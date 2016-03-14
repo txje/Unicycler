@@ -51,7 +51,7 @@ class AssemblyGraph:
         halfway_length = total_length // 2
         length_so_far = 0
         for segment in sorted_segments:
-            length_so_far += len(segment.forward_sequence)
+            length_so_far += segment.get_length()
             if length_so_far >= halfway_length:
                 return segment.depth
         return 0.0
@@ -73,7 +73,7 @@ class AssemblyGraph:
         '''
         total_length = 0
         for segment in self.segments.itervalues():
-            total_length += len(segment.forward_sequence)
+            total_length += segment.get_length()
         return total_length
 
     def save_to_fastg(self, filename):
@@ -215,9 +215,22 @@ class AssemblyGraph:
         self.forward_links = remove_nums_from_links(self.forward_links, nums_to_remove)
         self.reverse_links = remove_nums_from_links(self.reverse_links, nums_to_remove)
 
-
-
-
+    def get_n_segment_length(self, n):
+        '''
+        Returns the length for which segments that length and longer make up >= n% of the total
+        bases.  E.g. if n = 50, this function returns the N50.
+        n must be from 0 to 100.
+        '''
+        total_length = get_total_length(self)
+        target_length = total_length * (n / 100.0)
+        sorted_segments = sorted(self.segments.values(), key=lambda x: x.depth, reverse=True)
+        length_so_far = 0
+        for segment in sorted_segments:
+            seg_length = segment.get_length()
+            length_so_far += seg_length
+            if length_so_far >= target_length:
+                return seg_length
+        return 0
 
 
 
@@ -270,6 +283,9 @@ class Segment:
         if not positive:
             header += "'"
         return header
+
+    def get_length(self):
+        return len(self.forward_sequence)
 
 
 

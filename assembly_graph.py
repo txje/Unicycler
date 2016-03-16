@@ -150,6 +150,20 @@ class AssemblyGraph:
                         segment_nums_to_remove.append(num)
         self.remove_segments(segment_nums_to_remove)
 
+    def filter_homopolymer_loops(self):
+        '''
+        A common feature in SPAdes graphs is a k+1 segment that is all one base and loops to itself
+        (and doesn't have any other connections).  This function removes these from the graph.
+        '''
+        segment_nums_to_remove = []
+        for num, segment in self.segments.iteritems():
+            if segment.get_length() == self.overlap + 1 and \
+               segment.is_homopolymer() and \
+               self.forward_links[num] == [num] and \
+               self.forward_links[-num] == [-num]:
+                segment_nums_to_remove.append(num)
+        self.remove_segments(segment_nums_to_remove)
+
     def get_connected_components(self):
         '''
         Returns a list of lists, where each inner list is the segment numbers of one connected
@@ -221,9 +235,9 @@ class AssemblyGraph:
         bases.  E.g. if n = 50, this function returns the N50.
         n must be from 0 to 100.
         '''
-        total_length = get_total_length(self)
+        total_length = self.get_total_length()
         target_length = total_length * (n / 100.0)
-        sorted_segments = sorted(self.segments.values(), key=lambda x: x.depth, reverse=True)
+        sorted_segments = sorted(self.segments.values(), key=lambda x: x.get_length(), reverse=True)
         length_so_far = 0
         for segment in sorted_segments:
             seg_length = segment.get_length()
@@ -286,6 +300,18 @@ class Segment:
 
     def get_length(self):
         return len(self.forward_sequence)
+
+    def is_homopolymer(self):
+        '''
+        Returns True if the segment's sequence is made up of only one base.
+        '''
+        if len(self.forward_sequence) == 0:
+            return False
+        first_base = self.forward_sequence[0].lower()
+        for base in self.forward_sequence[1:]:
+            if base.lower() != first_base:
+                return False
+        return True
 
 
 

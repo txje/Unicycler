@@ -10,17 +10,22 @@ import subprocess
 import os
 import sys
 import shutil
+import gzip
+import math
 from assembly_graph import AssemblyGraph
 
 
 spades_path = '/Users/Ryan/Applications/SPAdes-3.7.1-Darwin/bin/spades.py'
-starting_kmer = 11
-max_kmer = 99
-kmer_interval = 2
+starting_kmer_fraction = 0.2 # Relative to median read length
+max_kmer_fraction = 0.9 # Relative to median read length
+kmer_count = 10
 read_depth_filter_cutoff = 0.25
 
 
 def main():
+    '''
+    The first function to run on execution.
+    '''
     args = get_arguments()
     make_output_directory(args.out)
     log_filepath = make_log_file(args.out)
@@ -29,6 +34,7 @@ def main():
     check_file_exists(args.short2)
     # check_file_exists(args.long)
     assembly_graph = get_best_spades_graph(args.short1, args.short2, args.out, log_file)
+    assembly_graph.save_to_fastg(os.path.join(args.out, 'assembly_graph.fastg'))
 
 
 
@@ -72,22 +78,30 @@ def get_best_spades_graph(short1, short2, outdir, log_file):
     'The best' is defined as the smallest dead-end count after low-depth filtering.  If multiple
     graphs have the same dead-end count (e.g. zero!) then the highest kmer is used.
     '''
-    spades_dir = os.path.join(outdir, '1_spades_assembly')
+    kmer_range = get_kmer_range(short1, short2, log_file)
+    spades_dir = os.path.join(outdir, 'spades_assembly')
     read_correction_dir = os.path.join(spades_dir, 'read_correction')
     read_files = spades_read_correction(short1, short2, read_correction_dir, log_file)
     shutil.rmtree(read_correction_dir)
     assem_dir = os.path.join(spades_dir, 'assembly')
     print('Conducting SPAdes assemblies...\n')
-    print('kmer\tsegments\tdead ends\tconnected_components')
-    kmer_range = range(starting_kmer, max_kmer, kmer_interval) + [max_kmer]
+    print('kmer\tsegments\tdead ends\tconnected_components\tscore')
+    best_score = 0.0
     for i, kmer in enumerate(kmer_range):
         graph_file = spades_assembly(read_files, assem_dir, log_file, kmer_range[:i+1])
         assembly_graph = AssemblyGraph(graph_file, kmer)
         filter_graph(assembly_graph, spades_dir, kmer)
         dead_ends, connected_components, segment_count = get_graph_info(assembly_graph)
-        
-        print(str(kmer) + '\t' + str(segment_count) + '\t' + str(dead_ends) + '\t' + str(connected_components))
+        score = 1.0 / (segment_count * ((dead_ends + 1) ** 2))
+        print(str(kmer) + '\t' + str(segment_count) + '\t' + str(dead_ends) +
+              '\t' + str(connected_components) + '\t' + str(score))
+        if score >= best_score:
+            best_kmer = kmer
+            best_score = score
+            best_assembly_graph = assembly_graph
     shutil.rmtree(assem_dir)
+    print('\nBest kmer: ' + str(best_kmer))
+    return best_assembly_graph
 
 def filter_graph(assembly_graph, graph_dir, kmer):
     '''
@@ -96,6 +110,7 @@ def filter_graph(assembly_graph, graph_dir, kmer):
     '''
     assembly_graph.normalise_read_depths()
     assembly_graph.filter_by_read_depth(read_depth_filter_cutoff)
+    assembly_graph.filter_homopolymer_loops()
     filtered_path = os.path.join(graph_dir, 'assembly_graph_k' + str(kmer) + '_filtered.fastg')
     assembly_graph.save_to_fastg(filtered_path)
 
@@ -203,6 +218,69 @@ def make_log_file(outdir):
     log_file_path = os.path.join(outdir, 'log.txt')
     open(log_file_path, 'w')
     return log_file_path
+
+def get_kmer_range(reads_1_filename, reads_2_filename, log_file):
+    '''
+    Uses the read lengths to determine the k-mer range to be used in the SPAdes assembly.
+    '''
+    read_lengths = get_read_lengths(reads_1_filename) + get_read_lengths(reads_2_filename)
+    read_lengths = sorted(read_lengths)
+    median_read_length = read_lengths[len(read_lengths) // 2]
+    starting_kmer = round_to_nearest_odd(starting_kmer_fraction * median_read_length)
+    max_kmer = round_to_nearest_odd(max_kmer_fraction * median_read_length)
+    if starting_kmer < 11:
+        starting_kmer = 11
+    if max_kmer > 127:
+        max_kmer = 127
+    interval = 2
+    while True:
+        kmer_range = range(starting_kmer, max_kmer, interval) + [max_kmer]
+        if len(kmer_range) <= kmer_count:
+            break
+        interval += 2
+    log_file.write('K-mer sizes for SPAdes assembly\n')
+    log_file.write('-------------------------------\n')
+    log_file.write('Median read length: ' + str(median_read_length) + '\n')
+    log_file.write('Starting k-mer:     ' + str(starting_kmer) + '\n')
+    log_file.write('Maximum k-mer:      ' + str(max_kmer) + '\n')
+    log_file.write('k-mer range:        ' + ', '.join([str(x) for x in kmer_range]) + '\n')
+    log_file.write('\n\n\n\n\n\n\n\n\n\n\n')
+    return kmer_range
+
+
+def round_to_nearest_odd(num):
+    '''
+    Rounds a float to an odd integer.
+    '''
+    round_up = int(math.ceil(num))
+    if round_up % 2 == 0:
+        round_up += 1
+    round_down = int(math.floor(num))
+    if round_down % 2 == 0:
+        round_down -= 1
+    up_diff = round_up - num
+    down_diff = num - round_down
+    if up_diff > down_diff:
+        return round_down
+    else:
+        return round_up
+
+
+def get_read_lengths(reads_filename):
+    '''
+    Returns a list of the read lengths for the given read file.
+    '''
+    # TO DO: check if .fastq.gz or just .fastq
+    reads = gzip.open(reads_filename, 'rb')
+    read_lengths = []
+    i = 0
+    for line in reads:
+        if i == 1:
+            read_lengths.append(len(line.strip()))
+        i += 1
+        if i == 4:
+            i = 0
+    return read_lengths
 
 
 if __name__ == '__main__':

@@ -152,16 +152,15 @@ class AssemblyGraph:
 
     def filter_homopolymer_loops(self):
         '''
-        A common feature in SPAdes graphs is a k+1 segment that is all one base and loops to itself
-        (and doesn't have any other connections).  This function removes these from the graph.
+        A common feature in SPAdes graphs is a small piece of the graph (often just one node) which
+        has nothing but one base.  Filter these out.
         '''
         segment_nums_to_remove = []
-        for num, segment in self.segments.iteritems():
-            if segment.get_length() == self.overlap + 1 and \
-               segment.is_homopolymer() and \
-               self.forward_links[num] == [num] and \
-               self.forward_links[-num] == [-num]:
-                segment_nums_to_remove.append(num)
+        connected_components = self.get_connected_components()
+        for component_nums in connected_components:
+            component_segments = [self.segments[x] for x in component_nums]
+            if all_segments_are_one_base(component_segments):
+                segment_nums_to_remove += component_nums
         self.remove_segments(segment_nums_to_remove)
 
     def get_connected_components(self):
@@ -498,5 +497,24 @@ def remove_nums_from_links(links, nums_to_remove):
     for n_1, n_2 in links.iteritems():
         if abs(n_1) not in nums_to_remove:
             new_links[n_1] = [x for x in n_2 if abs(x) not in nums_to_remove]
+            if new_links[n_1] == []:
+                 del new_links[n_1]
     return new_links
+
+def all_segments_are_one_base(segments):
+    '''
+    This function returns true if all given segments have nothing but one base.
+    '''
+    non_empty_segments = [x for x in segments if x.get_length() > 0]
+    if not non_empty_segments:
+        return False
+    base = non_empty_segments[0].forward_sequence[0].lower()
+    for segment in non_empty_segments:
+        if not segment.is_homopolymer():
+            return False
+        forward_base = segment.forward_sequence[0].lower()
+        reverse_base = segment.reverse_sequence[0].lower()
+        if forward_base != base and reverse_base != base:
+            return False
+    return True
 

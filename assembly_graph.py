@@ -355,42 +355,16 @@ def reverse_complement(seq):
     '''
     rev_comp = ''
     for i in reversed(range(len(seq))):
-        base = seq[i]
-        if base == 'A': rev_comp += 'T'
-        elif base == 'T': rev_comp += 'A'
-        elif base == 'G': rev_comp += 'C'
-        elif base == 'C': rev_comp += 'G'
-        elif base == 'a': rev_comp += 't'
-        elif base == 't': rev_comp += 'a'
-        elif base == 'g': rev_comp += 'c'
-        elif base == 'c': rev_comp += 'g'
-        elif base == 'R': rev_comp += 'Y'
-        elif base == 'Y': rev_comp += 'R'
-        elif base == 'S': rev_comp += 'S'
-        elif base == 'W': rev_comp += 'W'
-        elif base == 'K': rev_comp += 'M'
-        elif base == 'M': rev_comp += 'K'
-        elif base == 'r': rev_comp += 'y'
-        elif base == 'y': rev_comp += 'r'
-        elif base == 's': rev_comp += 's'
-        elif base == 'w': rev_comp += 'w'
-        elif base == 'k': rev_comp += 'm'
-        elif base == 'm': rev_comp += 'k'
-        elif base == 'B': rev_comp += 'V'
-        elif base == 'D': rev_comp += 'H'
-        elif base == 'H': rev_comp += 'D'
-        elif base == 'V': rev_comp += 'B'
-        elif base == 'b': rev_comp += 'v'
-        elif base == 'd': rev_comp += 'h'
-        elif base == 'h': rev_comp += 'd'
-        elif base == 'v': rev_comp += 'b'
-        elif base == 'N': rev_comp += 'N'
-        elif base == 'n': rev_comp += 'n'
-        elif base == '.': rev_comp += '.'
-        elif base == '-': rev_comp += '-'
-        elif base == '?': rev_comp += '?'
-        else: rev_comp += 'N'
+        rev_comp += complement_base(seq[i])
     return rev_comp
+
+def complement_base(base):
+    '''
+    Given a DNA base, this returns the complement.
+    '''
+    forward = 'ATGCatgcRYSWKMryswkmBDHVbdhvNn.-?'
+    reverse = 'TACGtacgYRSWMKyrswmkVHDBvhdbNn.-?N'
+    return reverse[forward.find(base)]
 
 def get_unsigned_number_from_header(header):
     '''

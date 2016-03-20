@@ -293,6 +293,14 @@ class Segment(object):
         else:
             self.reverse_sequence = sequence
 
+    def __repr__(self):
+        if len(self.forward_sequence) > 6:
+            seq_string = self.forward_sequence[:3] + '...' + self.forward_sequence[-3:]
+        else:
+            seq_string = self.forward_sequence
+        return str(self.number) + ' (' + seq_string + ')'
+
+
     def parse_header(self, header):
         header = header[:-1]
         header = header.split(':')[0]

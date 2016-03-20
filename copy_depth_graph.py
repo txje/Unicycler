@@ -15,6 +15,17 @@ class CopyDepthGraph(AssemblyGraph):
         self.copy_depths = {} # Dictionary of segment number -> list of copy depths
         self.error_margin = error_margin
 
+    def save_to_gfa(self, filename):
+        gfa = open(filename, 'w')
+        sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
+        for segment in sorted_segments:
+            segment_line = segment.gfa_segment_line()
+            segment_line = segment_line[:-1]
+            ADD LABEL AND COLOUR TAGS HERE
+            segment_line += '\n'
+            gfa.write(segment_line)
+        gfa.write(self.get_all_gfa_link_lines())
+
     def assign_single_copy_segments(self):
         '''
         This function assigns a single copy to segments which satisfy all of these criteria:
@@ -33,7 +44,7 @@ class CopyDepthGraph(AssemblyGraph):
         for segment in segments_without_copies:
             if segment.get_length() >= n_90_size and \
                within_error_margin(segment.depth, median_depth, self.error_margin) and \
-               at_most_one_link_per_end(segment):
+               self.at_most_one_link_per_end(segment):
                 self.copy_depths[segment.number] = [segment.depth]
                 assignment_count += 0
         return assignment_count

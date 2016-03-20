@@ -93,10 +93,16 @@ class AssemblyGraph(object):
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
         for segment in sorted_segments:
             gfa.write(segment.gfa_segment_line())
+        gfa.write(self.get_all_gfa_link_lines())
+
+    def get_all_gfa_link_lines(self):
+        gfa_link_lines = ''
         for start, ends in self.forward_links.iteritems():
             for end in ends:
                 if is_link_positive(start, end):
-                    gfa.write(self.gfa_link_line(start, end))
+                    gfa_link_lines += self.gfa_link_line(start, end)
+        return gfa_link_lines
+
 
     def get_fastg_header_with_links(self, segment, positive):
         '''

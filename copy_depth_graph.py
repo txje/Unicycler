@@ -37,7 +37,7 @@ class CopyDepthGraph(AssemblyGraph):
         '''
         if segment.number not in self.copy_depths:
             return ''
-        return ','.join(['%.4f' % x for x in self.copy_depths[segment.number]])
+        return ','.join(['%.3f' % x for x in self.copy_depths[segment.number]])
 
     def get_copy_number_colour(self, segment):
         '''
@@ -55,26 +55,35 @@ class CopyDepthGraph(AssemblyGraph):
         else: # 4+
             return 'red'
 
-    def assign_copy_depth(self):
-        while True:
-            single_copy_count = self.assign_single_copy_segments()
-            print(single_copy_count) # TEMP
-            if not single_copy_count:
-                break
-  
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
+    def determine_copy_depth(self):
+        '''
+        This function iteratively applies the various methods for assigning copy depth to segments
+        until no more assignments can be made.  It may not succeed in assigning copy depths to all
+        segments, as some segments will have strange/difficult connections or depth which prevent
+        automatic copy depth determination.
+        '''
+        while self.assign_single_copy_depths():
+            self.determine_copy_depth_part_2()
 
+    def determine_copy_depth_part_2(self):
+        '''
+        This function will recursively call itself to follow these rules:
+           1) Run merge_copy_depths until it stops successfully assigning copy depths.
+           2) Run redistribute_copy_depths.  If it succeeded in assigning any copy depths, go back
+              to step 1.
+           3) Run simple_loop_copy_depths.  If it succeeded in assigning any copy depths, go back
+              to step 1.
+        When this function completes, it means that no more copy depths can be assigned using those
+        three functions.
+        '''
+        while self.merge_copy_depths():
+            pass
+        if self.redistribute_copy_depths():
+            self.determine_copy_depth_part_2()
+        if self.simple_loop_copy_depths():
+            self.determine_copy_depth_part_2()
 
-    def assign_single_copy_segments(self):
+    def assign_single_copy_depths(self):
         '''
         This function assigns a single copy to segments which satisfy all of these criteria:
           1) It has a read depth within the error margin of the median depth.  Only use segments
@@ -96,6 +105,60 @@ class CopyDepthGraph(AssemblyGraph):
             if long_enough and good_depth and few_enough_links:
                 self.copy_depths[segment.number] = [segment.depth]
                 assignment_count += 1
+        print('assign_single_copy_segments:', assignment_count) # TEMP
+        return assignment_count
+
+    def merge_copy_depths(self):
+        '''
+        This function looks for segments where they have input on one end where:
+          1) All input segments have copy depth assigned.
+          2) All input segments exclusively input to this segment.
+        In these cases, if the sum of the input copy depths is within the error margin of the
+        segment's depth, then we assign copy depths to the segment, scaling the inputs so their sum
+        exactly matches the segment's depth.
+        '''
+        assignment_count = 0
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        print('merge_copy_depths:', assignment_count) # TEMP
+        return assignment_count
+
+    def redistribute_copy_depths(self):
+        '''
+        This function deals with a more complex case of copy depth redistribution: where one or
+        more segments with copy depth are linked to multiple segments without copy depth.  In this
+        case, the source segments' copy depths need to be redistributed as best as possible to the
+        destination segments.  This function combinatorially tries all possible distributions and
+        chooses the best fit, if it is within the allowed error margin.
+        '''
+        assignment_count = 0
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        print('redistribute_copy_depths:', assignment_count) # TEMP
+        return assignment_count
+
+    def simple_loop_copy_depths(self):
+        '''
+        This function assigns copy depths to simple loop structures.  It will only assign copy
+        depths in cases where the loop occurs once - higher repetition loops will not be given copy
+        depths due to the increasing uncertainty in repetition counts.
+        '''
+        assignment_count = 0
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        print('simple_loop_copy_depths:', assignment_count) # TEMP
         return assignment_count
         
     def at_most_one_link_per_end(self, segment):

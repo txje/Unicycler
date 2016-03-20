@@ -111,6 +111,7 @@ def filter_graph(assembly_graph, graph_dir, kmer):
     assembly_graph.normalise_read_depths()
     assembly_graph.filter_by_read_depth(read_depth_filter_cutoff)
     assembly_graph.filter_homopolymer_loops()
+    assembly_graph.normalise_read_depths()
     filtered_path = os.path.join(graph_dir, 'assembly_graph_k' + str(kmer) + '_filtered.fastg')
     assembly_graph.save_to_fastg(filtered_path)
 

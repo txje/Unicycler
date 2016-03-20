@@ -3,7 +3,7 @@ from __future__ import division
 from collections import deque
 
 
-class AssemblyGraph:
+class AssemblyGraph(object):
     '''
     This class holds an assembly graph with segments and links.
     '''
@@ -42,11 +42,14 @@ class AssemblyGraph:
         self.forward_links = build_rc_links_if_necessary(self.forward_links)
         self.reverse_links = build_reverse_links(self.forward_links)
 
-    def get_median_read_depth(self):
+    def get_median_read_depth(self, segment_list=None):
         '''
-        Returns the assembly graph's median read depth (by base).
+        Returns the assembly graph's median read depth (by base).  Optionally, a list of segments
+        can be given, in which case only those segments are used for the calculation.
         '''
-        sorted_segments = sorted(self.segments.values(), key=lambda x: x.depth)
+        if not segment_list:
+            segment_list = self.segments.values()
+        sorted_segments = sorted(segment_list, key=lambda x: x.depth)
         total_length = self.get_total_length()
         halfway_length = total_length // 2
         length_so_far = 0
@@ -84,6 +87,16 @@ class AssemblyGraph:
             fastg.write(add_line_breaks_to_sequence(segment.forward_sequence, 60))
             fastg.write(self.get_fastg_header_with_links(segment, False))
             fastg.write(add_line_breaks_to_sequence(segment.reverse_sequence, 60))
+
+    def save_to_gfa(self, filename):
+        gfa = open(filename, 'w')
+        sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
+        for segment in sorted_segments:
+            gfa.write(segment.gfa_segment_line())
+        for start, ends in self.forward_links.iteritems():
+            for end in ends:
+                if is_link_positive(start, end):
+                    gfa.write(self.gfa_link_line(start, end))
 
     def get_fastg_header_with_links(self, segment, positive):
         '''
@@ -228,14 +241,13 @@ class AssemblyGraph:
         self.forward_links = remove_nums_from_links(self.forward_links, nums_to_remove)
         self.reverse_links = remove_nums_from_links(self.reverse_links, nums_to_remove)
 
-    def get_n_segment_length(self, n):
+    def get_n_segment_length(self, n_percent):
         '''
         Returns the length for which segments that length and longer make up >= n% of the total
-        bases.  E.g. if n = 50, this function returns the N50.
-        n must be from 0 to 100.
+        bases.  E.g. if n = 50, this function returns the N50.  n must be from 0 to 100.
         '''
         total_length = self.get_total_length()
-        target_length = total_length * (n / 100.0)
+        target_length = total_length * (n_percent / 100.0)
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.get_length(), reverse=True)
         length_so_far = 0
         for segment in sorted_segments:
@@ -245,10 +257,22 @@ class AssemblyGraph:
                 return seg_length
         return 0
 
+    def gfa_link_line(self, start, end):
+        '''
+        Returns an entire L line for GFA output, including the newline.
+        '''
+        l_line = 'L\t'
+        l_line += str(abs(start)) + '\t'
+        l_line += get_sign_string(start) + '\t'
+        l_line += str(abs(end)) + '\t'
+        l_line += get_sign_string(end) + '\t'
+        l_line += str(self.overlap) + 'M\n'
+        return l_line
 
 
 
-class Segment:
+
+class Segment(object):
     '''
     This hold a graph segment with a number, depth, direction and sequence.
     '''
@@ -257,7 +281,6 @@ class Segment:
         self.depth = 0.0
         self.forward_sequence = ''
         self.reverse_sequence = ''
-
         self.parse_header(header)
         if is_header_positive(header):
             self.forward_sequence = sequence
@@ -311,6 +334,18 @@ class Segment:
             if base.lower() != first_base:
                 return False
         return True
+
+    def gfa_segment_line(self):
+        '''
+        Returns an entire S line for GFA output, including the newline.
+        '''
+        s_line = 'S\t'
+        s_line += str(self.number) + '\t'
+        s_line += self.forward_sequence + '\t'
+        s_line += 'LN:i:' + str(self.get_length()) + '\t'
+        s_line += 'DP:f:' + str(self.depth) + '\n'
+        return s_line
+
 
 
 
@@ -450,7 +485,6 @@ def add_line_breaks_to_sequence(sequence, length):
         seq_with_breaks += '\n'
     return seq_with_breaks
 
-
 def get_list_with_num(num, num_lists):
     '''
     Given a number and a list of lists of numbers, this function returns the list of numbers
@@ -472,7 +506,7 @@ def remove_nums_from_links(links, nums_to_remove):
         if abs(n_1) not in nums_to_remove:
             new_links[n_1] = [x for x in n_2 if abs(x) not in nums_to_remove]
             if new_links[n_1] == []:
-                 del new_links[n_1]
+                del new_links[n_1]
     return new_links
 
 def all_segments_are_one_base(segments):
@@ -491,4 +525,30 @@ def all_segments_are_one_base(segments):
         if forward_base != base and reverse_base != base:
             return False
     return True
+
+def is_link_positive(start, end):
+    '''
+    Returns True if the link is 'positive'.  This is a somewhat arbitrary call that allows us to
+    only get one link per RC pair.
+    A link is positive if:
+      1) Both segments are positive
+      2) It has no RC link (i.e. is its own RC)
+      3) The starting segment has a higher absolute value than the ending segment.
+    '''
+    if start > 0 and end > 0:
+        return True
+    if start < 0 and end < 0:
+        return False
+    if start == -end:
+        return True
+    return abs(start) > abs(end)
+
+def get_sign_string(num):
+    '''
+    Returns '+' for positive numbers (and zero) and '-' for negative numbers.
+    '''
+    if num >= 0:
+        return '+'
+    else:
+        return '-'
 

@@ -51,7 +51,7 @@ class CopyDepthGraph(AssemblyGraph):
         if copy_number == 2:
             return 'gold'
         if copy_number == 3:
-            return 'firebrick'
+            return 'darkorange'
         else: # 4+
             return 'red'
 
@@ -131,41 +131,72 @@ class CopyDepthGraph(AssemblyGraph):
             out_depth_possible = exclusive_outputs and self.all_have_copy_depths(exclusive_outputs)
             in_depth_acceptable = False
             out_depth_acceptable = False
-
             if in_depth_possible:
                 in_depths, in_error = self.scale_copy_depths(num, exclusive_inputs)
-                if in_error <= self.error_margin:
-                    in_depth_acceptable = True
+                in_depth_acceptable = in_error <= self.error_margin
             if out_depth_possible:
                 out_depths, out_error = self.scale_copy_depths(num, exclusive_outputs)
-                if out_error <= self.error_margin:
-                    out_depth_acceptable = True
-
+                out_depth_acceptable = out_error <= self.error_margin
             if in_depth_acceptable or out_depth_acceptable:
                 assignment_count += 1
                 if in_depth_acceptable and (not out_depth_acceptable or in_error < out_error):
                     self.copy_depths[num] = in_depths
                 else:
                     self.copy_depths[num] = out_depths
-
         print('merge_copy_depths:', assignment_count) # TEMP
         return assignment_count
 
-    def redistribute_copy_depths(self):
+    def redistribute_copy_depths_easy(self):
         '''
-        This function deals with a more complex case of copy depth redistribution: where one or
-        more segments with copy depth are linked to multiple segments without copy depth.  In this
-        case, the source segments' copy depths need to be redistributed as best as possible to the
-        destination segments.  This function combinatorially tries all possible distributions and
-        chooses the best fit, if it is within the allowed error margin.
+        This function deals with the easier case of copy depth redistribution: where one segments
+        with copy depth leads exclusively to multiple segments without copy depth.
+        We will then try to redistribute the source segment's copy depths among the destination
+        segments.  If it can be done within the allowed error margin, the destination segments will
+        get their copy depths.
         '''
         assignment_count = 0
+
         # TO DO
         # TO DO
         # TO DO
+        #
+        # LOOP THROUGH ALL SEGMENTS, LOOKING FOR THE FIRST INSTANCE OF A SEGMENT WITH DEPTH WHICH EXCLUSIVELY LEADS (IN EITHER DIRECTION) TO MULTIPLE SEGMENTS, AT LEAST ONE OF WHICH LACKS DEPTH.
+        # IF THE SOURCE COPY NUMBER IS LESS THAN THE DESTINATION SEGMENT COUNT, IT ISN'T POSSIBLE SO CONTINUE.
+        # SHUFFLE THE SOURCE DEPTHS INTO BINS, ONE FOR EACH DESTINATION SEGMENT, IN ALL POSSIBLE COMBINATIONS.
+        # ASSESS THE ERROR OF EACH COMBINATION.  FOR DESTINATION SEGMENTS THAT ALREADY HAVE COPY DEPTHS, WE CAN COMPARE THE SOURCE DEPTHS TO THE DESTINATION DEPTHS DIRECTLY.  FOR DESTINATION SEGMENTS WITHOUT COPY DEPTHS, WE COMPARE THE PROPOSED SUM TO THE SEGMENT'S READ DEPTH.
+        # CHOOSE THE LOWEST ERROR COMBINATIOIN.  IF ITS ERROR IS WITHIN THE ALLOWED ERROR MARGIN, SCALE THE COPY DEPTHS AND ASSIGN THEM.
+        # THEN LEAVE THIS FUNCTION (I.E. ONLY DO ONE REDISTRIBUTION)
+        #    
         # TO DO
         # TO DO
         # TO DO
+
+        print('redistribute_copy_depths:', assignment_count) # TEMP
+        return assignment_count
+
+    def redistribute_copy_depths_complex(self):
+        '''
+        This function deals with a more complex case of copy depth redistribution: where multiple
+        segments with copy depth lead exclusively to multiple segments without copy depth.
+        We will then try to redistribute the source segment's copy depths among the destination
+        segments.  If it can be done within the allowed error margin, the destination segments will
+        get their copy depths.
+        '''
+        assignment_count = 0
+
+        # TO DO
+        # TO DO
+        # TO DO
+        #
+        # LOOP THROUGH ALL SEGMENTS, LOOKING FOR ANY INSTANCES OF A SEGMENT WITH COPY DEPTHS WHICH CONNECTS TO A SEGMENT WITHOUT COPY DEPTHS.
+        # EXPAND THE SOURCE AND DESTINATION GROUPS UNTIL EITHER WE GET A SOURCE NODE LACKING COPY DEPTHS (FAILURE) OR THEY STOP GROWING.
+        # NOW WE SHOULD HAVE A SOURCE GROUP, ALL OF WHICH HAVE COPY DEPTHS, AND A DESTINATION GROUP, AT LEAST SOME OF WHICH DO NOT HAVE COPY DEPTHS.
+        # DO A SIMILAR COMBINATORIAL APPROACH AS WITH THE EASY CASE.
+        #
+        # TO DO
+        # TO DO
+        # TO DO
+
         print('redistribute_copy_depths:', assignment_count) # TEMP
         return assignment_count
 

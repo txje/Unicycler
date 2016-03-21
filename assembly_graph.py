@@ -275,7 +275,55 @@ class AssemblyGraph(object):
         l_line += str(self.overlap) + 'M\n'
         return l_line
 
+    def get_all_inputs(self, segment):
+        '''
+        Returns a list of segment numbers which lead into the given segment.
+        '''
 
+
+    def get_all_outputs(self, segment):
+        '''
+        Returns a list of segments which lead out from the given segment.
+        '''
+        if segment.number in self.reverse_links:
+            return [self.segments[x] for x in self.forward_links[segment.number]]
+        else:
+            return []
+
+    def get_exclusive_inputs(self, segment_number):
+        '''
+        This function finds all segments which lead into the given segment.  If those segments
+        do not lead into any other segments, then this function returns them in a list.  If they
+        do lead into other segments, then this function returns None.
+        Specifically, this function returns a list of unsigned numbers.
+        '''
+        if segment_number not in self.reverse_links:
+            return []
+        return [abs(x) for x in self.reverse_links[segment_number] if self.lead_exclusively_to(x, segment_number)]
+
+    def get_exclusive_outputs(self, segment_number):
+        '''
+        Does the same thing as get_exclusive_inputs, but in the other direction.
+        '''
+        if segment_number not in self.forward_links:
+            return []
+        return [abs(x) for x in self.forward_links[segment_number] if self.lead_exclusively_from(x, segment_number)]
+
+    def lead_exclusively_to(self, segment_num_1, segment_num_2):
+        '''
+        Returns whether or not the first segment leads to and only to the second segment.
+        '''
+        if segment_num_1 not in self.forward_links:
+            return False
+        return self.forward_links[segment_num_1] == [segment_num_2]
+
+    def lead_exclusively_from(self, segment_num_1, segment_num_2):
+        '''
+        Does the same thing as lead_exclusively_to, but follows links in the opposite direction.
+        '''
+        if segment_num_1 not in self.reverse_links:
+            return False
+        return self.reverse_links[segment_num_1] == [segment_num_2]
 
 
 class Segment(object):

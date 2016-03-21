@@ -37,7 +37,7 @@ class CopyDepthGraph(AssemblyGraph):
         '''
         if segment.number not in self.copy_depths:
             return ''
-        return ','.join(['%.3f' % x for x in self.copy_depths[segment.number]])
+        return ', '.join(['%.3f' % x for x in self.copy_depths[segment.number]])
 
     def get_copy_number_colour(self, segment):
         '''
@@ -93,12 +93,12 @@ class CopyDepthGraph(AssemblyGraph):
         It returns the number of segments for which it assigned a copy depth.
         '''
         n_95_size = self.get_n_segment_length(95)
-        segments_without_copies = [x for x in self.segments.values() if x.number not in self.copy_depths]
-        if not segments_without_copies:
+        segments = self.get_segments_without_copies()
+        if not segments:
             return 0
-        median_depth = self.get_median_read_depth(segments_without_copies)
+        median_depth = self.get_median_read_depth(segments)
         assignment_count = 0
-        for segment in segments_without_copies:
+        for segment in segments:
             long_enough = segment.get_length() >= n_95_size
             good_depth = within_error_margin(segment.depth, median_depth, self.error_margin)
             few_enough_links = self.at_most_one_link_per_end(segment)
@@ -116,14 +116,38 @@ class CopyDepthGraph(AssemblyGraph):
         In these cases, if the sum of the input copy depths is within the error margin of the
         segment's depth, then we assign copy depths to the segment, scaling the inputs so their sum
         exactly matches the segment's depth.
+        If both ends can potentially be used to assign copy depths to a node, we use the side which
+        more closely matches the node's depth.
         '''
+        segments = self.get_segments_without_copies()
+        if not segments:
+            return 0
         assignment_count = 0
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
+        for segment in segments:
+            num = segment.number
+            exclusive_inputs = self.get_exclusive_inputs(num)
+            exclusive_outputs = self.get_exclusive_outputs(num)
+            in_depth_possible = exclusive_inputs and self.all_have_copy_depths(exclusive_inputs)
+            out_depth_possible = exclusive_outputs and self.all_have_copy_depths(exclusive_outputs)
+            in_depth_acceptable = False
+            out_depth_acceptable = False
+
+            if in_depth_possible:
+                in_depths, in_error = self.scale_copy_depths(num, exclusive_inputs)
+                if in_error <= self.error_margin:
+                    in_depth_acceptable = True
+            if out_depth_possible:
+                out_depths, out_error = self.scale_copy_depths(num, exclusive_outputs)
+                if out_error <= self.error_margin:
+                    out_depth_acceptable = True
+
+            if in_depth_acceptable or out_depth_acceptable:
+                assignment_count += 1
+                if in_depth_acceptable and (not out_depth_acceptable or in_error < out_error):
+                    self.copy_depths[num] = in_depths
+                else:
+                    self.copy_depths[num] = out_depths
+
         print('merge_copy_depths:', assignment_count) # TEMP
         return assignment_count
 
@@ -170,6 +194,45 @@ class CopyDepthGraph(AssemblyGraph):
         if segment in self.reverse_links and len(self.reverse_links[segment]) > 1:
             return False
         return True
+
+    def all_have_copy_depths(self, segment_numbers):
+        '''
+        Takes a list of segment numbers and returns whether every segment in the list has copy
+        depths assigned.
+        '''
+        for num in segment_numbers:
+            if num not in self.copy_depths:
+                return False
+        return True
+
+    def scale_copy_depths(self, segment_number, source_segment_numbers):
+        '''
+        Using a list of segments which are the source of copy depth, this function scales them so
+        that their sum matches the depth of the given segment.
+        It returns:
+          1) a list of depth numbers
+          2) the error (i.e. the degree of scaling which had to occur)
+        It assumes that all of the source segments definitely have copy depths.
+        '''
+        source_depths = []
+        for num in source_segment_numbers:
+            source_depths += self.copy_depths[num]
+        source_depth_sum = sum(source_depths)
+        target_depth = self.segments[segment_number].depth
+        scaling_factor = target_depth / source_depth_sum
+        scaled_depths = sorted([scaling_factor * x for x in source_depths], reverse=True)
+        if target_depth > 0.0:
+            error = abs(source_depth_sum - target_depth) / target_depth
+        else:
+            error = 1.0
+        return scaled_depths, error
+
+    def get_segments_without_copies(self):
+        '''
+        Returns a list of the graph segments lacking copy depth information.
+        '''
+        return [x for x in self.segments.values() if x.number not in self.copy_depths]
+
 
 def within_error_margin(val_1, val_2, error_margin):
     '''

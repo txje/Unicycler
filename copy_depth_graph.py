@@ -78,7 +78,9 @@ class CopyDepthGraph(AssemblyGraph):
         '''
         while self.merge_copy_depths():
             pass
-        if self.redistribute_copy_depths():
+        if self.redistribute_copy_depths_easy():
+            self.determine_copy_depth_part_2()
+        if self.redistribute_copy_depths_complex():
             self.determine_copy_depth_part_2()
         if self.simple_loop_copy_depths():
             self.determine_copy_depth_part_2()
@@ -171,7 +173,7 @@ class CopyDepthGraph(AssemblyGraph):
         # TO DO
         # TO DO
 
-        print('redistribute_copy_depths:', assignment_count) # TEMP
+        print('redistribute_copy_depths_easy:', assignment_count) # TEMP
         return assignment_count
 
     def redistribute_copy_depths_complex(self):
@@ -197,7 +199,7 @@ class CopyDepthGraph(AssemblyGraph):
         # TO DO
         # TO DO
 
-        print('redistribute_copy_depths:', assignment_count) # TEMP
+        print('redistribute_copy_depths_complex:', assignment_count) # TEMP
         return assignment_count
 
     def simple_loop_copy_depths(self):

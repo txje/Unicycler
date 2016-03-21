@@ -50,7 +50,9 @@ class AssemblyGraph(object):
         if not segment_list:
             segment_list = self.segments.values()
         sorted_segments = sorted(segment_list, key=lambda x: x.depth)
-        total_length = self.get_total_length()
+        total_length = 0
+        for segment in sorted_segments:
+            total_length += segment.get_length()
         halfway_length = total_length // 2
         length_so_far = 0
         for segment in sorted_segments:

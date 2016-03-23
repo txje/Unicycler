@@ -158,17 +158,17 @@ class AssemblyGraph(object):
           1) the segment has at least one dead end
           2) the segment is part of a connected component where all of the segments are below the
              depth cutoff
+          3) deleting the segment would not create any dead ends
         '''
         segment_nums_to_remove = []
         connected_components = self.get_connected_components()
         for num, segment in self.segments.iteritems():
             if segment.depth < cutoff:
-                if self.dead_end_count(segment) > 0:
+                if self.dead_end_count(segment) > 0 or \
+                   self.all_segments_below_depth(get_list_with_num(num, connected_components), cutoff) or \
+                   not self.deleting_would_create_dead_end(segment):
                     segment_nums_to_remove.append(num)
-                else:
-                    component = get_list_with_num(num, connected_components)
-                    if self.all_segments_below_depth(component, cutoff):
-                        segment_nums_to_remove.append(num)
+
         self.remove_segments(segment_nums_to_remove)
 
     def filter_homopolymer_loops(self):
@@ -277,12 +277,6 @@ class AssemblyGraph(object):
         l_line += str(self.overlap) + 'M\n'
         return l_line
 
-    def get_all_inputs(self, segment):
-        '''
-        Returns a list of segment numbers which lead into the given segment.
-        '''
-
-
     def get_all_outputs(self, segment):
         '''
         Returns a list of segments which lead out from the given segment.
@@ -326,6 +320,25 @@ class AssemblyGraph(object):
         if segment_num_1 not in self.reverse_links:
             return False
         return self.reverse_links[segment_num_1] == [segment_num_2]
+
+    def deleting_would_create_dead_end(self, segment):
+        '''
+        If deleting the given segment would create a dead end, this function returns True.
+        '''
+        downstream_segments = self.forward_links[segment.number]
+        for downstream_segment in downstream_segments:
+            if len(self.reverse_links[downstream_segment]) == 1:
+                return True
+        upstream_segments = self.reverse_links[segment.number]
+        for upstream_segment in upstream_segments:
+            if len(self.forward_links[upstream_segment]) == 1:
+                return True
+        return False
+
+            
+
+
+
 
 
 class Segment(object):

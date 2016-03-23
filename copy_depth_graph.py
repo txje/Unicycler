@@ -2,7 +2,6 @@ from __future__ import print_function
 from __future__ import division
 from assembly_graph import AssemblyGraph
 
-
 class CopyDepthGraph(AssemblyGraph):
     '''
     This class add copy depth tracking to the basic assembly graph.
@@ -134,10 +133,10 @@ class CopyDepthGraph(AssemblyGraph):
             in_depth_acceptable = False
             out_depth_acceptable = False
             if in_depth_possible:
-                in_depths, in_error = self.scale_copy_depths(num, exclusive_inputs)
+                in_depths, in_error = self.scale_copy_depths_from_source_segments(num, exclusive_inputs)
                 in_depth_acceptable = in_error <= self.error_margin
             if out_depth_possible:
-                out_depths, out_error = self.scale_copy_depths(num, exclusive_outputs)
+                out_depths, out_error = self.scale_copy_depths_from_source_segments(num, exclusive_outputs)
                 out_depth_acceptable = out_error <= self.error_margin
             if in_depth_acceptable or out_depth_acceptable:
                 assignment_count += 1
@@ -156,25 +155,42 @@ class CopyDepthGraph(AssemblyGraph):
         segments.  If it can be done within the allowed error margin, the destination segments will
         get their copy depths.
         '''
+        segments = self.get_segments_with_two_or_more_copies()
+        if not segments:
+            print('redistribute_copy_depths_easy:', 0) # TEMP
+            return 0
         assignment_count = 0
+        for segment in segments:
+            num = segment.number
+            connections = self.get_exclusive_inputs(num)
+            if not connections or self.all_have_copy_depths(connections):
+                connections = self.get_exclusive_outputs(num)
+            if not connections or self.all_have_copy_depths(connections):
+                continue
 
-        # TO DO
-        # TO DO
-        # TO DO
-        #
-        # LOOP THROUGH ALL SEGMENTS, LOOKING FOR THE FIRST INSTANCE OF A SEGMENT WITH DEPTH WHICH EXCLUSIVELY LEADS (IN EITHER DIRECTION) TO MULTIPLE SEGMENTS, AT LEAST ONE OF WHICH LACKS DEPTH.
-        # IF THE SOURCE COPY NUMBER IS LESS THAN THE DESTINATION SEGMENT COUNT, IT ISN'T POSSIBLE SO CONTINUE.
-        # SHUFFLE THE SOURCE DEPTHS INTO BINS, ONE FOR EACH DESTINATION SEGMENT, IN ALL POSSIBLE COMBINATIONS.
-        # ASSESS THE ERROR OF EACH COMBINATION.  FOR DESTINATION SEGMENTS THAT ALREADY HAVE COPY DEPTHS, WE CAN COMPARE THE SOURCE DEPTHS TO THE DESTINATION DEPTHS DIRECTLY.  FOR DESTINATION SEGMENTS WITHOUT COPY DEPTHS, WE COMPARE THE PROPOSED SUM TO THE SEGMENT'S READ DEPTH.
-        # CHOOSE THE LOWEST ERROR COMBINATIOIN.  IF ITS ERROR IS WITHIN THE ALLOWED ERROR MARGIN, SCALE THE COPY DEPTHS AND ASSIGN THEM.
-        # THEN LEAVE THIS FUNCTION (I.E. ONLY DO ONE REDISTRIBUTION)
-        #    
-        # TO DO
-        # TO DO
-        # TO DO
+            # If we got here, then we can try to redistribute the segment's copy depths to its
+            # connections which are lacking copy depth.
+            copy_depths = self.copy_depths[num]
+            bins = [[]] * len(connections)
+            targets = [None if x not in self.copy_depths else len(self.copy_depths[x]) for x in connections]
+            arrangments = shuffle_into_bins(copy_depths, bins, targets)
+            if not arrangments:
+                continue
 
-        print('redistribute_copy_depths_easy:', assignment_count) # TEMP
-        return assignment_count
+            lowest_error = float('inf')
+            for arrangment in arrangments:
+                error = self.get_error_for_multiple_segments_and_depths(connections, arrangment)
+                if error < lowest_error:
+                    lowest_error = error
+                    best_arrangement = arrangment
+            if lowest_error < self.error_margin:
+                if self.assign_copy_depths_where_needed(connections, best_arrangement):
+                    print('redistribute_copy_depths_easy:', 1) # TEMP
+                    return 1
+
+        print('redistribute_copy_depths_easy:', 0) # TEMP
+        return 0
+
 
     def redistribute_copy_depths_complex(self):
         '''
@@ -185,6 +201,8 @@ class CopyDepthGraph(AssemblyGraph):
         get their copy depths.
         '''
         assignment_count = 0
+
+
 
         # TO DO
         # TO DO
@@ -238,7 +256,7 @@ class CopyDepthGraph(AssemblyGraph):
                 return False
         return True
 
-    def scale_copy_depths(self, segment_number, source_segment_numbers):
+    def scale_copy_depths_from_source_segments(self, segment_number, source_segment_numbers):
         '''
         Using a list of segments which are the source of copy depth, this function scales them so
         that their sum matches the depth of the given segment.
@@ -250,14 +268,18 @@ class CopyDepthGraph(AssemblyGraph):
         source_depths = []
         for num in source_segment_numbers:
             source_depths += self.copy_depths[num]
-        source_depth_sum = sum(source_depths)
         target_depth = self.segments[segment_number].depth
+        return self.scale_copy_depths(target_depth, source_depths)
+
+    def scale_copy_depths(self, target_depth, source_depths):
+        '''
+        This function takes the source depths and scales them so their sum matches the target
+        depth.  It returns the scaled depths and the error.
+        '''
+        source_depth_sum = sum(source_depths)
         scaling_factor = target_depth / source_depth_sum
         scaled_depths = sorted([scaling_factor * x for x in source_depths], reverse=True)
-        if target_depth > 0.0:
-            error = abs(source_depth_sum - target_depth) / target_depth
-        else:
-            error = 1.0
+        error = get_error(source_depth_sum, target_depth)
         return scaled_depths, error
 
     def get_segments_without_copies(self):
@@ -266,6 +288,54 @@ class CopyDepthGraph(AssemblyGraph):
         '''
         return [x for x in self.segments.values() if x.number not in self.copy_depths]
 
+    def get_segments_with_two_or_more_copies(self):
+        return [x for x in self.segments.values() if x.number in self.copy_depths and len(self.copy_depths[x.number]) > 1]
+
+    def get_error_for_multiple_segments_and_depths(self, segment_numbers, copy_depths):
+        '''
+        For the given segments, this function assesses how well the given copy depths match up.
+        The maximum error for any segment is what's returned at the end.
+        '''
+        max_error = 0
+        for i, num in enumerate(segment_numbers):
+            segment_depth = self.segments[num].depth
+            depth_sum = sum(copy_depths[i])
+            max_error = max(max_error, get_error(depth_sum, segment_depth))
+        return max_error
+
+    def assign_copy_depths_where_needed(self, segment_numbers, new_depths):
+        '''
+        For the given segments, this function assigns the corresponding copy depths, scaled to fit
+        the segment.  If a segment already has copy depths, it is skipped (i.e. this function only
+        write new copy depths, doesn't overwrite existing ones).
+        It will only create copy depths if doing so is within the allowed error margin.
+        '''
+        success = False
+        for i, num in enumerate(segment_numbers):
+            if num not in self.copy_depths:
+                new_copy_depths, error = self.scale_copy_depths(self.segments[num].depth, new_depths[i])
+                if error <= self.error_margin:
+                    self.copy_depths[num] = new_copy_depths
+                    success = True
+        return success
+
+
+
+
+
+
+
+
+
+def get_error(source, target):
+    '''
+    Returns the relative error from trying to assign the source value to the target value.
+    E.g. if source = 1.6 and target = 2.0, the error is 0.2
+    '''
+    if target > 0.0:
+        return abs(source - target) / target
+    else:
+        return float('inf')
 
 def within_error_margin(val_1, val_2, error_margin):
     '''
@@ -276,6 +346,28 @@ def within_error_margin(val_1, val_2, error_margin):
     '''
     return val_1 >= val_2 * (1 - error_margin) and val_1 <= val_2 * (1 + error_margin)
 
+def shuffle_into_bins(items, bins, targets):
+    '''
+    Shuffle items into bins in all possible arrangements that satisfy these conditions:
+      1) All bins must have at least one item.
+      2) Any bins with a specified target must have exactly that number of items.
+    '''
+    arrangements = []
 
+    # If there are items not yet in a bin, place the first item in each possible bin and call this
+    # function recursively.
+    if items:
+        for i, _ in enumerate(bins):
+            bins_copy = [list(x) for x in bins]
+            bins_copy[i].append(items[0])
+            arrangements += shuffle_into_bins(items[1:], bins_copy, targets)
+
+    # If all items are in a bin, all bins have at least one item and any bins with a target have
+    # the appropriate amount, then add the arrangement to the results.
+    elif all(x for x in bins) and \
+         all([not target or target == len(bins[i]) for i, target in enumerate(targets)]):
+            arrangements.append(bins)
+
+    return arrangements
 
 

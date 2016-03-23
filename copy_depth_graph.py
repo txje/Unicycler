@@ -6,7 +6,7 @@ class CopyDepthGraph(AssemblyGraph):
     '''
     This class add copy depth tracking to the basic assembly graph.
     '''
-    def __init__(self, filename, overlap, error_margin):
+    def __init__(self, filename, overlap, error_margin, minimum_auto_single):
         '''
         The only argument in addition to those used in AssemblyGraph is error_margin.  This
         specifies the allowed relative depth used when making copy depth assignments.  For example,
@@ -15,6 +15,7 @@ class CopyDepthGraph(AssemblyGraph):
         AssemblyGraph.__init__(self, filename, overlap)
         self.copy_depths = {} # Dictionary of segment number -> list of copy depths
         self.error_margin = error_margin
+        self.minimum_auto_single = minimum_auto_single
 
     def save_to_gfa(self, filename):
         gfa = open(filename, 'w')
@@ -65,24 +66,12 @@ class CopyDepthGraph(AssemblyGraph):
             self.determine_copy_depth_part_2()
 
     def determine_copy_depth_part_2(self):
-        '''
-        This function will recursively call itself to follow these rules:
-           1) Run merge_copy_depths until it stops successfully assigning copy depths.
-           2) Run redistribute_copy_depths.  If it succeeded in assigning any copy depths, go back
-              to step 1.
-           3) Run simple_loop_copy_depths.  If it succeeded in assigning any copy depths, go back
-              to step 1.
-        When this function completes, it means that no more copy depths can be assigned using those
-        three functions.
-        '''
         while self.merge_copy_depths():
             pass
-        if self.redistribute_copy_depths_easy():
+        if self.redistribute_copy_depths():
             self.determine_copy_depth_part_2()
-        # if self.redistribute_copy_depths_complex():
-        #     self.determine_copy_depth_part_2()
-        # if self.simple_loop_copy_depths():
-        #     self.determine_copy_depth_part_2()
+        while self.simple_loop_copy_depths():
+            pass
 
     def assign_single_copy_depth(self):
         '''
@@ -91,7 +80,8 @@ class CopyDepthGraph(AssemblyGraph):
         '''
         segments = sorted(self.get_segments_without_copies(), key=lambda x: x.get_length(), reverse=True)
         for segment in segments:
-            if self.at_most_one_link_per_end(segment):
+            if segment.get_length() >= self.minimum_auto_single and \
+               self.at_most_one_link_per_end(segment):
                 self.copy_depths[segment.number] = [segment.depth]
                 print('assign_single_copy_segments:', segment.number) # TEMP
                 return 1
@@ -103,44 +93,46 @@ class CopyDepthGraph(AssemblyGraph):
         This function looks for segments where they have input on one end where:
           1) All input segments have copy depth assigned.
           2) All input segments exclusively input to this segment.
-        In these cases, if the sum of the input copy depths is within the error margin of the
-        segment's depth, then we assign copy depths to the segment, scaling the inputs so their sum
+        All such cases are evaluated, and the segment with the lowest error (if that error is below
+        the allowed error margin) is assigned copy depths, scaling the inputs so their sum
         exactly matches the segment's depth.
-        If both ends can potentially be used to assign copy depths to a node, we use the side which
-        more closely matches the node's depth.
         '''
         segments = self.get_segments_without_copies()
         if not segments:
             print('merge_copy_depths:           ') # TEMP
             return 0
-        assignments = []
+        
+        best_segment_num = None
+        best_new_depths = []
+        lowest_error = float('inf')
+
         for segment in segments:
             num = segment.number
             exclusive_inputs = self.get_exclusive_inputs(num)
             exclusive_outputs = self.get_exclusive_outputs(num)
             in_depth_possible = exclusive_inputs and self.all_have_copy_depths(exclusive_inputs)
             out_depth_possible = exclusive_outputs and self.all_have_copy_depths(exclusive_outputs)
-            in_depth_acceptable = False
-            out_depth_acceptable = False
             if in_depth_possible:
-                in_depths, in_error = self.scale_copy_depths_from_source_segments(num, exclusive_inputs)
-                in_depth_acceptable = in_error <= self.error_margin
+                depths, error = self.scale_copy_depths_from_source_segments(num, exclusive_inputs)
+                if error < lowest_error:
+                    lowest_error = error
+                    best_segment_num = num
+                    best_new_depths = depths
             if out_depth_possible:
-                out_depths, out_error = self.scale_copy_depths_from_source_segments(num, exclusive_outputs)
-                out_depth_acceptable = out_error <= self.error_margin
-            if in_depth_acceptable or out_depth_acceptable:
-                assignments.append(str(num))
-                if in_depth_acceptable and (not out_depth_acceptable or in_error < out_error):
-                    self.copy_depths[num] = in_depths
-                else:
-                    self.copy_depths[num] = out_depths
-        if not assignments: # TEMP
+                depths, error = self.scale_copy_depths_from_source_segments(num, exclusive_outputs)
+                if error < lowest_error:
+                    lowest_error = error
+                    best_segment_num = num
+                    best_new_depths = depths
+        if best_segment_num and lowest_error < self.error_margin:
+            print('merge_copy_depths:          ', best_segment_num) # TEMP
+            self.copy_depths[best_segment_num] = best_new_depths
+            return 1
+        else:
             print('merge_copy_depths:           ') # TEMP
-        else: # TEMP
-            print('merge_copy_depths:          ', ', '.join(assignments)) # TEMP
-        return len(assignments)
+            return 0
 
-    def redistribute_copy_depths_easy(self):
+    def redistribute_copy_depths(self):
         '''
         This function deals with the easier case of copy depth redistribution: where one segments
         with copy depth leads exclusively to multiple segments without copy depth.
@@ -184,35 +176,6 @@ class CopyDepthGraph(AssemblyGraph):
         print('redistribute_copy_depths:    ') # TEMP
         return 0
 
-
-    def redistribute_copy_depths_complex(self):
-        '''
-        This function deals with a more complex case of copy depth redistribution: where multiple
-        segments with copy depth lead exclusively to multiple segments without copy depth.
-        We will then try to redistribute the source segment's copy depths among the destination
-        segments.  If it can be done within the allowed error margin, the destination segments will
-        get their copy depths.
-        '''
-        assignment_count = 0
-
-
-
-        # TO DO
-        # TO DO
-        # TO DO
-        #
-        # LOOP THROUGH ALL SEGMENTS, LOOKING FOR ANY INSTANCES OF A SEGMENT WITH COPY DEPTHS WHICH CONNECTS TO A SEGMENT WITHOUT COPY DEPTHS.
-        # EXPAND THE SOURCE AND DESTINATION GROUPS UNTIL EITHER WE GET A SOURCE NODE LACKING COPY DEPTHS (FAILURE) OR THEY STOP GROWING.
-        # NOW WE SHOULD HAVE A SOURCE GROUP, ALL OF WHICH HAVE COPY DEPTHS, AND A DESTINATION GROUP, AT LEAST SOME OF WHICH DO NOT HAVE COPY DEPTHS.
-        # DO A SIMILAR COMBINATORIAL APPROACH AS WITH THE EASY CASE.
-        #
-        # TO DO
-        # TO DO
-        # TO DO
-
-        print('redistribute_copy_depths_complex: none') # TEMP
-        return assignment_count
-
     def simple_loop_copy_depths(self):
         '''
         This function assigns copy depths to simple loop structures.  It will only assign copy
@@ -226,7 +189,7 @@ class CopyDepthGraph(AssemblyGraph):
         # TO DO
         # TO DO
         # TO DO
-        print('simple_loop_copy_depths: none') # TEMP
+        print('simple_loop_copy_depths:     ') # TEMP
         return assignment_count
         
     def at_most_one_link_per_end(self, segment):

@@ -61,7 +61,7 @@ class CopyDepthGraph(AssemblyGraph):
         segments, as some segments will have strange/difficult connections or depth which prevent
         automatic copy depth determination.
         '''
-        while self.assign_single_copy_depths():
+        while self.assign_single_copy_depth():
             self.determine_copy_depth_part_2()
 
     def determine_copy_depth_part_2(self):
@@ -79,35 +79,24 @@ class CopyDepthGraph(AssemblyGraph):
             pass
         if self.redistribute_copy_depths_easy():
             self.determine_copy_depth_part_2()
-        if self.redistribute_copy_depths_complex():
-            self.determine_copy_depth_part_2()
-        if self.simple_loop_copy_depths():
-            self.determine_copy_depth_part_2()
+        # if self.redistribute_copy_depths_complex():
+        #     self.determine_copy_depth_part_2()
+        # if self.simple_loop_copy_depths():
+        #     self.determine_copy_depth_part_2()
 
-    def assign_single_copy_depths(self):
+    def assign_single_copy_depth(self):
         '''
-        This function assigns a single copy to segments which satisfy all of these criteria:
-          1) It has a read depth within the error margin of the median depth.  Only use segments
-             without copy depth information for the median value to which we're comparing.
-          2) It has a length of at least N95 for the whole graph.
-          3) It has a maximum of one link connected to each end.
-        It returns the number of segments for which it assigned a copy depth.
+        This function assigns a single copy to the longest segment with no more than one link per
+        end.
         '''
-        n_95_size = self.get_n_segment_length(95)
-        segments = self.get_segments_without_copies()
-        if not segments:
-            return 0
-        median_depth = self.get_median_read_depth(segments)
-        assignment_count = 0
+        segments = sorted(self.get_segments_without_copies(), key=lambda x: x.get_length(), reverse=True)
         for segment in segments:
-            long_enough = segment.get_length() >= n_95_size
-            good_depth = within_error_margin(segment.depth, median_depth, self.error_margin)
-            few_enough_links = self.at_most_one_link_per_end(segment)
-            if long_enough and good_depth and few_enough_links:
+            if self.at_most_one_link_per_end(segment):
                 self.copy_depths[segment.number] = [segment.depth]
-                assignment_count += 1
-        print('assign_single_copy_segments:', assignment_count) # TEMP
-        return assignment_count
+                print('assign_single_copy_segments:', segment.number) # TEMP
+                return 1
+        print('assign_single_copy_segments: ') # TEMP
+        return 0
 
     def merge_copy_depths(self):
         '''
@@ -122,8 +111,9 @@ class CopyDepthGraph(AssemblyGraph):
         '''
         segments = self.get_segments_without_copies()
         if not segments:
+            print('merge_copy_depths:           ') # TEMP
             return 0
-        assignment_count = 0
+        assignments = []
         for segment in segments:
             num = segment.number
             exclusive_inputs = self.get_exclusive_inputs(num)
@@ -139,13 +129,16 @@ class CopyDepthGraph(AssemblyGraph):
                 out_depths, out_error = self.scale_copy_depths_from_source_segments(num, exclusive_outputs)
                 out_depth_acceptable = out_error <= self.error_margin
             if in_depth_acceptable or out_depth_acceptable:
-                assignment_count += 1
+                assignments.append(str(num))
                 if in_depth_acceptable and (not out_depth_acceptable or in_error < out_error):
                     self.copy_depths[num] = in_depths
                 else:
                     self.copy_depths[num] = out_depths
-        print('merge_copy_depths:', assignment_count) # TEMP
-        return assignment_count
+        if not assignments: # TEMP
+            print('merge_copy_depths:           ') # TEMP
+        else: # TEMP
+            print('merge_copy_depths:          ', ', '.join(assignments)) # TEMP
+        return len(assignments)
 
     def redistribute_copy_depths_easy(self):
         '''
@@ -157,7 +150,7 @@ class CopyDepthGraph(AssemblyGraph):
         '''
         segments = self.get_segments_with_two_or_more_copies()
         if not segments:
-            print('redistribute_copy_depths_easy:', 0) # TEMP
+            print('redistribute_copy_depths:    ') # TEMP
             return 0
         assignment_count = 0
         for segment in segments:
@@ -185,10 +178,10 @@ class CopyDepthGraph(AssemblyGraph):
                     best_arrangement = arrangment
             if lowest_error < self.error_margin:
                 if self.assign_copy_depths_where_needed(connections, best_arrangement):
-                    print('redistribute_copy_depths_easy:', 1) # TEMP
+                    print('redistribute_copy_depths:   ', num) # TEMP
                     return 1
 
-        print('redistribute_copy_depths_easy:', 0) # TEMP
+        print('redistribute_copy_depths:    ') # TEMP
         return 0
 
 
@@ -217,7 +210,7 @@ class CopyDepthGraph(AssemblyGraph):
         # TO DO
         # TO DO
 
-        print('redistribute_copy_depths_complex:', assignment_count) # TEMP
+        print('redistribute_copy_depths_complex: none') # TEMP
         return assignment_count
 
     def simple_loop_copy_depths(self):
@@ -233,16 +226,17 @@ class CopyDepthGraph(AssemblyGraph):
         # TO DO
         # TO DO
         # TO DO
-        print('simple_loop_copy_depths:', assignment_count) # TEMP
+        print('simple_loop_copy_depths: none') # TEMP
         return assignment_count
         
     def at_most_one_link_per_end(self, segment):
         '''
         Returns True if the given segment has no more than one link on either end.
         '''
-        if segment in self.forward_links and len(self.forward_links[segment]) > 1:
+        num = segment.number
+        if num in self.forward_links and len(self.forward_links[num]) > 1:
             return False
-        if segment in self.reverse_links and len(self.reverse_links[segment]) > 1:
+        if num in self.reverse_links and len(self.reverse_links[num]) > 1:
             return False
         return True
 

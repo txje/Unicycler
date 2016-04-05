@@ -52,11 +52,11 @@ class AssemblyGraph(object):
         sorted_segments = sorted(segment_list, key=lambda x: x.depth)
         total_length = 0
         for segment in sorted_segments:
-            total_length += segment.get_length()
+            total_length += segment.get_length() - self.overlap
         halfway_length = total_length // 2
         length_so_far = 0
         for segment in sorted_segments:
-            length_so_far += segment.get_length()
+            length_so_far += segment.get_length() - self.overlap
             if length_so_far >= halfway_length:
                 return segment.depth
         return 0.0
@@ -342,8 +342,8 @@ class AssemblyGraph(object):
         overlap size) to bridge the connection.
         For example: A->B,C and D->B,C becomes A->E and D->E and E->B and E->C
         '''
-
         seg_nums = self.segments.keys()
+        seg_nums += [-x for x in self.segments.keys()]
         for seg_num in seg_nums:
             ending_segs = self.forward_links[seg_num]
             if len(ending_segs) != 2:

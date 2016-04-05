@@ -504,6 +504,14 @@ class Segment(object):
         s_line += 'DP:f:' + str(self.depth) + '\n'
         return s_line
 
+    def save_to_fasta(self, fasta_filename):
+        '''
+        Saves the segment's sequence to FASTA file.
+        '''
+        fasta = open(fasta_filename, 'w')
+        fasta.write('>NODE_' + str(self.number) + '\n')
+        fasta.write(add_line_breaks_to_sequence(self.forward_sequence, 60))
+        fasta.close()
 
 
 

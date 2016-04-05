@@ -13,9 +13,12 @@ import shutil
 import gzip
 import math
 from assembly_graph import AssemblyGraph
+from long_read import LongRead
+from long_read import load_long_reads
 
 
 spades_path = '/Users/Ryan/Applications/SPAdes-3.7.1-Darwin/bin/spades.py'
+graphmap_path = '/Users/Ryan/Applications/graphmap/bin/Mac/graphmap'
 starting_kmer_fraction = 0.2 # Relative to median read length
 max_kmer_fraction = 0.9 # Relative to median read length
 kmer_count = 10
@@ -24,7 +27,7 @@ read_depth_filter_cutoff = 0.25
 
 def main():
     '''
-    The first function to run on execution.
+    Script execution starts here.
     '''
     args = get_arguments()
     make_output_directory(args.out)
@@ -32,9 +35,10 @@ def main():
     log_file = open(log_filepath, 'w')
     check_file_exists(args.short1)
     check_file_exists(args.short2)
-    # check_file_exists(args.long)
+    check_file_exists(args.long)
     assembly_graph = get_best_spades_graph(args.short1, args.short2, args.out, log_file)
     assembly_graph.save_to_fastg(os.path.join(args.out, 'assembly_graph.fastg'))
+    scaffold_with_long_reads(assembly_graph, args.long, args.out)
 
 
 
@@ -103,12 +107,42 @@ def get_best_spades_graph(short1, short2, outdir, log_file):
     print('\nBest kmer: ' + str(best_kmer))
     return best_assembly_graph
 
+def scaffold_with_long_reads(assembly_graph, long_reads, outdir):
+    '''
+    This is where the magic happens!
+    '''
+    alignment_dir = os.path.join(outdir, 'alignments')
+    if not os.path.exists(alignment_dir):
+        os.makedirs(alignment_dir)
+
+
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+
+
+
+    shutil.rmtree(alignment_dir)
+
 def filter_graph(assembly_graph, graph_dir, kmer):
     '''
     For the given graph, this function normalises the read depths, filters based on depth and saves
     it, with '_filtered' in the filename.
     '''
-    assembly_graph.normalise_read_depths()
     assembly_graph.filter_by_read_depth(read_depth_filter_cutoff)
     assembly_graph.filter_homopolymer_loops()
     assembly_graph.normalise_read_depths()

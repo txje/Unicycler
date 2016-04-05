@@ -151,24 +151,30 @@ class AssemblyGraph(object):
             dead_ends += 1
         return dead_ends
 
-    def filter_by_read_depth(self, cutoff):
+    def filter_by_read_depth(self, relative_depth_cutoff):
         '''
-        This function removes segments from the graph with a read depth less than the given cutoff,
-        if one of the following is also true:
+        This function removes segments from the graph based on a relative depth cutoff. Segments
+        are considered below the cutoff if they are less than the cutoff for the entire graph or
+        less than the cutoff for their connected component.
+        To be removed, one of the following must also be true:
           1) the segment has at least one dead end
           2) the segment is part of a connected component where all of the segments are below the
-             depth cutoff
+             whole graph cutoff
           3) deleting the segment would not create any dead ends
         '''
         segment_nums_to_remove = []
+        whole_graph_cutoff = self.get_median_read_depth() * relative_depth_cutoff
         connected_components = self.get_connected_components()
-        for num, segment in self.segments.iteritems():
-            if segment.depth < cutoff:
-                if self.dead_end_count(segment) > 0 or \
-                   self.all_segments_below_depth(get_list_with_num(num, connected_components), cutoff) or \
-                   not self.deleting_would_create_dead_end(segment):
-                    segment_nums_to_remove.append(num)
-
+        for component in connected_components:
+            component_segs = [self.segments[x] for x in component]
+            component_cutoff = self.get_median_read_depth(component_segs) * relative_depth_cutoff
+            for num in component:
+                segment = self.segments[num]
+                if segment.depth < whole_graph_cutoff or segment.depth < component_cutoff:
+                    if self.dead_end_count(segment) > 0 or \
+                       self.all_segments_below_depth(component, whole_graph_cutoff) or \
+                       not self.deleting_would_create_dead_end(segment):
+                        segment_nums_to_remove.append(num)
         self.remove_segments(segment_nums_to_remove)
 
     def filter_homopolymer_loops(self):
@@ -345,6 +351,8 @@ class AssemblyGraph(object):
         seg_nums = self.segments.keys()
         seg_nums += [-x for x in self.segments.keys()]
         for seg_num in seg_nums:
+            if seg_num not in self.forward_links:
+                continue
             ending_segs = self.forward_links[seg_num]
             if len(ending_segs) != 2:
                 continue
@@ -619,17 +627,6 @@ def add_line_breaks_to_sequence(sequence, length):
         seq_with_breaks += sequence
         seq_with_breaks += '\n'
     return seq_with_breaks
-
-def get_list_with_num(num, num_lists):
-    '''
-    Given a number and a list of lists of numbers, this function returns the list of numbers
-    which contains the specified number.
-    E.g. given 5 and [[1,2], [3, 4, 5]], this will return [3, 4, 5]
-    '''
-    for num_list in num_lists:
-        if num in num_list:
-            return num_list
-    return []
 
 def remove_nums_from_links(links, nums_to_remove):
     '''

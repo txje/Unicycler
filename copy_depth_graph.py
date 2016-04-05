@@ -55,6 +55,41 @@ class CopyDepthGraph(AssemblyGraph):
         else: # 4+
             return 'red'
 
+    # def determine_copy_depth(self):
+
+    #     one_link_segments = [x for x in self.segments.values() if self.at_most_one_link_per_end(x)]
+        
+    #     for seg in one_link_segments:
+    #         depth = seg.depth
+
+    #     base_depths = []
+    #     for seg in one_link_segments:
+    #         base_depths += [seg.depth] * seg.get_length()
+    #     base_depths = sorted(base_depths)
+    #     median_depth = get_median(base_depths)
+    #     absolute_deviations = [abs(x - median_depth) for x in base_depths]
+    #     median_absolute_deviation = 1.4826 * get_median(sorted(absolute_deviations))
+
+    #     print('median_depth', median_depth)
+    #     print('median_absolute_deviation', median_absolute_deviation)
+
+    #     for seg in one_link_segments:
+    #         depth = seg.depth
+    #         robust_z_score = (seg.depth - median_depth) / median_absolute_deviation
+    #         print(seg.number, seg.depth, robust_z_score)
+
+
+    #     # depth_file = open('/Users/Ryan/Desktop/depths.txt', 'w')
+    #     # for depth in base_depths:
+    #     #     depth_file.write(str(depth) + '\n')
+    #     # depth_file.close()
+
+
+
+
+
+
+
     def determine_copy_depth(self):
         '''
         This function iteratively applies the various methods for assigning copy depth to segments
@@ -327,4 +362,10 @@ def shuffle_into_bins(items, bins, targets):
 
     return arrangements
 
-
+def get_median(sorted_list):
+    count = len(sorted_list)
+    index = (count - 1) // 2
+    if (count % 2):
+        return sorted_list[index]
+    else:
+        return (sorted_list[index] + sorted_list[index + 1]) / 2.0

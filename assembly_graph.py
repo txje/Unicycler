@@ -52,11 +52,11 @@ class AssemblyGraph(object):
         sorted_segments = sorted(segment_list, key=lambda x: x.depth)
         total_length = 0
         for segment in sorted_segments:
-            total_length += segment.get_length() - self.overlap
+            total_length += segment.get_length_no_overlap(self.overlap)
         halfway_length = total_length // 2
         length_so_far = 0
         for segment in sorted_segments:
-            length_so_far += segment.get_length() - self.overlap
+            length_so_far += segment.get_length_no_overlap(self.overlap)
             if length_so_far >= halfway_length:
                 return segment.depth
         return 0.0
@@ -79,6 +79,16 @@ class AssemblyGraph(object):
         total_length = 0
         for segment in self.segments.itervalues():
             total_length += segment.get_length()
+        return total_length
+
+    def get_total_length_no_overlaps(self):
+        '''
+        Returns the sum of all segment sequence lengths, subtracting the overlap size from each
+        node.
+        '''
+        total_length = 0
+        for segment in self.segments.itervalues():
+            total_length += segment.get_length_no_overlap(self.overlap)
         return total_length
 
     def save_to_fastg(self, filename):
@@ -260,12 +270,14 @@ class AssemblyGraph(object):
         Returns the length for which segments that length and longer make up >= n% of the total
         bases.  E.g. if n = 50, this function returns the N50.  n must be from 0 to 100.
         '''
-        total_length = self.get_total_length()
+        total_length = self.get_total_length_no_overlaps()
         target_length = total_length * (n_percent / 100.0)
-        sorted_segments = sorted(self.segments.values(), key=lambda x: x.get_length(), reverse=True)
+        sorted_segments = sorted(self.segments.values(),
+                                 key=lambda x: x.get_length_no_overlap(self.overlap),
+                                 reverse=True)
         length_so_far = 0
         for segment in sorted_segments:
-            seg_length = segment.get_length()
+            seg_length = segment.get_length_no_overlap(self.overlap)
             length_so_far += seg_length
             if length_so_far >= target_length:
                 return seg_length
@@ -465,6 +477,9 @@ class Segment(object):
 
     def get_length(self):
         return len(self.forward_sequence)
+
+    def get_length_no_overlap(self, overlap):
+        return len(self.forward_sequence) - overlap
 
     def is_homopolymer(self):
         '''

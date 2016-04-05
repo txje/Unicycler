@@ -335,9 +335,67 @@ class AssemblyGraph(object):
                 return True
         return False
 
-            
+    def repair_four_way_junctions(self):
+        '''
+        This function finds and fixes four-way junctions in the graph, as these can mess up copy
+        number determination. It fixes them by creating a new node with no length (i.e with the
+        overlap size) to bridge the connection.
+        For example: A->B,C and D->B,C becomes A->E and D->E and E->B and E->C
+        '''
 
+        seg_nums = self.segments.keys()
+        for seg_num in seg_nums:
+            ending_segs = self.forward_links[seg_num]
+            if len(ending_segs) != 2:
+                continue
+            end_num_1 = ending_segs[0]
+            end_num_2 = ending_segs[1]
+            if len(self.reverse_links[end_num_1]) != 2 or \
+               len(self.reverse_links[end_num_2]) != 2:
+                continue
+            starting_segs = set(self.reverse_links[end_num_1])
+            starting_segs.union(set(self.reverse_links[end_num_2]))
+            starting_segs = list(starting_segs)
+            if len(starting_segs) != 2:
+                continue
 
+            # If the code got here, then we've found a four-way junction! Create a new segment
+            # to bridge the starting and ending segments.
+            start_num_1 = starting_segs[0]
+            start_num_2 = starting_segs[1]
+            start_1 = self.segments[abs(start_num_1)]
+            start_2 = self.segments[abs(start_num_2)]
+            end_1 = self.segments[abs(end_num_1)]
+            end_2 = self.segments[abs(end_num_2)]
+            if end_1 > 0:
+                bridge_seq = end_1.forward_sequence[:self.overlap]
+            else:
+                bridge_seq = end_1.reverse_sequence[:self.overlap]
+            bridge_depth = (start_1.depth + start_2.depth + end_1.depth + end_2.depth) / 2.0
+            bridge_num = self.get_next_available_seg_number()
+            bridge_header = 'Node_' + str(bridge_num) + '_length_' + str(len(bridge_seq)) + \
+                            '_cov_' + str(bridge_depth)
+            bridge_seg = Segment(bridge_header, bridge_seq)
+            self.segments[bridge_num] = bridge_seg
+            self.forward_links[start_num_1] = [bridge_num]
+            self.forward_links[start_num_2] = [bridge_num]
+            self.forward_links[bridge_num] = [end_num_1, end_num_2]
+            self.reverse_links[bridge_num] = [start_num_1, start_num_2]
+            self.reverse_links[end_num_1] = [bridge_num]
+            self.reverse_links[end_num_2] = [bridge_num]
+            self.reverse_links[-start_num_1] = [-bridge_num]
+            self.reverse_links[-start_num_2] = [-bridge_num]
+            self.reverse_links[-bridge_num] = [-end_num_1, -end_num_2]
+            self.forward_links[-bridge_num] = [-start_num_1, -start_num_2]
+            self.forward_links[-end_num_1] = [-bridge_num]
+            self.forward_links[-end_num_2] = [-bridge_num]
+
+    def get_next_available_seg_number(self):
+        '''
+        This function finds the largest used segment number and returns the next 
+        '''
+        current_largest = max(self.segments.iterkeys())
+        return current_largest + 1
 
 
 

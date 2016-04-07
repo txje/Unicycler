@@ -13,8 +13,6 @@ import shutil
 import gzip
 import math
 from assembly_graph import AssemblyGraph
-from long_read import LongRead
-from long_read import load_long_reads
 
 
 spades_path = '/Users/Ryan/Applications/SPAdes-3.7.1-Darwin/bin/spades.py'

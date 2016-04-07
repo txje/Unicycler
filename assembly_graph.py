@@ -91,6 +91,13 @@ class AssemblyGraph(object):
             total_length += segment.get_length_no_overlap(self.overlap)
         return total_length
 
+    def save_to_fasta(self, filename):
+        fasta = open(filename, 'w')
+        sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
+        for segment in sorted_segments:
+            fasta.write('>' + segment.get_fastg_header(True) + '\n')
+            fasta.write(add_line_breaks_to_sequence(segment.forward_sequence, 60))
+
     def save_to_fastg(self, filename):
         fastg = open(filename, 'w')
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
@@ -114,7 +121,6 @@ class AssemblyGraph(object):
                 if is_link_positive(start, end):
                     gfa_link_lines += self.gfa_link_line(start, end)
         return gfa_link_lines
-
 
     def get_fastg_header_with_links(self, segment, positive):
         '''
@@ -509,7 +515,7 @@ class Segment(object):
         Saves the segment's sequence to FASTA file.
         '''
         fasta = open(fasta_filename, 'w')
-        fasta.write('>NODE_' + str(self.number) + '\n')
+        fasta.write('>' + self.get_fastg_header(True) + '\n')
         fasta.write(add_line_breaks_to_sequence(self.forward_sequence, 60))
         fasta.close()
 

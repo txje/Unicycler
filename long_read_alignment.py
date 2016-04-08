@@ -8,6 +8,7 @@ import re
 import datetime
 from assembly_graph import Segment
 from assembly_graph import reverse_complement
+from assembly_graph import AssemblyGraph
 
 
 
@@ -31,19 +32,19 @@ class Alignment(object):
     '''
     This class describes an alignment between a long read and a contig.
     '''
-    def __init__(self, sam_line, segment_lengths):
+    def __init__(self, sam_line, references):
 
         # Load all important parts from the SAM line.
         sam_parts = sam_line.split('\t')
         self.read_name = sam_parts[0].split('/')[0]
         self.flag = int(sam_parts[1])
         self.reverse_complement = bool(self.flag & 0x10)
-        self.segment_name = sam_parts[2]
+        self.reference_name = sam_parts[2]
         self.mapping_quality = int(sam_parts[4])
         self.cigar = sam_parts[5]
         self.cigar_parts = re.findall(r'\d+\w', self.cigar)
-        self.read_sequence = sam_parts[9]
-        self.read_length = len(self.read_sequence)
+        self.full_read_sequence = sam_parts[9]
+        self.read_length = len(self.full_read_sequence)
         self.read_quality = sam_parts[10]
         self.flags = sam_parts[11:]
         self.edit_distance = None
@@ -57,30 +58,30 @@ class Alignment(object):
             if flag.startswith('ZE:f:'):
                 self.e_value = float(flag[5:])
 
-        # Determine the position of the alignment in the segment.
-        # Positions are stored with a Python style 0-based index.
-        self.segment_length = segment_lengths[self.segment_name]
-        self.segment_start_pos = int(sam_parts[3]) - 1
-        self.segment_end_pos = self.segment_start_pos
+        # Determine the position of the alignment in the reference.
+        self.reference_length = len(references[self.reference_name])
+        self.reference_start_pos = int(sam_parts[3]) - 1
+        self.reference_end_pos = self.reference_start_pos
         for cigar_part in self.cigar_parts:
-            self.segment_end_pos += get_reference_shift_from_cigar_part(cigar_part)
-
-        # If the match is to the reverse complement, flip the sequence and alignment.
-        if self.reverse_complement:
-            self.read_sequence = reverse_complement(self.read_sequence)
-            self.read_quality = self.read_quality[::-1]
-            self.cigar_parts = self.cigar_parts[::-1]
-            self.cigar = ''.join(self.cigar_parts)
-            old_start = self.segment_start_pos
-            self.segment_start_pos = self.segment_length - self.segment_end_pos
-            self.segment_end_pos = self.segment_length - old_start
-
-        self.segment_end_gap = self.segment_length - self.segment_end_pos
+            self.reference_end_pos += get_reference_shift_from_cigar_part(cigar_part)
+        self.reference_end_gap = self.reference_length - self.reference_end_pos
 
         # Determine the position of the alignment in the read.
         self.read_start_pos = self.get_start_soft_clips()
         self.read_end_pos = self.read_length - self.get_end_soft_clips()
         self.read_end_gap = self.get_end_soft_clips()
+
+        # Extend the alignment so it is fully semi-global, reaching the end of the sequence.
+        self.extend_alignment()
+
+        # Count matches, mismatches, insertions and deletions.
+        # Insertions and deletions are counted per base. E.g. 5M3I4M has 3 insertions, not 1.
+        self.matches = 0
+        self.mismatches = 0
+        self.insertions = 0
+        self.deletions = 0
+        self.percent_identity = 0.0
+        self.tally_up_alignment(references)
 
     def __repr__(self):
         if self.reverse_complement:
@@ -88,8 +89,70 @@ class Alignment(object):
         else:
             strand = '+'
         return self.read_name + ' (' + str(self.read_start_pos) + '-' + str(self.read_end_pos) + \
-               '), ' + self.segment_name + ' (' + str(self.segment_start_pos) + '-' + \
-               str(self.segment_end_pos) + ', strand: ' + strand + ')'
+               '), ' + self.reference_name + ' (' + str(self.reference_start_pos) + '-' + \
+               str(self.reference_end_pos) + ', strand: ' + strand + '), ' + \
+               '%.2f' % self.percent_identity + '%'
+
+    def get_alignment_length_read(self):
+        '''
+        Returns the length of the aligned read sequence.
+        '''
+        return self.read_end_pos - self.read_start_pos
+
+    def get_alignment_length_reference(self):
+        '''
+        Returns the length of the aligned reference sequence.
+        '''
+        return self.reference_end_pos - self.reference_start_pos
+
+    def extend_alignment(self):
+        '''
+        This function extends the alignment as much as possible in both directions so the alignment
+        only terminates when it reaches the end of either the read or the reference.
+        It does not actually perform the alignment - it just counts each alignment as a match. This
+        means that very long extensions will probably result in terrible alignments, but that's
+        okay because we'll filter alignments by quality later.
+        '''
+        missing_bases_at_start = min(self.read_start_pos, self.reference_start_pos)
+        missing_bases_at_end = min(self.read_end_gap, self.reference_end_gap)
+
+        if missing_bases_at_start:
+            # Adjust the start of the reference.
+            self.reference_start_pos -= missing_bases_at_start
+
+            # Adjust the start of the read and fix up the CIGAR to match.
+            self.read_start_pos -= missing_bases_at_start
+            self.cigar_parts.pop(0)
+            if self.cigar_parts[0][-1] == 'M':
+                new_match_length = missing_bases_at_start + int(self.cigar_parts[0][:-1])
+                self.cigar_parts.pop(0)
+                new_cigar_part = str(new_match_length) + 'M'
+            else:
+                new_cigar_part = str(missing_bases_at_start) + 'M'
+            self.cigar_parts.insert(0, new_cigar_part)
+            if self.read_start_pos > 0:
+                self.cigar_parts.insert(0, str(self.read_start_pos) + 'S')
+            self.cigar = ''.join(self.cigar_parts)
+
+        if missing_bases_at_end:
+            # Adjust the end of the reference.
+            self.reference_end_pos += missing_bases_at_end
+            self.reference_end_gap -= missing_bases_at_end
+
+            # Adjust the end of the read and fix up the CIGAR to match.
+            self.read_end_pos += missing_bases_at_end
+            self.read_end_gap -= missing_bases_at_end
+            self.cigar_parts.pop()
+            if self.cigar_parts[-1][-1] == 'M':
+                new_match_length = missing_bases_at_end + int(self.cigar_parts[-1][:-1])
+                self.cigar_parts.pop()
+                new_cigar_part = str(new_match_length) + 'M'
+            else:
+                new_cigar_part = str(missing_bases_at_end) + 'M'
+            self.cigar_parts.append(new_cigar_part)
+            if self.read_end_gap > 0:
+                self.cigar_parts.append(str(self.read_end_gap) + 'S')
+            self.cigar = ''.join(self.cigar_parts)
 
     def get_start_soft_clips(self):
         '''
@@ -111,6 +174,45 @@ class Alignment(object):
         else:
             return int(match.group(0)[:-1])
 
+    def tally_up_alignment(self, references):
+        '''
+        Counts the matches, mismatches, indels and deletions. Also calculates the percent identity,
+        which it does like BLAST: matches / alignment positions.
+        '''
+        # Get the aligned parts of the read and reference sequences.
+        read_seq = self.full_read_sequence[self.read_start_pos:self.read_end_pos]
+        ref_seq = references[self.reference_name][self.reference_start_pos:self.reference_end_pos]
+
+        # Remove the soft clipping parts of the CIGAR string.
+        cigar_parts = self.cigar_parts[:]
+        if cigar_parts[0][-1] == 'S':
+            cigar_parts.pop(0)
+        if cigar_parts[-1][-1] == 'S':
+            cigar_parts.pop()
+
+        # Step through the alignment, counting as we go.
+        read_i = 0
+        ref_i = 0
+        align_i = 0
+        for cigar_part in cigar_parts:
+            cigar_count = int(cigar_part[:-1])
+            cigar_type = cigar_part[-1]
+            if cigar_type == 'I':
+                self.insertions += cigar_count
+                read_i += cigar_count
+            elif cigar_type == 'D':
+                self.deletions += cigar_count
+                ref_i += cigar_count
+            else: # match/mismatch
+                for _ in range(cigar_count):
+                    if read_seq[read_i] == ref_seq[ref_i]:
+                        self.matches += 1
+                    else:
+                        self.mismatches += 1
+                    read_i += 1
+                    ref_i += 1
+            align_i += cigar_count
+        self.percent_identity = 100.0 * self.matches / align_i
 
 def load_long_reads(fastq_filename):
     '''
@@ -128,33 +230,33 @@ def load_long_reads(fastq_filename):
     fastq.close()
     return reads
 
-def run_blasr_alignment_all_segments(graph, long_reads_fasta, sam_file, blasr_path, working_dir):
-    '''
-    Runs BLASR to produce a SAM file of alignments.
-    '''
-    graph_fasta = os.path.join(working_dir, 'graph.fasta')
-    graph.save_to_fasta(graph_fasta)
-    run_blasr(graph_fasta, long_reads_fasta, sam_file, blasr_path, working_dir)
-    os.remove(graph_fasta)
+# def run_blasr_alignment_all_segments(graph, long_reads_fasta, sam_file, blasr_path, working_dir):
+#     '''
+#     Runs BLASR to produce a SAM file of alignments.
+#     '''
+#     graph_fasta = os.path.join(working_dir, 'graph.fasta')
+#     graph.save_to_fasta(graph_fasta)
+#     run_blasr(graph_fasta, long_reads_fasta, sam_file, blasr_path, working_dir)
+#     os.remove(graph_fasta)
 
-def run_graphmap_alignment_all_segments(graph, long_reads_fastq, sam_file, graphmap_path, working_dir):
-    '''
-    Runs GraphMap to produce a SAM file of alignments.
-    '''
-    graph_fasta = os.path.join(working_dir, 'graph.fasta')
-    graph.save_to_fasta(graph_fasta)
-    run_graphmap(graph_fasta, long_reads_fastq, sam_file, graphmap_path, working_dir)
-    os.remove(graph_fasta)
+# def run_graphmap_alignment_all_segments(graph, long_reads_fastq, sam_file, graphmap_path, working_dir):
+#     '''
+#     Runs GraphMap to produce a SAM file of alignments.
+#     '''
+#     graph_fasta = os.path.join(working_dir, 'graph.fasta')
+#     graph.save_to_fasta(graph_fasta)
+#     run_graphmap(graph_fasta, long_reads_fastq, sam_file, graphmap_path, working_dir)
+#     os.remove(graph_fasta)
 
-def run_graphmap_owler(graph, long_reads_fastq, sam_file, graphmap_path, working_dir):
-    graph_fasta = os.path.join(working_dir, 'graph.fasta')
-    graph.save_to_fasta(graph_fasta)
-    command = [graphmap_path, '-r', graph_fasta, '-d', long_reads_fastq, '-o',
-               sam_file, '-w', 'owler', '-L', 'paf', '-Z']
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    _, _ = process.communicate()
-    os.remove(graph_fasta + '.gmidxowl')
-    os.remove(graph_fasta)
+# def run_graphmap_owler(graph, long_reads_fastq, sam_file, graphmap_path, working_dir):
+#     graph_fasta = os.path.join(working_dir, 'graph.fasta')
+#     graph.save_to_fasta(graph_fasta)
+#     command = [graphmap_path, '-r', graph_fasta, '-d', long_reads_fastq, '-o',
+#                sam_file, '-w', 'owler', '-L', 'paf', '-Z']
+#     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+#     _, _ = process.communicate()
+#     os.remove(graph_fasta + '.gmidxowl')
+#     os.remove(graph_fasta)
 
 def run_graphmap_alignment_one_segment_at_a_time(graph, long_reads_fastq, sam_file,
                                                  graphmap_path, working_dir):
@@ -203,15 +305,15 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, working_dir):
 
 
 
-def run_blasr(fasta, long_reads_fasta, sam_file, blasr_path, working_dir):
+# def run_blasr(fasta, long_reads_fasta, sam_file, blasr_path, working_dir):
 
-    my_env = os.environ.copy()
-    my_env['DYLD_LIBRARY_PATH'] = '/Users/Ryan/Applications/blasr_install/blasr/libcpp/alignment:/Users/Ryan/Applications/blasr_install/blasr/libcpp/hdf:/Users/Ryan/Applications/blasr_install/blasr/libcpp/pbdata:/Users/Ryan/Applications/blasr_install/hdf5/lib'
-    command = [blasr_path, long_reads_fasta, fasta, '-out', sam_file, '-sam', '-nproc', '8', '-affineAlign']
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=my_env)
-    _, _ = process.communicate()
+#     my_env = os.environ.copy()
+#     my_env['DYLD_LIBRARY_PATH'] = '/Users/Ryan/Applications/blasr_install/blasr/libcpp/alignment:/Users/Ryan/Applications/blasr_install/blasr/libcpp/hdf:/Users/Ryan/Applications/blasr_install/blasr/libcpp/pbdata:/Users/Ryan/Applications/blasr_install/hdf5/lib'
+#     command = [blasr_path, long_reads_fasta, fasta, '-out', sam_file, '-sam', '-nproc', '8', '-affineAlign']
+#     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=my_env)
+#     _, _ = process.communicate()
 
-def load_alignments(sam_filename, segment_lengths):
+def load_alignments(sam_filename, references):
     '''
     This function returns a list of Alignment objects from the given SAM file.
     '''
@@ -219,7 +321,7 @@ def load_alignments(sam_filename, segment_lengths):
     sam_file = open(sam_filename, 'r')
     for line in sam_file:
         if not line.startswith('@') and line.split('\t', 3)[2] != '*':
-            alignments.append(Alignment(line, segment_lengths))
+            alignments.append(Alignment(line, references))
     return alignments
 
 def get_reference_shift_from_cigar_part(cigar_part):
@@ -240,27 +342,27 @@ def get_reference_shift_from_cigar_part(cigar_part):
     if cigar_part[-1] == 'I':
         return 0
 
-def filter_by_end_gaps(alignments, allowed_gaps):
-    '''
-    Removes alignments with unaligned parts. Specifically, it looks for cases where the start
-    of the alignment has soft clipping but the alignment did not begin at the start of the
-    segment, or where the end of the alignment has soft clipping but the alignment did not end
-    at the end of the segment.
-    '''
-    good_alignments = []
-    bad_alignments = []
+# def filter_by_end_gaps(alignments, allowed_gaps):
+#     '''
+#     Removes alignments with unaligned parts. Specifically, it looks for cases where the start
+#     of the alignment has soft clipping but the alignment did not begin at the start of the
+#     segment, or where the end of the alignment has soft clipping but the alignment did not end
+#     at the end of the segment.
+#     '''
+#     good_alignments = []
+#     bad_alignments = []
 
-    for alignment in alignments:
-        s_start_gap = alignment.segment_start_pos
-        s_end_gap = alignment.segment_end_gap
-        r_start_gap = alignment.read_start_pos
-        r_end_gap = alignment.read_end_gap
+#     for alignment in alignments:
+#         s_start_gap = alignment.reference_start_pos
+#         s_end_gap = alignment.reference_end_gap
+#         r_start_gap = alignment.read_start_pos
+#         r_end_gap = alignment.read_end_gap
 
-        if (s_start_gap > allowed_gaps and r_start_gap > allowed_gaps) or \
-           (s_end_gap > allowed_gaps and r_end_gap > allowed_gaps):
-            bad_alignments.append(alignment)
-        else:
-            good_alignments.append(alignment)
+#         if (s_start_gap > allowed_gaps and r_start_gap > allowed_gaps) or \
+#            (s_end_gap > allowed_gaps and r_end_gap > allowed_gaps):
+#             bad_alignments.append(alignment)
+#         else:
+#             good_alignments.append(alignment)
 
-    return good_alignments, bad_alignments
+#     return good_alignments, bad_alignments
 

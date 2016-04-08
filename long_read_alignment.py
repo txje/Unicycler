@@ -230,34 +230,6 @@ def load_long_reads(fastq_filename):
     fastq.close()
     return reads
 
-# def run_blasr_alignment_all_segments(graph, long_reads_fasta, sam_file, blasr_path, working_dir):
-#     '''
-#     Runs BLASR to produce a SAM file of alignments.
-#     '''
-#     graph_fasta = os.path.join(working_dir, 'graph.fasta')
-#     graph.save_to_fasta(graph_fasta)
-#     run_blasr(graph_fasta, long_reads_fasta, sam_file, blasr_path, working_dir)
-#     os.remove(graph_fasta)
-
-# def run_graphmap_alignment_all_segments(graph, long_reads_fastq, sam_file, graphmap_path, working_dir):
-#     '''
-#     Runs GraphMap to produce a SAM file of alignments.
-#     '''
-#     graph_fasta = os.path.join(working_dir, 'graph.fasta')
-#     graph.save_to_fasta(graph_fasta)
-#     run_graphmap(graph_fasta, long_reads_fastq, sam_file, graphmap_path, working_dir)
-#     os.remove(graph_fasta)
-
-# def run_graphmap_owler(graph, long_reads_fastq, sam_file, graphmap_path, working_dir):
-#     graph_fasta = os.path.join(working_dir, 'graph.fasta')
-#     graph.save_to_fasta(graph_fasta)
-#     command = [graphmap_path, '-r', graph_fasta, '-d', long_reads_fastq, '-o',
-#                sam_file, '-w', 'owler', '-L', 'paf', '-Z']
-#     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-#     _, _ = process.communicate()
-#     os.remove(graph_fasta + '.gmidxowl')
-#     os.remove(graph_fasta)
-
 def run_graphmap_alignment_one_segment_at_a_time(graph, long_reads_fastq, sam_file,
                                                  graphmap_path, working_dir):
     final_sam = open(sam_file, 'w')
@@ -283,7 +255,6 @@ def run_graphmap_alignment_one_segment_at_a_time(graph, long_reads_fastq, sam_fi
 
     final_sam.close()
 
-
 def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, working_dir):
 
     # First build the index. This may not be necessary in the future, but a development version of
@@ -301,17 +272,6 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, working_dir):
     # Clean up.
     os.remove(fasta + '.gmidx')
     os.remove(fasta + '.gmidxsec')
-
-
-
-
-# def run_blasr(fasta, long_reads_fasta, sam_file, blasr_path, working_dir):
-
-#     my_env = os.environ.copy()
-#     my_env['DYLD_LIBRARY_PATH'] = '/Users/Ryan/Applications/blasr_install/blasr/libcpp/alignment:/Users/Ryan/Applications/blasr_install/blasr/libcpp/hdf:/Users/Ryan/Applications/blasr_install/blasr/libcpp/pbdata:/Users/Ryan/Applications/blasr_install/hdf5/lib'
-#     command = [blasr_path, long_reads_fasta, fasta, '-out', sam_file, '-sam', '-nproc', '8', '-affineAlign']
-#     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=my_env)
-#     _, _ = process.communicate()
 
 def load_alignments(sam_filename, references):
     '''
@@ -341,28 +301,4 @@ def get_reference_shift_from_cigar_part(cigar_part):
         return 0
     if cigar_part[-1] == 'I':
         return 0
-
-# def filter_by_end_gaps(alignments, allowed_gaps):
-#     '''
-#     Removes alignments with unaligned parts. Specifically, it looks for cases where the start
-#     of the alignment has soft clipping but the alignment did not begin at the start of the
-#     segment, or where the end of the alignment has soft clipping but the alignment did not end
-#     at the end of the segment.
-#     '''
-#     good_alignments = []
-#     bad_alignments = []
-
-#     for alignment in alignments:
-#         s_start_gap = alignment.reference_start_pos
-#         s_end_gap = alignment.reference_end_gap
-#         r_start_gap = alignment.read_start_pos
-#         r_end_gap = alignment.read_end_gap
-
-#         if (s_start_gap > allowed_gaps and r_start_gap > allowed_gaps) or \
-#            (s_end_gap > allowed_gaps and r_end_gap > allowed_gaps):
-#             bad_alignments.append(alignment)
-#         else:
-#             good_alignments.append(alignment)
-
-#     return good_alignments, bad_alignments
 

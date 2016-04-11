@@ -6,9 +6,11 @@ import sys
 import os
 import re
 import datetime
+import random
 from assembly_graph import Segment
 from assembly_graph import reverse_complement
 from assembly_graph import AssemblyGraph
+
 
 
 
@@ -22,9 +24,26 @@ class LongRead(object):
         self.qualities = qualities
         self.alignments = []
 
-    def add_alignment(self, new_alignment):
-        self.alignments.append(new_alignment)
-        self.alignments = sorted(self.alignments, key=lambda x: x.read_start_pos)
+    def remove_bad_alignments(self, id_threshold):
+        '''
+        This function removes alignments from the read which are likely to be spurious. It sorts
+        alignments by identity and works through them from highest identity to lowest identity,
+        only keeping alignments that cover new parts of the read.
+        It also uses an identity threshold to remove alignments with very poor identity.
+        '''
+        self.alignments = sorted(self.alignments, reverse=True,
+                                 key=lambda x: (x.percent_identity, random.random()))
+        kept_alignments = []
+        read_ranges = []
+        for alignment in self.alignments:
+            read_range = alignment.read_start_end_positive_strand()
+            if not range_is_contained(read_range, read_ranges) and \
+               alignment.percent_identity >= id_threshold:
+                read_ranges.append(read_range)
+                read_ranges = simplify_ranges(read_ranges)
+                kept_alignments.append(alignment)
+        self.alignments = kept_alignments
+
 
 
 
@@ -35,6 +54,7 @@ class Alignment(object):
     def __init__(self, sam_line, references):
 
         # Load all important parts from the SAM line.
+        self.sam_line = sam_line
         sam_parts = sam_line.split('\t')
         self.read_name = sam_parts[0].split('/')[0]
         self.flag = int(sam_parts[1])
@@ -88,9 +108,10 @@ class Alignment(object):
             strand = '-'
         else:
             strand = '+'
-        return self.read_name + ' (' + str(self.read_start_pos) + '-' + str(self.read_end_pos) + \
-               '), ' + self.reference_name + ' (' + str(self.reference_start_pos) + '-' + \
-               str(self.reference_end_pos) + ', strand: ' + strand + '), ' + \
+        read_start, read_end = self.read_start_end_positive_strand()
+        return self.read_name + ' (' + str(read_start) + '-' + str(read_end) + \
+               ', strand: ' + strand + '), ' + self.reference_name + ' (' + \
+               str(self.reference_start_pos) + '-' + str(self.reference_end_pos) + '), ' + \
                '%.2f' % self.percent_identity + '%'
 
     def get_alignment_length_read(self):
@@ -104,6 +125,26 @@ class Alignment(object):
         Returns the length of the aligned reference sequence.
         '''
         return self.reference_end_pos - self.reference_start_pos
+
+    def get_read_to_ref_ratio(self):
+        '''
+        Returns the length ratio between the aligned parts of the read and reference.
+        '''
+        return self.get_alignment_length_read() / self.get_alignment_length_reference()
+
+    def read_start_end_positive_strand(self):
+        '''
+        This function returns the read start/end coordinates for the positive strand of the read.
+        For alignments on the positive strand, this is just the normal start/end. But for
+        alignments on the negative strand, the coordinates are flipped to the other side.
+        '''
+        if not self.reverse_complement:
+            return self.read_start_pos, self.read_end_pos
+        else:
+            start = self.read_length - self.read_end_pos
+            end = self.read_length - self.read_start_pos
+            return start, end
+
 
     def extend_alignment(self):
         '''
@@ -214,6 +255,8 @@ class Alignment(object):
             align_i += cigar_count
         self.percent_identity = 100.0 * self.matches / align_i
 
+
+
 def load_long_reads(fastq_filename):
     '''
     This function loads in long reads from a FASTQ file and returns a dictionary where key = read
@@ -232,6 +275,10 @@ def load_long_reads(fastq_filename):
 
 def run_graphmap_alignment_one_segment_at_a_time(graph, long_reads_fastq, sam_file,
                                                  graphmap_path, working_dir):
+    '''
+    This function runs GraphMap separately for each contig in the graph. Resulting alignments are
+    collected in a single SAM file.
+    '''
     final_sam = open(sam_file, 'w')
 
     for segment in graph.segments.values():
@@ -239,8 +286,7 @@ def run_graphmap_alignment_one_segment_at_a_time(graph, long_reads_fastq, sam_fi
         segment_fasta = os.path.join(working_dir, segment_short_name + '.fasta')
         segment.save_to_fasta(segment_fasta)
         segment_sam_filename = os.path.join(working_dir, segment_short_name + '.sam')
-        run_graphmap(segment_fasta, long_reads_fastq, segment_sam_filename, graphmap_path,
-                     working_dir)
+        run_graphmap(segment_fasta, long_reads_fastq, segment_sam_filename, graphmap_path)
 
         # Copy the segment's SAM alignments to the final SAM file.
         segment_sam = open(segment_sam_filename, 'r')
@@ -255,17 +301,12 @@ def run_graphmap_alignment_one_segment_at_a_time(graph, long_reads_fastq, sam_fi
 
     final_sam.close()
 
-def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, working_dir):
-
-    # First build the index. This may not be necessary in the future, but a development version of
-    # GraphMap I was using could crash if you didn't do this first.
-    command = [graphmap_path, '-I', '-r', fasta]
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    _, _ = process.communicate()
-
-    # Now actually run GraphMap.
+def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path):
+    '''
+    This function runs GraphMap for the given inputs and produces a SAM file at the given location.
+    '''
     command = [graphmap_path, '-r', fasta, '-d', long_reads_fastq, '-o',
-               sam_file, '-Z', '-F', '1.0', '-t', '8']
+               sam_file, '-Z', '-F', '1.0', '-t', '8', '-a', 'anchorgotoh']
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     _, _ = process.communicate()
 
@@ -281,7 +322,7 @@ def load_alignments(sam_filename, references):
     sam_file = open(sam_filename, 'r')
     for line in sam_file:
         if not line.startswith('@') and line.split('\t', 3)[2] != '*':
-            alignments.append(Alignment(line, references))
+            alignments.append(Alignment(line.strip(), references))
     return alignments
 
 def get_reference_shift_from_cigar_part(cigar_part):
@@ -301,4 +342,58 @@ def get_reference_shift_from_cigar_part(cigar_part):
         return 0
     if cigar_part[-1] == 'I':
         return 0
+
+
+def simplify_ranges(ranges):
+    '''
+    Collapses overlapping ranges together.
+    '''
+    fixed_ranges = []
+    for int_range in ranges:
+        if int_range[0] > int_range[1]:
+            fixed_ranges.append((int_range[1], int_range[0]))
+        elif int_range[0] < int_range[1]:
+            fixed_ranges.append(int_range)
+    starts_ends = [(x[0], 1) for x in fixed_ranges]
+    starts_ends += [(x[1], -1) for x in fixed_ranges]
+    starts_ends.sort(key=lambda x: x[0])
+    current_sum = 0
+    cumulative_sum = []
+    for start_end in starts_ends:
+        current_sum += start_end[1]
+        cumulative_sum.append((start_end[0], current_sum))
+    prev_depth = 0
+    start = 0
+    combined = []
+    for pos, depth in cumulative_sum:
+        if prev_depth == 0:
+            start = pos
+        elif depth == 0:
+            combined.append((start, pos))
+        prev_depth = depth
+    return combined
+
+def range_is_contained(test_range, other_ranges):
+    '''
+    Returns True if test_range is entirely contained within any range in other_ranges.
+    '''
+    start, end = test_range
+    for other_range in other_ranges:
+        if other_range[0] <= start and other_range[1] >= end:
+            return True
+    return False
+
+
+def write_sam_file(alignments, sam_filename):
+    '''
+    Writes the given alignments to a SAM file.
+    '''
+    sam_file = open(sam_filename, 'w')
+    for alignment in alignments:
+        sam_file.write(alignment.sam_line)
+        sam_file.write('\n')
+    sam_file.close()
+
+
+
 

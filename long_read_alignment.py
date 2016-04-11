@@ -16,14 +16,16 @@ def main():
     If this script is run on its own, execution starts here.
     '''
     args = get_arguments()
+    check_file_exists(args.ref)
+    check_file_exists(args.reads)
     temp_dir_exist_at_start = os.path.exists(args.temp_dir)
     if not temp_dir_exist_at_start:
         os.makedirs(args.temp_dir)
-
-    semi_global_align_long_reads(args.ref, args.reads, args.sam_raw, args.sam_filtered,
-                                 args.temp_dir, args.graphmap_path)
-    write_reference_errors_to_table(args.ref, args.reads, args.err_table_out)
-
+    long_reads = semi_global_align_long_reads(args.ref, args.reads, args.sam_raw,
+                                              args.sam_filtered, args.temp_dir, args.graphmap_path,
+                                              True)
+    if args.err_table_out:
+        write_reference_errors_to_table(args.ref, long_reads, args.err_table_out, True)
     if not temp_dir_exist_at_start:
         os.rmdir(args.temp_dir)
     sys.exit(0)
@@ -50,7 +52,7 @@ def get_arguments():
 
 
 def semi_global_align_long_reads(ref_fasta, long_reads_fastq, sam_raw, sam_filtered, temp_dir,
-                                 graphmap_path):
+                                 graphmap_path, print_summary):
     '''
     This function does the primary work of this module: aligning long reads to references in an
     end-gap-free, semi-global manner. It returns a list of LongRead objects which contain their
@@ -64,9 +66,14 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, sam_raw, sam_filte
     else:
         temp_sam_raw = False
 
-    seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, sam_raw, graphmap_path, temp_dir)
-    quit()
+    seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, sam_raw, graphmap_path, temp_dir,
+                                  print_summary)
     alignments = load_alignments(sam_raw, ref_fasta)
+    if print_summary:
+        print()
+        print('Total raw GraphMap alignments:      ', len(alignments))
+
+    # Give the alignments to their corresponding reads.
     for alignment in alignments:
         long_reads[alignment.read_name].alignments.append(alignment)
 
@@ -75,14 +82,28 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, sam_raw, sam_filte
     for read in long_reads.itervalues():
         read.remove_conflicting_alignments()
         filtered_alignments += read.alignments
+    if print_summary:
+        print('Alignments after conflict filtering:', len(filtered_alignments))
 
     # Filter the alignments based on identity.
-    mean_id, std_dev_id = get_mean_and_st_dev_identity(filtered_alignments)
-    low_id_cutoff = mean_id - (3.0 * std_dev_id)
+    mean_id, std_dev_id = get_mean_and_st_dev_identity(filtered_alignments, True)
+    if mean_id == 0.0 and std_dev_id == 0.0:
+        low_id_cutoff = 75.0
+        if print_summary:
+            print('Not enough alignments to automatically set a low identity cutoff. Using 75%.')
+    else:
+        low_id_cutoff = mean_id - (3.0 * std_dev_id)
+        if print_summary:
+            print('Mean alignment identity:            ', '%.2f' % mean_id + '%')
+            print('Identity standard deviation:        ', '%.2f' % std_dev_id + '%')
+            print('Low identity cutoff:                ', '%.2f' % low_id_cutoff + '%')
     filtered_alignments = []
     for read in long_reads.itervalues():
         read.remove_low_id_alignments(low_id_cutoff)
         filtered_alignments += read.alignments
+    if print_summary:
+        print('Alignments after identity filtering:', len(filtered_alignments))
+        print()
 
     # FUTURE POSSIBILITY: FOR ANY READS WHICH ARE LACKING MAPPED REGIONS, TRY AGAIN WITH A MORE
     # SENSITIVE SEARCH.
@@ -93,20 +114,56 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, sam_raw, sam_filte
 
     return long_reads
 
-def write_reference_errors_to_table(ref_fasta, long_reads_fastq, table_file):
+def write_reference_errors_to_table(ref_fasta, long_reads, table_file, print_summary):
     '''
     Writes a table file summarising the alignment errors in terms of reference sequence position.
+    Works in a brute force manner - could be made more efficient later if necessary.
     '''
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
+    table = open(table_file, 'w')
+    table.write('\t'.join(['reference', 'base', 'read depth', 'mismatches', 'insertions',
+                           'deletions']) + '\n')
+    ref_headers_and_seqs = load_fasta(ref_fasta)
+    for header, seq in ref_headers_and_seqs:
+        nice_header = get_nice_header(header)
+        seq_len = len(seq)
+        depths = [0] * seq_len
+        mismatches = [0] * seq_len
+        insertions = [0] * seq_len
+        deletions = [0] * seq_len
+        alignments = []
+        for read in long_reads.itervalues():
+            for alignment in read.alignments:
+                if alignment.ref_name == nice_header:
+                    alignments.append(alignment)
+                    for pos in range(alignment.ref_start_pos, alignment.ref_end_pos):
+                        depths[pos] += 1
+                    for pos in alignment.ref_mismatch_positions:
+                        mismatches[pos] += 1
+                    for pos in alignment.ref_insertion_positions:
+                        insertions[pos] += 1
+                    for pos in alignment.ref_deletion_positions:
+                        deletions[pos] += 1
+        for i in range(seq_len):
+            table.write('\t'.join([nice_header, str(i+1), str(depths[i]), str(mismatches[i]),
+                                   str(insertions[i]), str(deletions[i])]) + '\n')
+        if print_summary:
+            mean_depth = sum(depths) / seq_len
+            mean_mismatches = sum(depths) / seq_len
+            mean_insertions = sum(depths) / seq_len
+            mean_deletions = sum(depths) / seq_len
+            mean_id, std_dev_id = get_mean_and_st_dev_identity(alignments, False)
+            print('Reference:', nice_header)
+            print('  Filtered alignments:', len(alignments))
+            if alignments:
+                print('  Mean read depth:    ', '%.2f' % mean_depth)
+                print('  Mean mismatch rate: ', '%.2f' % (100.0 * mean_mismatches) + '%')
+                print('  Mean insertion rate:', '%.2f' % (100.0 * mean_insertions) + '%')
+                print('  Mean deletion rate: ', '%.2f' % (100.0 * mean_deletions) + '%')
+                print('  Mean identity:      ', '%.2f' % mean_id + '%')
+            if std_dev_id != -1:
+                print('  Identity std dev:   ', '%.2f' % std_dev_id + '%')
+            print()
+
 
 
 def load_long_reads(fastq_filename):
@@ -126,15 +183,17 @@ def load_long_reads(fastq_filename):
     return reads
 
 def seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, sam_file, graphmap_path,
-                                  working_dir):
+                                  working_dir, print_summary):
     '''
     This function runs GraphMap separately for each individual sequence in the reference.
     Resulting alignments are collected in a single SAM file.
     '''
+    if print_summary:
+        print()
+        print('Raw GraphMap alignments:')
+
     final_sam = open(sam_file, 'w')
-
     ref_headers_and_seqs = load_fasta(ref_fasta)
-
     for header, seq in ref_headers_and_seqs:
         nice_header = get_nice_header(header)
         one_seq_fasta = os.path.join(working_dir, nice_header + '.fasta')
@@ -143,11 +202,17 @@ def seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, sam_file, graphma
         run_graphmap(one_seq_fasta, long_reads_fastq, sam_filename, graphmap_path)
 
         # Copy the segment's SAM alignments to the final SAM file.
+        alignment_count = 0
         one_seq_sam = open(sam_filename, 'r')
         for line in one_seq_sam:
             if not line.startswith('@') and line.split('\t', 3)[2] != '*':
                 final_sam.write(line)
+                alignment_count += 1
         one_seq_sam.close()
+
+        if print_summary:
+            print('  ' + nice_header + ' (' + str(len(seq)) + ' bp): ' + str(alignment_count))
+            sys.stdout.flush()
 
         # Clean up
         os.remove(one_seq_fasta)
@@ -312,7 +377,6 @@ def save_reads_to_fastq(reads, fastq_filename):
     for read in reads:
         fastq.write(read.get_fastq())
 
-
 def add_line_breaks_to_sequence(sequence, length):
     '''
     Wraps sequences to the defined length.  All resulting sequences end in a line break.
@@ -326,29 +390,37 @@ def add_line_breaks_to_sequence(sequence, length):
         seq_with_breaks += '\n'
     return seq_with_breaks
 
-def get_mean_and_st_dev_identity(alignments):
+def get_mean_and_st_dev_identity(alignments, limit_to_safe_alignments):
     '''
-    This function looks at all alignments and specifically examines the ones where the alignment
-    is in the middle of a reference and did not have to be artificially extended (i.e. the
-    alignment was complete out of GraphMap). It then returns the mean and standard deviation for
-    the identities of these alignments.
+    This function returns the mean and standard deviation for the identities of the given
+    alignments. If limit_to_safe_alignments is True, it only considers alignments that are
+    entirely contained within contigs without having been extended.
     '''
     identities = []
     for alignment in alignments:
-        if alignment.read_start_pos == 0 or alignment.read_end_pos == alignment.read_length:
-            continue
-        if alignment.extended:
+        if limit_to_safe_alignments and \
+           (alignment.read_start_pos > 0 or alignment.read_end_gap > 0 or alignment.extended):
             continue
         identities.append(alignment.percent_identity)
     num = len(identities)
-    if not num:
+    if num == 0:
         return 0.0, 0.0
     mean = sum(identities) / num
-    st_dev = 0.0
-    if num > 1:
-        sum_squares = sum((x - mean) ** 2 for x in identities)
-        st_dev = (sum_squares / (num - 1)) ** 0.5
+    if num == 1:
+        return mean, -1
+    sum_squares = sum((x - mean) ** 2 for x in identities)
+    st_dev = (sum_squares / (num - 1)) ** 0.5
     return mean, st_dev
+
+def check_file_exists(filename): # type: (str) -> bool
+    '''Checks to make sure the single given file exists.'''
+    if not os.path.isfile(filename):
+        quit_with_error('could not find ' + filename)
+
+def quit_with_error(message): # type: (str) -> None
+    '''Displays the given message and ends the program's execution.'''
+    print('Error:', message, file=sys.stderr)
+    sys.exit(1)
 
 
 
@@ -477,6 +549,9 @@ class Alignment(object):
         self.insertions = 0
         self.deletions = 0
         self.percent_identity = 0.0
+        self.ref_mismatch_positions = []
+        self.ref_insertion_positions = []
+        self.ref_deletion_positions = []
         self.tally_up_alignment()
 
     def __repr__(self):
@@ -605,6 +680,9 @@ class Alignment(object):
         self.insertions = 0
         self.deletions = 0
         self.percent_identity = 0.0
+        self.ref_mismatch_positions = []
+        self.ref_insertion_positions = []
+        self.ref_deletion_positions = []
 
         # Remove the soft clipping parts of the CIGAR string.
         cigar_parts = self.cigar_parts[:]
@@ -622,9 +700,12 @@ class Alignment(object):
             cigar_type = cigar_part[-1]
             if cigar_type == 'I':
                 self.insertions += cigar_count
+                self.ref_insertion_positions += [ref_i] * cigar_count
                 read_i += cigar_count
             elif cigar_type == 'D':
                 self.deletions += cigar_count
+                for i in range(cigar_count):
+                    self.ref_deletion_positions.append(ref_i + i)
                 ref_i += cigar_count
             else: # match/mismatch
                 for _ in range(cigar_count):
@@ -634,6 +715,7 @@ class Alignment(object):
                         self.matches += 1
                     else:
                         self.mismatches += 1
+                        self.ref_mismatch_positions.append(ref_i)
                     read_i += 1
                     ref_i += 1
             align_i += cigar_count

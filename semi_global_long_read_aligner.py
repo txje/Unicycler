@@ -591,10 +591,13 @@ def line_count(filename):
 def clean_str_for_filename(filename):
     '''
     This function removes characters from a string which would not be suitable in a filename.
+    It also turns spaces into underscores, because filenames with spaces can occasionally cause
+    issues.
     http://stackoverflow.com/questions/295135/turn-a-string-into-a-valid-filename-in-python
     '''
     valid_chars = "-_.() %s%s" % (string.ascii_letters, string.digits)
-    return ''.join(c for c in filename if c in valid_chars)
+    filename_valid_chars = ''.join(c for c in filename if c in valid_chars)
+    return filename_valid_chars.replace(' ', '_')
 
 
 
@@ -907,11 +910,5 @@ class Alignment(object):
 
 
 
-
-
-
 if __name__ == '__main__':
     main()
-
-
-

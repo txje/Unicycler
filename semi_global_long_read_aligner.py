@@ -1,3 +1,38 @@
+#!/usr/bin/env python
+'''
+Semi-global long read aligner
+
+This is a script to align error-prone long reads (e.g. PacBio or Nanopore) to one or more
+references in a semi-global manner. It uses GraphMap to do the actual alignment and then filters
+the resulting alignments and outputs summaries.
+
+Semi-global alignment allows for unpenalised end gaps, but the alignment will continue until one of
+the two sequences ends. This includes cases where the two sequences overlap and cases where one
+sequence is contained within the other:
+
+  AAAAA        AAAAAAAAAAA         AAAAAAAA     AAAAAAAA
+  |||||          |||||||           |||||           |||||
+BBBBBBBBB        BBBBBBB       BBBBBBBBB           BBBBBBBBB
+
+This tool is intended for cases where the reads and reference are expected to match perfectly (or
+at least as perfectly as error-prone long reads can match). An example of an appropriate case would
+be if the reference sequences are assembled contigs of a bacterial strain and the long reads are
+from the same strain.
+
+Required inputs:
+  1) FASTA file of one or more reference sequences
+  2) FASTQ file of long reads
+
+Required outputs:
+  1) SAM file of alignments
+
+Optional outputs:
+  1) SAM file of raw (unfiltered) GraphMap alignments
+  2) Table files of depth and errors per base of each reference
+
+Author: Ryan Wick
+email: rrwick@gmail.com
+'''
 from __future__ import print_function
 from __future__ import division
 

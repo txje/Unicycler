@@ -7,8 +7,7 @@ import os
 import re
 import random
 import argparse
-
-
+import string
 
 
 def main():
@@ -22,14 +21,12 @@ def main():
     if not temp_dir_exist_at_start:
         os.makedirs(args.temp_dir)
     long_reads = semi_global_align_long_reads(args.ref, args.reads, args.sam_raw,
-                                              args.sam, args.temp_dir, args.graphmap_path,
+                                              args.sam, args.temp_dir, args.path,
                                               True, args.threads)
-    if args.err_table_out:
-        write_reference_errors_to_table(args.ref, long_reads, args.err_table_out, True)
+    write_reference_errors_to_table(args.ref, long_reads, args.table, True)
     if not temp_dir_exist_at_start:
         os.rmdir(args.temp_dir)
     sys.exit(0)
-
 
 def get_arguments():
     '''
@@ -37,24 +34,23 @@ def get_arguments():
     '''
     parser = argparse.ArgumentParser(description='Semi-global long read aligner',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--ref', type=str, required=True,
+    parser.add_argument('--ref', type=str, required=True, default=argparse.SUPPRESS,
                         help='FASTA file containing one or more reference sequences')
-    parser.add_argument('--reads', type=str, required=True,
+    parser.add_argument('--reads', type=str, required=True, default=argparse.SUPPRESS,
                         help='FASTQ file of long reads')
-    parser.add_argument('--sam', type=str, required=True,
+    parser.add_argument('--sam', type=str, required=True, default=argparse.SUPPRESS,
                         help='SAM file of alignments after QC filtering')
     parser.add_argument('--sam_raw', type=str, required=False,
-                        help='SAM file of unfiltered GraphMap alignments')
-    parser.add_argument('--err_table_out', type=str, required=False,
-                        help='Table file summarising errors in the reference')
-    parser.add_argument('--temp_dir', type=str, required=False, default='read_align_temp',
-                        help='Temporary directory for working files')
-    parser.add_argument('--graphmap_path', type=str, required=False, default='graphmap',
+                        help='SAM file of unfiltered alignments')
+    parser.add_argument('--table', type=str, required=False,
+                        help='Path and/or prefix for table files summarising reference errors')
+    parser.add_argument('--temp_dir', type=str, required=False, default='align_temp',
+                        help='Temp directory for working files')
+    parser.add_argument('--path', type=str, required=False, default='graphmap',
                         help='Path to the GraphMap executable')
     parser.add_argument('--threads', type=int, required=False, default=8,
-                        help='Number of alignment threads (used by GraphMap)')
+                        help='Number of threads used by GraphMap')
     return parser.parse_args()
-
 
 def semi_global_align_long_reads(ref_fasta, long_reads_fastq, sam_raw, sam_filtered, temp_dir,
                                  graphmap_path, print_summary, threads):
@@ -129,9 +125,9 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, sam_raw, sam_filte
             else:
                 partially_aligned_count += 1
 
-        print('Fully aligned reads:    ', int_to_str(len(fully_aligned_count), max_v))
-        print('Partially aligned reads:', int_to_str(len(partially_aligned_count), max_v))
-        print('Unaligned reads:        ', int_to_str(len(unaligned_count), max_v))
+        print('Fully aligned reads:    ', int_to_str(fully_aligned_count, max_v))
+        print('Partially aligned reads:', int_to_str(partially_aligned_count, max_v))
+        print('Unaligned reads:        ', int_to_str(unaligned_count, max_v))
         print()
 
     # FUTURE POSSIBILITY: FOR ANY READS WHICH ARE LACKING MAPPED REGIONS, TRY AGAIN WITH A MORE
@@ -143,23 +139,44 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, sam_raw, sam_filte
 
     return long_reads
 
-def write_reference_errors_to_table(ref_fasta, long_reads, table_file, print_summary):
+def write_reference_errors_to_table(ref_fasta, long_reads, table_prefix, print_summary):
     '''
     Writes a table file summarising the alignment errors in terms of reference sequence position.
     Works in a brute force manner - could be made more efficient later if necessary.
     '''
-    table = open(table_file, 'w')
-    table.write('\t'.join(['reference', 'base', 'read depth', 'mismatches', 'insertions',
-                           'deletions']) + '\n')
-    ref_headers_and_seqs = load_fasta(ref_fasta)
+    # If we are not making table files or printing a summary, then quit now because there's nothing
+    # else to do.
+    if not table_prefix and not print_summary:
+        return
+
+    # Ensure the table prefix is nicely formatted and any necessary directories are made.
+    if table_prefix:
+        if os.path.isdir(table_prefix) and not table_prefix.endswith('/'):
+            table_prefix += '/'
+        if table_prefix.endswith('/') and not os.path.isdir(table_prefix):
+            os.makedirs(table_prefix)
+        if not table_prefix.endswith('/'):
+            directory = os.path.dirname(table_prefix)
+            if directory and not os.path.isdir(directory):
+                os.makedirs(directory)
 
     if print_summary:
         max_v = max(100, sum([len(x.alignments) for x in long_reads.itervalues()]))
         print('Alignment summaries per reference')
         print('---------------------------------')
 
+    ref_headers_and_seqs = load_fasta(ref_fasta)
     for header, seq in ref_headers_and_seqs:
         nice_header = get_nice_header(header)
+        if table_prefix:
+            header_for_filename = clean_str_for_filename(nice_header)
+            if table_prefix.endswith('/'):
+                table_filename = table_prefix + header_for_filename + '.txt'
+            else:
+                table_filename = table_prefix + '_' + header_for_filename + '.txt'
+            table = open(table_filename, 'w')
+            table.write('\t'.join(['base', 'read depth', 'mismatches', 'insertions',
+                                   'deletions']) + '\n')
         seq_len = len(seq)
         depths = [0] * seq_len
         mismatches = [0] * seq_len
@@ -178,9 +195,10 @@ def write_reference_errors_to_table(ref_fasta, long_reads, table_file, print_sum
                         insertions[pos] += 1
                     for pos in alignment.ref_deletion_positions:
                         deletions[pos] += 1
-        for i in xrange(seq_len):
-            table.write('\t'.join([nice_header, str(i+1), str(depths[i]), str(mismatches[i]),
-                                   str(insertions[i]), str(deletions[i])]) + '\n')
+        if table_prefix:
+            for i in xrange(seq_len):
+                table.write('\t'.join([str(i+1), str(depths[i]), str(mismatches[i]),
+                                       str(insertions[i]), str(deletions[i])]) + '\n')
         if print_summary:
             mismatch_rates = []
             insertion_rates = []
@@ -218,6 +236,8 @@ def write_reference_errors_to_table(ref_fasta, long_reads, table_file, print_sum
             else:
                 print('  Filtered alignments:   ', int_to_str(0, max_v))
             print()
+        if table_prefix:
+            table.close()
 
 def load_long_reads(fastq_filename):
     '''
@@ -533,7 +553,13 @@ def line_count(filename):
             pass
     return i + 1
 
-
+def clean_str_for_filename(filename):
+    '''
+    This function removes characters from a string which would not be suitable in a filename.
+    http://stackoverflow.com/questions/295135/turn-a-string-into-a-valid-filename-in-python
+    '''
+    valid_chars = "-_.() %s%s" % (string.ascii_letters, string.digits)
+    return ''.join(c for c in filename if c in valid_chars)
 
 
 

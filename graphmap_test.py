@@ -35,7 +35,7 @@ def main():
     graph_fasta = os.path.join(temp_dir, 'graph.fasta')
     graph.save_to_fasta(graph_fasta)
     long_reads = semi_global_align_long_reads(graph_fasta, pacbio_reads_fastq, sam_raw,
-                                              sam_filtered, temp_dir, graphmap_path)
+                                              sam_filtered, temp_dir, graphmap_path, False, 8)
     os.remove(graph_fasta)
 
     for read in long_reads.itervalues():

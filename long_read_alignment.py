@@ -77,6 +77,8 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, sam_raw, sam_filte
     if print_summary:
         max_v = max(100, len(alignments))
         print()
+        print('Alignment summary')
+        print('-----------------')
         print('Total raw GraphMap alignments:      ', int_to_str(len(alignments), max_v))
 
     # Give the alignments to their corresponding reads.
@@ -111,7 +113,10 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, sam_raw, sam_filte
     if print_summary:
         print('Alignments after identity filtering:', int_to_str(len(filtered_alignments), max_v))
         print()
-        print('Total read count:                   ', int_to_str(len(long_reads), max_v))
+        print('Read summary')
+        print('------------')
+        max_v = len(long_reads)
+        print('Total read count:       ', int_to_str(len(long_reads), max_v))
         fully_aligned_count = 0
         partially_aligned_count = 0
         unaligned_count = 0
@@ -123,9 +128,10 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, sam_raw, sam_filte
                 unaligned_count += 1
             else:
                 partially_aligned_count += 1
-        print('Fully aligned reads:                ', int_to_str(len(fully_aligned_count), max_v))
-        print('Partially aligned reads:            ', int_to_str(len(partially_aligned_count), max_v))
-        print('Unaligned reads:                    ', int_to_str(len(unaligned_count), max_v))
+
+        print('Fully aligned reads:    ', int_to_str(len(fully_aligned_count), max_v))
+        print('Partially aligned reads:', int_to_str(len(partially_aligned_count), max_v))
+        print('Unaligned reads:        ', int_to_str(len(unaligned_count), max_v))
         print()
 
     # FUTURE POSSIBILITY: FOR ANY READS WHICH ARE LACKING MAPPED REGIONS, TRY AGAIN WITH A MORE
@@ -149,6 +155,8 @@ def write_reference_errors_to_table(ref_fasta, long_reads, table_file, print_sum
 
     if print_summary:
         max_v = max(100, sum([len(x.alignments) for x in long_reads.itervalues()]))
+        print('Alignment summaries per reference')
+        print('---------------------------------')
 
     for header, seq in ref_headers_and_seqs:
         nice_header = get_nice_header(header)
@@ -235,7 +243,8 @@ def seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, sam_file, graphma
     '''
     if print_summary:
         print()
-        print('Raw GraphMap alignments')
+        print('Raw GraphMap alignments per reference')
+        print('-------------------------------------')
 
     final_sam = open(sam_file, 'w')
     ref_headers_and_seqs = load_fasta(ref_fasta)
@@ -261,7 +270,7 @@ def seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, sam_file, graphma
 
         if print_summary:
             nice_header = get_nice_header_and_len(header, seq, pad_length=longest_header) + ':'
-            print('  ' + nice_header + ' ' + int_to_str(alignment_count, read_count))
+            print(nice_header, int_to_str(alignment_count, read_count))
             sys.stdout.flush()
 
         # Clean up

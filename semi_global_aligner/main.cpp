@@ -45,6 +45,7 @@ std::string semiGlobalAlign(char * s1, char * s2)
     //Get the Seqan results in a normal string.
     std::ostringstream stream1;
     std::ostringstream stream2;
+    std::cout << align;
     stream1 << row(align, 0);
     stream2 << row(align, 1);
     std::string alignedSeq1 =  stream1.str();

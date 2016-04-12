@@ -22,7 +22,7 @@ def main():
     if not temp_dir_exist_at_start:
         os.makedirs(args.temp_dir)
     long_reads = semi_global_align_long_reads(args.ref, args.reads, args.sam_raw,
-                                              args.sam_filtered, args.temp_dir, args.graphmap_path,
+                                              args.sam, args.temp_dir, args.graphmap_path,
                                               True, args.threads)
     if args.err_table_out:
         write_reference_errors_to_table(args.ref, long_reads, args.err_table_out, True)
@@ -41,10 +41,10 @@ def get_arguments():
                         help='FASTA file containing one or more reference sequences')
     parser.add_argument('--reads', type=str, required=True,
                         help='FASTQ file of long reads')
-    parser.add_argument('--sam_raw', type=str, required=False,
-                        help='SAM file of GraphMap alignments')
-    parser.add_argument('--sam_filtered', type=str, required=True,
+    parser.add_argument('--sam', type=str, required=True,
                         help='SAM file of alignments after QC filtering')
+    parser.add_argument('--sam_raw', type=str, required=False,
+                        help='SAM file of unfiltered GraphMap alignments')
     parser.add_argument('--err_table_out', type=str, required=False,
                         help='Table file summarising errors in the reference')
     parser.add_argument('--temp_dir', type=str, required=False, default='read_align_temp',

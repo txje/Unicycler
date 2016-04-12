@@ -3,9 +3,9 @@ from __future__ import division
 import os
 from assembly_graph import AssemblyGraph
 from assembly_graph import Segment
-from long_read_alignment import Alignment
-from long_read_alignment import semi_global_align_long_reads
-from long_read_alignment import LongRead
+from semi_global_long_read_aligner import Alignment
+from semi_global_long_read_aligner import semi_global_align_long_reads
+from semi_global_long_read_aligner import LongRead
 
 
 

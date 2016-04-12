@@ -155,11 +155,10 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, sam_raw, sam_filte
             fraction_aligned = read.get_fraction_aligned()
             if fraction_aligned == 1.0:
                 fully_aligned_count += 1
-            elif fully_aligned_count == 0.0:
+            elif fraction_aligned == 0.0:
                 unaligned_count += 1
             else:
                 partially_aligned_count += 1
-
         print('Fully aligned reads:    ', int_to_str(fully_aligned_count, max_v))
         print('Partially aligned reads:', int_to_str(partially_aligned_count, max_v))
         print('Unaligned reads:        ', int_to_str(unaligned_count, max_v))

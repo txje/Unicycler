@@ -123,9 +123,9 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, sam_raw, sam_filte
                 unaligned_count += 1
             else:
                 partially_aligned_count += 1
-        print('Fully aligned reads:                ', int_to_str(len(long_reads), max_v))
-        print('Partially aligned reads:            ', int_to_str(len(long_reads), max_v))
-        print('Unaligned reads:                    ', int_to_str(len(long_reads), max_v))
+        print('Fully aligned reads:                ', int_to_str(len(fully_aligned_count), max_v))
+        print('Partially aligned reads:            ', int_to_str(len(partially_aligned_count), max_v))
+        print('Unaligned reads:                    ', int_to_str(len(unaligned_count), max_v))
         print()
 
     # FUTURE POSSIBILITY: FOR ANY READS WHICH ARE LACKING MAPPED REGIONS, TRY AGAIN WITH A MORE

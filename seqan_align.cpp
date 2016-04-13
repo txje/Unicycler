@@ -28,28 +28,25 @@ typedef std::tuple<std::string, int, int> Kmer;
 typedef std::map<std::string, std::tuple<int, int>> KmerDict;
 typedef std::tuple<int, int, int, int> CommonLocation;
 
-enum CigarType {MATCH, INSERTION, DELETION};
-
+enum CigarType {MATCH, INSERTION, DELETION, CLIP, NOTHING};
 
 
 std::vector<Kmer> getSeqKmers(std::string seq, int strLen, int kSize);
 std::vector<CommonLocation> getCommonLocations(std::vector<Kmer> s1Kmers, std::vector<Kmer> s2Kmers);
-CigarType getCigarType(char b1, char b2);
+CigarType getCigarType(char b1, char b2, bool alignmentStarted);
 std::string getCigarPart(CigarType type, int length);
 char * cpp_string_to_c_string(std::string cpp_string);
 
 
 char * semiGlobalAlign(char * s1, char * s2, int s1Len, int s2Len, int kSize, int bandSize)
 {
-	long long time1 = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
+	long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 
 	std::string s1Str(s1);
 	std::string s2Str(s2);
 	std::vector<Kmer> s1Kmers = getSeqKmers(s1Str, s1Len, kSize);
 	std::vector<Kmer> s2Kmers = getSeqKmers(s2Str, s2Len, kSize);
 	std::vector<CommonLocation> commonLocations = getCommonLocations(s1Kmers, s2Kmers);
-
-    long long time2 = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 
 	TSeedSet seedSet;
 	for (int i = 0; i < commonLocations.size(); ++i)
@@ -60,15 +57,13 @@ char * semiGlobalAlign(char * s1, char * s2, int s1Len, int s2Len, int kSize, in
         	addSeed(seedSet, seed, Single());
 	}
 
-    long long time3 = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
-
     TSequence sequenceH = s1;
     TSequence sequenceV = s2;
 
 	String<TSeed> seedChain;
 	chainSeedsGlobally(seedChain, seedSet, SparseChaining());
-
-    long long time4 = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
+	if (length(seedChain) == 0)
+		return strdup("");
 
 	Align<Dna5String, ArrayGaps> alignment;
     resize(rows(alignment), 2);
@@ -76,27 +71,63 @@ char * semiGlobalAlign(char * s1, char * s2, int s1Len, int s2Len, int kSize, in
     assignSource(row(alignment, 1), sequenceV);
     Score<int, Simple> scoringScheme(1, -1, -1);
     AlignConfig<true, true, true, true> alignConfig;
-    int result = bandedChainAlignment(alignment, seedChain, scoringScheme, alignConfig, bandSize);
+    bandedChainAlignment(alignment, seedChain, scoringScheme, alignConfig, bandSize);
 
-    long long time5 = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
+    // Extract the alignment sequences into C++ strings, as the TRow type doesn't seem to have
+    // constant time random access.
+	std::ostringstream stream1;
+    stream1 << row(alignment, 0);;
+    std::string s1Alignment =  stream1.str();
+	std::ostringstream stream2;
+    stream2 << row(alignment, 1);;
+    std::string s2Alignment =  stream2.str();
 
-    // std::cout << alignment << std::endl;
-
-	int alignmentLength = std::max(length(row(alignment, 0)), length(row(alignment, 1)));
-
+	int alignmentLength = std::max(s1Alignment.size(), s2Alignment.size());
 	if (alignmentLength == 0)
 		return strdup("");
 
-	// Build a CIGAR string of the alignment. 
+	// Build a CIGAR string of the alignment.
 	std::string cigarString;
-	CigarType currentCigarType = getCigarType(row(alignment, 0)[0], row(alignment, 1)[0]);
-	int currentCigarLength = 1;
-	int editDistance = 0;
-	for (int i = 1; i < alignmentLength; ++i)
+	CigarType currentCigarType;
+	int currentCigarLength = 0;
+	int matchCount = 0;
+	int mismatchCount = 0;
+	int insertionCount = 0;
+	int deletionCount = 0;
+	int s1Start = -1, s2Start = -1;
+	int s1Bases = 0, s2Bases = 0;
+	bool alignmentStarted = false;
+	for (int i = 0; i < alignmentLength; ++i)
 	{
-		char base1 = row(alignment, 0)[i];
-		char base2 = row(alignment, 1)[i];
-		CigarType cigarType = getCigarType(base1, base2);
+		char base1 = s1Alignment[i];
+		char base2 = s2Alignment[i];
+
+		if (base1 != '-' && base2 != '-' && !alignmentStarted)
+		{
+			s1Start = s1Bases;
+			s2Start = s2Bases;
+			alignmentStarted = true;
+		}
+		if (base1 != '-')
+			++s1Bases;
+		if (base2 != '-')
+			++s2Bases;
+
+		CigarType cigarType = getCigarType(base1, base2, alignmentStarted);
+		if (cigarType == MATCH)
+		{
+			if (base1 == base2)
+				++matchCount;
+			else
+				++mismatchCount;
+		}
+		if (cigarType == DELETION)
+			++deletionCount;
+		if (cigarType == INSERTION)
+			++insertionCount;
+
+		if (i == 0)
+			currentCigarType = cigarType;
 		if (cigarType == currentCigarType)
 			++currentCigarLength;
 		else
@@ -105,34 +136,42 @@ char * semiGlobalAlign(char * s1, char * s2, int s1Len, int s2Len, int kSize, in
 			currentCigarType = cigarType;
 			currentCigarLength = 1;
 		}
-		if (base1 != base2)
-			++editDistance;
 	}
+
+	int s1End = s1Bases;
+	int s2End = s2Bases;
+	if (currentCigarType == INSERTION)
+	{
+		currentCigarType = CLIP;
+		insertionCount -= currentCigarLength;
+		s1End -= currentCigarLength;
+	}
+	else if (currentCigarType == DELETION)
+	{
+		currentCigarType = NOTHING;
+		deletionCount -= currentCigarLength;
+		s2End -= currentCigarLength;
+	}	
 	cigarString.append(getCigarPart(currentCigarType, currentCigarLength));
 
-	std::string finalString = cigarString + "," + std::to_string(editDistance);
+    long long endTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
+	int editDistance = mismatchCount + insertionCount + deletionCount;
+	int alignedLength = matchCount + mismatchCount + insertionCount + deletionCount;
+	double percentIdentity = 100.0 * matchCount / alignedLength;
+	int milliseconds = endTime - startTime;
+
+	std::string finalString = cigarString + "," +
+	                          std::to_string(s1Start) + "," + std::to_string(s1End) + "," + 
+	                          std::to_string(s2Start) + "," + std::to_string(s2End) + "," + 
+	                          std::to_string(alignedLength) + "," + 
+	                          std::to_string(matchCount) + "," + std::to_string(mismatchCount) + "," + 
+	                          std::to_string(insertionCount) + "," + std::to_string(deletionCount) + "," + 
+	                          std::to_string(editDistance) + "," + std::to_string(percentIdentity) + "," + 
+	                          std::to_string(milliseconds);
+
+
 
 	return cpp_string_to_c_string(finalString);
-
-    std::cout << "Score: " << result << std::endl << std::endl;
-
- //    std::cout << "Milliseconds to find common kmers: " << time2 - time1 << std::endl;
- //    std::cout << "Milliseconds to find add seeds:    " << time3 - time2 << std::endl;
- //    std::cout << "Milliseconds to find chain seeds:  " << time4 - time3 << std::endl;
- //    std::cout << "Milliseconds to perform alignment: " << time5 - time4 << std::endl;
- //    std::cout << "--------------------------------------" << std::endl;
- //    std::cout << "Total milliseconds:                " << time5 - time1 << std::endl;
-
-
-	// return strdup("hey there");
-
-	// char hello[] = "Hello";
- //    char * greeting = (char*)malloc(sizeof(char) * strlen(hello));
- //    if(greeting == NULL)
- //    	exit(1);
- //    strcpy(greeting, hello);
-
- //    return greeting;
 }
 
 // Frees dynamically allocated memory for a c string. Called by Python after the string has been
@@ -150,12 +189,22 @@ char * cpp_string_to_c_string(std::string cpp_string)
 	return c_string;
 }
 
-CigarType getCigarType(char b1, char b2)
+CigarType getCigarType(char b1, char b2, bool alignmentStarted)
 {
 	if (b1 == '-')
-		return DELETION;
+	{
+		if (alignmentStarted)
+			return DELETION;
+		else
+			return NOTHING;
+	}
 	else if (b2 == '-')
-		return INSERTION;
+	{
+		if (alignmentStarted)
+			return INSERTION;
+		else
+			return CLIP;
+	}
 	else
 		return MATCH;
 }
@@ -167,8 +216,12 @@ std::string getCigarPart(CigarType type, int length)
 		cigarPart = "D";
 	else if (type == INSERTION)
 		cigarPart = "I";
-	else
+	else if (type == CLIP)
+		cigarPart = "S";
+	else if (type == MATCH)
 		cigarPart = "M";
+	else //type == NOTHING
+		return "";
 	cigarPart.append(std::to_string(length));
 	return cigarPart;
 }

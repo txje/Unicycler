@@ -43,7 +43,7 @@ import re
 import random
 import argparse
 import string
-
+import ctypes
 
 def main():
     '''
@@ -355,8 +355,82 @@ def load_alignments(sam_filename, ref_fasta):
     sam_file = open(sam_filename, 'r')
     for line in sam_file:
         if not line.startswith('@') and line.split('\t', 3)[2] != '*':
-            alignments.append(Alignment(line.strip(), references))
+            alignments.append(Alignment.from_sam(line.strip(), references))
     return alignments
+
+def seqan_alignment_one_read_all_refs(ref_headers_and_seqs, read, print_summary, threads, k_size,
+                                      band_size, allowed_length_discrepancy):
+    '''
+    Aligns a single read against all reference sequences using Seqan.
+    '''
+    # Prepare the c functions.
+    c_lib_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_align.so')
+    c_lib = ctypes.CDLL(c_lib_path)
+    c_lib.semiGlobalAlign.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int,
+                                      ctypes.c_int, ctypes.c_int, ctypes.c_double]
+    c_lib.semiGlobalAlign.restype = ctypes.c_void_p
+    c_lib.free_c_string.argtypes = [ctypes.c_void_p]
+    c_lib.free_c_string.restype = None
+
+    alignments = []
+    for header, seq in ref_headers_and_seqs:
+        nice_header = get_nice_header(header)
+        forward_alignment = run_one_seqan_alignment(nice_header, seq, read, False, k_size,
+                                                    band_size, allowed_length_discrepancy, c_lib)
+        reverse_alignment = run_one_seqan_alignment(nice_header, seq, read, True, k_size,
+                                                    band_size, allowed_length_discrepancy, c_lib)
+        if forward_alignment:
+            alignments.append(forward_alignment)
+        if reverse_alignment:
+            alignments.append(reverse_alignment)
+
+
+
+
+
+
+def run_one_seqan_alignment(ref_name, ref_seq, read, rev_comp, k_size, band_size,
+                            allowed_length_discrepancy, c_lib):
+    '''
+    Runs a single alignment using Seqan. Returns either an Alignment object (if successful) or None
+    (if not).
+    '''
+    if rev_comp:
+        read_seq = reverse_complement(read.sequence)
+    else:
+        read_seq = read.sequence
+
+    ptr = c_lib.semiGlobalAlign(read_seq, ref_seq, len(read_seq), len(ref_seq), k_size, band_size,
+                                allowed_length_discrepancy)
+    alignment_result = ctypes.cast(ptr, ctypes.c_char_p).value
+    c_lib.free_c_string(ptr)
+
+    alignment_result_parts = alignment_result.split(',')
+    if len(alignment_result_parts) < 13:
+        return None
+
+    cigar = alignment_result_parts[0]
+    read_start = int(alignment_result_parts[1])
+    read_end = int(alignment_result_parts[2])
+    ref_start = int(alignment_result_parts[3])
+    ref_end = int(alignment_result_parts[4])
+    alignment_length = int(alignment_result_parts[5])
+    match_count = int(alignment_result_parts[6])
+    mismatch_count = int(alignment_result_parts[7])
+    ref_mismatch_positions = alignment_result_parts[8].split(";")
+    insertion_count = int(alignment_result_parts[9])
+    ref_insertion_positions = alignment_result_parts[10].split(";")
+    deletion_count = int(alignment_result_parts[11])
+    ref_deletion_positions = alignment_result_parts[12].split(";")
+    edit_distance = int(alignment_result_parts[13])
+    percent_identity = float(alignment_result_parts[14])
+    milliseconds = int(alignment_result_parts[15])
+
+    return Alignment(False, read.name, read_seq, ref_name, ref_seq, 0, rev_comp, cigar,
+                     read.qualities, read_start, read_end, ref_start, ref_end,
+                     match_count, mismatch_count, insertion_count, deletion_count,
+                     alignment_length, edit_distance, percent_identity,
+                     ref_mismatch_positions, ref_insertion_positions, ref_deletion_positions)
 
 def get_ref_shift_from_cigar_part(cigar_part):
     '''
@@ -598,6 +672,19 @@ def clean_str_for_filename(filename):
     filename_valid_chars = ''.join(c for c in filename if c in valid_chars)
     return filename_valid_chars.replace(' ', '_')
 
+def reverse_complement(seq):
+    '''Given a DNA sequences, this function returns the reverse complement sequence.'''
+    rev_comp = ''
+    for i in reversed(range(len(seq))):
+        rev_comp += complement_base(seq[i])
+    return rev_comp
+
+def complement_base(base):
+    '''Given a DNA base, this returns the complement.'''
+    forward = 'ATGCatgcRYSWKMryswkmBDHVbdhvNn.-?'
+    reverse = 'TACGtacgYRSWMKyrswmkVHDBvhdbNn.-?N'
+    return reverse[forward.find(base)]
+
 
 
 class LongRead(object):
@@ -675,57 +762,93 @@ class Alignment(object):
     '''
     This class describes an alignment between a long read and a contig.
     '''
-    def __init__(self, sam_line, references):
+    def __init__(self, made_from_sam, read_name, full_read_sequence, ref_name, full_ref_sequence,
+                 mapping_quality, rev_comp, cigar, read_qualities,
+                 read_start_pos, read_end_pos, ref_start_pos, ref_end_pos,
+                 match_count, mismatch_count, insertion_count, deletion_count,
+                 alignment_length, edit_distance, percent_identity,
+                 ref_mismatch_positions, ref_insertion_positions, ref_deletion_positions):
+        # Save the many arguments to the class.
+        self.read_name = read_name
+        self.full_read_sequence = full_read_sequence
+        self.ref_name = ref_name
+        self.full_ref_sequence = full_ref_sequence
+        self.mapping_quality = mapping_quality
+        self.rev_comp = rev_comp
+        self.cigar = cigar
+        self.read_qualities = read_qualities
+        self.read_start_pos = read_start_pos
+        self.read_end_pos = read_end_pos
+        self.ref_start_pos = ref_start_pos
+        self.ref_end_pos = ref_end_pos
+        self.match_count = match_count
+        self.mismatch_count = mismatch_count
+        self.insertion_count = insertion_count
+        self.deletion_count = deletion_count
+        self.alignment_length = alignment_length
+        self.edit_distance = edit_distance
+        self.percent_identity = percent_identity
+        self.ref_mismatch_positions = ref_mismatch_positions
+        self.ref_insertion_positions = ref_insertion_positions
+        self.ref_deletion_positions = ref_deletion_positions
 
-        # Load all important parts from the SAM line.
-        sam_parts = sam_line.split('\t')
-        self.read_name = sam_parts[0].split('/')[0]
-        self.flag = int(sam_parts[1])
-        self.reverse_complement = bool(self.flag & 0x10)
-        self.ref_name = sam_parts[2]
-        self.mapping_quality = int(sam_parts[4])
-        self.cigar = sam_parts[5]
         self.cigar_parts = re.findall(r'\d+\w', self.cigar)
-        self.full_read_sequence = sam_parts[9]
         self.read_length = len(self.full_read_sequence)
-        self.read_quality = sam_parts[10]
-        self.flags = sam_parts[11:]
+        self.ref_length = len(self.full_ref_sequence)
 
-        # Determine the position of the alignment in the reference.
-        self.reference_length = len(references[self.ref_name])
-        self.ref_start_pos = int(sam_parts[3]) - 1
-        self.ref_end_pos = self.ref_start_pos
-        for cigar_part in self.cigar_parts:
-            self.ref_end_pos += get_ref_shift_from_cigar_part(cigar_part)
-        self.reference_end_gap = self.reference_length - self.ref_end_pos
+        # If the alignment was done by Seqan, then most of the other details were already done in
+        # the C++ code. If it was done by GraphMap, then made_from_sam is True and various other
+        # steps are necessary in this constructor.
 
-        # Determine the position of the alignment in the read.
-        self.read_start_pos = self.get_start_soft_clips()
-        self.read_end_pos = self.read_length - self.get_end_soft_clips()
+        if made_from_sam:
+            # Use the CIGAR to determine read/reference positions.
+            self.ref_end_pos = self.ref_start_pos
+            for cigar_part in self.cigar_parts:
+                self.ref_end_pos += get_ref_shift_from_cigar_part(cigar_part)
+            self.read_start_pos = self.get_start_soft_clips()
+            self.read_end_pos = self.read_length - self.get_end_soft_clips()
+
+        self.reference_end_gap = self.ref_length - self.ref_end_pos
         self.read_end_gap = self.get_end_soft_clips()
 
-        # Extend the alignment so it is fully semi-global, reaching the end of the sequence.
-        self.extended = False
-        self.extend_alignment()
+        if made_from_sam:
+            # Extend the alignment so it is fully semi-global, reaching the end of the sequence.
+            self.extended = False
+            self.extend_alignment()
 
         # Get the aligned parts of the read and reference sequences.
         self.aligned_read_seq = self.full_read_sequence[self.read_start_pos:self.read_end_pos]
-        self.aligned_ref_seq = references[self.ref_name][self.ref_start_pos:self.ref_end_pos]
+        self.aligned_ref_seq = self.full_ref_sequence[self.ref_start_pos:self.ref_end_pos]
 
-        # Count matches, mismatches, insertions and deletions.
-        # Insertions and deletions are counted per base. E.g. 5M3I4M has 3 insertions, not 1.
-        self.matches = 0
-        self.mismatches = 0
-        self.insertions = 0
-        self.deletions = 0
-        self.percent_identity = 0.0
-        self.ref_mismatch_positions = []
-        self.ref_insertion_positions = []
-        self.ref_deletion_positions = []
-        self.tally_up_alignment()
+        if made_from_sam:
+            # Count matches, mismatches, insertions and deletions.
+            # Insertions and deletions are counted per base. E.g. 5M3I4M has 3 insertions, not 1.
+            self.tally_up_alignment()
+
+    @classmethod
+    def from_sam(cls, sam_line, references):
+        '''
+        Construct an Alignment using a SAM line.
+        '''
+        sam_parts = sam_line.split('\t')
+        read_name = sam_parts[0].split('/')[0]
+        sam_flag = int(sam_parts[1])
+        rev_comp = bool(sam_flag & 0x10)
+        ref_name = sam_parts[2]
+        ref_start_pos = int(sam_parts[3]) - 1
+        mapping_quality = int(sam_parts[4])
+        cigar = sam_parts[5]
+        full_read_sequence = sam_parts[9]
+        read_qualities = sam_parts[10]
+        return cls(True, read_name, full_read_sequence, ref_name, references[ref_name],
+                   mapping_quality, rev_comp, cigar, read_qualities,
+                   None, None, ref_start_pos, None,
+                   None, None, None, None,
+                   None, None, None,
+                   None, None, None)
 
     def __repr__(self):
-        if self.reverse_complement:
+        if self.rev_comp:
             strand = '-'
         else:
             strand = '+'
@@ -759,7 +882,7 @@ class Alignment(object):
         For alignments on the positive strand, this is just the normal start/end. But for
         alignments on the negative strand, the coordinates are flipped to the other side.
         '''
-        if not self.reverse_complement:
+        if not self.rev_comp:
             return self.read_start_pos, self.read_end_pos
         else:
             start = self.read_length - self.read_end_pos
@@ -845,10 +968,10 @@ class Alignment(object):
         which it does like BLAST: matches / alignment positions.
         '''
         # Reset any existing tallies.
-        self.matches = 0
-        self.mismatches = 0
-        self.insertions = 0
-        self.deletions = 0
+        self.match_count = 0
+        self.mismatch_count = 0
+        self.insertion_count = 0
+        self.deletion_count = 0
         self.percent_identity = 0.0
         self.ref_mismatch_positions = []
         self.ref_insertion_positions = []
@@ -869,11 +992,11 @@ class Alignment(object):
             cigar_count = int(cigar_part[:-1])
             cigar_type = cigar_part[-1]
             if cigar_type == 'I':
-                self.insertions += cigar_count
+                self.insertion_count += cigar_count
                 self.ref_insertion_positions += [ref_i + self.ref_start_pos] * cigar_count
                 read_i += cigar_count
             elif cigar_type == 'D':
-                self.deletions += cigar_count
+                self.deletion_count += cigar_count
                 for i in xrange(cigar_count):
                     self.ref_deletion_positions.append(ref_i + self.ref_start_pos + i)
                 ref_i += cigar_count
@@ -882,23 +1005,24 @@ class Alignment(object):
                     read_base = self.aligned_read_seq[read_i]
                     ref_base = self.aligned_ref_seq[ref_i]
                     if read_base == ref_base:
-                        self.matches += 1
+                        self.match_count += 1
                     else:
-                        self.mismatches += 1
+                        self.mismatch_count += 1
                         self.ref_mismatch_positions.append(ref_i + self.ref_start_pos)
                     read_i += 1
                     ref_i += 1
             align_i += cigar_count
-        self.percent_identity = 100.0 * self.matches / align_i
+        self.percent_identity = 100.0 * self.match_count / align_i
 
     def get_sam_line(self):
         '''
         Returns a SAM alignment line.
         '''
-        edit_distance = self.mismatches + self.insertions + self.deletions
-        return '\t'.join([self.read_name, str(self.flag), self.ref_name,
+        edit_distance = self.mismatch_count + self.insertion_count + self.deletion_count
+        sam_flag = 0 #TEMP
+        return '\t'.join([self.read_name, str(sam_flag), self.ref_name,
                           str(self.ref_start_pos + 1), str(self.mapping_quality), self.cigar,
-                          '*', '0', '0', self.full_read_sequence, self.read_quality,
+                          '*', '0', '0', self.full_read_sequence, self.read_qualities,
                           'NM:i:' + str(edit_distance)])
 
     def is_whole_read(self):

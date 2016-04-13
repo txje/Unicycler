@@ -24,60 +24,22 @@ typedef Seed<Simple> TSeed;
 typedef SeedSet<TSeed> TSeedSet;
 typedef Row<TAlign>::Type TRow;
 typedef Iterator<TRow>::Type TRowIterator;
-
 typedef std::tuple<std::string, int, int> Kmer;
 typedef std::map<std::string, std::tuple<int, int>> KmerDict;
 typedef std::tuple<int, int, int, int> CommonLocation;
 
 enum CigarType {MATCH, INSERTION, DELETION};
 
-std::vector<Kmer> getSeqKmers(std::string seq, int strLen, int kSize)
-{
-	std::vector<Kmer> kmers;
-	int kCount = strLen - kSize;
-	kmers.reserve(kCount);
-	for (int i = 0; i < kCount; ++i)
-	{
-		Kmer kmer(seq.substr(i, kSize), i, i + kSize);
-		kmers.push_back(kmer);
-	}
-	return kmers;
-}
-
-std::vector<CommonLocation> getCommonLocations(std::vector<Kmer> s1Kmers, std::vector<Kmer> s2Kmers)
-{
-	std::vector<CommonLocation> commonLocations;
-
-	// Store all s1 kmers in a map of seq -> positions.
-	KmerDict s1KmerPositions;
-	for (int i = 0; i < s1Kmers.size(); ++i)
-	{
-		std::string s1KmerSeq = std::get<0>(s1Kmers[i]);
-		std::tuple<int, int> s1Positions(std::get<1>(s1Kmers[i]), std::get<2>(s1Kmers[i]));
-		s1KmerPositions[s1KmerSeq] = s1Positions;
-	}
-
-	// For all s2 kmers, see if they are in the s1 map. If so, they are common.
-	for (int i = 0; i < s2Kmers.size(); ++i)
-	{
-		std::string s2KmerSeq = std::get<0>(s2Kmers[i]);
-		if (s1KmerPositions.count(s2KmerSeq))
-		{
-			std::tuple<int, int> s1Position = s1KmerPositions[s2KmerSeq];
-			int s1Start = std::get<0>(s1Position);
-			int s1End = std::get<1>(s1Position);
-			int s2Start = std::get<1>(s2Kmers[i]);
-			int s2End = std::get<2>(s2Kmers[i]);
-			CommonLocation commonLocation(s1Start, s1End, s2Start, s2End);
-			commonLocations.push_back(commonLocation);
-		}
-	}
-
-	return commonLocations;
-}
 
 
-void semiGlobalAlign(char * s1, char * s2, int s1Len, int s2Len, int kSize, int bandSize)
+std::vector<Kmer> getSeqKmers(std::string seq, int strLen, int kSize);
+std::vector<CommonLocation> getCommonLocations(std::vector<Kmer> s1Kmers, std::vector<Kmer> s2Kmers);
+CigarType getCigarType(char b1, char b2);
+std::string getCigarPart(CigarType type, int length);
+char * cpp_string_to_c_string(std::string cpp_string);
+
+
+char * semiGlobalAlign(char * s1, char * s2, int s1Len, int s2Len, int kSize, int bandSize)
 {
 	long long time1 = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 
@@ -122,38 +84,133 @@ void semiGlobalAlign(char * s1, char * s2, int s1Len, int s2Len, int kSize, int 
 
 	int alignmentLength = std::max(length(row(alignment, 0)), length(row(alignment, 1)));
 
-	for (int i = 0; i < alignmentLength; ++i)
+	if (alignmentLength == 0)
+		return strdup("");
+
+	// Build a CIGAR string of the alignment. 
+	std::string cigarString;
+	CigarType currentCigarType = getCigarType(row(alignment, 0)[0], row(alignment, 1)[0]);
+	int currentCigarLength = 1;
+	for (int i = 1; i < alignmentLength; ++i)
 	{
-		std::cout << row(alignment, 0)[i] << row(alignment, 1)[i] << std::endl;
-
+		CigarType cigarType = getCigarType(row(alignment, 0)[i], row(alignment, 1)[i]);
+		if (cigarType == currentCigarType)
+			++currentCigarLength;
+		else
+		{
+			cigarString.append(getCigarPart(currentCigarType, currentCigarLength));
+			currentCigarType = cigarType;
+			currentCigarLength = 1;
+		}
 	}
+	cigarString.append(getCigarPart(currentCigarType, currentCigarLength));
 
-	// for (int i = 0; i < length(rows(alignment)); ++i)
- //    {
- //    	TRowIterator it = iter(row(alignment, i), 0);
- //        TRowIterator itEnd = iter(row(alignment, i), aliLength);
- //        int pos = 0;
- //        std::cout << "Row " << i << " contains gaps at positions: ";
- //        std::cout << std::endl;
- //        while (it != itEnd)
- //        {
- //            if (isGap(it))
- //                std::cout << pos << std::endl;
- //            ++it;
- //            ++pos;
- //        }
- //    }
-
+	return cpp_string_to_c_string(cigarString);
 
     std::cout << "Score: " << result << std::endl << std::endl;
 
-    std::cout << "Milliseconds to find common kmers: " << time2 - time1 << std::endl;
-    std::cout << "Milliseconds to find add seeds:    " << time3 - time2 << std::endl;
-    std::cout << "Milliseconds to find chain seeds:  " << time4 - time3 << std::endl;
-    std::cout << "Milliseconds to perform alignment: " << time5 - time4 << std::endl;
-    std::cout << "--------------------------------------" << std::endl;
-    std::cout << "Total milliseconds:                " << time5 - time1 << std::endl;
+ //    std::cout << "Milliseconds to find common kmers: " << time2 - time1 << std::endl;
+ //    std::cout << "Milliseconds to find add seeds:    " << time3 - time2 << std::endl;
+ //    std::cout << "Milliseconds to find chain seeds:  " << time4 - time3 << std::endl;
+ //    std::cout << "Milliseconds to perform alignment: " << time5 - time4 << std::endl;
+ //    std::cout << "--------------------------------------" << std::endl;
+ //    std::cout << "Total milliseconds:                " << time5 - time1 << std::endl;
+
+
+	// return strdup("hey there");
+
+	// char hello[] = "Hello";
+ //    char * greeting = (char*)malloc(sizeof(char) * strlen(hello));
+ //    if(greeting == NULL)
+ //    	exit(1);
+ //    strcpy(greeting, hello);
+
+ //    return greeting;
 }
 
+// Frees dynamically allocated memory for a c string. Called by Python after the string has been
+// received.
+void free_c_string(char * p)
+{
+    free(p);
+}
+
+char * cpp_string_to_c_string(std::string cpp_string)
+{
+	char * c_string = (char*)malloc(sizeof(char) * (cpp_string.size() + 1));
+	std::copy(cpp_string.begin(), cpp_string.end(), c_string);
+	c_string[cpp_string.size()] = '\0';
+	return c_string;
+}
+
+CigarType getCigarType(char b1, char b2)
+{
+	if (b1 == '-')
+		return DELETION;
+	else if (b2 == '-')
+		return INSERTION;
+	else
+		return MATCH;
+}
+
+std::string getCigarPart(CigarType type, int length)
+{
+	std::string cigarPart;
+	if (type == DELETION)
+		cigarPart = "D";
+	else if (type == INSERTION)
+		cigarPart = "I";
+	else
+		cigarPart = "M";
+	cigarPart.append(std::to_string(length));
+	return cigarPart;
+}
+
+// Returns a list of all Kmers in a sequence.
+std::vector<Kmer> getSeqKmers(std::string seq, int strLen, int kSize)
+{
+	std::vector<Kmer> kmers;
+	int kCount = strLen - kSize;
+	kmers.reserve(kCount);
+	for (int i = 0; i < kCount; ++i)
+	{
+		Kmer kmer(seq.substr(i, kSize), i, i + kSize);
+		kmers.push_back(kmer);
+	}
+	return kmers;
+}
+
+// Returns a list of all Kmers common to both lists.
+std::vector<CommonLocation> getCommonLocations(std::vector<Kmer> s1Kmers, std::vector<Kmer> s2Kmers)
+{
+	std::vector<CommonLocation> commonLocations;
+
+	// Store all s1 kmers in a map of seq -> positions.
+	KmerDict s1KmerPositions;
+	for (int i = 0; i < s1Kmers.size(); ++i)
+	{
+		std::string s1KmerSeq = std::get<0>(s1Kmers[i]);
+		std::tuple<int, int> s1Positions(std::get<1>(s1Kmers[i]), std::get<2>(s1Kmers[i]));
+		s1KmerPositions[s1KmerSeq] = s1Positions;
+	}
+
+	// For all s2 kmers, see if they are in the s1 map. If so, they are common.
+	for (int i = 0; i < s2Kmers.size(); ++i)
+	{
+		std::string s2KmerSeq = std::get<0>(s2Kmers[i]);
+		if (s1KmerPositions.count(s2KmerSeq))
+		{
+			std::tuple<int, int> s1Position = s1KmerPositions[s2KmerSeq];
+			int s1Start = std::get<0>(s1Position);
+			int s1End = std::get<1>(s1Position);
+			int s2Start = std::get<1>(s2Kmers[i]);
+			int s2End = std::get<2>(s2Kmers[i]);
+			CommonLocation commonLocation(s1Start, s1End, s2Start, s2End);
+			commonLocations.push_back(commonLocation);
+		}
+	}
+
+	return commonLocations;
+}
 
 }

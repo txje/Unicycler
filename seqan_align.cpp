@@ -91,9 +91,12 @@ char * semiGlobalAlign(char * s1, char * s2, int s1Len, int s2Len, int kSize, in
 	std::string cigarString;
 	CigarType currentCigarType = getCigarType(row(alignment, 0)[0], row(alignment, 1)[0]);
 	int currentCigarLength = 1;
+	int editDistance = 0;
 	for (int i = 1; i < alignmentLength; ++i)
 	{
-		CigarType cigarType = getCigarType(row(alignment, 0)[i], row(alignment, 1)[i]);
+		char base1 = row(alignment, 0)[i];
+		char base2 = row(alignment, 1)[i];
+		CigarType cigarType = getCigarType(base1, base2);
 		if (cigarType == currentCigarType)
 			++currentCigarLength;
 		else
@@ -102,10 +105,14 @@ char * semiGlobalAlign(char * s1, char * s2, int s1Len, int s2Len, int kSize, in
 			currentCigarType = cigarType;
 			currentCigarLength = 1;
 		}
+		if (base1 != base2)
+			++editDistance;
 	}
 	cigarString.append(getCigarPart(currentCigarType, currentCigarLength));
 
-	return cpp_string_to_c_string(cigarString);
+	std::string finalString = cigarString + "," + std::to_string(editDistance);
+
+	return cpp_string_to_c_string(finalString);
 
     std::cout << "Score: " << result << std::endl << std::endl;
 

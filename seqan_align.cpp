@@ -38,15 +38,26 @@ std::string getCigarPart(CigarType type, int length);
 char * cpp_string_to_c_string(std::string cpp_string);
 
 
-char * semiGlobalAlign(char * s1, char * s2, int s1Len, int s2Len, int kSize, int bandSize)
+
+//
+// kSize = the kmer size used to find alignment seeds.
+// bandSize = the margin around seeds used for alignment. Larger values are more likely to find the
+//         best alignment, at a performance cost.
+// allowedLengthDiscrepancy = how much the sequences are allowed to vary in length as judged by the
+//         seed chain. E.g. 0.1 means that a ratio between 0.9 and 1.1 is acceptable. Anything
+//         outside that ratio will not be aligned.   
+char * semiGlobalAlign(char * s1, char * s2, int s1Len, int s2Len, int kSize, int bandSize,
+	                   double allowedLengthDiscrepancy)
 {
-	long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
+	long long time1 = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 
 	std::string s1Str(s1);
 	std::string s2Str(s2);
 	std::vector<Kmer> s1Kmers = getSeqKmers(s1Str, s1Len, kSize);
 	std::vector<Kmer> s2Kmers = getSeqKmers(s2Str, s2Len, kSize);
 	std::vector<CommonLocation> commonLocations = getCommonLocations(s1Kmers, s2Kmers);
+
+    long long time2 = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 
 	TSeedSet seedSet;
 	for (int i = 0; i < commonLocations.size(); ++i)
@@ -57,13 +68,31 @@ char * semiGlobalAlign(char * s1, char * s2, int s1Len, int s2Len, int kSize, in
         	addSeed(seedSet, seed, Single());
 	}
 
+    long long time3 = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
+
     TSequence sequenceH = s1;
     TSequence sequenceV = s2;
 
 	String<TSeed> seedChain;
 	chainSeedsGlobally(seedChain, seedSet, SparseChaining());
+
+    long long time4 = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
+
+	// Quit before doing the alignment if the seed chain doesn't look good.
 	if (length(seedChain) == 0)
 		return strdup("");
+	int seedsInChain = length(seedChain);
+	int seq1Span = endPositionH(seedChain[seedsInChain-1]) - beginPositionH(seedChain[0]);
+	int seq2Span = endPositionV(seedChain[seedsInChain-1]) - beginPositionV(seedChain[0]);
+	if (seq2Span == 0)
+		return strdup("");
+	double ratio = double(seq1Span) / double(seq2Span);
+	double minRatio = 1.0 - allowedLengthDiscrepancy;
+	double maxRatio = 1.0 + allowedLengthDiscrepancy;
+	if (ratio < minRatio || ratio > maxRatio)
+		return strdup("");
+
+    long long time5 = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 
 	Align<Dna5String, ArrayGaps> alignment;
     resize(rows(alignment), 2);
@@ -72,6 +101,8 @@ char * semiGlobalAlign(char * s1, char * s2, int s1Len, int s2Len, int kSize, in
     Score<int, Simple> scoringScheme(1, -1, -1);
     AlignConfig<true, true, true, true> alignConfig;
     bandedChainAlignment(alignment, seedChain, scoringScheme, alignConfig, bandSize);
+
+    long long time6 = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 
     // Extract the alignment sequences into C++ strings, as the TRow type doesn't seem to have
     // constant time random access.
@@ -154,11 +185,11 @@ char * semiGlobalAlign(char * s1, char * s2, int s1Len, int s2Len, int kSize, in
 	}	
 	cigarString.append(getCigarPart(currentCigarType, currentCigarLength));
 
-    long long endTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
+    long long time7 = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 	int editDistance = mismatchCount + insertionCount + deletionCount;
 	int alignedLength = matchCount + mismatchCount + insertionCount + deletionCount;
 	double percentIdentity = 100.0 * matchCount / alignedLength;
-	int milliseconds = endTime - startTime;
+	int milliseconds = time7 - time1;
 
 	std::string finalString = cigarString + "," +
 	                          std::to_string(s1Start) + "," + std::to_string(s1End) + "," + 
@@ -169,7 +200,14 @@ char * semiGlobalAlign(char * s1, char * s2, int s1Len, int s2Len, int kSize, in
 	                          std::to_string(editDistance) + "," + std::to_string(percentIdentity) + "," + 
 	                          std::to_string(milliseconds);
 
-
+    // std::cout << "Milliseconds to find common kmers: " << time2 - time1 << std::endl;
+    // std::cout << "Milliseconds to add seeds:         " << time3 - time2 << std::endl;
+    // std::cout << "Milliseconds to chain seeds:       " << time4 - time3 << std::endl;
+    // std::cout << "Milliseconds to check chain:       " << time5 - time4 << std::endl;
+    // std::cout << "Milliseconds to do alignment:      " << time6 - time5 << std::endl;
+    // std::cout << "Milliseconds to build CIGAR:       " << time7 - time6 << std::endl;
+    // std::cout << "--------------------------------------" << std::endl;
+    // std::cout << "Total milliseconds:                " << milliseconds << std::endl << std::endl;
 
 	return cpp_string_to_c_string(finalString);
 }

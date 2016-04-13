@@ -45,6 +45,17 @@ import argparse
 import string
 import ctypes
 
+# Prepare the c functions.
+c_lib_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_align.so')
+c_lib = ctypes.CDLL(c_lib_path)
+
+c_lib.semiGlobalAlign.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int,
+                                  ctypes.c_int, ctypes.c_int, ctypes.c_double]
+c_lib.semiGlobalAlign.restype = ctypes.c_void_p
+
+c_lib.free_c_string.argtypes = [ctypes.c_void_p]
+c_lib.free_c_string.restype = None
+
 def main():
     '''
     If this script is run on its own, execution starts here.
@@ -75,8 +86,8 @@ def get_arguments():
                         help='FASTQ file of long reads')
     parser.add_argument('--sam', type=str, required=True, default=argparse.SUPPRESS,
                         help='SAM file of alignments after QC filtering')
-    parser.add_argument('--sam_raw', type=str, required=False,
-                        help='SAM file of unfiltered alignments')
+    parser.add_argument('--paf_raw', type=str, required=False,
+                        help='PAF file of unfiltered alignments')
     parser.add_argument('--table', type=str, required=False,
                         help='Path and/or prefix for table files summarising reference errors')
     parser.add_argument('--temp_dir', type=str, required=False, default='align_temp',
@@ -87,7 +98,7 @@ def get_arguments():
                         help='Number of threads used by GraphMap')
     return parser.parse_args()
 
-def semi_global_align_long_reads(ref_fasta, long_reads_fastq, sam_raw, sam_filtered, temp_dir,
+def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filtered, temp_dir,
                                  graphmap_path, print_summary, threads):
     '''
     This function does the primary work of this module: aligning long reads to references in an
@@ -96,15 +107,15 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, sam_raw, sam_filte
     '''
     long_reads = load_long_reads(long_reads_fastq)
 
-    if not sam_raw:
-        temp_sam_raw = True
-        sam_raw = os.path.join(temp_dir, 'alignments.sam')
+    if not paf_raw:
+        temp_paf_raw = True
+        paf_raw = os.path.join(temp_dir, 'alignments.paf')
     else:
-        temp_sam_raw = False
+        temp_paf_raw = False
 
-    seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, sam_raw, graphmap_path, temp_dir,
+    seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, paf_raw, graphmap_path, temp_dir,
                                   print_summary, threads)
-    alignments = load_alignments(sam_raw, ref_fasta)
+    paf_alignments = load_paf_alignments(paf_raw, ref_fasta)
     if print_summary:
         max_v = max(100, len(alignments))
         print()
@@ -289,18 +300,18 @@ def load_long_reads(fastq_filename):
     fastq.close()
     return reads
 
-def seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, sam_file, graphmap_path,
+def seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, paf_file, graphmap_path,
                                   working_dir, print_summary, threads):
     '''
     This function runs GraphMap separately for each individual sequence in the reference.
-    Resulting alignments are collected in a single SAM file.
+    Resulting alignments are collected in a single PAF file.
     '''
     if print_summary:
         print()
         print('Raw GraphMap alignments per reference')
         print('-------------------------------------')
 
-    final_sam = open(sam_file, 'w')
+    final_paf = open(paf_file, 'w')
     ref_headers_and_seqs = load_fasta(ref_fasta)
     if print_summary and ref_headers_and_seqs:
         longest_header = max([len(get_nice_header_and_len(header, seq)) for \
@@ -310,17 +321,16 @@ def seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, sam_file, graphma
         nice_header = get_nice_header(header)
         one_seq_fasta = os.path.join(working_dir, nice_header + '.fasta')
         save_to_fasta(nice_header, seq, one_seq_fasta)
-        sam_filename = os.path.join(working_dir, nice_header + '.sam')
-        run_graphmap(one_seq_fasta, long_reads_fastq, sam_filename, graphmap_path, threads)
+        paf_filename = os.path.join(working_dir, nice_header + '.paf')
+        run_graphmap(one_seq_fasta, long_reads_fastq, paf_filename, graphmap_path, threads)
 
         # Copy the segment's SAM alignments to the final SAM file.
         alignment_count = 0
-        one_seq_sam = open(sam_filename, 'r')
-        for line in one_seq_sam:
-            if not line.startswith('@') and line.split('\t', 3)[2] != '*':
-                final_sam.write(line)
-                alignment_count += 1
-        one_seq_sam.close()
+        one_seq_paf = open(paf_filename, 'r')
+        for line in one_seq_paf:
+            final_paf.write(line)
+            alignment_count += 1
+        one_seq_paf.close()
 
         if print_summary:
             nice_header = get_nice_header_and_len(header, seq, pad_length=longest_header) + ':'
@@ -329,49 +339,40 @@ def seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, sam_file, graphma
 
         # Clean up
         os.remove(one_seq_fasta)
-        os.remove(sam_filename)
+        os.remove(paf_filename)
 
-    final_sam.close()
+    final_paf.close()
 
-def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads):
+def run_graphmap(fasta, long_reads_fastq, paf_file, graphmap_path, threads):
     '''
     This function runs GraphMap for the given inputs and produces a SAM file at the given location.
     '''
-    command = [graphmap_path, '-r', fasta, '-d', long_reads_fastq, '-o',
-               sam_file, '-Z', '-F', '1.0', '-t', str(threads), '-a', 'anchorgotoh']
+    command = [graphmap_path, '-w', 'owler', '-r', fasta, '-d', long_reads_fastq, '-o',
+               paf_file, '-L', 'paf', '-t', str(threads)]
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     _, _ = process.communicate()
 
     # Clean up.
-    os.remove(fasta + '.gmidx')
-    os.remove(fasta + '.gmidxsec')
+    os.remove(fasta + '.gmidxowl')
 
-def load_alignments(sam_filename, ref_fasta):
+def load_paf_alignments(paf_filename, ref_fasta):
     '''
-    This function returns a list of Alignment objects from the given SAM file.
+    This function returns a list of PafAlignment objects from the given SAM file.
     '''
     references = {get_nice_header(header): seq for header, seq in load_fasta(ref_fasta)}
-    alignments = []
-    sam_file = open(sam_filename, 'r')
-    for line in sam_file:
-        if not line.startswith('@') and line.split('\t', 3)[2] != '*':
-            alignments.append(Alignment.from_sam(line.strip(), references))
-    return alignments
+    paf_alignments = []
+    paf_file = open(paf_filename, 'r')
+    for line in paf_file:
+        line = line.strip()
+        if line:
+            paf_alignments.append(Alignment(references, paf_line=line))
+    return paf_alignments
 
 def seqan_alignment_one_read_all_refs(ref_headers_and_seqs, read, print_summary, threads, k_size,
                                       band_size, allowed_length_discrepancy):
     '''
     Aligns a single read against all reference sequences using Seqan.
     '''
-    # Prepare the c functions.
-    c_lib_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_align.so')
-    c_lib = ctypes.CDLL(c_lib_path)
-    c_lib.semiGlobalAlign.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int,
-                                      ctypes.c_int, ctypes.c_int, ctypes.c_double]
-    c_lib.semiGlobalAlign.restype = ctypes.c_void_p
-    c_lib.free_c_string.argtypes = [ctypes.c_void_p]
-    c_lib.free_c_string.restype = None
-
     alignments = []
     for header, seq in ref_headers_and_seqs:
         nice_header = get_nice_header(header)
@@ -399,38 +400,11 @@ def run_one_seqan_alignment(ref_name, ref_seq, read, rev_comp, k_size, band_size
         read_seq = reverse_complement(read.sequence)
     else:
         read_seq = read.sequence
-
     ptr = c_lib.semiGlobalAlign(read_seq, ref_seq, len(read_seq), len(ref_seq), k_size, band_size,
                                 allowed_length_discrepancy)
     alignment_result = ctypes.cast(ptr, ctypes.c_char_p).value
     c_lib.free_c_string(ptr)
-
-    alignment_result_parts = alignment_result.split(',')
-    if len(alignment_result_parts) < 13:
-        return None
-
-    cigar = alignment_result_parts[0]
-    read_start = int(alignment_result_parts[1])
-    read_end = int(alignment_result_parts[2])
-    ref_start = int(alignment_result_parts[3])
-    ref_end = int(alignment_result_parts[4])
-    alignment_length = int(alignment_result_parts[5])
-    match_count = int(alignment_result_parts[6])
-    mismatch_count = int(alignment_result_parts[7])
-    ref_mismatch_positions = alignment_result_parts[8].split(";")
-    insertion_count = int(alignment_result_parts[9])
-    ref_insertion_positions = alignment_result_parts[10].split(";")
-    deletion_count = int(alignment_result_parts[11])
-    ref_deletion_positions = alignment_result_parts[12].split(";")
-    edit_distance = int(alignment_result_parts[13])
-    percent_identity = float(alignment_result_parts[14])
-    milliseconds = int(alignment_result_parts[15])
-
-    return Alignment(False, read.name, read_seq, ref_name, ref_seq, 0, rev_comp, cigar,
-                     read.qualities, read_start, read_end, ref_start, ref_end,
-                     match_count, mismatch_count, insertion_count, deletion_count,
-                     alignment_length, edit_distance, percent_identity,
-                     ref_mismatch_positions, ref_insertion_positions, ref_deletion_positions)
+    return Alignment(seqan_output=alignment_result)
 
 def get_ref_shift_from_cigar_part(cigar_part):
     '''
@@ -697,6 +671,9 @@ class LongRead(object):
         self.qualities = qualities
         self.alignments = []
 
+    def get_length(self):
+        return len(self.sequence)
+
     def remove_conflicting_alignments(self):
         '''
         This function removes alignments from the read which are likely to be spurious. It sorts
@@ -757,106 +734,157 @@ class LongRead(object):
         return aligned_length / len(self.sequence)
 
 
-
 class Alignment(object):
     '''
     This class describes an alignment between a long read and a contig.
+    It can either describe a full Alignment generated by Seqan or a basic alignment from a PAF
+    file made by GraphMap in owler mode.
+    Both types require a dictionary of reads and a dictionary of references.
+    To make a PAF alignment, the only additional requirement is the PAF line.
+    To make a Seqan alignment, the additional requirements are the seqan output, read name,
+    reference name and whether the alignment was on the reverse complement strand.
     '''
-    def __init__(self, made_from_sam, read_name, full_read_sequence, ref_name, full_ref_sequence,
-                 mapping_quality, rev_comp, cigar, read_qualities,
-                 read_start_pos, read_end_pos, ref_start_pos, ref_end_pos,
-                 match_count, mismatch_count, insertion_count, deletion_count,
-                 alignment_length, edit_distance, percent_identity,
-                 ref_mismatch_positions, ref_insertion_positions, ref_deletion_positions):
-        # Save the many arguments to the class.
-        self.read_name = read_name
-        self.full_read_sequence = full_read_sequence
+    def __init__(self, reads, references, paf_line=None, seqan_output=None, read_name=None,
+                 ref_name=None, rev_comp=None):
+
+        assert paf_line or (seqan_output and read_name and ref_name and rev_comp)
+
+        # Read details
+        self.read = None
+        self.aligned_read_seq = None
+        self.read_start_pos = None
+        self.read_end_pos = None
+        self.read_end_gap = None
+
+        # Reference details
+        self.ref_name = None
+        self.full_ref_sequence = None
+        self.aligned_ref_seq = None
+        self.ref_start_pos = None
+        self.ref_end_pos = None
+        self.ref_end_gap = None
+
+        # Alignment details
+        self.alignment_type = None
+        self.rev_comp = None
+        self.cigar = None
+        self.cigar_parts = None
+        self.match_count = None
+        self.mismatch_count = None
+        self.insertion_count = None
+        self.deletion_count = None
+        self.alignment_length = None
+        self.edit_distance = None
+        self.percent_identity = None
+        self.ref_mismatch_positions = None
+        self.ref_insertion_positions = None
+        self.ref_deletion_positions = None
+        self.extention_length = None
+        self.milliseconds = None
+
+        if seqan_output and read_name and ref_name and rev_comp:
+            self.setup_using_seqan_output(seqan_output, reads, references, read_name, ref_name,
+                                          rev_comp)
+        elif paf_line:
+            self.setup_using_paf_line(paf_line, reads, references)
+
+    def setup_using_seqan_output(self, seqan_output, reads, references, read_name, ref_name,
+                                 rev_comp):
+        '''
+        This function sets up the Alignment using the Seqan results. This kind of alignment has
+        complete details about the alignment.
+        '''
+        self.alignment_type = 'Seqan'
+        seqan_parts = seqan_output.split(',')
+        if len(seqan_parts) < 13:
+            return
+
+        # Read details
+        self.read = reads[read_name]
+        self.aligned_read_seq = self.read.sequence[self.read_start_pos:self.read_end_pos]
+        self.read_start_pos = int(seqan_parts[1])
+        self.read_end_pos = int(seqan_parts[2])
+        self.read_end_gap = self.read.get_length() - self.read_end_pos
+
+        # Reference details
         self.ref_name = ref_name
-        self.full_ref_sequence = full_ref_sequence
-        self.mapping_quality = mapping_quality
-        self.rev_comp = rev_comp
-        self.cigar = cigar
-        self.read_qualities = read_qualities
-        self.read_start_pos = read_start_pos
-        self.read_end_pos = read_end_pos
-        self.ref_start_pos = ref_start_pos
-        self.ref_end_pos = ref_end_pos
-        self.match_count = match_count
-        self.mismatch_count = mismatch_count
-        self.insertion_count = insertion_count
-        self.deletion_count = deletion_count
-        self.alignment_length = alignment_length
-        self.edit_distance = edit_distance
-        self.percent_identity = percent_identity
-        self.ref_mismatch_positions = ref_mismatch_positions
-        self.ref_insertion_positions = ref_insertion_positions
-        self.ref_deletion_positions = ref_deletion_positions
-
-        self.cigar_parts = re.findall(r'\d+\w', self.cigar)
-        self.read_length = len(self.full_read_sequence)
-        self.ref_length = len(self.full_ref_sequence)
-
-        # If the alignment was done by Seqan, then most of the other details were already done in
-        # the C++ code. If it was done by GraphMap, then made_from_sam is True and various other
-        # steps are necessary in this constructor.
-
-        if made_from_sam:
-            # Use the CIGAR to determine read/reference positions.
-            self.ref_end_pos = self.ref_start_pos
-            for cigar_part in self.cigar_parts:
-                self.ref_end_pos += get_ref_shift_from_cigar_part(cigar_part)
-            self.read_start_pos = self.get_start_soft_clips()
-            self.read_end_pos = self.read_length - self.get_end_soft_clips()
-
-        self.reference_end_gap = self.ref_length - self.ref_end_pos
-        self.read_end_gap = self.get_end_soft_clips()
-
-        if made_from_sam:
-            # Extend the alignment so it is fully semi-global, reaching the end of the sequence.
-            self.extended = False
-            self.extend_alignment()
-
-        # Get the aligned parts of the read and reference sequences.
-        self.aligned_read_seq = self.full_read_sequence[self.read_start_pos:self.read_end_pos]
+        self.full_ref_sequence = references[ref_name]
         self.aligned_ref_seq = self.full_ref_sequence[self.ref_start_pos:self.ref_end_pos]
+        self.ref_start_pos = int(seqan_parts[3])
+        self.ref_end_pos = int(seqan_parts[4])
+        self.ref_end_gap = len(self.full_ref_sequence) - self.ref_end_pos
 
-        if made_from_sam:
-            # Count matches, mismatches, insertions and deletions.
-            # Insertions and deletions are counted per base. E.g. 5M3I4M has 3 insertions, not 1.
-            self.tally_up_alignment()
+        # Alignment details
+        self.rev_comp = rev_comp
+        self.cigar = seqan_parts[0]
+        self.cigar_parts = re.findall(r'\d+\w', self.cigar)
+        self.match_count = int(seqan_parts[6])
+        self.mismatch_count = int(seqan_parts[7])
+        self.insertion_count = int(seqan_parts[9])
+        self.deletion_count = int(seqan_parts[11])
+        self.alignment_length = int(seqan_parts[5])
+        self.edit_distance = int(seqan_parts[13])
+        self.percent_identity = float(seqan_parts[14])
+        self.ref_mismatch_positions = seqan_parts[8].split(";")
+        self.ref_insertion_positions = seqan_parts[10].split(";")
+        self.ref_deletion_positions = seqan_parts[12].split(";")
+        self.milliseconds = int(seqan_parts[15])
 
-    @classmethod
-    def from_sam(cls, sam_line, references):
+    def setup_using_paf_line(self, paf_line, reads, references):
         '''
-        Construct an Alignment using a SAM line.
+        This function sets up the Alignment using a PAF line. This kind of alignment only has rough
+        details about the alignment position but no detailed information.
         '''
-        sam_parts = sam_line.split('\t')
-        read_name = sam_parts[0].split('/')[0]
-        sam_flag = int(sam_parts[1])
-        rev_comp = bool(sam_flag & 0x10)
-        ref_name = sam_parts[2]
-        ref_start_pos = int(sam_parts[3]) - 1
-        mapping_quality = int(sam_parts[4])
-        cigar = sam_parts[5]
-        full_read_sequence = sam_parts[9]
-        read_qualities = sam_parts[10]
-        return cls(True, read_name, full_read_sequence, ref_name, references[ref_name],
-                   mapping_quality, rev_comp, cigar, read_qualities,
-                   None, None, ref_start_pos, None,
-                   None, None, None, None,
-                   None, None, None,
-                   None, None, None)
+        self.alignment_type = 'PAF'
+        paf_parts = paf_line.split()
+
+        # Read details
+        self.read = reads[paf_parts[0]]
+        self.read_start_pos = int(paf_parts[2])
+        self.read_end_pos = int(paf_parts[3])
+        self.read_end_gap = self.read.get_length() - self.read_end_pos
+
+        # Reference details
+        self.ref_name = paf_parts[5]
+        self.full_ref_sequence = references[self.ref_name]
+        self.ref_start_pos = int(paf_parts[7])
+        self.ref_end_pos = int(paf_parts[8])
+        self.ref_end_gap = len(self.full_ref_sequence) - self.ref_end_pos
+
+        # Alignment details
+        self.rev_comp = (paf_parts[4] == '-')
+        self.alignment_length = int(paf_parts[10])
+
+        # Extend the alignment to reach either the end of the read or reference, whichever comes
+        # first.
+        missing_bases_at_start = min(self.read_start_pos, self.ref_start_pos)
+        missing_bases_at_end = min(self.read_end_gap, self.ref_end_gap)
+        if missing_bases_at_start:
+            self.ref_start_pos -= missing_bases_at_start
+            self.read_start_pos -= missing_bases_at_start
+        if missing_bases_at_end:
+            self.ref_end_pos += missing_bases_at_end
+            self.ref_end_gap -= missing_bases_at_end
+            self.read_end_pos += missing_bases_at_end
+            self.read_end_gap -= missing_bases_at_end
+        self.extention_length = missing_bases_at_start + missing_bases_at_end
 
     def __repr__(self):
-        if self.rev_comp:
-            strand = '-'
+        if self.alignment_type == 'PAF':
+            return_str = 'PAF alignment: '
         else:
-            strand = '+'
+            return_str = 'Seqan alignment: '
         read_start, read_end = self.read_start_end_positive_strand()
-        return self.read_name + ' (' + str(read_start) + '-' + str(read_end) + \
-               ', strand: ' + strand + '), ' + self.ref_name + ' (' + \
-               str(self.ref_start_pos) + '-' + str(self.ref_end_pos) + '), ' + \
-               '%.2f' % self.percent_identity + '%'
+        return_str += self.read.name + ' (' + str(read_start) + '-' + str(read_end) + ', '
+        if self.rev_comp:
+            return_str += 'strand: -), '
+        else:
+            return_str += 'strand: +), '
+        return_str += self.ref_name + ' (' + str(self.ref_start_pos) + '-' + \
+                      str(self.ref_end_pos) + ')'
+        if self.alignment_type == 'Seqan':
+            return_str += ', ' + '%.2f' % self.percent_identity + '%'
+        return return_str
 
     def get_alignment_length_read(self):
         '''
@@ -885,62 +913,10 @@ class Alignment(object):
         if not self.rev_comp:
             return self.read_start_pos, self.read_end_pos
         else:
-            start = self.read_length - self.read_end_pos
-            end = self.read_length - self.read_start_pos
+            start = self.read.get_length() - self.read_end_pos
+            end = self.read.get_length() - self.read_start_pos
             return start, end
 
-    def extend_alignment(self):
-        '''
-        This function extends the alignment as much as possible in both directions so the alignment
-        only terminates when it reaches the end of either the read or the reference.
-        It does not actually perform the alignment - it just counts each alignment as a match. This
-        means that very long extensions will probably result in terrible alignments, but that's
-        okay because we'll filter alignments by quality later.
-        '''
-        missing_bases_at_start = min(self.read_start_pos, self.ref_start_pos)
-        missing_bases_at_end = min(self.read_end_gap, self.reference_end_gap)
-
-        if missing_bases_at_start:
-            self.extended = True
-
-            # Adjust the start of the reference.
-            self.ref_start_pos -= missing_bases_at_start
-
-            # Adjust the start of the read and fix up the CIGAR to match.
-            self.read_start_pos -= missing_bases_at_start
-            self.cigar_parts.pop(0)
-            if self.cigar_parts[0][-1] == 'M':
-                new_match_length = missing_bases_at_start + int(self.cigar_parts[0][:-1])
-                self.cigar_parts.pop(0)
-                new_cigar_part = str(new_match_length) + 'M'
-            else:
-                new_cigar_part = str(missing_bases_at_start) + 'M'
-            self.cigar_parts.insert(0, new_cigar_part)
-            if self.read_start_pos > 0:
-                self.cigar_parts.insert(0, str(self.read_start_pos) + 'S')
-            self.cigar = ''.join(self.cigar_parts)
-
-        if missing_bases_at_end:
-            self.extended = True
-
-            # Adjust the end of the reference.
-            self.ref_end_pos += missing_bases_at_end
-            self.reference_end_gap -= missing_bases_at_end
-
-            # Adjust the end of the read and fix up the CIGAR to match.
-            self.read_end_pos += missing_bases_at_end
-            self.read_end_gap -= missing_bases_at_end
-            self.cigar_parts.pop()
-            if self.cigar_parts[-1][-1] == 'M':
-                new_match_length = missing_bases_at_end + int(self.cigar_parts[-1][:-1])
-                self.cigar_parts.pop()
-                new_cigar_part = str(new_match_length) + 'M'
-            else:
-                new_cigar_part = str(missing_bases_at_end) + 'M'
-            self.cigar_parts.append(new_cigar_part)
-            if self.read_end_gap > 0:
-                self.cigar_parts.append(str(self.read_end_gap) + 'S')
-            self.cigar = ''.join(self.cigar_parts)
 
     def get_start_soft_clips(self):
         '''

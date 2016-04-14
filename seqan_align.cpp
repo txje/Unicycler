@@ -11,6 +11,7 @@
 #include <vector>
 #include <map>
 #include <algorithm>
+#include <random>
 
 using namespace seqan;
 using namespace std::chrono;
@@ -30,85 +31,61 @@ typedef std::tuple<int, int, int, int> CommonLocation;
 
 enum CigarType {MATCH, INSERTION, DELETION, CLIP, NOTHING};
 
+// These are the functions that will be called by the Python script.
+char * semiGlobalAlignmentAroundLine(char * s1, char * s2, int s1Len, int s2Len, double slope,
+                                     double intercept, int bandSize);
+char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len);
+char * exhaustiveSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len);
+void free_c_string(char * p);
 
+// These functions are internal to this C++ code.
 char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment,
                                           long long startTime);
-std::vector<Kmer> getSeqKmers(std::string seq, int strLen, int kSize);
-std::vector<CommonLocation> getCommonLocations(std::vector<Kmer> s1Kmers,
-                                               std::vector<Kmer> s2Kmers);
+std::vector<Kmer> getSeqKmers(std::string seq, int kSize);
+std::vector<CommonLocation> getCommonLocations(std::string s1, std::string s2, int kSize);
 CigarType getCigarType(char b1, char b2, bool alignmentStarted);
 std::string getCigarPart(CigarType type, int length);
 char * cppStringToCString(std::string cpp_string);
 std::string vectorToString(std::vector<int> * v);
-double getSeedChainMedianSlope(String<TSeed> * seedChain);
+void fixSeedChainToLine(String<TSeed> * seedChain, double bandSize);
+void getSeedChainSlopeAndIntercept(String<TSeed> * seedChain, int firstI, int lastI,
+                                   double * slope, double * intercept);
+void getSlopeAndIntercept(int hStart, int hEnd, int vStart, int vEnd,
+                                   double * slope, double * intercept);
+bool areSeedsInBand(String<TSeed> * seedChain, int i1, int i2, double slope, double lowIntercept,
+                    double highIntercept);
+bool isSeedInBand(TSeed * seed, double slope, double lowIntercept, double highIntercept);
+char * getSlopeAndInterceptString(double slope, double intercept);
 double getMedian(std::vector<double> * v);
 
 
 
-//
-// kSize = the kmer size used to find alignment seeds.
-// bandSize = the margin around seeds used for alignment. Larger values are more likely to find the
-//         best alignment, at a performance cost.
-// allowedLengthDiscrepancy = how much the sequences are allowed to vary in length as judged by the
-//         seed chain. E.g. 0.1 means that a ratio between 0.9 and 1.11111 is acceptable. Anything
-//         outside that ratio will not be aligned. This value must be in the range [0, 1)
-char * semiGlobalAlign(char * s1, char * s2, int s1Len, int s2Len, int kSize, int bandSize,
-                       double allowedLengthDiscrepancy)
+
+char * semiGlobalAlignmentAroundLine(char * s1, char * s2, int s1Len, int s2Len, double slope,
+                                     double intercept, int bandSize)
 {
     long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
-
-    std::string s1Str(s1);
-    std::string s2Str(s2);
-    std::vector<Kmer> s1Kmers = getSeqKmers(s1Str, s1Len, kSize);
-    std::vector<Kmer> s2Kmers = getSeqKmers(s2Str, s2Len, kSize);
-    std::vector<CommonLocation> commonLocations = getCommonLocations(s1Kmers, s2Kmers);
-
-    TSeedSet seedSet;
-    for (int i = 0; i < commonLocations.size(); ++i)
-    {
-        CommonLocation l = commonLocations[i];
-        TSeed seed(std::get<0>(l), std::get<2>(l), std::get<1>(l), std::get<3>(l));
-        if (!addSeed(seedSet, seed, 1, Merge()))
-            addSeed(seedSet, seed, Single());
-    }
 
     TSequence sequenceH = s1;
     TSequence sequenceV = s2;
 
-    // // Debugging code: output seed positions before chaining
-    // std::cout << std::endl << "Seed positions before global chaining" << std::endl;
-    // for (Iterator<TSeedSet>::Type it = begin(seedSet, Standard()); it != end(seedSet, Standard()); ++it)
-    // {
-    //     std::cout << beginPositionH(*it) << "\t" << beginPositionV(*it) << std::endl;
-    //     std::cout << endPositionH(*it) << "\t" << endPositionV(*it) << std::endl;
-    // }
-
-    String<TSeed> seedChain;
-    chainSeedsGlobally(seedChain, seedSet, SparseChaining());
-
-    // Quit before doing the alignment if the seed chain doesn't look good.
-    if (length(seedChain) == 0)
-        return strdup("Failed: no global seed chain");
-
-    int seedsInChain = length(seedChain);
-    int seq1Span = endPositionH(seedChain[seedsInChain-1]) - beginPositionH(seedChain[0]);
-    int seq2Span = endPositionV(seedChain[seedsInChain-1]) - beginPositionV(seedChain[0]);
-    if (seq2Span == 0)
-        return strdup("Failed: sequence 2 span zero");
-
-    // // Debugging code: output seed positions after chaining
-    // std::cout << std::endl << "Seed positions after global chaining" << std::endl;
-    // for (int i = 0; i < seedsInChain; ++i)
-    // {
-    //     std::cout << beginPositionH(seedChain[i]) << "\t" << beginPositionV(seedChain[i]) << std::endl; //TEMP
-    //     std::cout << endPositionH(seedChain[i]) << "\t" << endPositionV(seedChain[i]) << std::endl; //TEMP
-    // }
-
-    double ratio = getSeedChainMedianSlope(&seedChain);
-    double minRatio = 1.0 - allowedLengthDiscrepancy;
-    double maxRatio = 1.0 / minRatio;
-    if (ratio < minRatio || ratio > maxRatio)
-        return strdup("Failed: bad sequence length ratio");
+    // TO DO: BUILD SEED CHAIN AROUND LINE
+    // TO DO: BUILD SEED CHAIN AROUND LINE
+    // TO DO: BUILD SEED CHAIN AROUND LINE
+    // TO DO: BUILD SEED CHAIN AROUND LINE
+    // TO DO: BUILD SEED CHAIN AROUND LINE
+    // TO DO: BUILD SEED CHAIN AROUND LINE
+    // TO DO: BUILD SEED CHAIN AROUND LINE
+    // TO DO: BUILD SEED CHAIN AROUND LINE
+    // TO DO: BUILD SEED CHAIN AROUND LINE
+    // TO DO: BUILD SEED CHAIN AROUND LINE
+    // TO DO: BUILD SEED CHAIN AROUND LINE
+    // TO DO: BUILD SEED CHAIN AROUND LINE
+    // TO DO: BUILD SEED CHAIN AROUND LINE
+    // TO DO: BUILD SEED CHAIN AROUND LINE
+    // TO DO: BUILD SEED CHAIN AROUND LINE
+    // TO DO: BUILD SEED CHAIN AROUND LINE
+    // TO DO: BUILD SEED CHAIN AROUND LINE
 
     Align<Dna5String, ArrayGaps> alignment;
     resize(rows(alignment), 2);
@@ -121,8 +98,161 @@ char * semiGlobalAlign(char * s1, char * s2, int s1Len, int s2Len, int kSize, in
     return turnAlignmentIntoDescriptiveString(&alignment, startTime);
 }
 
+char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len)
+{
+    std::string s1Str(s1);
+    std::string s2Str(s2);
 
-char * semiGlobalAlignExact(char * s1, char * s2, int s1Len, int s2Len)
+    int targetKCount = std::min(s1Len, s2Len);
+    if (targetKCount < 10)
+        return strdup("Failed: sequence too short");
+    int minimumKCount = targetKCount / 4;
+
+    // We will dynamically choose a k-mer size that gives a useful number of common locations.
+    int kSize = 10;
+    std::vector<CommonLocation> commonLocations = getCommonLocations(s1Kmers, s2Kmers, kSize);
+
+    // If the starting k-mer gave too many locations, we increase it until we're in the correct
+    // range.
+    if (commonLocations.size() > targetKCount)
+    {
+        while (true)
+        {
+            ++kSize;
+            commonLocations = getCommonLocations(s1Kmers, s2Kmers, kSize);
+
+            // If we're reached the target range, that's good...
+            if (commonLocations.size() <= targetKCount)
+            {
+                // But if we went under the minimum, then we need to back down one k-mer step, even
+                // if it takes us over our target.
+                if (commonLocations.size() < minimumKCount)
+                {
+                    --kSize;
+                    commonLocations = getCommonLocations(s1Kmers, s2Kmers, kSize);
+                }
+                break;
+            }
+        }
+    }
+
+    // If the starting k-mer gave too few locations, we decrease it until we're in the correct
+    // range.
+    if (commonLocations.size() < minimumKCount)
+    {
+        while (true)
+        {
+            --kSize;
+
+            if (kSize < 2)
+                return strdup("Failed: kmer size too small");
+
+            commonLocations = getCommonLocations(s1Kmers, s2Kmers, kSize);
+            if (commonLocations.size() >= minimumKCount)
+                break;
+        }
+    }
+
+    //We should now have a reasonably-sized set of common kmers.
+    if (commonLocations.size() < 2)
+        return strdup("Failed: too few common kmers");
+
+    // // Debugging code: output common kmer positions
+    // std::cout << std::endl << "Common kmer positions" << std::endl;
+    // for (int i = 0; i < commonLocations.size(); ++i)
+    // {
+    //     CommonLocation l = commonLocations[i];
+    //     std::cout << std::get<0>(l) << "\t" << std::get<2>(l) << std::endl;
+    // }
+
+    // Build a Seqan seed set using our common k-mers.
+    TSeedSet seedSet;
+    for (int i = 0; i < commonLocations.size(); ++i)
+    {
+        CommonLocation l = commonLocations[i];
+        TSeed seed(std::get<0>(l), std::get<2>(l), std::get<1>(l), std::get<3>(l));
+        if (!addSeed(seedSet, seed, 1, Merge()))
+            addSeed(seedSet, seed, Single());
+    }
+
+    // // Debugging code: output seed positions before chaining
+    // std::cout << std::endl << "Seed positions before global chaining" << std::endl;
+    // for (Iterator<TSeedSet>::Type it = begin(seedSet, Standard()); it != end(seedSet, Standard()); ++it)
+    // {
+    //     std::cout << beginPositionH(*it) << "\t" << beginPositionV(*it) << std::endl;
+    //     std::cout << endPositionH(*it) << "\t" << endPositionV(*it) << std::endl;
+    // }
+
+    // We now get a Seqan global chain of the seeds.
+    String<TSeed> seedChain;
+    chainSeedsGlobally(seedChain, seedSet, SparseChaining());
+    int seedsInChain = length(seedChain);
+    if (seedsInChain == 0)
+        return strdup("Failed: no global seed chain");
+
+    // // Debugging code: output seed positions after chaining
+    // std::cout << std::endl << "Seed positions after global chaining" << std::endl;
+    // for (int i = 0; i < seedsInChain; ++i)
+    // {
+    //     std::cout << beginPositionH(seedChain[i]) << "\t" << beginPositionV(seedChain[i]) << std::endl; //TEMP
+    //     std::cout << endPositionH(seedChain[i]) << "\t" << endPositionV(seedChain[i]) << std::endl; //TEMP
+    // }
+
+    // In the unlikely case that our kmers have all merged into a single seed, then we can use
+    // that one seed's start/end to get our line.
+    if (seedsInChain == 1)
+    {
+        int hStart = beginPositionH(seedChain[0]);
+        int hEnd = endPositionH(seedChain[0]);
+        int vStart = beginPositionV(seedChain[0]);
+        int vEnd = endPositionV(seedChain[0]);
+        double slope, intercept;
+        getSlopeAndIntercept(hStart, hEnd, vStart, vEnd, &slope, &intercept);
+        if (slope == -1.0 && intercept == -1.0)
+            return strdup("Failed: bad slope and intercept");
+        return getSlopeAndInterceptString(slope, intercept);
+    }
+
+    // We now want to extract the most likely line which represents that global chain.
+    // Randomly sample pairs of seeds in the chain and determine their slope and intercept. The
+    // median of these values will be our returned answer.
+    int randomSampleCount = 100;
+    std::random_device rd;
+    std::mt19937 rng(rd());
+    std::uniform_int_distribution<int> uni(0, seedsInChain - 1);
+    std::vector<double> slopes;
+    std::vector<double> intercepts;
+    for (int i = 0; i < randomSampleCount; ++i)
+    {
+        int i1, i2;
+        i1 = random_integer = uni(rng);
+        do
+        {
+            i2 = random_integer = uni(rng);
+        } while (i1 == i2);
+        if (i1 > i2)
+            std::swap(i1, i2);
+
+        int hStart = beginPositionH(seedChain[i1]);
+        int hEnd = beginPositionH(seedChain[i1]);
+        int vStart = beginPositionV(seedChain[i2]);
+        int vEnd = beginPositionV(seedChain[i2]);
+        double slope, intercept;
+        getSlopeAndIntercept(hStart, hEnd, vStart, vEnd, &slope, &intercept);
+        if (slope == -1.0 && intercept == -1.0)
+            return strdup("Failed: bad slope and intercept");
+        slopes.push_back(slope);
+        intercepts.push_back(intercept);
+    }
+
+    double medianSlope = getMedian(&slopes);
+    double medianIntercept = getMedian(&intercepts);
+    return getSlopeAndInterceptString(slope, intercept);
+}
+
+// This function does the full semi-global alignment using the entirety of both sequences. It will
+// be slow but will always find the ideal alignment.
+char * exhaustiveSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len)
 {
     long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 
@@ -268,6 +398,12 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
     return cppStringToCString(finalString);
 }
 
+char * getSlopeAndInterceptString(double slope, double intercept)
+{
+    std::string slopeAndInterceptString = std::to_string(slope) + "," + std::to_string(intercept);
+    return cppStringToCString(slopeAndInterceptString);
+
+}
 
 // Frees dynamically allocated memory for a c string. Called by Python after the string has been
 // received.
@@ -333,10 +469,10 @@ std::string getCigarPart(CigarType type, int length)
 }
 
 // Returns a list of all Kmers in a sequence.
-std::vector<Kmer> getSeqKmers(std::string seq, int strLen, int kSize)
+std::vector<Kmer> getSeqKmers(std::string seq, int kSize)
 {
     std::vector<Kmer> kmers;
-    int kCount = strLen - kSize;
+    int kCount = seq.size() - kSize;
     kmers.reserve(kCount);
     for (int i = 0; i < kCount; ++i)
     {
@@ -347,9 +483,10 @@ std::vector<Kmer> getSeqKmers(std::string seq, int strLen, int kSize)
 }
 
 // Returns a list of all Kmers common to both lists.
-std::vector<CommonLocation> getCommonLocations(std::vector<Kmer> s1Kmers, std::vector<Kmer> s2Kmers)
+std::vector<CommonLocation> getCommonLocations(std::string s1, std::string s2, int kSize)
 {
-    std::vector<CommonLocation> commonLocations;
+    std::vector<Kmer> s1Kmers = getSeqKmers(s1, kSize);
+    std::vector<Kmer> s2Kmers = getSeqKmers(s2, kSize);
 
     // Store all s1 kmers in a map of seq -> positions.
     KmerDict s1KmerPositions;
@@ -361,6 +498,7 @@ std::vector<CommonLocation> getCommonLocations(std::vector<Kmer> s1Kmers, std::v
     }
 
     // For all s2 kmers, see if they are in the s1 map. If so, they are common.
+    std::vector<CommonLocation> commonLocations;
     for (int i = 0; i < s2Kmers.size(); ++i)
     {
         std::string s2KmerSeq = std::get<0>(s2Kmers[i]);
@@ -379,41 +517,75 @@ std::vector<CommonLocation> getCommonLocations(std::vector<Kmer> s1Kmers, std::v
     return commonLocations;
 }
 
-// Looks at all of the seeds in the chain and gets the slopes (defined as the slope from the start
-// of one seed to the start of the next). Returns the median.
-double getSeedChainMedianSlope(String<TSeed> * seedChain)
+
+
+// This function gets the slope and intercept of the seed chain line as defined by the seeds at the
+// given indices. Slope is defined as the change in V position over the change in H position.
+// Intercept is defined as the V position at the H position of 0.
+void getSeedChainSlopeAndIntercept(String<TSeed> * seedChain, int i1, int i2,
+                                   double * slope, double * intercept)
+{
+    int hStart = beginPositionH((*seedChain)[i1]);
+    int hEnd = endPositionH((*seedChain)[i2]);
+    int vStart = beginPositionV((*seedChain)[i1]);
+    int vEnd = endPositionV((*seedChain)[i2]);
+
+    getSlopeAndIntercept(hStart, hEnd, vStart, vEnd, slope, intercept);
+}
+
+
+void getSlopeAndIntercept(int hStart, int hEnd, int vStart, int vEnd,
+                          double * slope, double * intercept)
+{
+    *slope = -1.0;
+    *intercept = -1.0;
+
+    int hDiff = hEnd - hStart;
+    int vDiff = vEnd - vStart;
+
+    if (hDiff > 0)
+    {
+        *slope = double(vDiff) / hDiff;
+        *intercept = vStart - (*slope * hStart);
+    }
+}
+
+// This function checks to see if all of the seeds within the given index range in the chain fall
+// between two lines.
+bool areSeedsInBand(String<TSeed> * seedChain, int i1, int i2, double slope, double lowIntercept,
+                    double highIntercept)
 {
     int seedsInChain = length(*seedChain);
-    if (seedsInChain == 0)
-        return 0.0;
-
-    int lastHStart = beginPositionH((*seedChain)[0]);
-    int lastVStart = beginPositionV((*seedChain)[0]);
-
-    std::vector<double> slopes;
-    for (int i = 1; i < seedsInChain; ++i)
+    int h, v, lowerV, upperV;
+    for (int i = i1; i <= i2; ++i)
     {
-        int hStart = beginPositionH((*seedChain)[i]);
-        int vStart = beginPositionV((*seedChain)[i]);
-        int hDiff = hStart - lastHStart;
-        int vDiff = vStart - lastVStart;
-        if (vDiff > 0)
-        	slopes.push_back(double(hDiff) / double(vDiff));
+        if (!isSeedInBand(&((*seedChain)[i]), slope, lowIntercept, highIntercept))
+            return false;
     }
+    return true;
+}
 
-    if (slopes.size() == 0)
-        return 0.0;
-    return getMedian(&slopes);
+bool isSeedInBand(TSeed * seed, double slope, double lowIntercept, double highIntercept)
+{
+    int h = beginPositionH(*seed);
+    int v = beginPositionV(*seed);
+    if (v < slope * h + lowIntercept)
+        return false;
+    if (v > slope * h + highIntercept)
+        return false;
+    return true;
 }
 
 double getMedian(std::vector<double> * v)
 {
     size_t size = v->size();
-    sort(v->begin(), v->end());
+    std::sort(v->begin(), v->end());
     if (size % 2 == 0)
-        return ((*v)[size / 2 - 1] + (*v)[size / 2]) / 2.0;
-    else
+        return ((*v)[size / 2 - 1] + (*v)[size / 2]) / 2;
+    else 
         return (*v)[size / 2];
+
 }
+
 
 }

@@ -49,13 +49,13 @@ import ctypes
 c_lib_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_align.so')
 c_lib = ctypes.CDLL(c_lib_path)
 
-c_lib.semiGlobalAlign.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int,
-                                  ctypes.c_int, ctypes.c_int, ctypes.c_double]
-c_lib.semiGlobalAlign.restype = ctypes.c_void_p
+c_lib.semiGlobalAlignmentAroundLine.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int,
+                                                ctypes.c_int, ctypes.c_int, ctypes.c_double]
+c_lib.semiGlobalAlignmentAroundLine.restype = ctypes.c_void_p
 
-c_lib.semiGlobalAlignExact.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int,
+c_lib.exhaustiveSemiGlobalAlignment.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int,
                                        ctypes.c_int]
-c_lib.semiGlobalAlignExact.restype = ctypes.c_void_p
+c_lib.exhaustiveSemiGlobalAlignment.restype = ctypes.c_void_p
 
 c_lib.free_c_string.argtypes = [ctypes.c_void_p]
 c_lib.free_c_string.restype = None
@@ -410,7 +410,7 @@ def make_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp,
     try_until_successful is False, it will return None if the first attempt didn't work.
     '''
     # Banded search parameters.
-    k_size = 8
+    k_size = 10
     band_size = 20
     allowed_length_discrepancy = 0.1
 
@@ -464,13 +464,14 @@ def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, r
     else:
         read_seq = read.sequence
 
-    ptr = c_lib.semiGlobalAlign(read_seq, ref_seq, len(read_seq), len(ref_seq), k_size, band_size,
+    ptr = c_lib.semiGlobalAlignmentAroundLine(read_seq, ref_seq, len(read_seq), len(ref_seq), k_size, band_size,
                                 allowed_length_discrepancy)
     alignment_result = ctypes.cast(ptr, ctypes.c_char_p).value
     
     c_lib.free_c_string(ptr)
 
     if alignment_result.startswith('Failed'):
+        print(alignment_result)
         return None
     return Alignment(reads, references, seqan_output=alignment_result, read_name=read.name,
                      ref_name=ref_name, rev_comp=rev_comp)
@@ -484,7 +485,7 @@ def run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq, read, re
         read_seq = reverse_complement(read.sequence)
     else:
         read_seq = read.sequence
-    ptr = c_lib.semiGlobalAlignExact(read_seq, ref_seq, len(read_seq), len(ref_seq))
+    ptr = c_lib.exhaustiveSemiGlobalAlignment(read_seq, ref_seq, len(read_seq), len(ref_seq))
     alignment_result = ctypes.cast(ptr, ctypes.c_char_p).value
     c_lib.free_c_string(ptr)
 

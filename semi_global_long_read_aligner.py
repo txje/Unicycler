@@ -53,6 +53,10 @@ c_lib.semiGlobalAlign.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int
                                   ctypes.c_int, ctypes.c_int, ctypes.c_double]
 c_lib.semiGlobalAlign.restype = ctypes.c_void_p
 
+c_lib.semiGlobalAlignExact.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int,
+                                       ctypes.c_int]
+c_lib.semiGlobalAlignExact.restype = ctypes.c_void_p
+
 c_lib.free_c_string.argtypes = [ctypes.c_void_p]
 c_lib.free_c_string.restype = None
 
@@ -66,9 +70,9 @@ def main():
     temp_dir_exist_at_start = os.path.exists(args.temp_dir)
     if not temp_dir_exist_at_start:
         os.makedirs(args.temp_dir)
-    long_reads = semi_global_align_long_reads(args.ref, args.reads, args.sam_raw,
+    long_reads = semi_global_align_long_reads(args.ref, args.reads, args.paf_raw,
                                               args.sam, args.temp_dir, args.path,
-                                              True, args.threads)
+                                              True, args.threads, True)
     write_reference_errors_to_table(args.ref, long_reads, args.table, True)
     if not temp_dir_exist_at_start:
         os.rmdir(args.temp_dir)
@@ -85,9 +89,9 @@ def get_arguments():
     parser.add_argument('--reads', type=str, required=True, default=argparse.SUPPRESS,
                         help='FASTQ file of long reads')
     parser.add_argument('--sam', type=str, required=True, default=argparse.SUPPRESS,
-                        help='SAM file of alignments after QC filtering')
+                        help='SAM file of resulting alignments')
     parser.add_argument('--paf_raw', type=str, required=False,
-                        help='PAF file of unfiltered alignments')
+                        help='raw PAF file of unfiltered GraphMap alignments')
     parser.add_argument('--table', type=str, required=False,
                         help='Path and/or prefix for table files summarising reference errors')
     parser.add_argument('--temp_dir', type=str, required=False, default='align_temp',
@@ -99,13 +103,17 @@ def get_arguments():
     return parser.parse_args()
 
 def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filtered, temp_dir,
-                                 graphmap_path, print_summary, threads):
+                                 graphmap_path, print_summary, threads, seqan_all):
     '''
     This function does the primary work of this module: aligning long reads to references in an
     end-gap-free, semi-global manner. It returns a list of LongRead objects which contain their
     alignments.
+    If seqan_all is True, then every Alignment object will be refined by using Seqan.
+    If seqan_all is False, then only the overlap alignments and a small set of long contained
+    alignments will be run through Seqan.
     '''
-    long_reads = load_long_reads(long_reads_fastq)
+    reads = load_long_reads(long_reads_fastq)
+    references = {get_nice_header(header): seq for header, seq in load_fasta(ref_fasta)}
 
     if not paf_raw:
         temp_paf_raw = True
@@ -115,21 +123,31 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
 
     seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, paf_raw, graphmap_path, temp_dir,
                                   print_summary, threads)
-    paf_alignments = load_paf_alignments(paf_raw, ref_fasta)
+    paf_alignments = load_paf_alignments(paf_raw, reads, references)
     if print_summary:
-        max_v = max(100, len(alignments))
+        max_v = max(100, len(paf_alignments))
         print()
         print('Alignment summary')
         print('-----------------')
-        print('Total raw GraphMap alignments:      ', int_to_str(len(alignments), max_v))
+        print('Total raw GraphMap alignments:      ', int_to_str(len(paf_alignments), max_v))
+
+    # Now refine alignments using Seqan.
+    alignments = []
+    for alignment in paf_alignments:
+        if seqan_all or not alignment.is_whole_read():
+            alignments.append(seqan_from_paf_alignment(alignment, reads, references))
+        else:
+            alignments.append(alignment)
+
+    quit() # TEMP
 
     # Give the alignments to their corresponding reads.
     for alignment in alignments:
-        long_reads[alignment.read_name].alignments.append(alignment)
+        reads[alignment.read.name].alignments.append(alignment)
 
     # Filter the alignments based on conflicting read position.
     filtered_alignments = []
-    for read in long_reads.itervalues():
+    for read in reads.itervalues():
         read.remove_conflicting_alignments()
         filtered_alignments += read.alignments
     if print_summary:
@@ -148,7 +166,7 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
             print('              standard deviation:   ', float_to_str(std_dev_id, max_v) + '%')
             print('Low identity cutoff:                ', float_to_str(low_id_cutoff, max_v) + '%')
     filtered_alignments = []
-    for read in long_reads.itervalues():
+    for read in reads.itervalues():
         read.remove_low_id_alignments(low_id_cutoff)
         filtered_alignments += read.alignments
 
@@ -157,12 +175,12 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
         print()
         print('Read summary')
         print('------------')
-        max_v = len(long_reads)
-        print('Total read count:       ', int_to_str(len(long_reads), max_v))
+        max_v = len(reads)
+        print('Total read count:       ', int_to_str(len(reads), max_v))
         fully_aligned_count = 0
         partially_aligned_count = 0
         unaligned_count = 0
-        for read in long_reads.itervalues():
+        for read in reads.itervalues():
             fraction_aligned = read.get_fraction_aligned()
             if fraction_aligned == 1.0:
                 fully_aligned_count += 1
@@ -179,8 +197,8 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
     # SENSITIVE SEARCH.
 
     write_sam_file(filtered_alignments, sam_filtered)
-    if temp_sam_raw:
-        os.remove(sam_raw)
+    if temp_paf_raw:
+        os.remove(paf_raw)
 
     return long_reads
 
@@ -306,18 +324,18 @@ def seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, paf_file, graphma
     This function runs GraphMap separately for each individual sequence in the reference.
     Resulting alignments are collected in a single PAF file.
     '''
+    references = load_fasta(ref_fasta)
     if print_summary:
         print()
         print('Raw GraphMap alignments per reference')
         print('-------------------------------------')
 
     final_paf = open(paf_file, 'w')
-    ref_headers_and_seqs = load_fasta(ref_fasta)
-    if print_summary and ref_headers_and_seqs:
+    if print_summary and references:
         longest_header = max([len(get_nice_header_and_len(header, seq)) for \
-                                   header, seq in ref_headers_and_seqs])
+                                   header, seq in references])
         read_count = line_count(long_reads_fastq) / 4
-    for header, seq in ref_headers_and_seqs:
+    for header, seq in references:
         nice_header = get_nice_header(header)
         one_seq_fasta = os.path.join(working_dir, nice_header + '.fasta')
         save_to_fasta(nice_header, seq, one_seq_fasta)
@@ -355,56 +373,123 @@ def run_graphmap(fasta, long_reads_fastq, paf_file, graphmap_path, threads):
     # Clean up.
     os.remove(fasta + '.gmidxowl')
 
-def load_paf_alignments(paf_filename, ref_fasta):
+def load_paf_alignments(paf_filename, reads, references):
     '''
-    This function returns a list of PafAlignment objects from the given SAM file.
+    This function returns a list of Alignment objects from the given PAF file.
     '''
-    references = {get_nice_header(header): seq for header, seq in load_fasta(ref_fasta)}
     paf_alignments = []
     paf_file = open(paf_filename, 'r')
     for line in paf_file:
         line = line.strip()
         if line:
-            paf_alignments.append(Alignment(references, paf_line=line))
+            paf_alignments.append(Alignment(reads, references, paf_line=line))
     return paf_alignments
 
-def seqan_alignment_one_read_all_refs(ref_headers_and_seqs, read, print_summary, threads, k_size,
-                                      band_size, allowed_length_discrepancy):
+# def seqan_alignment_one_read_all_refs(ref_headers_and_seqs, read, print_summary, threads, k_size,
+#                                       band_size, allowed_length_discrepancy):
+#     '''
+#     Aligns a single read against all reference sequences using Seqan.
+#     '''
+#     alignments = []
+#     for header, seq in ref_headers_and_seqs:
+#         nice_header = get_nice_header(header)
+#         forward_alignment = run_one_seqan_alignment(nice_header, seq, read, False, k_size,
+#                                                     band_size, allowed_length_discrepancy)
+#         reverse_alignment = run_one_seqan_alignment(nice_header, seq, read, True, k_size,
+#                                                     band_size, allowed_length_discrepancy)
+#         if forward_alignment:
+#             alignments.append(forward_alignment)
+#         if reverse_alignment:
+#             alignments.append(reverse_alignment)
+
+def make_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp,
+                         try_until_successful):
     '''
-    Aligns a single read against all reference sequences using Seqan.
+    Runs an alignment using Seqan.
+    If try_until_successful is True, it will continue attempting to align until it succeeds. If
+    try_until_successful is False, it will return None if the first attempt didn't work.
     '''
-    alignments = []
-    for header, seq in ref_headers_and_seqs:
-        nice_header = get_nice_header(header)
-        forward_alignment = run_one_seqan_alignment(nice_header, seq, read, False, k_size,
-                                                    band_size, allowed_length_discrepancy, c_lib)
-        reverse_alignment = run_one_seqan_alignment(nice_header, seq, read, True, k_size,
-                                                    band_size, allowed_length_discrepancy, c_lib)
-        if forward_alignment:
-            alignments.append(forward_alignment)
-        if reverse_alignment:
-            alignments.append(reverse_alignment)
+    # Banded search parameters.
+    k_size = 8
+    band_size = 20
+    allowed_length_discrepancy = 0.1
 
+    alignment = run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read,
+                                               rev_comp, k_size, band_size,
+                                               allowed_length_discrepancy)
+    print('FIRST TRY:', alignment) # TEMP
+    if alignment: # TEMP
+        print('  longest indel run:', alignment.get_longest_indel_run()) # TEMP
 
+    if not try_until_successful:
+        return alignment
 
+    max_band_size = 80 # Max tried before switching to an exact alignment
 
+    while True:
+        # If the alignment looks good, we're done.
+        if alignment and alignment.get_longest_indel_run() <= 5:
+            return alignment
 
+        # Otherwise try more sensitive settings.
+        band_size *= 2
+        allowed_length_discrepancy *= 2
 
-def run_one_seqan_alignment(ref_name, ref_seq, read, rev_comp, k_size, band_size,
-                            allowed_length_discrepancy, c_lib):
+        # If we've tried too many times, just give up with the banded alignment and do an exact
+        # alignment.
+        if band_size > max_band_size:
+            alignment = run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq, read,
+                                                      rev_comp)
+            print('FINAL EXHAUSTIVE ALIGNMENT:', alignment) # TEMP
+            if alignment: # TEMP
+                print('  longest indel run:', alignment.get_longest_indel_run()) # TEMP
+            return alignment
+
+        alignment = run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read,
+                                                   rev_comp, k_size, band_size,
+                                                   allowed_length_discrepancy)
+        print('NEXT TRY:', alignment) # TEMP
+        if alignment: # TEMP
+            print('  longest indel run:', alignment.get_longest_indel_run()) # TEMP
+
+def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp, k_size,
+                                   band_size, allowed_length_discrepancy):
     '''
-    Runs a single alignment using Seqan. Returns either an Alignment object (if successful) or None
-    (if not).
+    Runs a single alignment using Seqan.
+    Since this does a banded alignment, it is efficient but may or may not be successful. Returns
+    either an Alignment object (if successful) or None (if not).
     '''
     if rev_comp:
         read_seq = reverse_complement(read.sequence)
     else:
         read_seq = read.sequence
+
     ptr = c_lib.semiGlobalAlign(read_seq, ref_seq, len(read_seq), len(ref_seq), k_size, band_size,
                                 allowed_length_discrepancy)
     alignment_result = ctypes.cast(ptr, ctypes.c_char_p).value
+    
     c_lib.free_c_string(ptr)
-    return Alignment(seqan_output=alignment_result)
+
+    if alignment_result.startswith('Failed'):
+        return None
+    return Alignment(reads, references, seqan_output=alignment_result, read_name=read.name,
+                     ref_name=ref_name, rev_comp=rev_comp)
+
+def run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp):
+    '''
+    Runs a single alignment using Seqan. Does not use heuristics so it will always return an
+    Alignment object, no matter how bad the alignment is, but it's slow.
+    '''
+    if rev_comp:
+        read_seq = reverse_complement(read.sequence)
+    else:
+        read_seq = read.sequence
+    ptr = c_lib.semiGlobalAlignExact(read_seq, ref_seq, len(read_seq), len(ref_seq))
+    alignment_result = ctypes.cast(ptr, ctypes.c_char_p).value
+    c_lib.free_c_string(ptr)
+
+    return Alignment(reads, references, seqan_output=alignment_result, read_name=read.name,
+                     ref_name=ref_name, rev_comp=rev_comp)
 
 def get_ref_shift_from_cigar_part(cigar_part):
     '''
@@ -576,9 +661,25 @@ def get_mean_and_st_dev_identity(alignments, limit_to_safe_alignments):
     identities = []
     for alignment in alignments:
         if limit_to_safe_alignments and \
-           (alignment.extended or not alignment.is_whole_read()):
+           (alignment.extension_length or not alignment.is_whole_read()):
             continue
         identities.append(alignment.percent_identity)
+
+
+
+
+
+
+
+    print('identities:', identities) # TEMP
+    quit() # TEMP
+
+
+
+
+
+
+
     num = len(identities)
     if num == 0:
         return 0.0, 0.0
@@ -660,6 +761,19 @@ def complement_base(base):
     return reverse[forward.find(base)]
 
 
+def seqan_from_paf_alignment(paf_alignment, reads, references):
+    '''
+    This function is used on PAF alignments to turn them into Seqan alignments. This takes them
+    from basic alignments with only approximate start/end positions into full alignments.
+    '''
+    assert paf_alignment.alignment_type == 'PAF'
+    print()
+    print('PAF BEFORE:', paf_alignment) # TEMP
+    return make_seqan_alignment(reads, references, paf_alignment.ref_name,
+                                paf_alignment.full_ref_sequence, paf_alignment.read,
+                                paf_alignment.rev_comp, True)
+
+
 
 class LongRead(object):
     '''
@@ -668,6 +782,7 @@ class LongRead(object):
     def __init__(self, name, sequence, qualities):
         self.name = name
         self.sequence = sequence
+        self.rev_comp_sequence = reverse_complement(sequence)
         self.qualities = qualities
         self.alignments = []
 
@@ -747,7 +862,7 @@ class Alignment(object):
     def __init__(self, reads, references, paf_line=None, seqan_output=None, read_name=None,
                  ref_name=None, rev_comp=None):
 
-        assert paf_line or (seqan_output and read_name and ref_name and rev_comp)
+        assert paf_line or (seqan_output and read_name and ref_name)
 
         # Read details
         self.read = None
@@ -779,14 +894,15 @@ class Alignment(object):
         self.ref_mismatch_positions = None
         self.ref_insertion_positions = None
         self.ref_deletion_positions = None
-        self.extention_length = None
+        self.extension_length = None
         self.milliseconds = None
 
-        if seqan_output and read_name and ref_name and rev_comp:
+        if seqan_output and read_name and ref_name:
             self.setup_using_seqan_output(seqan_output, reads, references, read_name, ref_name,
                                           rev_comp)
         elif paf_line:
             self.setup_using_paf_line(paf_line, reads, references)
+
 
     def setup_using_seqan_output(self, seqan_output, reads, references, read_name, ref_name,
                                  rev_comp):
@@ -828,6 +944,7 @@ class Alignment(object):
         self.ref_mismatch_positions = seqan_parts[8].split(";")
         self.ref_insertion_positions = seqan_parts[10].split(";")
         self.ref_deletion_positions = seqan_parts[12].split(";")
+        self.extension_length = None
         self.milliseconds = int(seqan_parts[15])
 
     def setup_using_paf_line(self, paf_line, reads, references):
@@ -867,7 +984,7 @@ class Alignment(object):
             self.ref_end_gap -= missing_bases_at_end
             self.read_end_pos += missing_bases_at_end
             self.read_end_gap -= missing_bases_at_end
-        self.extention_length = missing_bases_at_start + missing_bases_at_end
+        self.extension_length = missing_bases_at_start + missing_bases_at_end
 
     def __repr__(self):
         if self.alignment_type == 'PAF':
@@ -883,26 +1000,15 @@ class Alignment(object):
         return_str += self.ref_name + ' (' + str(self.ref_start_pos) + '-' + \
                       str(self.ref_end_pos) + ')'
         if self.alignment_type == 'Seqan':
-            return_str += ', ' + '%.2f' % self.percent_identity + '%'
+            return_str += ', ' + '%.2f' % self.percent_identity + '%, '
+            return_str += str(self.milliseconds) + ' ms'
         return return_str
-
-    def get_alignment_length_read(self):
-        '''
-        Returns the length of the aligned read sequence.
-        '''
-        return self.read_end_pos - self.read_start_pos
-
-    def get_alignment_length_reference(self):
-        '''
-        Returns the length of the aligned reference sequence.
-        '''
-        return self.ref_end_pos - self.ref_start_pos
 
     def get_read_to_ref_ratio(self):
         '''
         Returns the length ratio between the aligned parts of the read and reference.
         '''
-        return self.get_alignment_length_read() / self.get_alignment_length_reference()
+        return len(self.aligned_read_seq) / len(self.aligned_ref_seq)
 
     def read_start_end_positive_strand(self):
         '''
@@ -916,27 +1022,6 @@ class Alignment(object):
             start = self.read.get_length() - self.read_end_pos
             end = self.read.get_length() - self.read_start_pos
             return start, end
-
-
-    def get_start_soft_clips(self):
-        '''
-        Returns the number of soft-clipped bases at the start of the alignment.
-        '''
-        match = re.search(r'^\d+S', self.cigar)
-        if not match:
-            return 0
-        else:
-            return int(match.group(0)[:-1])
-
-    def get_end_soft_clips(self):
-        '''
-        Returns the number of soft-clipped bases at the start of the alignment.
-        '''
-        match = re.search(r'\d+S$', self.cigar)
-        if not match:
-            return 0
-        else:
-            return int(match.group(0)[:-1])
 
     def tally_up_alignment(self):
         '''
@@ -1006,6 +1091,18 @@ class Alignment(object):
         Returns True if the alignment covers the entirety of the read.
         '''
         return self.read_start_pos == 0 and self.read_end_gap == 0
+
+    def get_longest_indel_run(self):
+        '''
+        Returns the longest indel in the alignment.
+        '''
+        assert self.alignment_type == 'Seqan'
+        longest_indel_run = 0
+        for cigar_part in self.cigar_parts:
+            cigar_type = cigar_part[-1]
+            if cigar_type == 'I' or cigar_type == 'D':
+                longest_indel_run = max(longest_indel_run, int(cigar_part[:-1]))
+        return longest_indel_run
 
 
 

@@ -33,8 +33,8 @@ enum CigarType {MATCH, INSERTION, DELETION, CLIP, NOTHING};
 
 // These are the functions that will be called by the Python script.
 char * semiGlobalAlignmentAroundLine(char * s1, char * s2, int s1Len, int s2Len, double slope,
-                                     double intercept, int bandSize);
-char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len);
+                                     double intercept, int bandSize, int debugOutput);
+char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len, int debugOutput);
 char * exhaustiveSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len);
 void free_c_string(char * p);
 
@@ -52,9 +52,6 @@ void getSeedChainSlopeAndIntercept(String<TSeed> * seedChain, int firstI, int la
                                    double * slope, double * intercept);
 void getSlopeAndIntercept(int hStart, int hEnd, int vStart, int vEnd,
                                    double * slope, double * intercept);
-bool areSeedsInBand(String<TSeed> * seedChain, int i1, int i2, double slope, double lowIntercept,
-                    double highIntercept);
-bool isSeedInBand(TSeed * seed, double slope, double lowIntercept, double highIntercept);
 char * getSlopeAndInterceptString(double slope, double intercept);
 double getMedian(std::vector<double> * v);
 
@@ -62,7 +59,7 @@ double getMedian(std::vector<double> * v);
 
 
 char * semiGlobalAlignmentAroundLine(char * s1, char * s2, int s1Len, int s2Len, double slope,
-                                     double intercept, int bandSize)
+                                     double intercept, int bandSize, int debugOutput)
 {
     long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 
@@ -95,7 +92,13 @@ char * semiGlobalAlignmentAroundLine(char * s1, char * s2, int s1Len, int s2Len,
     int hDiff = hEnd - hStart;
     int vDiff = vEnd - vStart;
 
-
+    if (debugOutput > 0)
+    {
+        std::cout << std::endl;
+        std::cout << "ALIGNMENT RANGE FROM SLOPE" << std::endl;
+        std::cout << "--------------------------" << std::endl;
+        std::cout << "hStart: " << hStart << ", " << "hEnd: " << hEnd << ", " << "vStart: " << vStart << ", " << "vEnd: " << vEnd << std::endl << std::endl;;
+    }
 
     // Now that we have an estimate for the start/end of both sequences, we build a single seed
     // chain around that line.
@@ -105,56 +108,47 @@ char * semiGlobalAlignmentAroundLine(char * s1, char * s2, int s1Len, int s2Len,
     if (hDiff == vDiff)
         appendValue(seedChain, TSeed(hStart, vStart, hEnd, vEnd));
 
-    else if (hDiff > vDiff)
+    // If one of the distances is longer, then we need multiple seeds to step across at a slope
+    // not equal to 1.
+    else
     {
-        int additionalHSteps = hDiff - vDiff;
-        std::cout << "additionalHSteps: " << additionalHSteps << std::endl;
-        double pieceSize = double(vDiff) / additionalHSteps;
-        std::cout << "pieceSize: " << pieceSize << std::endl;
-        
+        int additionalSteps = std::abs(vDiff - hDiff);
+        bool additionalHSteps = hDiff > vDiff;
+
+        int seedCount = additionalSteps + 1;
+        double pieceSize = double(std::min(hDiff, vDiff)) / seedCount;        
         double targetPosition = 0;
         int distanceSoFar = 0;
         int hPos = hStart;
         int vPos = vStart;
-        for (int i = 0; i < additionalHSteps; ++i)
+        for (int i = 0; i < seedCount; ++i)
         {
             targetPosition += pieceSize;
             int thisPieceSize = std::round(targetPosition - distanceSoFar);
             distanceSoFar += thisPieceSize;
-            // std::cout << "thisPieceSize: " << thisPieceSize << "     " << "distanceSoFar: " << distanceSoFar << std::endl;
-            std::cout << "hStart: " << hPos << ", " << "hEnd: " << hPos + thisPieceSize - 1 << ", " << "vStart: " << vPos << ", " << "vEnd: " << vPos + thisPieceSize - 1 << ", "  << std::endl;
-            hPos += thisPieceSize + 1;
+            appendValue(seedChain, TSeed(hPos, vPos, hPos + thisPieceSize, vPos + thisPieceSize));
+            hPos += thisPieceSize;
             vPos += thisPieceSize;
-
-            // appendValue(seedChain, TSeed(hPos, vPos, hPos + thisPieceSize - 1, vPos + thisPieceSize - 1));
-
+            if (additionalHSteps)
+                hPos += 1;
+            else
+                vPos += 1;
         }
-
-        std::cout << "hStart: " << hStart << ", " << "hEnd: " << hEnd << ", " << "vStart: " << vStart << ", " << "vEnd: " << vEnd << std::endl;
-
-
     }
 
-    else // vDiff > hDiff
+    if (debugOutput > 0)
     {
-        int additionalVSteps = vDiff - hDiff;
-        std::cout << "additionalVSteps: " << additionalVSteps << std::endl;
-
-        
-        
+        int seedsInChain = length(seedChain);
+        std::cout << std::endl;
+        std::cout << "SEED POSITIONS" << std::endl;
+        std::cout << "--------------" << std::endl;
+        for (int i = 0; i < seedsInChain; ++i)
+        {
+            std::cout << "H range: " << beginPositionH(seedChain[i]) << " to " << endPositionH(seedChain[i]) << ", ";
+            std::cout << "V range: " << beginPositionV(seedChain[i]) << " to " << endPositionV(seedChain[i]) << std::endl;
+        }
+        std::cout << std::endl;
     }
-
-
-    // TO DO: BUILD THE SEED CHAIN OUT OF PARTS
-    // TO DO: BUILD THE SEED CHAIN OUT OF PARTS
-    // TO DO: BUILD THE SEED CHAIN OUT OF PARTS
-    // TO DO: BUILD THE SEED CHAIN OUT OF PARTS
-    // TO DO: BUILD THE SEED CHAIN OUT OF PARTS
-    // TO DO: BUILD THE SEED CHAIN OUT OF PARTS
-    // TO DO: BUILD THE SEED CHAIN OUT OF PARTS
-    // TO DO: BUILD THE SEED CHAIN OUT OF PARTS
-    // TO DO: BUILD THE SEED CHAIN OUT OF PARTS
-
 
     Align<Dna5String, ArrayGaps> alignment;
     resize(rows(alignment), 2);
@@ -167,7 +161,7 @@ char * semiGlobalAlignmentAroundLine(char * s1, char * s2, int s1Len, int s2Len,
     return turnAlignmentIntoDescriptiveString(&alignment, startTime);
 }
 
-char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len)
+char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len, int debugOutput)
 {
     std::string s1Str(s1);
     std::string s2Str(s2);
@@ -226,13 +220,18 @@ char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len)
     if (commonLocations.size() < 2)
         return strdup("Failed: too few common kmers");
 
-    // // Debugging code: output common kmer positions
-    // std::cout << std::endl << "Common kmer positions" << std::endl;
-    // for (int i = 0; i < commonLocations.size(); ++i)
-    // {
-    //     CommonLocation l = commonLocations[i];
-    //     std::cout << std::get<0>(l) << "\t" << std::get<2>(l) << std::endl;
-    // }
+    if (debugOutput > 0)
+    {
+        std::cout << std::endl;
+        std::cout << "COMMON K-MER POSITIONS" << std::endl;
+        std::cout << "----------------------" << std::endl;
+        for (int i = 0; i < commonLocations.size(); ++i)
+        {
+            CommonLocation l = commonLocations[i];
+            std::cout << std::get<0>(l) << "\t" << std::get<2>(l) << std::endl;
+        }
+        std::cout << std::endl;
+    }
 
     // Build a Seqan seed set using our common k-mers.
     TSeedSet seedSet;
@@ -244,13 +243,18 @@ char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len)
             addSeed(seedSet, seed, Single());
     }
 
-    // // Debugging code: output seed positions before chaining
-    // std::cout << std::endl << "Seed positions before global chaining" << std::endl;
-    // for (Iterator<TSeedSet>::Type it = begin(seedSet, Standard()); it != end(seedSet, Standard()); ++it)
-    // {
-    //     std::cout << beginPositionH(*it) << "\t" << beginPositionV(*it) << std::endl;
-    //     std::cout << endPositionH(*it) << "\t" << endPositionV(*it) << std::endl;
-    // }
+    if (debugOutput > 0)
+    {
+        std::cout << std::endl;
+        std::cout << "SEED POSITIONS BEFORE GLOBAL CHAINING" << std::endl;
+        std::cout << "-------------------------------------" << std::endl;
+        for (Iterator<TSeedSet>::Type it = begin(seedSet, Standard()); it != end(seedSet, Standard()); ++it)
+        {
+            std::cout << "H range: " << beginPositionH(*it) << " to " << endPositionH(*it) << ", ";
+            std::cout << "V range: " << beginPositionV(*it) << " to " << endPositionV(*it) << std::endl;
+        }
+        std::cout << std::endl;
+    }
 
     // We now get a Seqan global chain of the seeds.
     String<TSeed> seedChain;
@@ -259,13 +263,18 @@ char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len)
     if (seedsInChain == 0)
         return strdup("Failed: no global seed chain");
 
-    // // Debugging code: output seed positions after chaining
-    // std::cout << std::endl << "Seed positions after global chaining" << std::endl;
-    // for (int i = 0; i < seedsInChain; ++i)
-    // {
-    //     std::cout << beginPositionH(seedChain[i]) << "\t" << beginPositionV(seedChain[i]) << std::endl; //TEMP
-    //     std::cout << endPositionH(seedChain[i]) << "\t" << endPositionV(seedChain[i]) << std::endl; //TEMP
-    // }
+    if (debugOutput > 0)
+    {
+        std::cout << std::endl;
+        std::cout << "SEED POSITIONS AFTER GLOBAL CHAINING" << std::endl;
+        std::cout << "------------------------------------" << std::endl;
+        for (int i = 0; i < seedsInChain; ++i)
+        {
+            std::cout << "H range: " << beginPositionH(seedChain[i]) << " to " << endPositionH(seedChain[i]) << ", ";
+            std::cout << "V range: " << beginPositionV(seedChain[i]) << " to " << endPositionV(seedChain[i]) << std::endl;
+        }
+        std::cout << std::endl;
+    }
 
     // In the unlikely case that our kmers have all merged into a single seed, then we can use
     // that one seed's start/end to get our line.
@@ -621,32 +630,6 @@ void getSlopeAndIntercept(int hStart, int hEnd, int vStart, int vEnd,
         *slope = double(vDiff) / hDiff;
         *intercept = vStart - (*slope * hStart);
     }
-}
-
-// This function checks to see if all of the seeds within the given index range in the chain fall
-// between two lines.
-bool areSeedsInBand(String<TSeed> * seedChain, int i1, int i2, double slope, double lowIntercept,
-                    double highIntercept)
-{
-    int seedsInChain = length(*seedChain);
-    int h, v, lowerV, upperV;
-    for (int i = i1; i <= i2; ++i)
-    {
-        if (!isSeedInBand(&((*seedChain)[i]), slope, lowIntercept, highIntercept))
-            return false;
-    }
-    return true;
-}
-
-bool isSeedInBand(TSeed * seed, double slope, double lowIntercept, double highIntercept)
-{
-    int h = beginPositionH(*seed);
-    int v = beginPositionV(*seed);
-    if (v < slope * h + lowIntercept)
-        return false;
-    if (v > slope * h + highIntercept)
-        return false;
-    return true;
 }
 
 double getMedian(std::vector<double> * v)

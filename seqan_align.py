@@ -9,13 +9,13 @@ def main():
     c_lib = CDLL(c_lib_path)
 
     c_lib.semiGlobalAlignmentAroundLine.argtypes = [c_char_p, c_char_p, c_int, c_int, c_double,
-                                                    c_double, c_int]
+                                                    c_double, c_int, c_int]
     c_lib.semiGlobalAlignmentAroundLine.restype = c_void_p
 
     c_lib.exhaustiveSemiGlobalAlignment.argtypes = [c_char_p, c_char_p, c_int, c_int]
     c_lib.exhaustiveSemiGlobalAlignment.restype = c_void_p
 
-    c_lib.findAlignmentLine.argtypes = [c_char_p, c_char_p, c_int, c_int]
+    c_lib.findAlignmentLine.argtypes = [c_char_p, c_char_p, c_int, c_int, c_int]
     c_lib.findAlignmentLine.restype = c_void_p
 
     c_lib.free_c_string.argtypes = [c_void_p]
@@ -32,16 +32,19 @@ def main():
     read = S1_3_137_rev_comp
     ref = node_10
 
-    ptr = c_lib.findAlignmentLine(read, ref, len(read), len(ref))
+    ptr = c_lib.findAlignmentLine(read, ref, len(read), len(ref), 0)
     line_result = cast(ptr, c_char_p).value
     c_lib.free_c_string(ptr)
     if line_result.startswith('Fail'):
         print(line_result)
         quit()
     slope, intercept = [float(x) for x in line_result.split(',')]
+    
+    print(slope, intercept)
+    quit()
 
 
-    ptr = c_lib.semiGlobalAlignmentAroundLine(read, ref, len(read), len(ref), slope, intercept, 1)
+    ptr = c_lib.semiGlobalAlignmentAroundLine(read, ref, len(read), len(ref), slope, intercept, 15, 0)
     alignment_result = cast(ptr, c_char_p).value
     c_lib.free_c_string(ptr)
     if alignment_result.startswith('Fail'):

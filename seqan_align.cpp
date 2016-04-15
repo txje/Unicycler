@@ -11,7 +11,6 @@
 #include <vector>
 #include <map>
 #include <algorithm>
-#include <random>
 
 using namespace seqan;
 using namespace std::chrono;
@@ -62,6 +61,12 @@ char * semiGlobalAlignmentAroundLine(char * s1, char * s2, int s1Len, int s2Len,
                                      double intercept, int bandSize, int debugOutput)
 {
     long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
+
+    // Extreme slope values will not work, so check for them now.
+    if (slope > 1.5)
+        return strdup("Failed: slope too large");
+    if (slope < 0.5)
+        return strdup("Failed: slope too small");
 
     TSequence sequenceH = s1;
     TSequence sequenceV = s2;
@@ -142,10 +147,11 @@ char * semiGlobalAlignmentAroundLine(char * s1, char * s2, int s1Len, int s2Len,
         std::cout << std::endl;
         std::cout << "SEED POSITIONS" << std::endl;
         std::cout << "--------------" << std::endl;
+        std::cout << "H start\tH end\tV start\tV end" << std::endl;
         for (int i = 0; i < seedsInChain; ++i)
         {
-            std::cout << "H range: " << beginPositionH(seedChain[i]) << " to " << endPositionH(seedChain[i]) << ", ";
-            std::cout << "V range: " << beginPositionV(seedChain[i]) << " to " << endPositionV(seedChain[i]) << std::endl;
+            std::cout << beginPositionH(seedChain[i]) << "\t" << endPositionH(seedChain[i]) << "\t";
+            std::cout << beginPositionV(seedChain[i]) << "\t" << endPositionV(seedChain[i]) << std::endl;
         }
         std::cout << std::endl;
     }
@@ -175,6 +181,9 @@ char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len, int debugOu
     int kSize = 10;
     std::vector<CommonLocation> commonLocations = getCommonLocations(s1Str, s2Str, kSize);
 
+    if (debugOutput > 0)
+        std::cout << "K-MER: " << kSize << ", " << commonLocations.size() << " SITES IN COMMON" << std::endl;
+
     // If the starting k-mer gave too many locations, we increase it until we're in the correct
     // range.
     if (commonLocations.size() > targetKCount)
@@ -183,6 +192,8 @@ char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len, int debugOu
         {
             ++kSize;
             commonLocations = getCommonLocations(s1Str, s2Str, kSize);
+            if (debugOutput > 0)
+                std::cout << "K-MER: " << kSize << ", " << commonLocations.size() << " SITES IN COMMON" << std::endl;
 
             // If we're reached the target range, that's good...
             if (commonLocations.size() <= targetKCount)
@@ -193,6 +204,8 @@ char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len, int debugOu
                 {
                     --kSize;
                     commonLocations = getCommonLocations(s1Str, s2Str, kSize);
+                    if (debugOutput > 0)
+                        std::cout << "K-MER: " << kSize << ", " << commonLocations.size() << " SITES IN COMMON" << std::endl;
                 }
                 break;
             }
@@ -211,20 +224,27 @@ char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len, int debugOu
                 return strdup("Failed: kmer size too small");
 
             commonLocations = getCommonLocations(s1Str, s2Str, kSize);
+            if (debugOutput > 0)
+                std::cout << "K-MER: " << kSize << ", " << commonLocations.size() << " SITES IN COMMON" << std::endl;
+
             if (commonLocations.size() >= minimumKCount)
                 break;
         }
     }
 
+    if (debugOutput > 0)
+        std::cout << std::endl;
+
     //We should now have a reasonably-sized set of common kmers.
     if (commonLocations.size() < 2)
         return strdup("Failed: too few common kmers");
 
-    if (debugOutput > 0)
+    if (debugOutput > 1)
     {
         std::cout << std::endl;
         std::cout << "COMMON K-MER POSITIONS" << std::endl;
         std::cout << "----------------------" << std::endl;
+        std::cout << "Seq 1 pos\tSeq 2 pos" << std::endl;
         for (int i = 0; i < commonLocations.size(); ++i)
         {
             CommonLocation l = commonLocations[i];
@@ -243,15 +263,16 @@ char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len, int debugOu
             addSeed(seedSet, seed, Single());
     }
 
-    if (debugOutput > 0)
+    if (debugOutput > 1)
     {
         std::cout << std::endl;
         std::cout << "SEED POSITIONS BEFORE GLOBAL CHAINING" << std::endl;
         std::cout << "-------------------------------------" << std::endl;
+        std::cout << "H start\tH end\tV start\tV end" << std::endl;
         for (Iterator<TSeedSet>::Type it = begin(seedSet, Standard()); it != end(seedSet, Standard()); ++it)
         {
-            std::cout << "H range: " << beginPositionH(*it) << " to " << endPositionH(*it) << ", ";
-            std::cout << "V range: " << beginPositionV(*it) << " to " << endPositionV(*it) << std::endl;
+            std::cout << beginPositionH(*it) << "\t" << endPositionH(*it) << "\t";
+            std::cout << beginPositionV(*it) << "\t" << endPositionV(*it) << std::endl;
         }
         std::cout << std::endl;
     }
@@ -263,15 +284,16 @@ char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len, int debugOu
     if (seedsInChain == 0)
         return strdup("Failed: no global seed chain");
 
-    if (debugOutput > 0)
+    if (debugOutput > 1)
     {
         std::cout << std::endl;
         std::cout << "SEED POSITIONS AFTER GLOBAL CHAINING" << std::endl;
         std::cout << "------------------------------------" << std::endl;
+        std::cout << "H start\tH end\tV start\tV end" << std::endl;
         for (int i = 0; i < seedsInChain; ++i)
         {
-            std::cout << "H range: " << beginPositionH(seedChain[i]) << " to " << endPositionH(seedChain[i]) << ", ";
-            std::cout << "V range: " << beginPositionV(seedChain[i]) << " to " << endPositionV(seedChain[i]) << std::endl;
+            std::cout << beginPositionH(seedChain[i]) << "\t" << endPositionH(seedChain[i]) << "\t";
+            std::cout << beginPositionV(seedChain[i]) << "\t" << endPositionV(seedChain[i]) << std::endl;
         }
         std::cout << std::endl;
     }
@@ -292,43 +314,40 @@ char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len, int debugOu
     }
 
     // We now want to extract the most likely line which represents that global chain.
-    // Randomly sample pairs of seeds in the chain and determine their slope and intercept. The
-    // median of these values will be our returned answer.
-    int randomSampleCount = 100;
-    std::random_device rd;
-    std::mt19937 rng(rd());
-    std::uniform_int_distribution<int> uni(0, seedsInChain - 1);
+    // Sample pairs of seeds in the chain and determine their slope and intercept. The median of
+    // these values will be our returned answer.
+    int pairDistance = seedsInChain / 5; // TO DO: make this a parameter?
     std::vector<double> slopes;
     std::vector<double> intercepts;
-    for (int i = 0; i < randomSampleCount; ++i)
+    for (int i = 0; i < seedsInChain - pairDistance; ++i)
     {
-        int i1, i2;
-        i1 = uni(rng);
-        do
-        {
-            i2 = uni(rng);
-        } while (i1 == i2);
-        if (i1 > i2)
-            std::swap(i1, i2);
-
-        int hStart = beginPositionH(seedChain[i1]);
-        int vStart = beginPositionV(seedChain[i1]);
-        int hEnd = beginPositionH(seedChain[i2]);
-        int vEnd = beginPositionV(seedChain[i2]);
+        int hStart = beginPositionH(seedChain[i]);
+        int vStart = beginPositionV(seedChain[i]);
+        int hEnd = beginPositionH(seedChain[i + pairDistance]);
+        int vEnd = beginPositionV(seedChain[i + pairDistance]);
         double slope, intercept;
         getSlopeAndIntercept(hStart, hEnd, vStart, vEnd, &slope, &intercept);
         if (slope == -1.0 && intercept == -1.0)
-        {
-            std::cout << seedsInChain << "      " << i1 << ", " << i2 << std::endl;
-            std::cout << hStart << ", " << hEnd << "    " << vStart << ", " << vEnd << std::endl;
             return strdup("Failed: bad slope and intercept");
-        }
         slopes.push_back(slope);
         intercepts.push_back(intercept);
     }
 
     double medianSlope = getMedian(&slopes);
     double medianIntercept = getMedian(&intercepts);
+
+    if (debugOutput > 1)
+    {
+        std::cout << std::endl;
+        std::cout << "SLOPES AND INTERCEPTS (SORTED)" << std::endl;
+        std::cout << "------------------------------" << std::endl;
+        for (int i = 0; i < slopes.size(); ++i)
+            std::cout << "Slope: " << slopes[i] << ", Intercept: " << intercepts[i] << std::endl;
+        std::cout << std::endl;
+    }
+    if (debugOutput > 0)
+        std::cout << "MEDIAN SLOPE: " << medianSlope << ", MEDIAN INTERCEPT: " << medianIntercept << std::endl << std::endl;
+
     return getSlopeAndInterceptString(medianSlope, medianIntercept);
 }
 

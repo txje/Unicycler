@@ -43,22 +43,38 @@ import re
 import random
 import argparse
 import string
-import ctypes
+from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p
 
-# Prepare the c functions.
-c_lib_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_align.so')
-c_lib = ctypes.CDLL(c_lib_path)
+C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_align.so'))
 
-c_lib.semiGlobalAlignmentAroundLine.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_int,
-                                                ctypes.c_int, ctypes.c_int, ctypes.c_double]
-c_lib.semiGlobalAlignmentAroundLine.restype = ctypes.c_void_p
+'''
+This function conducts a full semi-global alignment between two sequences. It will be slow
+(possibly very slow for long sequences) but will always give an optimal result.
+'''
+C_LIB.exhaustiveSemiGlobalAlignment.argtypes = [c_char_p, c_char_p, c_int, c_int]
+C_LIB.exhaustiveSemiGlobalAlignment.restype = c_void_p
 
-c_lib.exhaustiveSemiGlobalAlignment.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int,
-                                       ctypes.c_int]
-c_lib.exhaustiveSemiGlobalAlignment.restype = ctypes.c_void_p
+'''
+This function conducts a semi-global alignment surrounding the given line. Since the search is
+limited to a narrow band it is much more efficient than the exhaustive search.
+'''
+C_LIB.semiGlobalAlignmentAroundLine.argtypes = [c_char_p, c_char_p, c_int, c_int, c_double,
+                                                c_double, c_int, c_int]
+C_LIB.semiGlobalAlignmentAroundLine.restype = c_void_p
 
-c_lib.free_c_string.argtypes = [ctypes.c_void_p]
-c_lib.free_c_string.restype = None
+'''
+This function looks for the most likely line representing the alignment. It is used to get a
+line to be given to C_LIB.semiGlobalAlignmentAroundLine.
+'''
+C_LIB.findAlignmentLine.argtypes = [c_char_p, c_char_p, c_int, c_int, c_int]
+C_LIB.findAlignmentLine.restype = c_void_p
+
+'''
+This function cleans up the heap memory for the C strings returned by the other C functions. It
+must be called after them.
+'''
+C_LIB.free_c_string.argtypes = [c_void_p]
+C_LIB.free_c_string.restype = None
 
 def main():
     '''
@@ -200,7 +216,7 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
     if temp_paf_raw:
         os.remove(paf_raw)
 
-    return long_reads
+    return reads
 
 def write_reference_errors_to_table(ref_fasta, long_reads, table_prefix, print_summary):
     '''
@@ -403,57 +419,54 @@ def load_paf_alignments(paf_filename, reads, references):
 #             alignments.append(reverse_alignment)
 
 def make_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp,
-                         try_until_successful):
+                         try_exhaustive):
     '''
     Runs an alignment using Seqan.
-    If try_until_successful is True, it will continue attempting to align until it succeeds. If
-    try_until_successful is False, it will return None if the first attempt didn't work.
     '''
-    # Banded search parameters.
-    k_size = 10
-    band_size = 20
-    allowed_length_discrepancy = 0.1
+    band_size = 10
+    max_band_size = 80
+    longest_acceptable_indel_run = 6
 
     alignment = run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read,
-                                               rev_comp, k_size, band_size,
-                                               allowed_length_discrepancy)
+                                               rev_comp, band_size)
     print('FIRST TRY:', alignment) # TEMP
     if alignment: # TEMP
         print('  longest indel run:', alignment.get_longest_indel_run()) # TEMP
 
-    if not try_until_successful:
-        return alignment
-
-    max_band_size = 80 # Max tried before switching to an exact alignment
-
-    while True:
-        # If the alignment looks good, we're done.
-        if alignment and alignment.get_longest_indel_run() <= 5:
-            return alignment
-
-        # Otherwise try more sensitive settings.
-        band_size *= 2
-        allowed_length_discrepancy *= 2
-
-        # If we've tried too many times, just give up with the banded alignment and do an exact
-        # alignment.
-        if band_size > max_band_size:
+    # If the first alignment totally failed, then our only recourse is an exhaustive alignment.
+    if not alignment:
+        if try_exhaustive:
             alignment = run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq, read,
                                                       rev_comp)
             print('FINAL EXHAUSTIVE ALIGNMENT:', alignment) # TEMP
-            if alignment: # TEMP
+            print('  longest indel run:', alignment.get_longest_indel_run()) # TEMP
+        return alignment
+
+    # If our alignment succeeded, we should still check to see if it looks good or if we need to
+    # increase the band size. The longest indel run is a good indicator.
+    while True:
+        if alignment.get_longest_indel_run() <= longest_acceptable_indel_run:
+            return alignment
+        band_size *= 2
+
+        # If we've reached the max band size and still have too long of an indel, then we either
+        # return what we've got or do the exhaustive alignment.
+        if band_size > max_band_size:
+            if try_exhaustive:
+                alignment = run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq, read,
+                                                      rev_comp)
+                print('FINAL EXHAUSTIVE ALIGNMENT:', alignment) # TEMP
                 print('  longest indel run:', alignment.get_longest_indel_run()) # TEMP
             return alignment
 
         alignment = run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read,
-                                                   rev_comp, k_size, band_size,
-                                                   allowed_length_discrepancy)
+                                                   rev_comp, band_size)
         print('NEXT TRY:', alignment) # TEMP
         if alignment: # TEMP
             print('  longest indel run:', alignment.get_longest_indel_run()) # TEMP
 
-def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp, k_size,
-                                   band_size, allowed_length_discrepancy):
+def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp,
+                                   band_size):
     '''
     Runs a single alignment using Seqan.
     Since this does a banded alignment, it is efficient but may or may not be successful. Returns
@@ -464,11 +477,19 @@ def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, r
     else:
         read_seq = read.sequence
 
-    ptr = c_lib.semiGlobalAlignmentAroundLine(read_seq, ref_seq, len(read_seq), len(ref_seq), k_size, band_size,
-                                allowed_length_discrepancy)
-    alignment_result = ctypes.cast(ptr, ctypes.c_char_p).value
+    ptr = C_LIB.findAlignmentLine(read_seq, ref_seq, len(read_seq), len(ref_seq), 0)
+    line_result = cast(ptr, c_char_p).value
+    C_LIB.free_c_string(ptr)
+    if line_result.startswith('Fail'):
+        print(line_result)
+        return None
+    slope, intercept = [float(x) for x in line_result.split(',')]
+
+    ptr = C_LIB.semiGlobalAlignmentAroundLine(read_seq, ref_seq, len(read_seq), len(ref_seq),
+                                              slope, intercept, band_size, 0)
+    alignment_result = cast(ptr, c_char_p).value
     
-    c_lib.free_c_string(ptr)
+    C_LIB.free_c_string(ptr)
 
     if alignment_result.startswith('Failed'):
         print(alignment_result)
@@ -485,9 +506,9 @@ def run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq, read, re
         read_seq = reverse_complement(read.sequence)
     else:
         read_seq = read.sequence
-    ptr = c_lib.exhaustiveSemiGlobalAlignment(read_seq, ref_seq, len(read_seq), len(ref_seq))
-    alignment_result = ctypes.cast(ptr, ctypes.c_char_p).value
-    c_lib.free_c_string(ptr)
+    ptr = C_LIB.exhaustiveSemiGlobalAlignment(read_seq, ref_seq, len(read_seq), len(ref_seq))
+    alignment_result = cast(ptr, c_char_p).value
+    C_LIB.free_c_string(ptr)
 
     return Alignment(reads, references, seqan_output=alignment_result, read_name=read.name,
                      ref_name=ref_name, rev_comp=rev_comp)
@@ -661,8 +682,7 @@ def get_mean_and_st_dev_identity(alignments, limit_to_safe_alignments):
     '''
     identities = []
     for alignment in alignments:
-        if limit_to_safe_alignments and \
-           (alignment.extension_length or not alignment.is_whole_read()):
+        if limit_to_safe_alignments and alignment.is_whole_read():
             continue
         identities.append(alignment.percent_identity)
 
@@ -975,17 +995,42 @@ class Alignment(object):
 
         # Extend the alignment to reach either the end of the read or reference, whichever comes
         # first.
+        slope = (self.ref_end_pos - self.ref_start_pos) / (self.read_end_pos - self.read_start_pos)
+        intercept = self.ref_start_pos - (slope * self.read_start_pos)
         missing_bases_at_start = min(self.read_start_pos, self.ref_start_pos)
         missing_bases_at_end = min(self.read_end_gap, self.ref_end_gap)
+        old_read_start = self.read_start_pos
+        old_ref_start = self.ref_start_pos
+        old_read_end = self.read_end_pos
+        old_ref_end = self.ref_end_pos
         if missing_bases_at_start:
-            self.ref_start_pos -= missing_bases_at_start
-            self.read_start_pos -= missing_bases_at_start
+            if intercept >= 0:
+                self.read_start_pos = 0
+                self.ref_start_pos = int(round(intercept))
+            else:
+                self.read_start_pos = int(round((self.ref_start_pos - intercept) / slope))
+                self.ref_start_pos = 0
         if missing_bases_at_end:
-            self.ref_end_pos += missing_bases_at_end
-            self.ref_end_gap -= missing_bases_at_end
-            self.read_end_pos += missing_bases_at_end
-            self.read_end_gap -= missing_bases_at_end
-        self.extension_length = missing_bases_at_start + missing_bases_at_end
+            read_end_intercept = (slope * len(self.read.sequence)) + intercept
+            if read_end_intercept <= len(self.full_ref_sequence):
+                self.read_end_pos = len(self.read.sequence)
+                self.ref_end_pos = int(round(read_end_intercept))
+            else:
+                self.read_end_pos = int(round((self.ref_end_pos - intercept) / slope))
+                self.ref_end_pos = len(self.full_ref_sequence)
+        self.read_end_gap = self.read.get_length() - self.read_end_pos
+        self.ref_end_gap = len(self.full_ref_sequence) - self.ref_end_pos
+        self.extension_length = (old_read_start - self.read_start_pos) + \
+                                (old_ref_start - self.ref_start_pos) + \
+                                (self.read_end_pos - old_read_end) + \
+                                (self.ref_end_pos - old_ref_end)
+
+        # The alignment extension should not have made much of a change to the slope.
+        # TEMP CHECKING CODE - CAN BE REMOVED LATER
+        new_slope = (self.ref_end_pos - self.ref_start_pos) / \
+                    (self.read_end_pos - self.read_start_pos)
+        assert new_slope / slope > 0.99
+        assert new_slope / slope < 1.01
 
     def __repr__(self):
         if self.alignment_type == 'PAF':

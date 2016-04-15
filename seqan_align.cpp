@@ -69,23 +69,92 @@ char * semiGlobalAlignmentAroundLine(char * s1, char * s2, int s1Len, int s2Len,
     TSequence sequenceH = s1;
     TSequence sequenceV = s2;
 
-    // TO DO: BUILD SEED CHAIN AROUND LINE
-    // TO DO: BUILD SEED CHAIN AROUND LINE
-    // TO DO: BUILD SEED CHAIN AROUND LINE
-    // TO DO: BUILD SEED CHAIN AROUND LINE
-    // TO DO: BUILD SEED CHAIN AROUND LINE
-    // TO DO: BUILD SEED CHAIN AROUND LINE
-    // TO DO: BUILD SEED CHAIN AROUND LINE
-    // TO DO: BUILD SEED CHAIN AROUND LINE
-    // TO DO: BUILD SEED CHAIN AROUND LINE
-    // TO DO: BUILD SEED CHAIN AROUND LINE
-    // TO DO: BUILD SEED CHAIN AROUND LINE
-    // TO DO: BUILD SEED CHAIN AROUND LINE
-    // TO DO: BUILD SEED CHAIN AROUND LINE
-    // TO DO: BUILD SEED CHAIN AROUND LINE
-    // TO DO: BUILD SEED CHAIN AROUND LINE
-    // TO DO: BUILD SEED CHAIN AROUND LINE
-    // TO DO: BUILD SEED CHAIN AROUND LINE
+    // Convert the slope and intercept into start/end coordinates for the two sequences.
+    int hStart, hEnd, vStart, vEnd;
+    if (intercept >= 0.0)
+    {
+        hStart = 0;
+        vStart = std::round(intercept);
+    }
+    else
+    {
+        hStart = std::round(-intercept / slope);
+        vStart = 0;
+    }
+    double vPosAtEndOfH = (slope * s1Len) + intercept;
+    if (vPosAtEndOfH <= s2Len)
+    {
+        hEnd = s1Len;
+        vEnd = std::round(vPosAtEndOfH);
+    }
+    else
+    {
+        hEnd = std::round((s2Len - intercept) / slope);
+        vEnd = s2Len;
+    }
+    int hDiff = hEnd - hStart;
+    int vDiff = vEnd - vStart;
+
+
+
+    // Now that we have an estimate for the start/end of both sequences, we build a single seed
+    // chain around that line.
+    String<TSeed> seedChain;
+
+    // If the two sequences are the same length, then a single seed will do.
+    if (hDiff == vDiff)
+        appendValue(seedChain, TSeed(hStart, vStart, hEnd, vEnd));
+
+    else if (hDiff > vDiff)
+    {
+        int additionalHSteps = hDiff - vDiff;
+        std::cout << "additionalHSteps: " << additionalHSteps << std::endl;
+        double pieceSize = double(vDiff) / additionalHSteps;
+        std::cout << "pieceSize: " << pieceSize << std::endl;
+        
+        double targetPosition = 0;
+        int distanceSoFar = 0;
+        int hPos = hStart;
+        int vPos = vStart;
+        for (int i = 0; i < additionalHSteps; ++i)
+        {
+            targetPosition += pieceSize;
+            int thisPieceSize = std::round(targetPosition - distanceSoFar);
+            distanceSoFar += thisPieceSize;
+            // std::cout << "thisPieceSize: " << thisPieceSize << "     " << "distanceSoFar: " << distanceSoFar << std::endl;
+            std::cout << "hStart: " << hPos << ", " << "hEnd: " << hPos + thisPieceSize - 1 << ", " << "vStart: " << vPos << ", " << "vEnd: " << vPos + thisPieceSize - 1 << ", "  << std::endl;
+            hPos += thisPieceSize + 1;
+            vPos += thisPieceSize;
+
+            // appendValue(seedChain, TSeed(hPos, vPos, hPos + thisPieceSize - 1, vPos + thisPieceSize - 1));
+
+        }
+
+        std::cout << "hStart: " << hStart << ", " << "hEnd: " << hEnd << ", " << "vStart: " << vStart << ", " << "vEnd: " << vEnd << std::endl;
+
+
+    }
+
+    else // vDiff > hDiff
+    {
+        int additionalVSteps = vDiff - hDiff;
+        std::cout << "additionalVSteps: " << additionalVSteps << std::endl;
+
+        
+        
+    }
+
+
+    // TO DO: BUILD THE SEED CHAIN OUT OF PARTS
+    // TO DO: BUILD THE SEED CHAIN OUT OF PARTS
+    // TO DO: BUILD THE SEED CHAIN OUT OF PARTS
+    // TO DO: BUILD THE SEED CHAIN OUT OF PARTS
+    // TO DO: BUILD THE SEED CHAIN OUT OF PARTS
+    // TO DO: BUILD THE SEED CHAIN OUT OF PARTS
+    // TO DO: BUILD THE SEED CHAIN OUT OF PARTS
+    // TO DO: BUILD THE SEED CHAIN OUT OF PARTS
+    // TO DO: BUILD THE SEED CHAIN OUT OF PARTS
+
 
     Align<Dna5String, ArrayGaps> alignment;
     resize(rows(alignment), 2);
@@ -110,7 +179,7 @@ char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len)
 
     // We will dynamically choose a k-mer size that gives a useful number of common locations.
     int kSize = 10;
-    std::vector<CommonLocation> commonLocations = getCommonLocations(s1Kmers, s2Kmers, kSize);
+    std::vector<CommonLocation> commonLocations = getCommonLocations(s1Str, s2Str, kSize);
 
     // If the starting k-mer gave too many locations, we increase it until we're in the correct
     // range.
@@ -119,7 +188,7 @@ char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len)
         while (true)
         {
             ++kSize;
-            commonLocations = getCommonLocations(s1Kmers, s2Kmers, kSize);
+            commonLocations = getCommonLocations(s1Str, s2Str, kSize);
 
             // If we're reached the target range, that's good...
             if (commonLocations.size() <= targetKCount)
@@ -129,7 +198,7 @@ char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len)
                 if (commonLocations.size() < minimumKCount)
                 {
                     --kSize;
-                    commonLocations = getCommonLocations(s1Kmers, s2Kmers, kSize);
+                    commonLocations = getCommonLocations(s1Str, s2Str, kSize);
                 }
                 break;
             }
@@ -147,7 +216,7 @@ char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len)
             if (kSize < 2)
                 return strdup("Failed: kmer size too small");
 
-            commonLocations = getCommonLocations(s1Kmers, s2Kmers, kSize);
+            commonLocations = getCommonLocations(s1Str, s2Str, kSize);
             if (commonLocations.size() >= minimumKCount)
                 break;
         }
@@ -209,7 +278,7 @@ char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len)
         double slope, intercept;
         getSlopeAndIntercept(hStart, hEnd, vStart, vEnd, &slope, &intercept);
         if (slope == -1.0 && intercept == -1.0)
-            return strdup("Failed: bad slope and intercept");
+            return strdup("Failed: single seed bad slope and intercept");
         return getSlopeAndInterceptString(slope, intercept);
     }
 
@@ -225,29 +294,33 @@ char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len)
     for (int i = 0; i < randomSampleCount; ++i)
     {
         int i1, i2;
-        i1 = random_integer = uni(rng);
+        i1 = uni(rng);
         do
         {
-            i2 = random_integer = uni(rng);
+            i2 = uni(rng);
         } while (i1 == i2);
         if (i1 > i2)
             std::swap(i1, i2);
 
         int hStart = beginPositionH(seedChain[i1]);
-        int hEnd = beginPositionH(seedChain[i1]);
-        int vStart = beginPositionV(seedChain[i2]);
+        int vStart = beginPositionV(seedChain[i1]);
+        int hEnd = beginPositionH(seedChain[i2]);
         int vEnd = beginPositionV(seedChain[i2]);
         double slope, intercept;
         getSlopeAndIntercept(hStart, hEnd, vStart, vEnd, &slope, &intercept);
         if (slope == -1.0 && intercept == -1.0)
+        {
+            std::cout << seedsInChain << "      " << i1 << ", " << i2 << std::endl;
+            std::cout << hStart << ", " << hEnd << "    " << vStart << ", " << vEnd << std::endl;
             return strdup("Failed: bad slope and intercept");
+        }
         slopes.push_back(slope);
         intercepts.push_back(intercept);
     }
 
     double medianSlope = getMedian(&slopes);
     double medianIntercept = getMedian(&intercepts);
-    return getSlopeAndInterceptString(slope, intercept);
+    return getSlopeAndInterceptString(medianSlope, medianIntercept);
 }
 
 // This function does the full semi-global alignment using the entirety of both sequences. It will
@@ -586,6 +659,5 @@ double getMedian(std::vector<double> * v)
         return (*v)[size / 2];
 
 }
-
 
 }

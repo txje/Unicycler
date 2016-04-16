@@ -33,7 +33,8 @@ enum CigarType {MATCH, INSERTION, DELETION, CLIP, NOTHING};
 // These are the functions that will be called by the Python script.
 char * semiGlobalAlignmentAroundLine(char * s1, char * s2, int s1Len, int s2Len, double slope,
                                      double intercept, int bandSize, int debugOutput);
-char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len, int debugOutput);
+char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len, double expectedSlope,
+                         int debugOutput);
 char * exhaustiveSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len);
 void free_c_string(char * p);
 
@@ -167,7 +168,8 @@ char * semiGlobalAlignmentAroundLine(char * s1, char * s2, int s1Len, int s2Len,
     return turnAlignmentIntoDescriptiveString(&alignment, startTime);
 }
 
-char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len, int debugOutput)
+char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len, double expectedSlope,
+                         int debugOutput)
 {
     std::string s1Str(s1);
     std::string s2Str(s2);
@@ -659,7 +661,6 @@ double getMedian(std::vector<double> * v)
         return ((*v)[size / 2 - 1] + (*v)[size / 2]) / 2;
     else 
         return (*v)[size / 2];
-
 }
 
 }

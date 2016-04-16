@@ -45,29 +45,45 @@ import argparse
 import string
 from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p
 
+DEBUG_LEVEL = 0
+
 C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_align.so'))
 
 '''
 This function conducts a full semi-global alignment between two sequences. It will be slow
 (possibly very slow for long sequences) but will always give an optimal result.
 '''
-C_LIB.exhaustiveSemiGlobalAlignment.argtypes = [c_char_p, c_char_p, c_int, c_int]
-C_LIB.exhaustiveSemiGlobalAlignment.restype = c_void_p
+C_LIB.exhaustiveSemiGlobalAlignment.argtypes = [c_char_p, # Sequence 1
+                                                c_char_p, # Sequence 2
+                                                c_int,    # Sequence 1 length
+                                                c_int]    # Sequence 2 length
+C_LIB.exhaustiveSemiGlobalAlignment.restype = c_void_p    # String describing alignment
 
 '''
 This function conducts a semi-global alignment surrounding the given line. Since the search is
 limited to a narrow band it is much more efficient than the exhaustive search.
 '''
-C_LIB.semiGlobalAlignmentAroundLine.argtypes = [c_char_p, c_char_p, c_int, c_int, c_double,
-                                                c_double, c_int, c_int]
-C_LIB.semiGlobalAlignmentAroundLine.restype = c_void_p
+C_LIB.semiGlobalAlignmentAroundLine.argtypes = [c_char_p, # Sequence 1
+                                                c_char_p, # Sequence 2
+                                                c_int,    # Sequence 1 length
+                                                c_int,    # Sequence 2 length
+                                                c_double, # Slope
+                                                c_double, # Intercept
+                                                c_int,    # Band size
+                                                c_int]    # Debug level
+C_LIB.semiGlobalAlignmentAroundLine.restype = c_void_p    # String describing alignment
 
 '''
 This function looks for the most likely line representing the alignment. It is used to get a
 line to be given to C_LIB.semiGlobalAlignmentAroundLine.
 '''
-C_LIB.findAlignmentLine.argtypes = [c_char_p, c_char_p, c_int, c_int, c_int]
-C_LIB.findAlignmentLine.restype = c_void_p
+C_LIB.findAlignmentLine.argtypes = [c_char_p, # Sequence 1
+                                    c_char_p, # Sequence 2
+                                    c_int,    # Sequence 1 length
+                                    c_int,    # Sequence 2 length
+                                    c_double, # Expected slope
+                                    c_int]    # Debug output
+C_LIB.findAlignmentLine.restype = c_void_p    # String describing the found line(s)
 
 '''
 This function cleans up the heap memory for the C strings returned by the other C functions. It
@@ -140,18 +156,26 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
     seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, paf_raw, graphmap_path, temp_dir,
                                   print_summary, threads)
     paf_alignments = load_paf_alignments(paf_raw, reads, references)
+
+    # Determine the median length ratio between reference and read.
+    ref_to_read_ratios = [x.get_ref_to_read_ratio() for x in paf_alignments]
+    median_ref_to_read_ratio = get_median(ref_to_read_ratios)
+    median_read_to_ref_ratio = 1.0 / median_ref_to_read_ratio
+
     if print_summary:
         max_v = max(100, len(paf_alignments))
         print()
         print('Alignment summary')
         print('-----------------')
-        print('Total raw GraphMap alignments:      ', int_to_str(len(paf_alignments), max_v))
+        print('Total raw GraphMap alignments:', int_to_str(len(paf_alignments)))
+        print('Median read length / reference length:', '%.3f' % median_read_to_ref_ratio)
 
     # Now refine alignments using Seqan.
     alignments = []
     for alignment in paf_alignments:
         if seqan_all or not alignment.is_whole_read():
-            alignments.append(seqan_from_paf_alignment(alignment, reads, references))
+            alignments.append(seqan_from_paf_alignment(alignment, reads, references,
+                                                       median_ref_to_read_ratio))
         else:
             alignments.append(alignment)
 
@@ -395,6 +419,7 @@ def load_paf_alignments(paf_filename, reads, references):
     '''
     paf_alignments = []
     paf_file = open(paf_filename, 'r')
+
     for line in paf_file:
         line = line.strip()
         if line:
@@ -419,7 +444,7 @@ def load_paf_alignments(paf_filename, reads, references):
 #             alignments.append(reverse_alignment)
 
 def make_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp,
-                         try_exhaustive):
+                         expected_ref_to_read_ratio, try_exhaustive=False):
     '''
     Runs an alignment using Seqan.
     '''
@@ -428,7 +453,7 @@ def make_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp,
     longest_acceptable_indel_run = 6
 
     alignment = run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read,
-                                               rev_comp, band_size)
+                                               rev_comp, band_size, expected_ref_to_read_ratio)
     print('FIRST TRY:', alignment) # TEMP
     if alignment: # TEMP
         print('  longest indel run:', alignment.get_longest_indel_run()) # TEMP
@@ -453,20 +478,20 @@ def make_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp,
         # return what we've got or do the exhaustive alignment.
         if band_size > max_band_size:
             if try_exhaustive:
-                alignment = run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq, read,
-                                                      rev_comp)
+                alignment = run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq,
+                                                          read, rev_comp)
                 print('FINAL EXHAUSTIVE ALIGNMENT:', alignment) # TEMP
                 print('  longest indel run:', alignment.get_longest_indel_run()) # TEMP
             return alignment
 
         alignment = run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read,
-                                                   rev_comp, band_size)
+                                                   rev_comp, band_size, expected_ref_to_read_ratio)
         print('NEXT TRY:', alignment) # TEMP
         if alignment: # TEMP
             print('  longest indel run:', alignment.get_longest_indel_run()) # TEMP
 
 def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp,
-                                   band_size):
+                                   band_size, expected_ref_to_read_ratio):
     '''
     Runs a single alignment using Seqan.
     Since this does a banded alignment, it is efficient but may or may not be successful. Returns
@@ -477,7 +502,8 @@ def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, r
     else:
         read_seq = read.sequence
 
-    ptr = C_LIB.findAlignmentLine(read_seq, ref_seq, len(read_seq), len(ref_seq), 0)
+    ptr = C_LIB.findAlignmentLine(read_seq, ref_seq, len(read_seq), len(ref_seq),
+                                  expected_ref_to_read_ratio, DEBUG_LEVEL)
     line_result = cast(ptr, c_char_p).value
     C_LIB.free_c_string(ptr)
     if line_result.startswith('Fail'):
@@ -486,7 +512,7 @@ def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, r
     slope, intercept = [float(x) for x in line_result.split(',')]
 
     ptr = C_LIB.semiGlobalAlignmentAroundLine(read_seq, ref_seq, len(read_seq), len(ref_seq),
-                                              slope, intercept, band_size, 0)
+                                              slope, intercept, band_size, DEBUG_LEVEL)
     alignment_result = cast(ptr, c_char_p).value
     
     C_LIB.free_c_string(ptr)
@@ -782,7 +808,7 @@ def complement_base(base):
     return reverse[forward.find(base)]
 
 
-def seqan_from_paf_alignment(paf_alignment, reads, references):
+def seqan_from_paf_alignment(paf_alignment, reads, references, expected_ref_to_read_ratio):
     '''
     This function is used on PAF alignments to turn them into Seqan alignments. This takes them
     from basic alignments with only approximate start/end positions into full alignments.
@@ -792,7 +818,22 @@ def seqan_from_paf_alignment(paf_alignment, reads, references):
     print('PAF BEFORE:', paf_alignment) # TEMP
     return make_seqan_alignment(reads, references, paf_alignment.ref_name,
                                 paf_alignment.full_ref_sequence, paf_alignment.read,
-                                paf_alignment.rev_comp, True)
+                                paf_alignment.rev_comp, expected_ref_to_read_ratio,
+                                try_exhaustive=False)
+
+def get_median(num_list):
+    '''
+    Returns the median of the given list of numbers.
+    '''
+    count = len(num_list)
+    if count == 0:
+        return 0
+    sorted_list = sorted(num_list)
+    if count % 2 == 0:
+        return (sorted_list[count // 2 - 1] + sorted_list[count // 2]) / 2.0
+    else:
+        return sorted_list[count // 2]
+
 
 
 
@@ -1050,11 +1091,11 @@ class Alignment(object):
             return_str += str(self.milliseconds) + ' ms'
         return return_str
 
-    def get_read_to_ref_ratio(self):
+    def get_ref_to_read_ratio(self):
         '''
-        Returns the length ratio between the aligned parts of the read and reference.
+        Returns the length ratio between the aligned parts of the reference and read.
         '''
-        return len(self.aligned_read_seq) / len(self.aligned_ref_seq)
+        return (self.ref_end_pos - self.ref_start_pos) / (self.read_end_pos - self.read_start_pos)
 
     def read_start_end_positive_strand(self):
         '''

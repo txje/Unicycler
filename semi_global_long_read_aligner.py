@@ -45,7 +45,7 @@ import argparse
 import string
 from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p
 
-DEBUG_LEVEL = 0
+DEBUG_LEVEL = 1
 
 C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_align.so'))
 

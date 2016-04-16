@@ -174,12 +174,11 @@ char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len, double expe
     std::string s1Str(s1);
     std::string s2Str(s2);
 
-    int targetKCount = std::min(s1Len, s2Len);
+    // We will dynamically choose a k-mer size that gives a useful density of common locations.
+    int targetKCount = double(s1Len) * double(s2Len) * 0.000002;
     if (targetKCount < 10)
         return strdup("Failed: sequence too short");
     int minimumKCount = targetKCount / 4;
-
-    // We will dynamically choose a k-mer size that gives a useful number of common locations.
     int kSize = 10;
     std::vector<CommonLocation> commonLocations = getCommonLocations(s1Str, s2Str, kSize);
 

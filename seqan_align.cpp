@@ -11,6 +11,7 @@
 #include <vector>
 #include <map>
 #include <algorithm>
+#include <cmath>
 
 using namespace seqan;
 using namespace std::chrono;
@@ -29,6 +30,21 @@ typedef std::map<std::string, std::tuple<int, int>> KmerDict;
 typedef std::tuple<int, int, int, int> CommonLocation;
 
 enum CigarType {MATCH, INSERTION, DELETION, CLIP, NOTHING};
+
+class CommonKmer
+{
+public:
+    CommonKmer(std::string sequence, int hPosition, int vPosition, double angle);
+    static double getRotationAngle(double slope) {return -atan(slope);}
+
+    std::string m_sequence;
+    int m_hPosition;
+    int m_vPosition;
+    double m_rotatedHPosition;
+    double m_rotatedVPosition;
+    double m_score;
+};
+
 
 // These are the functions that will be called by the Python script.
 char * semiGlobalAlignmentAroundLine(char * s1, char * s2, int s1Len, int s2Len, double slope,
@@ -175,7 +191,7 @@ char * findAlignmentLine(char * s1, char * s2, int s1Len, int s2Len, double expe
     std::string s2Str(s2);
 
     // We will dynamically choose a k-mer size that gives a useful density of common locations.
-    int targetKCount = double(s1Len) * double(s2Len) * 0.000005;
+    int targetKCount = double(s1Len) * double(s2Len) * 0.000005; // MIGHT NEED TO TUNE THIS CONSTANT
     if (targetKCount < 10)
         return strdup("Failed: sequence too short");
     int minimumKCount = targetKCount / 4;
@@ -662,6 +678,21 @@ double getMedian(std::vector<double> * v)
         return ((*v)[size / 2 - 1] + (*v)[size / 2]) / 2;
     else 
         return (*v)[size / 2];
+}
+
+
+// Creates the CommonKmer object using the position in the two sequences.
+// It then rotates the point relative to the origin by the given angle (in radians).
+CommonKmer::CommonKmer(std::string sequence, int hPosition, int vPosition, double angle) :
+    m_sequence(sequence),
+    m_hPosition(hPosition),
+    m_vPosition(vPosition),
+    m_score(0.0)
+{
+    double s = sin(angle);
+    double c = cos(angle);
+    m_rotatedHPosition = (m_hPosition * c) - (m_vPosition * s);
+    m_rotatedVPosition = (m_hPosition * s) + (m_vPosition * c);
 }
 
 }

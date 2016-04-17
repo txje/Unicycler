@@ -25,9 +25,6 @@ typedef Seed<Simple> TSeed;
 typedef SeedSet<TSeed> TSeedSet;
 typedef Row<TAlign>::Type TRow;
 typedef Iterator<TRow>::Type TRowIterator;
-// typedef std::tuple<std::string, int, int> Kmer;
-// typedef std::map<std::string, std::tuple<int, int>> KmerDict;
-// typedef std::tuple<int, int, int, int> CommonLocation;
 
 enum CigarType {MATCH, INSERTION, DELETION, CLIP, NOTHING};
 
@@ -36,6 +33,7 @@ class CommonKmer
 public:
     CommonKmer(std::string sequence, int hPosition, int vPosition, double angle);
     static double getRotationAngle(double slope) {return -atan(slope);}
+    bool operator<(const CommonKmer& other);
 
     std::string m_sequence;
     int m_hPosition;
@@ -230,6 +228,9 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
                                                          debugOutput);
     if (commonKmers.size() < 2)
         return strdup("Failed: too few common kmers");
+
+
+    std::sort(commonKmers.begin(), commonKmers.end());
 
     if (debugOutput > 1)
     {
@@ -674,6 +675,11 @@ CommonKmer::CommonKmer(std::string sequence, int hPosition, int vPosition, doubl
     double c = cos(angle);
     m_rotatedHPosition = (m_hPosition * c) - (m_vPosition * s);
     m_rotatedVPosition = (m_hPosition * s) + (m_vPosition * c);
+}
+
+bool CommonKmer::operator<(const CommonKmer& other)
+{
+    return this->m_rotatedVPosition < other.m_rotatedVPosition;
 }
 
 

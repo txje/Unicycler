@@ -45,7 +45,7 @@ import argparse
 import string
 from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p
 
-DEBUG_LEVEL = 1
+DEBUG_LEVEL = 2
 
 C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_align.so'))
 
@@ -77,13 +77,13 @@ C_LIB.semiGlobalAlignmentAroundLine.restype = c_void_p    # String describing al
 This function looks for the most likely line representing the alignment. It is used to get a
 line to be given to C_LIB.semiGlobalAlignmentAroundLine.
 '''
-C_LIB.findAlignmentLine.argtypes = [c_char_p, # Sequence 1
-                                    c_char_p, # Sequence 2
-                                    c_int,    # Sequence 1 length
-                                    c_int,    # Sequence 2 length
-                                    c_double, # Expected slope
-                                    c_int]    # Debug output
-C_LIB.findAlignmentLine.restype = c_void_p    # String describing the found line(s)
+C_LIB.findAlignmentLines.argtypes = [c_char_p, # Sequence 1
+                                     c_char_p, # Sequence 2
+                                     c_int,    # Sequence 1 length
+                                     c_int,    # Sequence 2 length
+                                     c_double, # Expected slope
+                                     c_int]    # Debug output
+C_LIB.findAlignmentLines.restype = c_void_p    # String describing the found line(s)
 
 '''
 This function cleans up the heap memory for the C strings returned by the other C functions. It
@@ -502,7 +502,7 @@ def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, r
     else:
         read_seq = read.sequence
 
-    ptr = C_LIB.findAlignmentLine(read_seq, ref_seq, len(read_seq), len(ref_seq),
+    ptr = C_LIB.findAlignmentLines(read_seq, ref_seq, len(read_seq), len(ref_seq),
                                   expected_ref_to_read_ratio, DEBUG_LEVEL)
     line_result = cast(ptr, c_char_p).value
     C_LIB.free_c_string(ptr)

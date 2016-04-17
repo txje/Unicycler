@@ -12,8 +12,8 @@ C_LIB.semiGlobalAlignmentAroundLine.restype = c_void_p
 C_LIB.exhaustiveSemiGlobalAlignment.argtypes = [c_char_p, c_char_p, c_int, c_int]
 C_LIB.exhaustiveSemiGlobalAlignment.restype = c_void_p
 
-C_LIB.findAlignmentLine.argtypes = [c_char_p, c_char_p, c_int, c_int, c_int]
-C_LIB.findAlignmentLine.restype = c_void_p
+C_LIB.findAlignmentLines.argtypes = [c_char_p, c_char_p, c_int, c_int, c_int]
+C_LIB.findAlignmentLines.restype = c_void_p
 
 C_LIB.free_c_string.argtypes = [c_void_p]
 C_LIB.free_c_string.restype = None
@@ -31,7 +31,7 @@ def main():
     read = S1_75_75_rev_comp
     ref = node_11
 
-    ptr = C_LIB.findAlignmentLine(read, ref, len(read), len(ref), 2)
+    ptr = C_LIB.findAlignmentLines(read, ref, len(read), len(ref), 2)
     line_result = cast(ptr, c_char_p).value
     C_LIB.free_c_string(ptr)
     if line_result.startswith('Fail'):

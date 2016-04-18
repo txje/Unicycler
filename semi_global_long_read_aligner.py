@@ -45,7 +45,7 @@ import argparse
 import string
 from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p
 
-DEBUG_LEVEL = 2
+DEBUG_LEVEL = 0
 
 C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_align.so'))
 
@@ -174,8 +174,8 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
     alignments = []
     for alignment in paf_alignments:
         if seqan_all or not alignment.is_whole_read():
-            alignments.append(seqan_from_paf_alignment(alignment, reads, references,
-                                                       median_ref_to_read_ratio))
+            alignments += seqan_from_paf_alignment(alignment, reads, references,
+                                                   median_ref_to_read_ratio)
         else:
             alignments.append(alignment)
 
@@ -443,17 +443,63 @@ def load_paf_alignments(paf_filename, reads, references):
 #         if reverse_alignment:
 #             alignments.append(reverse_alignment)
 
-def make_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp,
-                         expected_ref_to_read_ratio, try_exhaustive=False):
+def make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read, rev_comp,
+                                   expected_ref_to_read_ratio, try_exhaustive=False):
     '''
-    Runs an alignment using Seqan.
+    Runs an alignment using Seqan between one read and one reference.
+    Returns a list of Alignment objects: empty list means it did not succeed, a list of one means
+    it got one alignment (common) and a list of more than one means it got multiple alignments (not
+    common but possible).
     '''
-    band_size = 10
-    max_band_size = 80
-    longest_acceptable_indel_run = 6
+    if rev_comp:
+        read_seq = reverse_complement(read.sequence)
+    else:
+        read_seq = read.sequence
+
+    # First get the alignment line(s).
+    ptr = C_LIB.findAlignmentLines(read_seq, ref_seq, len(read_seq), len(ref_seq),
+                                   expected_ref_to_read_ratio, DEBUG_LEVEL)
+    line_result = cast(ptr, c_char_p).value
+    C_LIB.free_c_string(ptr)
+
+    # If no alignment lines were found, then our only recourse is an exhaustive alignment.
+    if line_result.startswith('Fail'):
+        if try_exhaustive:
+            alignment = run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq, read,
+                                                      rev_comp)
+            print('NO LINES FOUND, CONDUCTING EXHAUSTIVE ALIGNMENT') # TEMP
+            print('EXHAUSTIVE ALIGNMENT:', alignment) # TEMP
+            print('  longest indel run:', alignment.get_longest_indel_run()) # TEMP
+            return [alignment]
+        else:
+            return []
+
+    # If the code got here, then we have at least one line to use in a banded alignment. Conduct
+    # an alignment for each line.
+    alignments = []
+    slopes_and_intercepts = line_result.split(';')
+    for slope_and_intercept in slopes_and_intercepts:
+        slope, intercept = [float(x) for x in slope_and_intercept.split(',')]
+        alignment = make_seqan_alignment_one_line(reads, references, ref_name, ref_seq, read,
+                                                  rev_comp, slope, intercept, try_exhaustive)
+        if alignment:
+            alignments.append(alignment)
+    return alignments
+
+def make_seqan_alignment_one_line(reads, references, ref_name, ref_seq, read, rev_comp,
+                                  slope, intercept, try_exhaustive):
+    '''
+    Runs an alignment using Seqan between one read and one reference along one line.
+    It starts with a smallish band size (fast) and works up to larger ones if it sees an long indel
+    run in the alignment (indicative of a problem).
+    It returns either an Alignment object or None, depending on whether or not it was successful.
+    '''
+    band_size = 40 # TO DO: make this a parameter?
+    max_band_size = 160 # TO DO: make this a parameter?
+    longest_acceptable_indel_run = 6 # TO DO: make this a parameter?
 
     alignment = run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read,
-                                               rev_comp, band_size, expected_ref_to_read_ratio)
+                                               rev_comp, band_size, slope, intercept)
     print('FIRST TRY:', alignment) # TEMP
     if alignment: # TEMP
         print('  longest indel run:', alignment.get_longest_indel_run()) # TEMP
@@ -485,13 +531,13 @@ def make_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp,
             return alignment
 
         alignment = run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read,
-                                                   rev_comp, band_size, expected_ref_to_read_ratio)
+                                                   rev_comp, band_size, slope, intercept)
         print('NEXT TRY:', alignment) # TEMP
         if alignment: # TEMP
             print('  longest indel run:', alignment.get_longest_indel_run()) # TEMP
 
 def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp,
-                                   band_size, expected_ref_to_read_ratio):
+                                   band_size, slope, intercept):
     '''
     Runs a single alignment using Seqan.
     Since this does a banded alignment, it is efficient but may or may not be successful. Returns
@@ -501,20 +547,9 @@ def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, r
         read_seq = reverse_complement(read.sequence)
     else:
         read_seq = read.sequence
-
-    ptr = C_LIB.findAlignmentLines(read_seq, ref_seq, len(read_seq), len(ref_seq),
-                                  expected_ref_to_read_ratio, DEBUG_LEVEL)
-    line_result = cast(ptr, c_char_p).value
-    C_LIB.free_c_string(ptr)
-    if line_result.startswith('Fail'):
-        print(line_result)
-        return None
-    slope, intercept = [float(x) for x in line_result.split(',')]
-
     ptr = C_LIB.semiGlobalAlignmentAroundLine(read_seq, ref_seq, len(read_seq), len(ref_seq),
                                               slope, intercept, band_size, DEBUG_LEVEL)
-    alignment_result = cast(ptr, c_char_p).value
-    
+    alignment_result = cast(ptr, c_char_p).value    
     C_LIB.free_c_string(ptr)
 
     if alignment_result.startswith('Failed'):
@@ -816,10 +851,10 @@ def seqan_from_paf_alignment(paf_alignment, reads, references, expected_ref_to_r
     assert paf_alignment.alignment_type == 'PAF'
     print()
     print('PAF BEFORE:', paf_alignment) # TEMP
-    return make_seqan_alignment(reads, references, paf_alignment.ref_name,
-                                paf_alignment.full_ref_sequence, paf_alignment.read,
-                                paf_alignment.rev_comp, expected_ref_to_read_ratio,
-                                try_exhaustive=False)
+    return make_seqan_alignment_all_lines(reads, references, paf_alignment.ref_name,
+                                          paf_alignment.full_ref_sequence, paf_alignment.read,
+                                          paf_alignment.rev_comp, expected_ref_to_read_ratio,
+                                          try_exhaustive=False)
 
 def get_median(num_list):
     '''

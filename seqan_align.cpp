@@ -69,11 +69,10 @@ void getSeedChainSlopeAndIntercept(String<TSeed> * seedChain, int firstI, int la
                                    double * slope, double * intercept);
 void getSlopeAndIntercept(int hStart, int hEnd, int vStart, int vEnd,
                                    double * slope, double * intercept);
-char * getSlopeAndInterceptString(double slope, double intercept);
 double getMedian(std::vector<double> * v);
 void printKmerSize(int kmerSize, int locationCount);
 double getLineLength(double x, double y, double slope, double xSize, double ySize);
-
+void linearRegression(std::vector<CommonKmer> & pts, double * slope, double * intercept);
 
 
 
@@ -307,28 +306,21 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
     if (debugOutput > 0)
         std::cout << std::endl << "LINES FOUND: " << lineGroups.size() << std::endl;
 
-    
+    if (lineGroups.size() == 0)
+        return strdup("Failed: no lines found");
 
-    // TO DO
-    // TO DO
-    // TO DO
-    // TO DO
-    // TO DO
-    // TO DO
-    // TO DO
-    // TO DO
-    // TO DO
-    // TO DO
-    // TO DO
-    // TO DO
-    // TO DO
-    // TO DO
-    // TO DO
-
-
-
-
-    return getSlopeAndInterceptString(1.23, 4.56); //TEMP
+    // Perform a simple least-squares linear regression on each line group and add the
+    // slope/intercept to the returned string.
+    std::string linesString;
+    for (int i = 0; i < lineGroups.size(); ++i)
+    {
+        if (i > 0)
+            linesString += ";";
+        double slope, intercept;
+        linearRegression(lineGroups[i], &slope, &intercept);
+        linesString += std::to_string(slope) + "," + std::to_string(intercept);
+    }
+    return cppStringToCString(linesString);
 }
 
 
@@ -598,13 +590,6 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
     return cppStringToCString(finalString);
 }
 
-char * getSlopeAndInterceptString(double slope, double intercept)
-{
-    std::string slopeAndInterceptString = std::to_string(slope) + "," + std::to_string(intercept);
-    return cppStringToCString(slopeAndInterceptString);
-
-}
-
 // Frees dynamically allocated memory for a c string. Called by Python after the string has been
 // received.
 void free_c_string(char * p)
@@ -769,6 +754,27 @@ double getLineLength(double x, double y, double slope, double xSize, double ySiz
     double xLength = xEnd - xStart;
     double yLength = yEnd - yStart;
     return sqrt((xLength * xLength) + (yLength * yLength));
+}
+
+
+// Adapted from:
+// http://stackoverflow.com/questions/11449617/how-to-fit-the-2d-scatter-data-with-a-line-with-c
+void linearRegression(std::vector<CommonKmer> & pts, double * slope, double * intercept)
+{
+    int n = pts.size();
+    double sumH = 0.0, sumV = 0.0, sumHV = 0.0, sumHH = 0.0;
+    for (int i = 0; i < n; ++i)
+    {
+        sumH += pts[i].m_hPosition;
+        sumV += pts[i].m_vPosition;
+        sumHV += pts[i].m_hPosition * pts[i].m_vPosition;
+        sumHH += pts[i].m_hPosition * pts[i].m_hPosition;
+    }
+    double hMean = sumH / n;
+    double vMean = sumV / n;
+    double denominator = sumHH - (sumH * hMean);
+    *slope = (sumHV - sumH * vMean) / denominator;
+    *intercept = vMean - (*slope * hMean);
 }
 
 }

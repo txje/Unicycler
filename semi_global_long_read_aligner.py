@@ -545,19 +545,22 @@ def seqan_alignment_one_read_all_refs(reads, references, read, expected_ref_to_r
 
     for ref_name, ref_seq in references.iteritems():
         if verbosityAtStart > 2:
-            print('Reference:', ref_name)
+            print('Reference:', ref_name + '+')
         alignments += make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read,
                                                      False, expected_ref_to_read_ratio,
                                                      try_exhaustive)
+        if verbosityAtStart > 2:
+            print('Reference:', ref_name + '-')
         alignments += make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read,
                                                      True, expected_ref_to_read_ratio,
                                                      try_exhaustive)
     if verbosityAtStart > 1:
         if not alignments:
-            print('No alignments found')
+            print('No alignments found for read ' + read.name)
         else:
-            for i, alignment in enumerate(alignments):
-                print('Alignment ' + str(i+1) +':', alignment)
+            print('Alignments found for read ' + read.name + ':')
+            for alignment in alignments:
+                print(' ', alignment)
         print()
 
     # Restore the verbosity if it was suppressed.
@@ -591,11 +594,11 @@ def make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read, r
             alignment = run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq, read,
                                                       rev_comp)
             if VERBOSITY > 1:
-                print('No alignment lines found, conducting an exhaustive alignment\n')
+                print('  No alignment lines found, conducting an exhaustive alignment')
             return [alignment]
         else:
             if VERBOSITY > 1:
-                print('Seqan alignment failed: no alignment lines found\n')
+                print('  No alignment lines found')
             return []
 
     # If the code got here, then we have at least one line to use in a banded alignment. Conduct
@@ -608,8 +611,6 @@ def make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read, r
                                                   rev_comp, slope, intercept, try_exhaustive)
         if alignment:
             alignments.append(alignment)
-    if VERBOSITY > 1:
-        print()
     return alignments
 
 def make_seqan_alignment_one_line(reads, references, ref_name, ref_seq, read, rev_comp,
@@ -952,10 +953,13 @@ def seqan_from_paf_alignment(paf_alignment, reads, references, expected_ref_to_r
     assert paf_alignment.alignment_type == 'PAF'
     if VERBOSITY > 1:
         print('PAF alignment before Seqan:', paf_alignment)
-    return make_seqan_alignment_all_lines(reads, references, paf_alignment.ref_name,
-                                          paf_alignment.full_ref_sequence, paf_alignment.read,
-                                          paf_alignment.rev_comp, expected_ref_to_read_ratio,
-                                          try_exhaustive=False)
+    alignments = make_seqan_alignment_all_lines(reads, references, paf_alignment.ref_name,
+                                                paf_alignment.full_ref_sequence, paf_alignment.read,
+                                                paf_alignment.rev_comp, expected_ref_to_read_ratio,
+                                                try_exhaustive=False)
+    if VERBOSITY > 1:
+        print()
+    return alignments
 
 def get_median(num_list):
     '''

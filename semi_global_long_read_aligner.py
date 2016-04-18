@@ -1049,7 +1049,7 @@ class Alignment(object):
                 self.read_start_pos = 0
                 self.ref_start_pos = int(round(intercept))
             else:
-                self.read_start_pos = int(round((self.ref_start_pos - intercept) / slope))
+                self.read_start_pos = int(round(-intercept / slope))
                 self.ref_start_pos = 0
         if missing_bases_at_end:
             read_end_intercept = (slope * len(self.read.sequence)) + intercept
@@ -1057,7 +1057,7 @@ class Alignment(object):
                 self.read_end_pos = len(self.read.sequence)
                 self.ref_end_pos = int(round(read_end_intercept))
             else:
-                self.read_end_pos = int(round((self.ref_end_pos - intercept) / slope))
+                self.read_end_pos = int(round((len(self.full_ref_sequence) - intercept) / slope))
                 self.ref_end_pos = len(self.full_ref_sequence)
         self.read_end_gap = self.read.get_length() - self.read_end_pos
         self.ref_end_gap = len(self.full_ref_sequence) - self.ref_end_pos
@@ -1070,8 +1070,8 @@ class Alignment(object):
         # TEMP CHECKING CODE - CAN BE REMOVED LATER
         new_slope = (self.ref_end_pos - self.ref_start_pos) / \
                     (self.read_end_pos - self.read_start_pos)
-        assert new_slope / slope > 0.99
-        assert new_slope / slope < 1.01
+        assert new_slope / slope > 0.995
+        assert new_slope / slope < 1.005
 
     def __repr__(self):
         if self.alignment_type == 'PAF':

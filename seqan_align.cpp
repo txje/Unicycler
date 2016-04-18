@@ -283,14 +283,13 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
             lineGroups.back().push_back(commonKmers[i]);
         }
         else // score is below threshold
-        {
-            //If the previous group had a single point, remove it as lines need at least two
-            // points.
-            if (lineInProgress && lineGroups.back().size() == 1)
-                lineGroups.pop_back();
             lineInProgress = false;
-        }
     }
+
+    // Remove any line groups with fewer than two points.
+    lineGroups.erase(std::remove_if(lineGroups.begin(), lineGroups.end(), 
+                                    [](std::vector<CommonKmer> i) {return i.size() < 2;}),
+                     lineGroups.end());
 
     if (lineGroups.size() == 0)
         return strdup("Failed: no lines found");

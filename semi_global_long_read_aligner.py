@@ -45,7 +45,15 @@ import argparse
 import string
 from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p
 
-DEBUG_LEVEL = 0
+'''
+VERBOSITY controls how much the script prints to the screen.
+0 = nothing is printed
+1 = a relatively simple output is printed
+2 = a more thorough output is printed, including details on each Seqan alignment
+3 = even more output is printed, including stuff from the C++ code
+4 = tons of stuff is printed, including all k-mer positions in each Seqan alignment
+'''
+VERBOSITY = 0
 
 C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_align.so'))
 
@@ -104,8 +112,9 @@ def main():
         os.makedirs(args.temp_dir)
     long_reads = semi_global_align_long_reads(args.ref, args.reads, args.paf_raw,
                                               args.sam, args.temp_dir, args.path,
-                                              True, args.threads, True)
-    write_reference_errors_to_table(args.ref, long_reads, args.table, True)
+                                              args.threads, True, args.verbosity,
+                                              args.exhaustive)
+    write_reference_errors_to_table(args.ref, long_reads, args.table)
     if not temp_dir_exist_at_start:
         os.rmdir(args.temp_dir)
     sys.exit(0)
@@ -132,10 +141,15 @@ def get_arguments():
                         help='Path to the GraphMap executable')
     parser.add_argument('--threads', type=int, required=False, default=8,
                         help='Number of threads used by GraphMap')
+    parser.add_argument('--verbosity', type=int, required=False, default=1,
+                        help='Level of stdout information (0 to 4)')
+    parser.add_argument('--exhaustive', action='store_true', required=False,
+                        help='Use exhaustive semi-global alignment (slow) when attempting '
+                             'realignment of reads')
     return parser.parse_args()
 
 def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filtered, temp_dir,
-                                 graphmap_path, print_summary, threads, seqan_all):
+                                 graphmap_path, threads, seqan_all, verbosity, exhaustive):
     '''
     This function does the primary work of this module: aligning long reads to references in an
     end-gap-free, semi-global manner. It returns a list of LongRead objects which contain their
@@ -147,6 +161,11 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
     reads = load_long_reads(long_reads_fastq)
     references = {get_nice_header(header): seq for header, seq in load_fasta(ref_fasta)}
 
+    global VERBOSITY
+    VERBOSITY = verbosity
+    if VERBOSITY > 0:
+        print()
+
     if not paf_raw:
         temp_paf_raw = True
         paf_raw = os.path.join(temp_dir, 'alignments.paf')
@@ -154,7 +173,7 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
         temp_paf_raw = False
 
     seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, paf_raw, graphmap_path, temp_dir,
-                                  print_summary, threads)
+                                  threads)
     paf_alignments = load_paf_alignments(paf_raw, reads, references)
 
     # Determine the median length ratio between reference and read.
@@ -162,46 +181,100 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
     median_ref_to_read_ratio = get_median(ref_to_read_ratios)
     median_read_to_ref_ratio = 1.0 / median_ref_to_read_ratio
 
-    if print_summary:
+    if VERBOSITY > 0:
         max_v = max(100, len(paf_alignments))
-        print()
         print('Alignment summary')
         print('-----------------')
         print('Total raw GraphMap alignments:', int_to_str(len(paf_alignments)))
         print('Median read length / reference length:', '%.3f' % median_read_to_ref_ratio)
+        print()
 
-    # Now refine alignments using Seqan.
+    if VERBOSITY > 2:
+        print('All raw GraphMap alignments')
+        print('---------------------------')
+        for alignment in paf_alignments:
+            print(alignment)
+        print()
+
+    # We now choose some alignments to use for the identity mean and std dev calculation.
+    # We want long alignments that haven't been extended much (i.e. for which GraphMap already
+    # took the alignment close to the full length).
+    sorted_alignments = sorted(paf_alignments, reverse=True,
+                               key=lambda x: (x.ref_end_pos - x.ref_start_pos) /
+                               (x.extension_length + 1))
+    target_alignment_count = 20 # TO DO: MAKE THIS A PARAMETER?
+    alignments_for_identity = sorted_alignments[:target_alignment_count]
+
+    if VERBOSITY > 2:
+        print('Alignments to be used for identity mean and std dev')
+        print('---------------------------------------------------')
+        for alignment in alignments_for_identity:
+            print(alignment)
+        print()
+
+    # Determine which alignments to refine in Seqan.  If seqan_all is set, we refine them all. If
+    # not, then we only refine overlapping alignments and the alignments that we'll use to get an
+    # identity mean and std dev.
+    if seqan_all:
+        if VERBOSITY > 0:
+            print('Refining all alignments with Seqan')
+            print('----------------------------------')
+        alignments_to_refine = paf_alignments
+        alignments_not_to_refine = []
+    else:
+        alignments_to_refine = [x for x in paf_alignments
+                                if x in alignments_for_identity or not x.is_whole_read()]
+        alignments_not_to_refine = [x for x in paf_alignments if x not in alignments_to_refine]
+        if VERBOSITY > 0:
+            count_str = str(len(alignments_to_refine))
+            print('Refining ' + count_str + ' alignments with Seqan')
+            print('-------------------------------' + '-' * len(count_str))
+
+    # Refine the appropriate alignments using Seqan.
     alignments = []
-    for alignment in paf_alignments:
-        if seqan_all or not alignment.is_whole_read():
-            alignments += seqan_from_paf_alignment(alignment, reads, references,
-                                                   median_ref_to_read_ratio)
-        else:
-            alignments.append(alignment)
-
-    quit() # TEMP
+    completed_count = 0
+    if VERBOSITY == 1:
+        print_progress_line(completed_count, len(alignments_to_refine))
+    for alignment in alignments_to_refine:
+        alignments += seqan_from_paf_alignment(alignment, reads, references,
+                                               median_ref_to_read_ratio)
+        completed_count += 1
+        if VERBOSITY == 1:
+            print_progress_line(completed_count, len(alignments_to_refine))
+    alignments += alignments_not_to_refine
+    if VERBOSITY == 1:
+        print('\n')
 
     # Give the alignments to their corresponding reads.
     for alignment in alignments:
         reads[alignment.read.name].alignments.append(alignment)
 
     # Filter the alignments based on conflicting read position.
+    if VERBOSITY > 0:
+        print('Filtering alignments')
+        print('--------------------')
+        print('Alignments before filtering:        ', int_to_str(len(alignments), max_v))
     filtered_alignments = []
     for read in reads.itervalues():
         read.remove_conflicting_alignments()
         filtered_alignments += read.alignments
-    if print_summary:
+    if VERBOSITY > 0:
         print('Alignments after conflict filtering:', int_to_str(len(filtered_alignments), max_v))
 
+    # If any of our alignments for identity mean/stddev were removed in conflict filtering then we
+    # don't want to use them.
+    alignments_for_identity = [x for x in alignments_for_identity if x in filtered_alignments]
+    mean_id, std_dev_id = get_mean_and_st_dev_identity(alignments_for_identity)
+
     # Filter the alignments based on identity.
-    mean_id, std_dev_id = get_mean_and_st_dev_identity(filtered_alignments, True)
     if mean_id == 0.0 or std_dev_id == -1:
         low_id_cutoff = 75.0
-        if print_summary:
+        if VERBOSITY > 0:
             print('Not enough alignments to automatically set a low identity cutoff. Using 75%.')
     else:
-        low_id_cutoff = mean_id - (3.0 * std_dev_id)
-        if print_summary:
+        std_devs_below_mean = 3.0 # TO DO: make this a parameter?
+        low_id_cutoff = mean_id - (std_devs_below_mean * std_dev_id)
+        if VERBOSITY > 0:
             print('Complete alignment identity mean:   ', float_to_str(mean_id, max_v) + '%')
             print('              standard deviation:   ', float_to_str(std_dev_id, max_v) + '%')
             print('Low identity cutoff:                ', float_to_str(low_id_cutoff, max_v) + '%')
@@ -209,32 +282,52 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
     for read in reads.itervalues():
         read.remove_low_id_alignments(low_id_cutoff)
         filtered_alignments += read.alignments
-
-    if print_summary:
+    if VERBOSITY > 0:
         print('Alignments after identity filtering:', int_to_str(len(filtered_alignments), max_v))
         print()
+   
+    fully_aligned, partially_aligned, unaligned = group_reads_by_fraction_aligned(reads)
+    incomplete_reads = partially_aligned + unaligned
+
+    if VERBOSITY > 0:
         print('Read summary')
         print('------------')
         max_v = len(reads)
         print('Total read count:       ', int_to_str(len(reads), max_v))
-        fully_aligned_count = 0
-        partially_aligned_count = 0
-        unaligned_count = 0
-        for read in reads.itervalues():
-            fraction_aligned = read.get_fraction_aligned()
-            if fraction_aligned == 1.0:
-                fully_aligned_count += 1
-            elif fraction_aligned == 0.0:
-                unaligned_count += 1
-            else:
-                partially_aligned_count += 1
-        print('Fully aligned reads:    ', int_to_str(fully_aligned_count, max_v))
-        print('Partially aligned reads:', int_to_str(partially_aligned_count, max_v))
-        print('Unaligned reads:        ', int_to_str(unaligned_count, max_v))
+        print('Fully aligned reads:    ', int_to_str(len(fully_aligned), max_v))
+        print('Partially aligned reads:', int_to_str(len(partially_aligned), max_v))
+        print('Unaligned reads:        ', int_to_str(len(unaligned), max_v))
         print()
 
-    # FUTURE POSSIBILITY: FOR ANY READS WHICH ARE LACKING MAPPED REGIONS, TRY AGAIN WITH A MORE
-    # SENSITIVE SEARCH.
+    # Try to realign any reads which are not completely aligned.
+    if incomplete_reads:
+        completed_count = 0
+        if VERBOSITY > 0:
+            print('Attempting realignment of incomplete reads')
+            print('------------------------------------------')
+        if VERBOSITY == 1:
+            print_progress_line(completed_count, len(incomplete_reads))
+        new_alignments = []
+        for read in incomplete_reads:
+            new_alignments += seqan_alignment_one_read_all_refs(reads, references, read,
+                                                                median_ref_to_read_ratio,
+                                                                exhaustive)
+            completed_count += 1
+            if VERBOSITY == 1:
+                print_progress_line(completed_count, len(incomplete_reads))
+
+        fully_aligned, partially_aligned, unaligned = group_reads_by_fraction_aligned(reads)
+        if VERBOSITY == 1:
+            print('\n')
+        if VERBOSITY > 0:
+            print('Updated read summary')
+            print('--------------------')
+            max_v = len(reads)
+            print('Total read count:       ', int_to_str(len(reads), max_v))
+            print('Fully aligned reads:    ', int_to_str(len(fully_aligned), max_v))
+            print('Partially aligned reads:', int_to_str(len(partially_aligned), max_v))
+            print('Unaligned reads:        ', int_to_str(len(unaligned), max_v))
+            print()
 
     write_sam_file(filtered_alignments, sam_filtered)
     if temp_paf_raw:
@@ -242,14 +335,14 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
 
     return reads
 
-def write_reference_errors_to_table(ref_fasta, long_reads, table_prefix, print_summary):
+def write_reference_errors_to_table(ref_fasta, long_reads, table_prefix):
     '''
     Writes a table file summarising the alignment errors in terms of reference sequence position.
     Works in a brute force manner - could be made more efficient later if necessary.
     '''
     # If we are not making table files or printing a summary, then quit now because there's nothing
     # else to do.
-    if not table_prefix and not print_summary:
+    if not table_prefix and VERBOSITY == 0:
         return
 
     # Ensure the table prefix is nicely formatted and any necessary directories are made.
@@ -263,7 +356,7 @@ def write_reference_errors_to_table(ref_fasta, long_reads, table_prefix, print_s
             if directory and not os.path.isdir(directory):
                 os.makedirs(directory)
 
-    if print_summary:
+    if VERBOSITY > 0:
         max_v = max(100, sum([len(x.alignments) for x in long_reads.itervalues()]))
         print('Alignment summaries per reference')
         print('---------------------------------')
@@ -302,7 +395,7 @@ def write_reference_errors_to_table(ref_fasta, long_reads, table_prefix, print_s
             for i in xrange(seq_len):
                 table.write('\t'.join([str(i+1), str(depths[i]), str(mismatches[i]),
                                        str(insertions[i]), str(deletions[i])]) + '\n')
-        if print_summary:
+        if VERBOSITY > 0:
             mismatch_rates = []
             insertion_rates = []
             deletion_rates = []
@@ -316,7 +409,7 @@ def write_reference_errors_to_table(ref_fasta, long_reads, table_prefix, print_s
             mean_mismatch_rate = 100.0 * sum(mismatch_rates) / seq_len
             mean_insertion_rate = 100.0 * sum(insertion_rates) / seq_len
             mean_deletion_rate = 100.0 * sum(deletion_rates) / seq_len
-            mean_id, std_dev_id = get_mean_and_st_dev_identity(alignments, False)
+            mean_id, std_dev_id = get_mean_and_st_dev_identity(alignments)
             contained_alignment_count = 0
             overlapping_alignment_count = 0
             for alignment in alignments:
@@ -337,7 +430,7 @@ def write_reference_errors_to_table(ref_fasta, long_reads, table_prefix, print_s
                 if std_dev_id != -1:
                     print('  Identity std dev:      ', float_to_str(std_dev_id, max_v) + '%')
             else:
-                print('  Filtered alignments:   ', int_to_str(0, max_v))
+                print('  Total alignments:      ', int_to_str(0, max_v))
             print()
         if table_prefix:
             table.close()
@@ -359,19 +452,18 @@ def load_long_reads(fastq_filename):
     return reads
 
 def seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, paf_file, graphmap_path,
-                                  working_dir, print_summary, threads):
+                                  working_dir, threads):
     '''
     This function runs GraphMap separately for each individual sequence in the reference.
     Resulting alignments are collected in a single PAF file.
     '''
     references = load_fasta(ref_fasta)
-    if print_summary:
-        print()
+    if VERBOSITY > 0:
         print('Raw GraphMap alignments per reference')
         print('-------------------------------------')
 
     final_paf = open(paf_file, 'w')
-    if print_summary and references:
+    if VERBOSITY > 0 and references:
         longest_header = max([len(get_nice_header_and_len(header, seq)) for \
                                    header, seq in references])
         read_count = line_count(long_reads_fastq) / 4
@@ -390,7 +482,7 @@ def seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, paf_file, graphma
             alignment_count += 1
         one_seq_paf.close()
 
-        if print_summary:
+        if VERBOSITY > 0:
             nice_header = get_nice_header_and_len(header, seq, pad_length=longest_header) + ':'
             print(nice_header, int_to_str(alignment_count, read_count))
             sys.stdout.flush()
@@ -398,6 +490,9 @@ def seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, paf_file, graphma
         # Clean up
         os.remove(one_seq_fasta)
         os.remove(paf_filename)
+
+    if VERBOSITY > 0:
+        print()
 
     final_paf.close()
 
@@ -426,22 +521,45 @@ def load_paf_alignments(paf_filename, reads, references):
             paf_alignments.append(Alignment(reads, references, paf_line=line))
     return paf_alignments
 
-# def seqan_alignment_one_read_all_refs(ref_headers_and_seqs, read, print_summary, threads, k_size,
-#                                       band_size, allowed_length_discrepancy):
-#     '''
-#     Aligns a single read against all reference sequences using Seqan.
-#     '''
-#     alignments = []
-#     for header, seq in ref_headers_and_seqs:
-#         nice_header = get_nice_header(header)
-#         forward_alignment = run_one_seqan_alignment(nice_header, seq, read, False, k_size,
-#                                                     band_size, allowed_length_discrepancy)
-#         reverse_alignment = run_one_seqan_alignment(nice_header, seq, read, True, k_size,
-#                                                     band_size, allowed_length_discrepancy)
-#         if forward_alignment:
-#             alignments.append(forward_alignment)
-#         if reverse_alignment:
-#             alignments.append(reverse_alignment)
+def seqan_alignment_one_read_all_refs(reads, references, read, expected_ref_to_read_ratio,
+                                      try_exhaustive=False):
+    '''
+    Aligns a single read against all reference sequences using Seqan. Both forward and reverse
+    complement alignments are tried.
+    Returns a list of all alignments found.
+    '''
+    global VERBOSITY
+    if VERBOSITY > 1:
+        print(read)
+    alignments = []
+
+    # For lower verbosity levels we will suppress output for the Seqan alignent.
+    verbosityAtStart = VERBOSITY
+    if VERBOSITY <= 2:
+        VERBOSITY = 0
+
+    for ref_name, ref_seq in references.iteritems():
+        if verbosityAtStart > 2:
+            print('Reference:', ref_name)
+        alignments += make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read,
+                                                     False, expected_ref_to_read_ratio,
+                                                     try_exhaustive)
+        alignments += make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read,
+                                                     True, expected_ref_to_read_ratio,
+                                                     try_exhaustive)
+    if verbosityAtStart > 1:
+        if not alignments:
+            print('No alignments found')
+        else:
+            for i, alignment in enumerate(alignments):
+                print('Alignment ' + str(i+1) +':', alignment)
+        print()
+
+    # Restore the verbosity if it was suppressed.
+    if verbosityAtStart <= 2:
+        VERBOSITY = verbosityAtStart
+
+    return alignments
 
 def make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read, rev_comp,
                                    expected_ref_to_read_ratio, try_exhaustive=False):
@@ -458,7 +576,7 @@ def make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read, r
 
     # First get the alignment line(s).
     ptr = C_LIB.findAlignmentLines(read_seq, ref_seq, len(read_seq), len(ref_seq),
-                                   expected_ref_to_read_ratio, DEBUG_LEVEL)
+                                   expected_ref_to_read_ratio, VERBOSITY)
     line_result = cast(ptr, c_char_p).value
     C_LIB.free_c_string(ptr)
 
@@ -467,11 +585,12 @@ def make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read, r
         if try_exhaustive:
             alignment = run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq, read,
                                                       rev_comp)
-            print('NO LINES FOUND, CONDUCTING EXHAUSTIVE ALIGNMENT') # TEMP
-            print('EXHAUSTIVE ALIGNMENT:', alignment) # TEMP
-            print('  longest indel run:', alignment.get_longest_indel_run()) # TEMP
+            if VERBOSITY > 1:
+                print('No alignment lines found, conducting an exhaustive alignment\n')
             return [alignment]
         else:
+            if VERBOSITY > 1:
+                print('Seqan alignment failed: no alignment lines found\n')
             return []
 
     # If the code got here, then we have at least one line to use in a banded alignment. Conduct
@@ -484,6 +603,8 @@ def make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read, r
                                                   rev_comp, slope, intercept, try_exhaustive)
         if alignment:
             alignments.append(alignment)
+    if VERBOSITY > 1:
+        print()
     return alignments
 
 def make_seqan_alignment_one_line(reads, references, ref_name, ref_seq, read, rev_comp,
@@ -494,23 +615,18 @@ def make_seqan_alignment_one_line(reads, references, ref_name, ref_seq, read, re
     run in the alignment (indicative of a problem).
     It returns either an Alignment object or None, depending on whether or not it was successful.
     '''
-    band_size = 40 # TO DO: make this a parameter?
+    band_size = 20 # TO DO: make this a parameter?
     max_band_size = 160 # TO DO: make this a parameter?
-    longest_acceptable_indel_run = 6 # TO DO: make this a parameter?
+    longest_acceptable_indel_run = 5 # TO DO: make this a parameter?
 
     alignment = run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read,
                                                rev_comp, band_size, slope, intercept)
-    print('FIRST TRY:', alignment) # TEMP
-    if alignment: # TEMP
-        print('  longest indel run:', alignment.get_longest_indel_run()) # TEMP
 
     # If the first alignment totally failed, then our only recourse is an exhaustive alignment.
     if not alignment:
         if try_exhaustive:
             alignment = run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq, read,
                                                       rev_comp)
-            print('FINAL EXHAUSTIVE ALIGNMENT:', alignment) # TEMP
-            print('  longest indel run:', alignment.get_longest_indel_run()) # TEMP
         return alignment
 
     # If our alignment succeeded, we should still check to see if it looks good or if we need to
@@ -526,15 +642,10 @@ def make_seqan_alignment_one_line(reads, references, ref_name, ref_seq, read, re
             if try_exhaustive:
                 alignment = run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq,
                                                           read, rev_comp)
-                print('FINAL EXHAUSTIVE ALIGNMENT:', alignment) # TEMP
-                print('  longest indel run:', alignment.get_longest_indel_run()) # TEMP
             return alignment
 
         alignment = run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read,
                                                    rev_comp, band_size, slope, intercept)
-        print('NEXT TRY:', alignment) # TEMP
-        if alignment: # TEMP
-            print('  longest indel run:', alignment.get_longest_indel_run()) # TEMP
 
 def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp,
                                    band_size, slope, intercept):
@@ -548,15 +659,19 @@ def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, r
     else:
         read_seq = read.sequence
     ptr = C_LIB.semiGlobalAlignmentAroundLine(read_seq, ref_seq, len(read_seq), len(ref_seq),
-                                              slope, intercept, band_size, DEBUG_LEVEL)
+                                              slope, intercept, band_size, VERBOSITY)
     alignment_result = cast(ptr, c_char_p).value    
     C_LIB.free_c_string(ptr)
 
     if alignment_result.startswith('Failed'):
         print(alignment_result)
         return None
-    return Alignment(reads, references, seqan_output=alignment_result, read_name=read.name,
-                     ref_name=ref_name, rev_comp=rev_comp)
+
+    alignment = Alignment(reads, references, seqan_output=alignment_result, read_name=read.name,
+                          ref_name=ref_name, rev_comp=rev_comp)
+    if VERBOSITY > 1:
+        print('Seqan alignment, bandwidth = ' + str(band_size) + ':', alignment)
+    return alignment
 
 def run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp):
     '''
@@ -571,8 +686,11 @@ def run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq, read, re
     alignment_result = cast(ptr, c_char_p).value
     C_LIB.free_c_string(ptr)
 
-    return Alignment(reads, references, seqan_output=alignment_result, read_name=read.name,
-                     ref_name=ref_name, rev_comp=rev_comp)
+    alignment = Alignment(reads, references, seqan_output=alignment_result, read_name=read.name,
+                          ref_name=ref_name, rev_comp=rev_comp)
+    if VERBOSITY > 1:
+        print('Exhaustive alignment:', alignment)
+    return alignment
 
 def get_ref_shift_from_cigar_part(cigar_part):
     '''
@@ -732,36 +850,12 @@ def add_line_breaks_to_sequence(sequence, length):
         seq_with_breaks += '\n'
     return seq_with_breaks
 
-def get_mean_and_st_dev_identity(alignments, limit_to_safe_alignments):
+def get_mean_and_st_dev_identity(alignments):
     '''
     This function returns the mean and standard deviation for the identities of the given
-    alignments. If limit_to_safe_alignments is True, it only considers alignments that are
-    entirely contained within contigs without having been extended.
-    If there are 0 alignments, it returns 0 for both mean and std dev.
-    If there is 1 alignment, it returns the real mean (the identity of that alignment) and a std
-    dev of -1 (because we need two to get a std dev).
+    alignments.
     '''
-    identities = []
-    for alignment in alignments:
-        if limit_to_safe_alignments and alignment.is_whole_read():
-            continue
-        identities.append(alignment.percent_identity)
-
-
-
-
-
-
-
-    print('identities:', identities) # TEMP
-    quit() # TEMP
-
-
-
-
-
-
-
+    identities = [x.percent_identity for x in alignments]
     num = len(identities)
     if num == 0:
         return 0.0, 0.0
@@ -849,8 +943,8 @@ def seqan_from_paf_alignment(paf_alignment, reads, references, expected_ref_to_r
     from basic alignments with only approximate start/end positions into full alignments.
     '''
     assert paf_alignment.alignment_type == 'PAF'
-    print()
-    print('PAF BEFORE:', paf_alignment) # TEMP
+    if VERBOSITY > 1:
+        print('PAF alignment before Seqan:', paf_alignment)
     return make_seqan_alignment_all_lines(reads, references, paf_alignment.ref_name,
                                           paf_alignment.full_ref_sequence, paf_alignment.read,
                                           paf_alignment.rev_comp, expected_ref_to_read_ratio,
@@ -869,6 +963,31 @@ def get_median(num_list):
     else:
         return sorted_list[count // 2]
 
+def print_progress_line(completed, total):
+    fraction_str = str(completed) + ' / ' + str(total)
+    percent_str = '%.1f' % (100.0 * completed / total) + '%'
+    print('\r' + fraction_str + ' (' + percent_str + ')', end='')
+    sys.stdout.flush()
+
+def group_reads_by_fraction_aligned(reads):
+    '''
+    Groups reads into three groups:
+      1) Fully aligned
+      2) Partially aligned
+      3) Unaligned
+    '''
+    fully_aligned_reads = []
+    partially_aligned_reads = []
+    unaligned_reads = []
+    for read in reads.itervalues():
+        fraction_aligned = read.get_fraction_aligned()
+        if fraction_aligned == 1.0:
+            fully_aligned_reads.append(read)
+        elif fraction_aligned == 0.0:
+            unaligned_reads.append(read)
+        else:
+            partially_aligned_reads.append(read)
+    return fully_aligned_reads, partially_aligned_reads, unaligned_reads
 
 
 
@@ -883,7 +1002,13 @@ class LongRead(object):
         self.qualities = qualities
         self.alignments = []
 
+    def __repr__(self):
+        return self.name + ' (' + str(len(self.sequence)) + ' bp)'
+
     def get_length(self):
+        '''
+        Returns the sequence length.
+        '''
         return len(self.sequence)
 
     def remove_conflicting_alignments(self):
@@ -1038,9 +1163,9 @@ class Alignment(object):
         self.alignment_length = int(seqan_parts[5])
         self.edit_distance = int(seqan_parts[13])
         self.percent_identity = float(seqan_parts[14])
-        self.ref_mismatch_positions = seqan_parts[8].split(";")
-        self.ref_insertion_positions = seqan_parts[10].split(";")
-        self.ref_deletion_positions = seqan_parts[12].split(";")
+        self.ref_mismatch_positions = [int(x) for x in seqan_parts[8].split(";")]
+        self.ref_insertion_positions = [int(x) for x in seqan_parts[10].split(";")]
+        self.ref_deletion_positions = [int(x) for x in seqan_parts[12].split(";")]
         self.extension_length = None
         self.milliseconds = int(seqan_parts[15])
 
@@ -1109,12 +1234,8 @@ class Alignment(object):
         assert new_slope / slope < 1.005
 
     def __repr__(self):
-        if self.alignment_type == 'PAF':
-            return_str = 'PAF alignment: '
-        else:
-            return_str = 'Seqan alignment: '
         read_start, read_end = self.read_start_end_positive_strand()
-        return_str += self.read.name + ' (' + str(read_start) + '-' + str(read_end) + ', '
+        return_str = self.read.name + ' (' + str(read_start) + '-' + str(read_end) + ', '
         if self.rev_comp:
             return_str += 'strand: -), '
         else:
@@ -1122,8 +1243,9 @@ class Alignment(object):
         return_str += self.ref_name + ' (' + str(self.ref_start_pos) + '-' + \
                       str(self.ref_end_pos) + ')'
         if self.alignment_type == 'Seqan':
-            return_str += ', ' + '%.2f' % self.percent_identity + '%, '
-            return_str += str(self.milliseconds) + ' ms'
+            return_str += ', ' + '%.2f' % self.percent_identity + '%'
+            return_str += ', longest indel: ' + str(self.get_longest_indel_run())
+            return_str += ', ' + str(self.milliseconds) + ' ms'
         return return_str
 
     def get_ref_to_read_ratio(self):
@@ -1203,9 +1325,9 @@ class Alignment(object):
         '''
         edit_distance = self.mismatch_count + self.insertion_count + self.deletion_count
         sam_flag = 0 #TEMP
-        return '\t'.join([self.read_name, str(sam_flag), self.ref_name,
-                          str(self.ref_start_pos + 1), str(self.mapping_quality), self.cigar,
-                          '*', '0', '0', self.full_read_sequence, self.read_qualities,
+        return '\t'.join([self.read.name, str(sam_flag), self.ref_name,
+                          str(self.ref_start_pos + 1), '255', self.cigar,
+                          '*', '0', '0', self.read.sequence, self.read.qualities,
                           'NM:i:' + str(edit_distance)])
 
     def is_whole_read(self):

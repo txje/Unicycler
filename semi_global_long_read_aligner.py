@@ -671,6 +671,8 @@ def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, r
                           ref_name=ref_name, rev_comp=rev_comp)
     if VERBOSITY > 1:
         print('Seqan alignment, bandwidth = ' + str(band_size) + ':', alignment)
+    if VERBOSITY > 2:
+        print(alignment.cigar)
     return alignment
 
 def run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp):

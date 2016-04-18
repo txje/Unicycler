@@ -144,12 +144,7 @@ char * semiGlobalAlignmentAroundLine(char * s1, char * s2, int s1Len, int s2Len,
     int vDiff = vEnd - vStart;
 
     if (verbosity > 2)
-    {
-        std::cout << std::endl;
-        std::cout << "Alignment range from slope" << std::endl;
-        std::cout << "--------------------------" << std::endl;
-        std::cout << "hStart: " << hStart << ", " << "hEnd: " << hEnd << ", " << "vStart: " << vStart << ", " << "vEnd: " << vEnd << std::endl << std::endl;;
-    }
+        std::cout << "Alignment line start/end positions: " << hStart << "-" << hEnd << ", " << vStart << "-" << vEnd << std::endl;
 
     // Now that we have an estimate for the start/end of both sequences, we build a single seed
     // chain around that line.
@@ -190,16 +185,13 @@ char * semiGlobalAlignmentAroundLine(char * s1, char * s2, int s1Len, int s2Len,
     if (verbosity > 3)
     {
         int seedsInChain = length(seedChain);
-        std::cout << std::endl;
-        std::cout << "Seed positions" << std::endl;
-        std::cout << "--------------" << std::endl;
-        std::cout << "H start\tH end\tV start\tV end" << std::endl;
+        std::cout << "Line seed positions:" << std::endl;
+        std::cout << "\tH start\tH end\tV start\tV end" << std::endl;
         for (int i = 0; i < seedsInChain; ++i)
         {
-            std::cout << beginPositionH(seedChain[i]) << "\t" << endPositionH(seedChain[i]) << "\t";
+            std::cout << "\t" << beginPositionH(seedChain[i]) << "\t" << endPositionH(seedChain[i]) << "\t";
             std::cout << beginPositionV(seedChain[i]) << "\t" << endPositionV(seedChain[i]) << std::endl;
         }
-        std::cout << std::endl;
     }
 
     Align<Dna5String, ArrayGaps> alignment;
@@ -231,7 +223,7 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
 
     double commonKmerDensity = double(commonKmers.size()) / (double(s1Str.length()) * double(s2Str.length()));
     if (verbosity > 3)
-        std::cout << std::endl << "Common k-mer density: " << commonKmerDensity << std::endl << std::endl;
+        std::cout << "Common k-mer density: " << commonKmerDensity << std::endl;
 
     std::sort(commonKmers.begin(), commonKmers.end());
 
@@ -264,17 +256,14 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
 
     if (verbosity > 3)
     {
-        std::cout << std::endl;
-        std::cout << "Common k-mer positions" << std::endl;
-        std::cout << "----------------------" << std::endl;
-        std::cout << "Seq 1 pos\tSeq 2 pos\tRotated seq 1 pos\tRotated seq 2 pos\tBand length\tBand count\tScore" << std::endl;
+        std::cout << "Common k-mer positions:" << std::endl;
+        std::cout << "\tSeq 1 pos\tSeq 2 pos\tRotated seq 1 pos\tRotated seq 2 pos\tBand length\tBand count\tScore" << std::endl;
         for (int i = 0; i < commonKmers.size(); ++i)
-            std::cout << commonKmers[i].m_hPosition << "\t" << commonKmers[i].m_vPosition << "\t"
+            std::cout << "\t" << commonKmers[i].m_hPosition << "\t" << commonKmers[i].m_vPosition << "\t"
                       << commonKmers[i].m_rotatedHPosition << "\t" << commonKmers[i].m_rotatedVPosition
                       << "\t" << commonKmers[i].m_bandLength << "\t" << commonKmers[i].m_bandCount
                       << "\t" << commonKmers[i].m_score << std::endl;
-        std::cout << std::endl;
-        std::cout << "Max score: " << maxScore << std::endl << std::endl;
+        std::cout << "Max score: " << maxScore << std::endl;
     }
 
     // Now group all of the line points. A line group begins when the score exceeds a threshold and
@@ -303,11 +292,11 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
         }
     }
 
-    if (verbosity > 2)
-        std::cout << std::endl << "Number of lines found: " << lineGroups.size() << std::endl;
-
     if (lineGroups.size() == 0)
         return strdup("Failed: no lines found");
+
+    if (verbosity > 2)
+        std::cout << "Lines found: ";
 
     // Perform a simple least-squares linear regression on each line group and add the
     // slope/intercept to the returned string.
@@ -319,6 +308,12 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
         double slope, intercept;
         linearRegression(lineGroups[i], &slope, &intercept);
         linesString += std::to_string(slope) + "," + std::to_string(intercept);
+        if (verbosity > 2)
+        {
+            if (i > 0)
+                std::cout << "             ";
+            std::cout << "slope = " << slope << ", intercept = " << intercept << std::endl;
+        }
     }
     return cppStringToCString(linesString);
 }
@@ -344,7 +339,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
     }
     int minimumKCount = targetKCount / 4;
     if (verbosity > 2)
-        std::cout << std::endl << "Target k-mer range: " << minimumKCount << " to " <<
+        std::cout << "Target k-mer range: " << minimumKCount << " to " <<
                      targetKCount << std::endl;
     int kSize = 10; // Starting k-mer size
 
@@ -404,7 +399,6 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
                 break;
         }
     }
-    if (verbosity > 2) std::cout << std::endl;
 
     // Build the vector of CommonKmer objects.
     int kCount = shorter->size() - kSize;
@@ -718,7 +712,7 @@ bool CommonKmer::operator<(const CommonKmer& other)
 
 void printKmerSize(int kmerSize, int locationCount)
 {
-    std::cout << "K-MER: " << kmerSize << ", " << locationCount << " SITES IN COMMON" << std::endl;
+    std::cout << locationCount << " " << kmerSize << "-mers in common" << std::endl;
 }
 
 // Given a point, a slope and rectangle bounds, this function returns the length of the line

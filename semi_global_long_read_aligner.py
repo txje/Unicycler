@@ -320,6 +320,25 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
             completed_count += 1
             if VERBOSITY == 1:
                 print_progress_line(completed_count, len(incomplete_reads))
+        if VERBOSITY == 1:
+            print('\n')
+
+        # Give the alignments to their corresponding reads.
+        for alignment in new_alignments:
+            reads[alignment.read.name].alignments.append(alignment)
+
+        # Filter the alignments based on conflicting read position.
+        if VERBOSITY > 0:
+            print('Filtering alignments')
+            print('--------------------')
+            print('Alignments before filtering:        ', int_to_str(len(alignments), max_v))
+        filtered_alignments = []
+        for read in reads.itervalues():
+            read.remove_conflicting_alignments()
+            filtered_alignments += read.alignments
+        if VERBOSITY > 0:
+            print('Alignments after conflict filtering:', int_to_str(len(filtered_alignments),
+                                                                     max_v))
 
         fully_aligned, partially_aligned, unaligned = group_reads_by_fraction_aligned(reads)
         if VERBOSITY == 1:

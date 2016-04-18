@@ -40,7 +40,9 @@ public:
     int m_vPosition;
     double m_rotatedHPosition;
     double m_rotatedVPosition;
-    double m_score;
+    double m_bandLength; // Length of band at expected slope
+    int m_bandCount; // Number of neighbour points in band
+    double m_score; // Score calculated from bandCount, bandLength and overall kmer density
 };
 
 
@@ -58,7 +60,6 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
 std::map<std::string, std::vector<int> > getCommonLocations(std::string * s1, std::string * s2, int kSize);
 char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment,
                                           long long startTime);
-// std::vector<Kmer> getSeqKmers(std::string seq, int kSize);
 CigarType getCigarType(char b1, char b2, bool alignmentStarted);
 std::string getCigarPart(CigarType type, int length);
 char * cppStringToCString(std::string cpp_string);
@@ -71,7 +72,7 @@ void getSlopeAndIntercept(int hStart, int hEnd, int vStart, int vEnd,
 char * getSlopeAndInterceptString(double slope, double intercept);
 double getMedian(std::vector<double> * v);
 void printKmerSize(int kmerSize, int locationCount);
-
+double getLineLength(double x, double y, double slope, double xSize, double ySize);
 
 
 
@@ -219,7 +220,7 @@ char * semiGlobalAlignmentAroundLine(char * s1, char * s2, int s1Len, int s2Len,
 // This function searches for lines in the 2D ref-read space that represent likely semi-global
 // alignments.
 char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double expectedSlope,
-                         int debugOutput)
+                          int debugOutput)
 {
     std::string s1Str(s1);
     std::string s2Str(s2);
@@ -229,23 +230,84 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
     if (commonKmers.size() < 2)
         return strdup("Failed: too few common kmers");
 
+    double commonKmerDensity = double(commonKmers.size()) / (double(s1Str.length()) * double(s2Str.length()));
+    if (debugOutput > 1)
+        std::cout << std::endl << "COMMON K-MER DENSITY: " << commonKmerDensity << std::endl << std::endl;
 
     std::sort(commonKmers.begin(), commonKmers.end());
+
+    // Score each point based on the number of other points in its band. The score is scaled by
+    // the length of the band so short bands aren't penalised.
+    double bandSize = 20.0; // TO DO: MAKE THIS A PARAMETER?
+    int windowStart = 0;
+    int windowEnd = 0;
+    double maxScore = 0.0;
+    for (int i = 0; i < commonKmers.size(); ++i)
+    {
+        double y = commonKmers[i].m_rotatedVPosition;
+        while (y - commonKmers[windowStart].m_rotatedVPosition > bandSize)
+            ++windowStart;
+        while (windowEnd < commonKmers.size() &&
+               commonKmers[windowEnd].m_rotatedVPosition - y < bandSize)
+            ++windowEnd;
+        double bandLength = getLineLength(commonKmers[i].m_hPosition, commonKmers[i].m_vPosition,
+                                          expectedSlope, s1Len, s2Len);
+        int bandCount = windowEnd - windowStart;
+        double bandKmerDensity = bandCount / (bandLength * 2.0 * bandSize);
+        double score = bandKmerDensity / commonKmerDensity;
+        if (score > maxScore)
+            maxScore = score;
+
+        commonKmers[i].m_bandLength = bandLength;
+        commonKmers[i].m_bandCount = bandCount;
+        commonKmers[i].m_score = score;
+    }
 
     if (debugOutput > 1)
     {
         std::cout << std::endl;
         std::cout << "COMMON K-MER POSITIONS" << std::endl;
         std::cout << "----------------------" << std::endl;
-        std::cout << "Seq 1 pos\tSeq 2 pos\tRotated seq 1 pos\tRotated seq 2 pos" << std::endl;
+        std::cout << "Seq 1 pos\tSeq 2 pos\tRotated seq 1 pos\tRotated seq 2 pos\tBand length\tBand count\tScore" << std::endl;
         for (int i = 0; i < commonKmers.size(); ++i)
             std::cout << commonKmers[i].m_hPosition << "\t" << commonKmers[i].m_vPosition << "\t"
                       << commonKmers[i].m_rotatedHPosition << "\t" << commonKmers[i].m_rotatedVPosition
-                      << std::endl;
+                      << "\t" << commonKmers[i].m_bandLength << "\t" << commonKmers[i].m_bandCount
+                      << "\t" << commonKmers[i].m_score << std::endl;
         std::cout << std::endl;
+        std::cout << "MAX SCORE: " << maxScore << std::endl << std::endl;
     }
 
+    // Now group all of the line points. A line group begins when the score exceeds a threshold and
+    // it ends when the score drops below the threshold.
+    std::vector<std::vector<CommonKmer> > lineGroups;
+    double scoreThreshold = 100.0; // TO DO: MAKE THIS A PARAMETER?
+    bool lineInProgress = false;
+    for (int i = 0; i < commonKmers.size(); ++i)
+    {
+        if (commonKmers[i].m_score > scoreThreshold)
+        {
+            if (!lineInProgress)
+            {
+                lineGroups.push_back(std::vector<CommonKmer>());
+                lineInProgress = true;
+            }
+            lineGroups.back().push_back(commonKmers[i]);
+        }
+        else // score is below threshold
+        {
+            //If the previous group had a single point, remove it as lines need at least two
+            // points.
+            if (lineInProgress && lineGroups.back().size() == 1)
+                lineGroups.pop_back();
+            lineInProgress = false;
+        }
+    }
 
+    if (debugOutput > 0)
+        std::cout << std::endl << "LINES FOUND: " << lineGroups.size() << std::endl;
+
+    
 
     // TO DO
     // TO DO
@@ -606,20 +668,6 @@ std::string getCigarPart(CigarType type, int length)
     return cigarPart;
 }
 
-// // Returns a list of all Kmers in a sequence.
-// std::vector<Kmer> getSeqKmers(std::string seq, int kSize)
-// {
-//     std::vector<Kmer> kmers;
-//     int kCount = seq.size() - kSize;
-//     kmers.reserve(kCount);
-//     for (int i = 0; i < kCount; ++i)
-//     {
-//         Kmer kmer(seq.substr(i, kSize), i, i + kSize);
-//         kmers.push_back(kmer);
-//     }
-//     return kmers;
-// }
-
 
 // This function gets the slope and intercept of the seed chain line as defined by the seeds at the
 // given indices. Slope is defined as the change in V position over the change in H position.
@@ -686,6 +734,41 @@ bool CommonKmer::operator<(const CommonKmer& other)
 void printKmerSize(int kmerSize, int locationCount)
 {
     std::cout << "K-MER: " << kmerSize << ", " << locationCount << " SITES IN COMMON" << std::endl;
+}
+
+// Given a point, a slope and rectangle bounds, this function returns the length of the line
+// segment which goes through that point with that slope and is in those bounds.
+double getLineLength(double x, double y, double slope, double xSize, double ySize)
+{
+    double xStart, yStart, xEnd, yEnd;
+
+    double yIntercept = y - (slope * x);
+    if (yIntercept >= 0.0)
+    {
+        xStart = 0.0;
+        yStart = yIntercept;
+    }
+    else
+    {
+        xStart = -yIntercept / slope;
+        yStart = 0.0;
+    }
+
+    double yAtXEnd = (slope * xSize) + yIntercept;
+    if (yAtXEnd <= ySize)
+    {
+        xEnd = xSize;
+        yEnd = yAtXEnd;
+    }
+    else
+    {
+        xEnd = (ySize - yIntercept) / slope;
+        yEnd = ySize;
+    }
+
+    double xLength = xEnd - xStart;
+    double yLength = yEnd - yStart;
+    return sqrt((xLength * xLength) + (yLength * yLength));
 }
 
 }

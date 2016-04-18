@@ -232,12 +232,16 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
 
     # Refine the appropriate alignments using Seqan.
     alignments = []
+    refined_alignments_for_identity = []
     completed_count = 0
     if VERBOSITY == 1:
         print_progress_line(completed_count, len(alignments_to_refine))
     for alignment in alignments_to_refine:
-        alignments += seqan_from_paf_alignment(alignment, reads, references,
-                                               median_ref_to_read_ratio)
+        refined_alignments = seqan_from_paf_alignment(alignment, reads, references,
+                                                      median_ref_to_read_ratio)
+        alignments += refined_alignments
+        if alignment in alignments_for_identity:
+            refined_alignments_for_identity += refined_alignments
         completed_count += 1
         if VERBOSITY == 1:
             print_progress_line(completed_count, len(alignments_to_refine))
@@ -263,8 +267,9 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
 
     # If any of our alignments for identity mean/stddev were removed in conflict filtering then we
     # don't want to use them.
-    alignments_for_identity = [x for x in alignments_for_identity if x in filtered_alignments]
-    mean_id, std_dev_id = get_mean_and_st_dev_identity(alignments_for_identity)
+    refined_alignments_for_identity = [x for x in refined_alignments_for_identity \
+                                       if x in filtered_alignments]
+    mean_id, std_dev_id = get_mean_and_st_dev_identity(refined_alignments_for_identity)
 
     # Filter the alignments based on identity.
     if mean_id == 0.0 or std_dev_id == -1:

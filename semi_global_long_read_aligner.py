@@ -176,9 +176,12 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
                                   threads)
     paf_alignments = load_paf_alignments(paf_raw, reads, references)
 
-    # Determine the median length ratio between reference and read.
+    # Determine the median length ratio between reference and read. If there aren't any alignments,
+    # then we just go with 1.0.
     ref_to_read_ratios = [x.get_ref_to_read_ratio() for x in paf_alignments]
     median_ref_to_read_ratio = get_median(ref_to_read_ratios)
+    if median_ref_to_read_ratio == 0.0:
+        median_ref_to_read_ratio = 1.0
     median_read_to_ref_ratio = 1.0 / median_ref_to_read_ratio
 
     if VERBOSITY > 0:
@@ -189,7 +192,7 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
         print('Median read length / reference length:', '%.3f' % median_read_to_ref_ratio)
         print()
 
-    if VERBOSITY > 2:
+    if VERBOSITY > 2 and paf_alignments:
         print('All raw GraphMap alignments')
         print('---------------------------')
         for alignment in paf_alignments:
@@ -205,7 +208,7 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
     target_alignment_count = 20 # TO DO: MAKE THIS A PARAMETER?
     alignments_for_identity = sorted_alignments[:target_alignment_count]
 
-    if VERBOSITY > 2:
+    if VERBOSITY > 2 and alignments_for_identity:
         print('Alignments to be used for identity mean and std dev')
         print('---------------------------------------------------')
         for alignment in alignments_for_identity:
@@ -216,16 +219,16 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
     # not, then we only refine overlapping alignments and the alignments that we'll use to get an
     # identity mean and std dev.
     if seqan_all:
-        if VERBOSITY > 0:
-            print('Refining all alignments with Seqan')
-            print('----------------------------------')
         alignments_to_refine = paf_alignments
         alignments_not_to_refine = []
+        if VERBOSITY > 0 and alignments_to_refine:
+            print('Refining all alignments with Seqan')
+            print('----------------------------------')
     else:
         alignments_to_refine = [x for x in paf_alignments
                                 if x in alignments_for_identity or not x.is_whole_read()]
         alignments_not_to_refine = [x for x in paf_alignments if x not in alignments_to_refine]
-        if VERBOSITY > 0:
+        if VERBOSITY > 0 and alignments_to_refine:
             count_str = str(len(alignments_to_refine))
             print('Refining ' + count_str + ' alignments with Seqan')
             print('-------------------------------' + '-' * len(count_str))
@@ -234,7 +237,7 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
     alignments = []
     refined_alignments_for_identity = []
     completed_count = 0
-    if VERBOSITY == 1:
+    if VERBOSITY == 1 and alignments_to_refine:
         print_progress_line(completed_count, len(alignments_to_refine))
     for alignment in alignments_to_refine:
         refined_alignments = seqan_from_paf_alignment(alignment, reads, references,
@@ -326,12 +329,13 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
         # Give the alignments to their corresponding reads.
         for alignment in new_alignments:
             reads[alignment.read.name].alignments.append(alignment)
+        all_alignments_count = sum([len(x.alignments) for x in reads.itervalues()])
 
         # Filter the alignments based on conflicting read position.
         if VERBOSITY > 0:
             print('Filtering alignments')
             print('--------------------')
-            print('Alignments before filtering:        ', int_to_str(len(alignments), max_v))
+            print('Alignments before filtering:        ', int_to_str(all_alignments_count, max_v))
         filtered_alignments = []
         for read in reads.itervalues():
             read.remove_conflicting_alignments()
@@ -342,7 +346,7 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
 
         fully_aligned, partially_aligned, unaligned = group_reads_by_fraction_aligned(reads)
         if VERBOSITY == 1:
-            print('\n')
+            print()
         if VERBOSITY > 0:
             print('Updated read summary')
             print('--------------------')
@@ -986,7 +990,7 @@ def get_median(num_list):
     '''
     count = len(num_list)
     if count == 0:
-        return 0
+        return 0.0
     sorted_list = sorted(num_list)
     if count % 2 == 0:
         return (sorted_list[count // 2 - 1] + sorted_list[count // 2]) / 2.0

@@ -58,7 +58,7 @@ void free_c_string(char * p);
 std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, double expectedSlope,
                                        int verbosity);
 std::map<std::string, std::vector<int> > getCommonLocations(std::string * s1, std::string * s2, int kSize);
-char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment,
+char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment, int score,
                                           long long startTime);
 CigarType getCigarType(char b1, char b2, bool alignmentStarted);
 std::string getCigarPart(CigarType type, int length);
@@ -90,11 +90,11 @@ char * exhaustiveSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len)
     resize(rows(alignment), 2);
     assignSource(row(alignment, 0), sequenceH);
     assignSource(row(alignment, 1), sequenceV);
-    Score<int, Simple> scoringScheme(1, -1, -1);
+    Score<int, Simple> scoringScheme(3, -6, -2, -5);
     AlignConfig<true, true, true, true> alignConfig;
-    globalAlignment(alignment, scoringScheme, alignConfig);
+    int score = globalAlignment(alignment, scoringScheme, alignConfig);
 
-    return turnAlignmentIntoDescriptiveString(&alignment, startTime);
+    return turnAlignmentIntoDescriptiveString(&alignment, score, startTime);
 }
 
 
@@ -116,106 +116,129 @@ char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, dou
     if (slope < 0.5)
         return strdup("Failed: slope too small");
 
+    TSequence sequenceH = s1;
+    TSequence sequenceV = s2;
+
     std::string kmerLocationsStr(kmerLocations);
     std::vector<int> s1KmerLocations;
     std::vector<int> s2KmerLocations;
     parseKmerLocationsFromString(kmerLocationsStr, s1KmerLocations, s2KmerLocations);
 
+    // Build a Seqan seed set using our common k-mers.
+    TSeedSet seedSet;
     for (int i = 0; i < s1KmerLocations.size(); ++i)
-        std::cout << s1KmerLocations[i] << ", " << s2KmerLocations[i] << std::endl;
-
-    int ZERO = 0;
-    int CRASH = 5 / ZERO;
-
-    TSequence sequenceH = s1;
-    TSequence sequenceV = s2;
-
-    // Convert the slope and intercept into start/end coordinates for the two sequences.
-    int hStart, hEnd, vStart, vEnd;
-    if (intercept >= 0.0)
     {
-        hStart = 0;
-        vStart = std::round(intercept);
+        TSeed seed(s1KmerLocations[i], s2KmerLocations[i], kSize);
+        if (!addSeed(seedSet, seed, 1, Merge()))
+            addSeed(seedSet, seed, Single());
     }
-    else
-    {
-        hStart = std::round(-intercept / slope);
-        vStart = 0;
-    }
-    double vPosAtEndOfH = (slope * s1Len) + intercept;
-    if (vPosAtEndOfH <= s2Len)
-    {
-        hEnd = s1Len;
-        vEnd = std::round(vPosAtEndOfH);
-    }
-    else
-    {
-        hEnd = std::round((s2Len - intercept) / slope);
-        vEnd = s2Len;
-    }
-    int hDiff = hEnd - hStart;
-    int vDiff = vEnd - vStart;
 
-    if (verbosity > 2)
-        std::cout << "  Alignment line start/end positions: " << hStart << "-" << hEnd << ", " << vStart << "-" << vEnd << std::endl;
-
-    // Now that we have an estimate for the start/end of both sequences, we build a single seed
-    // chain around that line.
+    // We now get a Seqan global chain of the seeds.
     String<TSeed> seedChain;
-
-    // If the two sequences are the same length, then a single seed will do.
-    if (hDiff == vDiff)
-        appendValue(seedChain, TSeed(hStart, vStart, hEnd, vEnd));
-
-    // If one of the distances is longer, then we need multiple seeds to step across at a slope
-    // not equal to 1.
-    else
-    {
-        int additionalSteps = std::abs(vDiff - hDiff);
-        bool additionalHSteps = hDiff > vDiff;
-
-        int seedCount = additionalSteps + 1;
-        double pieceSize = double(std::min(hDiff, vDiff)) / seedCount;        
-        double targetPosition = 0;
-        int distanceSoFar = 0;
-        int hPos = hStart;
-        int vPos = vStart;
-        for (int i = 0; i < seedCount; ++i)
-        {
-            targetPosition += pieceSize;
-            int thisPieceSize = std::round(targetPosition - distanceSoFar);
-            distanceSoFar += thisPieceSize;
-            appendValue(seedChain, TSeed(hPos, vPos, hPos + thisPieceSize, vPos + thisPieceSize));
-            hPos += thisPieceSize;
-            vPos += thisPieceSize;
-            if (additionalHSteps)
-                hPos += 1;
-            else
-                vPos += 1;
-        }
-    }
+    chainSeedsGlobally(seedChain, seedSet, SparseChaining());
+    int seedsInChain = length(seedChain);
+    if (seedsInChain == 0)
+        return strdup("Failed: no global seed chain");
 
     if (verbosity > 3)
     {
-        int seedsInChain = length(seedChain);
-        std::cout << "  Line seed positions:" << std::endl;
+        std::cout << "  Globally chained seeds" << std::endl;
         std::cout << "\tH start\tH end\tV start\tV end" << std::endl;
         for (int i = 0; i < seedsInChain; ++i)
         {
             std::cout << "\t" << beginPositionH(seedChain[i]) << "\t" << endPositionH(seedChain[i]) << "\t";
             std::cout << beginPositionV(seedChain[i]) << "\t" << endPositionV(seedChain[i]) << std::endl;
         }
+        std::cout << std::endl;
     }
+
+
+    // // Convert the slope and intercept into start/end coordinates for the two sequences.
+    // int hStart, hEnd, vStart, vEnd;
+    // if (intercept >= 0.0)
+    // {
+    //     hStart = 0;
+    //     vStart = std::round(intercept);
+    // }
+    // else
+    // {
+    //     hStart = std::round(-intercept / slope);
+    //     vStart = 0;
+    // }
+    // double vPosAtEndOfH = (slope * s1Len) + intercept;
+    // if (vPosAtEndOfH <= s2Len)
+    // {
+    //     hEnd = s1Len;
+    //     vEnd = std::round(vPosAtEndOfH);
+    // }
+    // else
+    // {
+    //     hEnd = std::round((s2Len - intercept) / slope);
+    //     vEnd = s2Len;
+    // }
+    // int hDiff = hEnd - hStart;
+    // int vDiff = vEnd - vStart;
+
+    // if (verbosity > 2)
+    //     std::cout << "  Alignment line start/end positions: " << hStart << "-" << hEnd << ", " << vStart << "-" << vEnd << std::endl;
+
+    // // Now that we have an estimate for the start/end of both sequences, we build a single seed
+    // // chain around that line.
+    // String<TSeed> seedChain;
+
+    // // If the two sequences are the same length, then a single seed will do.
+    // if (hDiff == vDiff)
+    //     appendValue(seedChain, TSeed(hStart, vStart, hEnd, vEnd));
+
+    // // If one of the distances is longer, then we need multiple seeds to step across at a slope
+    // // not equal to 1.
+    // else
+    // {
+    //     int additionalSteps = std::abs(vDiff - hDiff);
+    //     bool additionalHSteps = hDiff > vDiff;
+
+    //     int seedCount = additionalSteps + 1;
+    //     double pieceSize = double(std::min(hDiff, vDiff)) / seedCount;        
+    //     double targetPosition = 0;
+    //     int distanceSoFar = 0;
+    //     int hPos = hStart;
+    //     int vPos = vStart;
+    //     for (int i = 0; i < seedCount; ++i)
+    //     {
+    //         targetPosition += pieceSize;
+    //         int thisPieceSize = std::round(targetPosition - distanceSoFar);
+    //         distanceSoFar += thisPieceSize;
+    //         appendValue(seedChain, TSeed(hPos, vPos, hPos + thisPieceSize, vPos + thisPieceSize));
+    //         hPos += thisPieceSize;
+    //         vPos += thisPieceSize;
+    //         if (additionalHSteps)
+    //             hPos += 1;
+    //         else
+    //             vPos += 1;
+    //     }
+    // }
+
+    // if (verbosity > 3)
+    // {
+    //     int seedsInChain = length(seedChain);
+    //     std::cout << "  Line seed positions:" << std::endl;
+    //     std::cout << "\tH start\tH end\tV start\tV end" << std::endl;
+    //     for (int i = 0; i < seedsInChain; ++i)
+    //     {
+    //         std::cout << "\t" << beginPositionH(seedChain[i]) << "\t" << endPositionH(seedChain[i]) << "\t";
+    //         std::cout << beginPositionV(seedChain[i]) << "\t" << endPositionV(seedChain[i]) << std::endl;
+    //     }
+    // }
 
     Align<Dna5String, ArrayGaps> alignment;
     resize(rows(alignment), 2);
     assignSource(row(alignment, 0), sequenceH);
     assignSource(row(alignment, 1), sequenceV);
-    Score<int, Simple> scoringScheme(1, -1, -1);
+    Score<int, Simple> scoringScheme(3, -6, -2, -5);
     AlignConfig<true, true, true, true> alignConfig;
-    bandedChainAlignment(alignment, seedChain, scoringScheme, alignConfig, bandSize);
+    int score = bandedChainAlignment(alignment, seedChain, scoringScheme, alignConfig, bandSize);
 
-    return turnAlignmentIntoDescriptiveString(&alignment, startTime);
+    return turnAlignmentIntoDescriptiveString(&alignment, score, startTime);
 }
 
 
@@ -539,7 +562,7 @@ std::map<std::string, std::vector<int> > getCommonLocations(std::string * shorte
 
 
 
-char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment,
+char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment, int score,
                                           long long startTime)
 {
     // Extract the alignment sequences into C++ strings, as the TRow type doesn't seem to have
@@ -661,6 +684,7 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
                               vectorToString(&s2DeletionPositions) + "," + 
                               std::to_string(editDistance) + "," + 
                               std::to_string(percentIdentity) + "," + 
+                              std::to_string(score) + "," + 
                               std::to_string(milliseconds);
 
     return cppStringToCString(finalString);

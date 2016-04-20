@@ -668,43 +668,38 @@ def make_seqan_alignment_one_line(reads, references, ref_name, ref_seq, read, re
                                   slope, intercept, k_size, kmer_locations, try_exhaustive):
     '''
     Runs an alignment using Seqan between one read and one reference along one line.
-    It starts with a smallish band size (fast) and works up to larger ones if it sees an long indel
-    run in the alignment (indicative of a problem).
+    It starts with a smallish band size (fast) and works up to larger ones to see if they improve
+    the alignment.
     It returns either an Alignment object or None, depending on whether or not it was successful.
     '''
-    band_size = 20 # TO DO: make this a parameter?
-    max_band_size = 160 # TO DO: make this a parameter?
-    longest_acceptable_indel_run = 5 # TO DO: make this a parameter?
+    band_size = 5 # TO DO: make this a parameter?
+    max_band_size = 320 # TO DO: make this a parameter?
 
     alignment = run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read,
                                                rev_comp, band_size, slope, intercept, k_size,
                                                kmer_locations)
-
-    # If the first alignment totally failed, then our only recourse is an exhaustive alignment.
     if not alignment:
-        if try_exhaustive:
-            alignment = run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq, read,
-                                                      rev_comp)
-        return alignment
+        return None
 
-    # If our alignment succeeded, we should still check to see if it looks good or if we need to
-    # increase the band size. The longest indel run is a good indicator.
+    # If our alignment succeeded, we try larger bands to see if that helps.
     while True:
-        if alignment.get_longest_indel_run() <= longest_acceptable_indel_run:
-            return alignment
         band_size *= 2
 
-        # If we've reached the max band size and still have too long of an indel, then we either
-        # return what we've got or do the exhaustive alignment.
+        # If we've reached the max band size, then we return what we've got.
         if band_size > max_band_size:
-            if try_exhaustive:
-                alignment = run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq,
-                                                          read, rev_comp)
             return alignment
 
-        alignment = run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read,
-                                                   rev_comp, band_size, slope, intercept, k_size,
-                                                   kmer_locations)
+        new_alignment = run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read,
+                                                       rev_comp, band_size, slope, intercept,
+                                                       k_size, kmer_locations)
+
+        # If our new alignment with a larger band size failed to improve upon our previous
+        # alignment with a smaller band size, then we don't bother trying for larger bands and just
+        # return our best alignment so far.
+        if new_alignment.score <= alignment.score:
+            return alignment
+        else:
+            alignment = new_alignment
 
 def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp,
                                    band_size, slope, intercept, k_size, kmer_locations):
@@ -1189,6 +1184,7 @@ class Alignment(object):
         self.ref_insertion_positions = None
         self.ref_deletion_positions = None
         self.extension_length = None
+        self.score = None
         self.milliseconds = None
 
         if seqan_output and read_name and ref_name:
@@ -1239,7 +1235,8 @@ class Alignment(object):
         self.ref_insertion_positions = [int(x) for x in seqan_parts[10].split(";")]
         self.ref_deletion_positions = [int(x) for x in seqan_parts[12].split(";")]
         self.extension_length = None
-        self.milliseconds = int(seqan_parts[15])
+        self.score = int(seqan_parts[15])
+        self.milliseconds = int(seqan_parts[16])
 
     def setup_using_paf_line(self, paf_line, reads, references):
         '''
@@ -1315,7 +1312,8 @@ class Alignment(object):
         return_str += self.ref_name + ' (' + str(self.ref_start_pos) + '-' + \
                       str(self.ref_end_pos) + ')'
         if self.alignment_type == 'Seqan':
-            return_str += ', ' + '%.2f' % self.percent_identity + '%'
+            return_str += ', ' + '%.2f' % self.percent_identity + '% ID'
+            return_str += ', score = ' + str(self.score)
             return_str += ', longest indel: ' + str(self.get_longest_indel_run())
             return_str += ', ' + str(self.milliseconds) + ' ms'
         return return_str

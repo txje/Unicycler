@@ -44,6 +44,7 @@ import random
 import argparse
 import string
 from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p
+from multiprocessing.dummy import Pool as ThreadPool
 
 '''
 VERBOSITY controls how much the script prints to the screen.
@@ -239,16 +240,36 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
     completed_count = 0
     if VERBOSITY == 1 and alignments_to_refine:
         print_progress_line(completed_count, len(alignments_to_refine))
+
+    # OLD SINGLE-THREADED APPROACH
+    # for alignment in alignments_to_refine:
+    #     refined_alignments = seqan_from_paf_alignment(alignment, reads, references,
+    #                                                   median_ref_to_read_ratio)
+    #     alignments += refined_alignments
+    #     if alignment in alignments_for_identity:
+    #         refined_alignments_for_identity += refined_alignments
+    #     completed_count += 1
+    #     if VERBOSITY == 1:
+    #         print_progress_line(completed_count, len(alignments_to_refine))
+
+    # NEW MULTITHREADED APPROACH
+    pool = ThreadPool(threads)
+    arg_list = []
     for alignment in alignments_to_refine:
-        refined_alignments = seqan_from_paf_alignment(alignment, reads, references,
-                                                      median_ref_to_read_ratio)
+        arg_list.append((alignment, reads, references, median_ref_to_read_ratio))
+    for refined_alignments in pool.imap_unordered(seqan_from_paf_alignment_one_arg, arg_list, 1):
         alignments += refined_alignments
         if alignment in alignments_for_identity:
             refined_alignments_for_identity += refined_alignments
         completed_count += 1
         if VERBOSITY == 1:
             print_progress_line(completed_count, len(alignments_to_refine))
+
     alignments += alignments_not_to_refine
+
+
+
+
     if VERBOSITY == 1:
         print('\n')
 
@@ -307,55 +328,55 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
         print('Unaligned reads:        ', int_to_str(len(unaligned), max_v))
         print()
 
-    # Try to realign any reads which are not completely aligned.
-    if incomplete_reads:
-        completed_count = 0
-        if VERBOSITY > 0:
-            print('Attempting realignment of incomplete reads')
-            print('------------------------------------------')
-        if VERBOSITY == 1:
-            print_progress_line(completed_count, len(incomplete_reads))
-        new_alignments = []
-        for read in incomplete_reads:
-            new_alignments += seqan_alignment_one_read_all_refs(reads, references, read,
-                                                                median_ref_to_read_ratio,
-                                                                exhaustive)
-            completed_count += 1
-            if VERBOSITY == 1:
-                print_progress_line(completed_count, len(incomplete_reads))
-        if VERBOSITY == 1:
-            print('\n')
+    # # Try to realign any reads which are not completely aligned.
+    # if incomplete_reads:
+    #     completed_count = 0
+    #     if VERBOSITY > 0:
+    #         print('Attempting realignment of incomplete reads')
+    #         print('------------------------------------------')
+    #     if VERBOSITY == 1:
+    #         print_progress_line(completed_count, len(incomplete_reads))
+    #     new_alignments = []
+    #     for read in incomplete_reads:
+    #         new_alignments += seqan_alignment_one_read_all_refs(reads, references, read,
+    #                                                             median_ref_to_read_ratio,
+    #                                                             exhaustive)
+    #         completed_count += 1
+    #         if VERBOSITY == 1:
+    #             print_progress_line(completed_count, len(incomplete_reads))
+    #     if VERBOSITY == 1:
+    #         print('\n')
 
-        # Give the alignments to their corresponding reads.
-        for alignment in new_alignments:
-            reads[alignment.read.name].alignments.append(alignment)
-        all_alignments_count = sum([len(x.alignments) for x in reads.itervalues()])
+    #     # Give the alignments to their corresponding reads.
+    #     for alignment in new_alignments:
+    #         reads[alignment.read.name].alignments.append(alignment)
+    #     all_alignments_count = sum([len(x.alignments) for x in reads.itervalues()])
 
-        # Filter the alignments based on conflicting read position.
-        if VERBOSITY > 0:
-            print('Filtering alignments')
-            print('--------------------')
-            print('Alignments before filtering:        ', int_to_str(all_alignments_count, max_v))
-        filtered_alignments = []
-        for read in reads.itervalues():
-            read.remove_conflicting_alignments()
-            filtered_alignments += read.alignments
-        if VERBOSITY > 0:
-            print('Alignments after conflict filtering:', int_to_str(len(filtered_alignments),
-                                                                     max_v))
+    #     # Filter the alignments based on conflicting read position.
+    #     if VERBOSITY > 0:
+    #         print('Filtering alignments')
+    #         print('--------------------')
+    #         print('Alignments before filtering:        ', int_to_str(all_alignments_count, max_v))
+    #     filtered_alignments = []
+    #     for read in reads.itervalues():
+    #         read.remove_conflicting_alignments()
+    #         filtered_alignments += read.alignments
+    #     if VERBOSITY > 0:
+    #         print('Alignments after conflict filtering:', int_to_str(len(filtered_alignments),
+    #                                                                  max_v))
 
-        fully_aligned, partially_aligned, unaligned = group_reads_by_fraction_aligned(reads)
-        if VERBOSITY == 1:
-            print()
-        if VERBOSITY > 0:
-            print('Updated read summary')
-            print('--------------------')
-            max_v = len(reads)
-            print('Total read count:       ', int_to_str(len(reads), max_v))
-            print('Fully aligned reads:    ', int_to_str(len(fully_aligned), max_v))
-            print('Partially aligned reads:', int_to_str(len(partially_aligned), max_v))
-            print('Unaligned reads:        ', int_to_str(len(unaligned), max_v))
-            print()
+    #     fully_aligned, partially_aligned, unaligned = group_reads_by_fraction_aligned(reads)
+    #     if VERBOSITY == 1:
+    #         print()
+    #     if VERBOSITY > 0:
+    #         print('Updated read summary')
+    #         print('--------------------')
+    #         max_v = len(reads)
+    #         print('Total read count:       ', int_to_str(len(reads), max_v))
+    #         print('Fully aligned reads:    ', int_to_str(len(fully_aligned), max_v))
+    #         print('Partially aligned reads:', int_to_str(len(partially_aligned), max_v))
+    #         print('Unaligned reads:        ', int_to_str(len(unaligned), max_v))
+    #         print()
 
     write_sam_file(filtered_alignments, sam_filtered)
     if temp_paf_raw:
@@ -967,6 +988,14 @@ def complement_base(base):
     reverse = 'TACGtacgYRSWMKyrswmkVHDBvhdbNn.-?N'
     return reverse[forward.find(base)]
 
+
+def seqan_from_paf_alignment_one_arg(all_args):
+    '''
+    This function is just a convenience for calling seqan_from_paf_alignment with a single argument
+    (makes multithreading easier).
+    '''
+    paf_alignment, reads, references, expected_ref_to_read_ratio = all_args
+    return seqan_from_paf_alignment(paf_alignment, reads, references, expected_ref_to_read_ratio)
 
 def seqan_from_paf_alignment(paf_alignment, reads, references, expected_ref_to_read_ratio):
     '''

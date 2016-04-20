@@ -33,7 +33,6 @@ class CommonKmer
 public:
     CommonKmer(std::string sequence, int hPosition, int vPosition, double angle);
     static double getRotationAngle(double slope) {return -atan(slope);}
-    bool operator<(const CommonKmer& other);
 
     std::string m_sequence;
     int m_hPosition;
@@ -47,10 +46,11 @@ public:
 
 
 // These are the functions that will be called by the Python script.
-char * semiGlobalAlignmentAroundLine(char * s1, char * s2, int s1Len, int s2Len, double slope,
-                                     double intercept, int bandSize, int verbosity);
+char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, double slope,
+                                 double intercept, int kSize, int bandSize, int verbosity,
+                                 char * kmerLocations, int kmerLocationsInt);
 char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double expectedSlope,
-                         int verbosity);
+                          int verbosity);
 char * exhaustiveSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len);
 void free_c_string(char * p);
 
@@ -103,7 +103,7 @@ char * exhaustiveSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len)
 // bandSize parameter specifies how far of an area around the line is searched. It is generally
 // much faster than exhaustiveSemiGlobalAlignment, though it may not find the optimal alignment.
 // A lower bandSize is faster with a larger chance of missing the optimal alignment.
-char * semiGlobalAlignmentAroundLine(char * s1, char * s2, int s1Len, int s2Len, double slope,
+char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, double slope,
                                      double intercept, int bandSize, int verbosity)
 {
     long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
@@ -221,15 +221,20 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
     if (commonKmers.size() < 2)
         return strdup("Failed: too few common kmers");
 
+    int kSize = commonKmers[0].m_sequence.length();
+
     double commonKmerDensity = double(commonKmers.size()) / (double(s1Str.length()) * double(s2Str.length()));
     if (verbosity > 3)
         std::cout << "  Common k-mer density: " << commonKmerDensity << std::endl;
 
-    std::sort(commonKmers.begin(), commonKmers.end());
+    // Sort by rotated vertical position so lines should be roughly horizontal.
+    std::sort(commonKmers.begin(), commonKmers.end(), [](const CommonKmer & a, const CommonKmer & b) {
+        return a.m_rotatedVPosition < b.m_rotatedVPosition;   
+    });
 
     // Score each point based on the number of other points in its band. The score is scaled by
     // the length of the band so short bands aren't penalised.
-    double bandSize = 20.0; // TO DO: MAKE THIS A PARAMETER?
+    double bandSize = 200.0; // TO DO: MAKE THIS A PARAMETER?
     int windowStart = 0;
     int windowEnd = 0;
     double maxScore = 0.0;
@@ -269,7 +274,7 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
     // Now group all of the line points. A line group begins when the score exceeds a threshold and
     // it ends when the score drops below the threshold.
     std::vector<std::vector<CommonKmer> > lineGroups;
-    double scoreThreshold = 100.0; // TO DO: MAKE THIS A PARAMETER?
+    double scoreThreshold = 10.0; // TO DO: MAKE THIS A PARAMETER?
     bool lineInProgress = false;
     for (int i = 0; i < commonKmers.size(); ++i)
     {
@@ -286,6 +291,50 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
             lineInProgress = false;
     }
 
+    //For each line group, throw out any point which is too divergent from its neighbours.
+    double maxSlope = 0.5; // TO DO: MAKE THIS A PARAMETER?
+    for (int i = 0; i < lineGroups.size(); ++i)
+    {
+        std::vector<CommonKmer> * lineGroup = &(lineGroups[i]);
+
+        // Sort by rotated horizontal position so we proceed along the line from start to end. 
+        std::sort(lineGroup->begin(), lineGroup->end(), [](const CommonKmer & a, const CommonKmer & b) {
+            return a.m_rotatedHPosition < b.m_rotatedHPosition;   
+        });
+
+        std::vector<CommonKmer> fixedLineGroup;
+        int groupSize = lineGroup->size();
+        for (int j = 0; j < groupSize; ++j)
+        {
+            CommonKmer * thisPoint = &((*lineGroup)[j]);
+            bool okaySlopeToPrevious, okaySlopeToNext;
+
+            if (j > 0)
+            {
+                CommonKmer * previousPoint = &((*lineGroup)[j - 1]);
+                double slopeToPrevious = (thisPoint->m_rotatedVPosition - previousPoint->m_rotatedVPosition) /
+                                         (thisPoint->m_rotatedHPosition - previousPoint->m_rotatedHPosition);
+                okaySlopeToPrevious = (fabs(slopeToPrevious) <= maxSlope);
+            }
+            else
+                okaySlopeToPrevious = false;
+
+            if (j < groupSize - 1)
+            {
+                CommonKmer * nextPoint = &((*lineGroup)[j + 1]);
+                double slopeToNext = (nextPoint->m_rotatedVPosition - thisPoint->m_rotatedVPosition) /
+                                     (nextPoint->m_rotatedHPosition - thisPoint->m_rotatedHPosition);
+                okaySlopeToNext = (fabs(slopeToNext) <= maxSlope);
+            }
+            else
+                okaySlopeToNext = false;
+
+            if (okaySlopeToPrevious || okaySlopeToNext)
+                fixedLineGroup.push_back(*thisPoint);
+        }
+        lineGroups[i] = fixedLineGroup;
+    }
+
     // Remove any line groups with fewer than two points.
     lineGroups.erase(std::remove_if(lineGroups.begin(), lineGroups.end(), 
                                     [](std::vector<CommonKmer> i) {return i.size() < 2;}),
@@ -295,23 +344,35 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
         return strdup("Failed: no lines found");
 
     if (verbosity > 2)
-        std::cout << "  Lines found: ";
+        std::cout << "  Lines found:\n";
 
-    // Perform a simple least-squares linear regression on each line group and add the
-    // slope/intercept to the returned string.
+    
     std::string linesString;
     for (int i = 0; i < lineGroups.size(); ++i)
     {
         if (i > 0)
             linesString += ";";
+
+        // Perform a simple least-squares linear regression on each line group.
         double slope, intercept;
         linearRegression(lineGroups[i], &slope, &intercept);
-        linesString += std::to_string(slope) + "," + std::to_string(intercept);
+        linesString += std::to_string(slope) + "," + std::to_string(intercept) + "," + std::to_string(kSize);
+
+        // Add the k-mer locations to the returned string.
+        for (int j = 0; j < lineGroups[i].size(); ++j)
+            linesString += "," + std::to_string(lineGroups[i][j].m_hPosition) + "," + std::to_string(lineGroups[i][j].m_vPosition)
+
         if (verbosity > 2)
+            std::cout << "    slope = " << slope << ", intercept = " << intercept << std::endl;
+
+        if (verbosity > 3)
         {
-            if (i > 0)
-                std::cout << "               ";
-            std::cout << "slope = " << slope << ", intercept = " << intercept << std::endl;
+            std::cout << "\tSeq 1 pos\tSeq 2 pos\tRotated seq 1 pos\tRotated seq 2 pos\tBand length\tBand count\tScore" << std::endl;
+            for (int j = 0; j < lineGroups[i].size(); ++j)
+                std::cout << "\t" << lineGroups[i][j].m_hPosition << "\t" << lineGroups[i][j].m_vPosition << "\t"
+                          << lineGroups[i][j].m_rotatedHPosition << "\t" << lineGroups[i][j].m_rotatedVPosition
+                          << "\t" << lineGroups[i][j].m_bandLength << "\t" << lineGroups[i][j].m_bandCount
+                          << "\t" << lineGroups[i][j].m_score << std::endl;
         }
     }
     return cppStringToCString(linesString);
@@ -329,7 +390,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
     double rotationAngle = CommonKmer::getRotationAngle(expectedSlope);
 
     // We will dynamically choose a k-mer size that gives a useful density of common locations.
-    int targetKCount = double(s1->length()) * double(s2->length()) * 0.000005; // MIGHT NEED TO TUNE THIS CONSTANT
+    int targetKCount = double(s1->length()) * double(s2->length()) * 0.00001; // MIGHT NEED TO TUNE THIS CONSTANT
     if (targetKCount < 40)
         targetKCount = 40;
     int minimumKCount = targetKCount / 4;
@@ -379,9 +440,10 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
     }
 
     // If the starting k-mer gave too few locations, we decrease it until we're in the correct
-    // range.
+    // range. But if at any step our smaller k-mer size reduces our common k-mer count, then 
     if (commonLocations.size() < minimumKCount)
     {
+        int lastCount = commonLocations.size();
         while (true)
         {
             --kSize;
@@ -392,6 +454,18 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
                 printKmerSize(kSize, commonLocations.size());
             if (commonLocations.size() >= minimumKCount)
                 break;
+
+            // If making the k-mer size smaller reduced the number of common k-mers, then we've
+            // gone too far. Back up and break out of the loop.
+            if (commonLocations.size() < lastCount)
+            {
+                ++kSize;
+                commonLocations = getCommonLocations(shorter, longer, kSize);
+                if (verbosity > 2)
+                    printKmerSize(kSize, commonLocations.size());
+                break;
+            }
+            lastCount = commonLocations.size();
         }
     }
 
@@ -698,12 +772,6 @@ CommonKmer::CommonKmer(std::string sequence, int hPosition, int vPosition, doubl
     m_rotatedHPosition = (m_hPosition * c) - (m_vPosition * s);
     m_rotatedVPosition = (m_hPosition * s) + (m_vPosition * c);
 }
-
-bool CommonKmer::operator<(const CommonKmer& other)
-{
-    return this->m_rotatedVPosition < other.m_rotatedVPosition;
-}
-
 
 void printKmerSize(int kmerSize, int locationCount)
 {

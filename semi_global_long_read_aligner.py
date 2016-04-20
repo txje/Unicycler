@@ -72,19 +72,22 @@ C_LIB.exhaustiveSemiGlobalAlignment.restype = c_void_p    # String describing al
 This function conducts a semi-global alignment surrounding the given line. Since the search is
 limited to a narrow band it is much more efficient than the exhaustive search.
 '''
-C_LIB.semiGlobalAlignmentAroundLine.argtypes = [c_char_p, # Sequence 1
-                                                c_char_p, # Sequence 2
-                                                c_int,    # Sequence 1 length
-                                                c_int,    # Sequence 2 length
-                                                c_double, # Slope
-                                                c_double, # Intercept
-                                                c_int,    # Band size
-                                                c_int]    # Debug level
-C_LIB.semiGlobalAlignmentAroundLine.restype = c_void_p    # String describing alignment
+C_LIB.bandedSemiGlobalAlignment.argtypes = [c_char_p, # Sequence 1
+                                            c_char_p, # Sequence 2
+                                            c_int,    # Sequence 1 length
+                                            c_int,    # Sequence 2 length
+                                            c_double, # Slope
+                                            c_double, # Intercept
+                                            c_int,    # K-mer size
+                                            c_int,    # Band size
+                                            c_int,    # Debug level
+                                            c_char_p, # K-mer location string
+                                            c_int]    # K-mer location string length
+C_LIB.bandedSemiGlobalAlignment.restype = c_void_p    # String describing alignment
 
 '''
 This function looks for the most likely line representing the alignment. It is used to get a
-line to be given to C_LIB.semiGlobalAlignmentAroundLine.
+line to be given to C_LIB.bandedSemiGlobalAlignment.
 '''
 C_LIB.findAlignmentLines.argtypes = [c_char_p, # Sequence 1
                                      c_char_p, # Sequence 2
@@ -242,28 +245,28 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
         print_progress_line(completed_count, len(alignments_to_refine))
 
     # OLD SINGLE-THREADED APPROACH
-    # for alignment in alignments_to_refine:
-    #     refined_alignments = seqan_from_paf_alignment(alignment, reads, references,
-    #                                                   median_ref_to_read_ratio)
-    #     alignments += refined_alignments
-    #     if alignment in alignments_for_identity:
-    #         refined_alignments_for_identity += refined_alignments
-    #     completed_count += 1
-    #     if VERBOSITY == 1:
-    #         print_progress_line(completed_count, len(alignments_to_refine))
-
-    # NEW MULTITHREADED APPROACH
-    pool = ThreadPool(threads)
-    arg_list = []
     for alignment in alignments_to_refine:
-        arg_list.append((alignment, reads, references, median_ref_to_read_ratio))
-    for refined_alignments in pool.imap_unordered(seqan_from_paf_alignment_one_arg, arg_list, 1):
+        refined_alignments = seqan_from_paf_alignment(alignment, reads, references,
+                                                      median_ref_to_read_ratio)
         alignments += refined_alignments
         if alignment in alignments_for_identity:
             refined_alignments_for_identity += refined_alignments
         completed_count += 1
         if VERBOSITY == 1:
             print_progress_line(completed_count, len(alignments_to_refine))
+
+    # NEW MULTITHREADED APPROACH
+    # pool = ThreadPool(threads)
+    # arg_list = []
+    # for alignment in alignments_to_refine:
+    #     arg_list.append((alignment, reads, references, median_ref_to_read_ratio))
+    # for refined_alignments in pool.imap_unordered(seqan_from_paf_alignment_one_arg, arg_list, 1):
+    #     alignments += refined_alignments
+    #     if alignment in alignments_for_identity:
+    #         refined_alignments_for_identity += refined_alignments
+    #     completed_count += 1
+    #     if VERBOSITY == 1:
+    #         print_progress_line(completed_count, len(alignments_to_refine))
 
     alignments += alignments_not_to_refine
 
@@ -648,17 +651,22 @@ def make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read, r
     # If the code got here, then we have at least one line to use in a banded alignment. Conduct
     # an alignment for each line.
     alignments = []
-    slopes_and_intercepts = line_result.split(';')
-    for slope_and_intercept in slopes_and_intercepts:
-        slope, intercept = [float(x) for x in slope_and_intercept.split(',')]
+    lines_info = line_result.split(';')
+    for line_info in lines_info:
+        line_info_parts = line_info.split(',', 3)
+        slope = float(line_info_parts[0])
+        intercept = float(line_info_parts[1])
+        k_size = int(line_info_parts[2])
+        kmer_locations = line_info_parts[3]
         alignment = make_seqan_alignment_one_line(reads, references, ref_name, ref_seq, read,
-                                                  rev_comp, slope, intercept, try_exhaustive)
+                                                  rev_comp, slope, intercept, k_size,
+                                                  kmer_locations, try_exhaustive)
         if alignment:
             alignments.append(alignment)
     return alignments
 
 def make_seqan_alignment_one_line(reads, references, ref_name, ref_seq, read, rev_comp,
-                                  slope, intercept, try_exhaustive):
+                                  slope, intercept, k_size, kmer_locations, try_exhaustive):
     '''
     Runs an alignment using Seqan between one read and one reference along one line.
     It starts with a smallish band size (fast) and works up to larger ones if it sees an long indel
@@ -670,7 +678,8 @@ def make_seqan_alignment_one_line(reads, references, ref_name, ref_seq, read, re
     longest_acceptable_indel_run = 5 # TO DO: make this a parameter?
 
     alignment = run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read,
-                                               rev_comp, band_size, slope, intercept)
+                                               rev_comp, band_size, slope, intercept, k_size,
+                                               kmer_locations)
 
     # If the first alignment totally failed, then our only recourse is an exhaustive alignment.
     if not alignment:
@@ -695,10 +704,11 @@ def make_seqan_alignment_one_line(reads, references, ref_name, ref_seq, read, re
             return alignment
 
         alignment = run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read,
-                                                   rev_comp, band_size, slope, intercept)
+                                                   rev_comp, band_size, slope, intercept, k_size,
+                                                   kmer_locations)
 
 def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp,
-                                   band_size, slope, intercept):
+                                   band_size, slope, intercept, k_size, kmer_locations):
     '''
     Runs a single alignment using Seqan.
     Since this does a banded alignment, it is efficient but may or may not be successful. Returns
@@ -708,8 +718,9 @@ def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, r
         read_seq = reverse_complement(read.sequence)
     else:
         read_seq = read.sequence
-    ptr = C_LIB.semiGlobalAlignmentAroundLine(read_seq, ref_seq, len(read_seq), len(ref_seq),
-                                              slope, intercept, band_size, VERBOSITY)
+    ptr = C_LIB.bandedSemiGlobalAlignment(read_seq, ref_seq, len(read_seq), len(ref_seq), slope,
+                                          intercept, k_size, band_size, VERBOSITY, kmer_locations,
+                                          len(kmer_locations))
     alignment_result = cast(ptr, c_char_p).value    
     C_LIB.free_c_string(ptr)
 

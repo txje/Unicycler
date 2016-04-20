@@ -59,18 +59,8 @@ VERBOSITY = 0
 C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_align.so'))
 
 '''
-This function conducts a full semi-global alignment between two sequences. It will be slow
-(possibly very slow for long sequences) but will always give an optimal result.
-'''
-C_LIB.exhaustiveSemiGlobalAlignment.argtypes = [c_char_p, # Sequence 1
-                                                c_char_p, # Sequence 2
-                                                c_int,    # Sequence 1 length
-                                                c_int]    # Sequence 2 length
-C_LIB.exhaustiveSemiGlobalAlignment.restype = c_void_p    # String describing alignment
-
-'''
 This function conducts a semi-global alignment surrounding the given line. Since the search is
-limited to a narrow band it is much more efficient than the exhaustive search.
+limited to a narrow band it is much more efficient than an exhaustive search.
 '''
 C_LIB.bandedSemiGlobalAlignment.argtypes = [c_char_p, # Sequence 1
                                             c_char_p, # Sequence 2
@@ -115,8 +105,7 @@ def main():
         os.makedirs(args.temp_dir)
     long_reads = semi_global_align_long_reads(args.ref, args.reads, args.paf_raw,
                                               args.sam, args.temp_dir, args.path,
-                                              args.threads, True, args.verbosity,
-                                              args.exhaustive)
+                                              args.threads, True, args.verbosity)
     write_reference_errors_to_table(args.ref, long_reads, args.table)
     if not temp_dir_exist_at_start:
         os.rmdir(args.temp_dir)
@@ -146,13 +135,10 @@ def get_arguments():
                         help='Number of threads used by GraphMap')
     parser.add_argument('--verbosity', type=int, required=False, default=1,
                         help='Level of stdout information (0 to 4)')
-    parser.add_argument('--exhaustive', action='store_true', required=False,
-                        help='Use exhaustive semi-global alignment (slow) when attempting '
-                             'realignment of reads')
     return parser.parse_args()
 
 def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filtered, temp_dir,
-                                 graphmap_path, threads, seqan_all, verbosity, exhaustive):
+                                 graphmap_path, threads, seqan_all, verbosity):
     '''
     This function does the primary work of this module: aligning long reads to references in an
     end-gap-free, semi-global manner. It returns a list of LongRead objects which contain their
@@ -245,14 +231,16 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
 
     # OLD SINGLE-THREADED APPROACH
     for alignment in alignments_to_refine:
-        refined_alignments = seqan_from_paf_alignment(alignment, reads, references,
-                                                      median_ref_to_read_ratio)
+        refined_alignments, output = seqan_from_paf_alignment(alignment, reads, references,
+                                                              median_ref_to_read_ratio)
         alignments += refined_alignments
         if alignment in alignments_for_identity:
             refined_alignments_for_identity += refined_alignments
         completed_count += 1
         if VERBOSITY == 1:
             print_progress_line(completed_count, len(alignments_to_refine))
+        if VERBOSITY > 1:
+            print(output, end='')
 
     # NEW MULTITHREADED APPROACH
     # pool = ThreadPool(threads)
@@ -318,7 +306,6 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
         print()
    
     fully_aligned, partially_aligned, unaligned = group_reads_by_fraction_aligned(reads)
-    incomplete_reads = partially_aligned + unaligned
 
     if VERBOSITY > 0:
         print('Read summary')
@@ -331,6 +318,7 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
         print()
 
     # # Try to realign any reads which are not completely aligned.
+    # incomplete_reads = partially_aligned + unaligned
     # if incomplete_reads:
     #     completed_count = 0
     #     if VERBOSITY > 0:
@@ -572,57 +560,64 @@ def load_paf_alignments(paf_filename, reads, references):
             paf_alignments.append(Alignment(reads, references, paf_line=line))
     return paf_alignments
 
-def seqan_alignment_one_read_all_refs(reads, references, read, expected_ref_to_read_ratio,
-                                      try_exhaustive=False):
+def seqan_alignment_one_read_all_refs(reads, references, read, expected_ref_to_read_ratio):
     '''
     Aligns a single read against all reference sequences using Seqan. Both forward and reverse
     complement alignments are tried.
     Returns a list of all alignments found.
     '''
+    output = ''
     global VERBOSITY
     if VERBOSITY > 1:
-        print(read)
+        output += str(read) + '\n'
     alignments = []
 
     # For lower verbosity levels we will suppress output for the Seqan alignent.
-    verbosityAtStart = VERBOSITY
+    verbosity_at_start = VERBOSITY
     if VERBOSITY <= 2:
         VERBOSITY = 0
 
     for ref_name, ref_seq in references.iteritems():
-        if verbosityAtStart > 2:
-            print('Reference:', ref_name + '+')
-        alignments += make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read,
-                                                     False, expected_ref_to_read_ratio,
-                                                     try_exhaustive)
-        if verbosityAtStart > 2:
-            print('Reference:', ref_name + '-')
-        alignments += make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read,
-                                                     True, expected_ref_to_read_ratio,
-                                                     try_exhaustive)
-    if verbosityAtStart > 1:
+        if verbosity_at_start > 2:
+            output += 'Reference:', ref_name + '+\n'
+        forward_alignment, forward_alignment_output = \
+                        make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read,
+                                                       False, expected_ref_to_read_ratio)
+        alignments += forward_alignment
+        output += forward_alignment_output
+
+        if verbosity_at_start > 2:
+            output += 'Reference:', ref_name + '-\n'
+        reverse_alignment, reverse_alignment_output = \
+                        make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read,
+                                                       True, expected_ref_to_read_ratio)
+        alignments += reverse_alignment
+        output += reverse_alignment_output
+
+    if verbosity_at_start > 1:
         if not alignments:
-            print('No alignments found for read ' + read.name)
+            output += 'No alignments found for read ' + read.name + '\n'
         else:
-            print('Alignments found for read ' + read.name + ':')
+            output += 'Alignments found for read ' + read.name + ':\n'
             for alignment in alignments:
-                print(' ', alignment)
-        print()
+                output += '  ' + str(alignment) + '\n'
+        output += '\n'
 
     # Restore the verbosity if it was suppressed.
-    if verbosityAtStart <= 2:
-        VERBOSITY = verbosityAtStart
+    if verbosity_at_start <= 2:
+        VERBOSITY = verbosity_at_start
 
     return alignments
 
 def make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read, rev_comp,
-                                   expected_ref_to_read_ratio, try_exhaustive=False):
+                                   expected_ref_to_read_ratio):
     '''
     Runs an alignment using Seqan between one read and one reference.
     Returns a list of Alignment objects: empty list means it did not succeed, a list of one means
     it got one alignment (common) and a list of more than one means it got multiple alignments (not
     common but possible).
     '''
+    output = ''
     if rev_comp:
         read_seq = reverse_complement(read.sequence)
     else:
@@ -634,18 +629,10 @@ def make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read, r
     line_result = cast(ptr, c_char_p).value
     C_LIB.free_c_string(ptr)
 
-    # If no alignment lines were found, then our only recourse is an exhaustive alignment.
     if line_result.startswith('Fail'):
-        if try_exhaustive:
-            alignment = run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq, read,
-                                                      rev_comp)
-            if VERBOSITY > 1:
-                print('  No alignment lines found, conducting an exhaustive alignment')
-            return [alignment]
-        else:
-            if VERBOSITY > 1:
-                print('  No alignment lines found')
-            return []
+        if VERBOSITY > 1:
+            output += '  No alignment lines found\n'
+        return [], output
 
     # If the code got here, then we have at least one line to use in a banded alignment. Conduct
     # an alignment for each line.
@@ -657,29 +644,34 @@ def make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read, r
         intercept = float(line_info_parts[1])
         k_size = int(line_info_parts[2])
         kmer_locations = line_info_parts[3]
-        alignment = make_seqan_alignment_one_line(reads, references, ref_name, ref_seq, read,
-                                                  rev_comp, slope, intercept, k_size,
-                                                  kmer_locations, try_exhaustive)
+        alignment, alignment_output = make_seqan_alignment_one_line(reads, references, ref_name,
+                                                                    ref_seq, read, rev_comp, slope,
+                                                                    intercept, k_size,
+                                                                    kmer_locations)
         if alignment:
             alignments.append(alignment)
-    return alignments
+            output += alignment_output
+    return alignments, output
 
 def make_seqan_alignment_one_line(reads, references, ref_name, ref_seq, read, rev_comp,
-                                  slope, intercept, k_size, kmer_locations, try_exhaustive):
+                                  slope, intercept, k_size, kmer_locations):
     '''
     Runs an alignment using Seqan between one read and one reference along one line.
     It starts with a smallish band size (fast) and works up to larger ones to see if they improve
     the alignment.
     It returns either an Alignment object or None, depending on whether or not it was successful.
     '''
+    output = ''
     band_size = 5 # TO DO: make this a parameter?
     max_band_size = 320 # TO DO: make this a parameter?
 
-    alignment = run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read,
-                                               rev_comp, band_size, slope, intercept, k_size,
-                                               kmer_locations)
+    alignment, alignment_output = run_one_banded_seqan_alignment(reads, references, ref_name,
+                                                                 ref_seq, read, rev_comp,
+                                                                 band_size, slope, intercept,
+                                                                 k_size, kmer_locations)
+    output += alignment_output
     if not alignment:
-        return None
+        return None, output
 
     # If our alignment succeeded, we try larger bands to see if that helps.
     while True:
@@ -687,17 +679,20 @@ def make_seqan_alignment_one_line(reads, references, ref_name, ref_seq, read, re
 
         # If we've reached the max band size, then we return what we've got.
         if band_size > max_band_size:
-            return alignment
+            return alignment, output
 
-        new_alignment = run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read,
-                                                       rev_comp, band_size, slope, intercept,
-                                                       k_size, kmer_locations)
+        new_alignment, alignment_output = run_one_banded_seqan_alignment(reads, references,
+                                                                         ref_name, ref_seq, read,
+                                                                         rev_comp, band_size,
+                                                                         slope, intercept, k_size,
+                                                                         kmer_locations)
+        output += alignment_output
 
         # If our new alignment with a larger band size failed to improve upon our previous
         # alignment with a smaller band size, then we don't bother trying for larger bands and just
         # return our best alignment so far.
         if new_alignment.score <= alignment.score:
-            return alignment
+            return alignment, output
         else:
             alignment = new_alignment
 
@@ -708,6 +703,7 @@ def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, r
     Since this does a banded alignment, it is efficient but may or may not be successful. Returns
     either an Alignment object (if successful) or None (if not).
     '''
+    output = ''
     if rev_comp:
         read_seq = reverse_complement(read.sequence)
     else:
@@ -718,35 +714,16 @@ def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, r
     C_LIB.free_c_string(ptr)
 
     if alignment_result.startswith('Failed'):
-        print(alignment_result)
-        return None
+        output += alignment_result + '\n'
+        return None, output
 
     alignment = Alignment(reads, references, seqan_output=alignment_result, read_name=read.name,
                           ref_name=ref_name, rev_comp=rev_comp)
     if VERBOSITY > 1:
-        print('Seqan alignment, bandwidth = ' + str(band_size) + ':', alignment)
+        output += 'Seqan alignment, bandwidth = ' + str(band_size) + ': ' + str(alignment) + '\n'
     if VERBOSITY > 2:
-        print(alignment.cigar)
-    return alignment
-
-def run_one_exact_seqan_alignment(reads, references, ref_name, ref_seq, read, rev_comp):
-    '''
-    Runs a single alignment using Seqan. Does not use heuristics so it will always return an
-    Alignment object, no matter how bad the alignment is, but it's slow.
-    '''
-    if rev_comp:
-        read_seq = reverse_complement(read.sequence)
-    else:
-        read_seq = read.sequence
-    ptr = C_LIB.exhaustiveSemiGlobalAlignment(read_seq, ref_seq, len(read_seq), len(ref_seq))
-    alignment_result = cast(ptr, c_char_p).value
-    C_LIB.free_c_string(ptr)
-
-    alignment = Alignment(reads, references, seqan_output=alignment_result, read_name=read.name,
-                          ref_name=ref_name, rev_comp=rev_comp)
-    if VERBOSITY > 1:
-        print('Exhaustive alignment:', alignment)
-    return alignment
+        output += alignment.cigar + '\n'
+    return alignment, output
 
 def get_ref_shift_from_cigar_part(cigar_part):
     '''
@@ -765,7 +742,6 @@ def get_ref_shift_from_cigar_part(cigar_part):
         return 0
     if cigar_part[-1] == 'I':
         return 0
-
 
 def simplify_ranges(ranges):
     '''
@@ -806,7 +782,6 @@ def range_is_contained(test_range, other_ranges):
             return True
     return False
 
-
 def write_sam_file(alignments, sam_filename):
     '''
     Writes the given alignments to a SAM file.
@@ -816,7 +791,6 @@ def write_sam_file(alignments, sam_filename):
         sam_file.write(alignment.get_sam_line())
         sam_file.write('\n')
     sam_file.close()
-
 
 def load_fasta(filename): # type: (str) -> list[tuple[str, str]]
     '''
@@ -1006,16 +980,21 @@ def seqan_from_paf_alignment(paf_alignment, reads, references, expected_ref_to_r
     This function is used on PAF alignments to turn them into Seqan alignments. This takes them
     from basic alignments with only approximate start/end positions into full alignments.
     '''
+    output = ''
     assert paf_alignment.alignment_type == 'PAF'
     if VERBOSITY > 1:
-        print('PAF alignment before Seqan:', paf_alignment)
-    alignments = make_seqan_alignment_all_lines(reads, references, paf_alignment.ref_name,
-                                                paf_alignment.full_ref_sequence, paf_alignment.read,
-                                                paf_alignment.rev_comp, expected_ref_to_read_ratio,
-                                                try_exhaustive=False)
+        output += 'PAF alignment before Seqan: ' + str(paf_alignment) + '\n'
+
+    alignments, alignment_output = make_seqan_alignment_all_lines(reads, references,
+                                                                  paf_alignment.ref_name,
+                                                                  paf_alignment.full_ref_sequence,
+                                                                  paf_alignment.read,
+                                                                  paf_alignment.rev_comp,
+                                                                  expected_ref_to_read_ratio)
+    output += alignment_output
     if VERBOSITY > 1:
-        print()
-    return alignments
+        output += '\n'
+    return alignments, output
 
 def get_median(num_list):
     '''
@@ -1031,6 +1010,10 @@ def get_median(num_list):
         return sorted_list[count // 2]
 
 def print_progress_line(completed, total):
+    '''
+    Prints a progress line to the screen using a carriage return to overwrite the previous progress
+    line.
+    '''
     fraction_str = str(completed) + ' / ' + str(total)
     percent_str = '%.1f' % (100.0 * completed / total) + '%'
     print('\r' + fraction_str + ' (' + percent_str + ')', end='')

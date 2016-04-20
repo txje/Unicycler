@@ -629,6 +629,9 @@ def make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read, r
     line_result = cast(ptr, c_char_p).value
     C_LIB.free_c_string(ptr)
 
+    line_finding_output, line_result = line_result.split(';', 1)
+    output += line_finding_output
+
     if line_result.startswith('Fail'):
         if VERBOSITY > 1:
             output += '  No alignment lines found\n'
@@ -712,6 +715,9 @@ def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, r
                                           intercept, k_size, band_size, VERBOSITY, kmer_locations)
     alignment_result = cast(ptr, c_char_p).value    
     C_LIB.free_c_string(ptr)
+
+    alignment_output, alignment_result = alignment_result.split(';', 1)
+    output += alignment_output
 
     if alignment_result.startswith('Failed'):
         output += alignment_result + '\n'
@@ -1184,7 +1190,7 @@ class Alignment(object):
         complete details about the alignment.
         '''
         self.alignment_type = 'Seqan'
-        seqan_parts = seqan_output.split(',')
+        seqan_parts = seqan_output.split(';')
         if len(seqan_parts) < 13:
             return
 
@@ -1214,9 +1220,9 @@ class Alignment(object):
         self.alignment_length = int(seqan_parts[5])
         self.edit_distance = int(seqan_parts[13])
         self.percent_identity = float(seqan_parts[14])
-        self.ref_mismatch_positions = [int(x) for x in seqan_parts[8].split(";")]
-        self.ref_insertion_positions = [int(x) for x in seqan_parts[10].split(";")]
-        self.ref_deletion_positions = [int(x) for x in seqan_parts[12].split(";")]
+        self.ref_mismatch_positions = [int(x) for x in seqan_parts[8].split(',')]
+        self.ref_insertion_positions = [int(x) for x in seqan_parts[10].split(',')]
+        self.ref_deletion_positions = [int(x) for x in seqan_parts[12].split(',')]
         self.extension_length = None
         self.score = int(seqan_parts[15])
         self.milliseconds = int(seqan_parts[16])

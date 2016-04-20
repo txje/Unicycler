@@ -56,10 +56,10 @@ void free_c_string(char * p);
 
 // These functions are internal to this C++ code.
 std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, double expectedSlope,
-                                       int verbosity);
+                                       int verbosity, std::string & output);
 std::map<std::string, std::vector<int> > getCommonLocations(std::string * s1, std::string * s2, int kSize);
 char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment, int score,
-                                          long long startTime);
+                                          long long startTime, std::string output);
 CigarType getCigarType(char b1, char b2, bool alignmentStarted);
 std::string getCigarPart(CigarType type, int length);
 char * cppStringToCString(std::string cpp_string);
@@ -70,17 +70,19 @@ void getSeedChainSlopeAndIntercept(String<TSeed> * seedChain, int firstI, int la
 void getSlopeAndIntercept(int hStart, int hEnd, int vStart, int vEnd,
                                    double * slope, double * intercept);
 double getMedian(std::vector<double> * v);
-void printKmerSize(int kmerSize, int locationCount);
+void printKmerSize(int kmerSize, int locationCount, std::string & output);
 double getLineLength(double x, double y, double slope, double xSize, double ySize);
 void linearRegression(std::vector<CommonKmer> & pts, double * slope, double * intercept);
 void parseKmerLocationsFromString(std::string & str, std::vector<int> & v1, std::vector<int> & v2);
-
+std::string getKmerTable(std::vector<CommonKmer> & commonKmers);
+std::string getSeedChainTable(String<TSeed> & seedChain);
 
 
 // This function does the full semi-global alignment using the entirety of both sequences. It will
 // be slow but will always find the ideal alignment.
 char * exhaustiveSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len)
 {
+    std::string output = "";
     long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 
     TSequence sequenceH = s1;
@@ -94,7 +96,7 @@ char * exhaustiveSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len)
     AlignConfig<true, true, true, true> alignConfig;
     int score = globalAlignment(alignment, scoringScheme, alignConfig);
 
-    return turnAlignmentIntoDescriptiveString(&alignment, score, startTime);
+    return turnAlignmentIntoDescriptiveString(&alignment, score, startTime, output);
 }
 
 
@@ -108,13 +110,14 @@ char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, dou
                                  double intercept, int kSize, int bandSize, int verbosity,
                                  char * kmerLocations)
 {
+    std::string output = "";
     long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 
     // Extreme slope values will not work.
     if (slope > 1.5)
-        return strdup("Failed: slope too large");
+        return cppStringToCString(output + ";Failed: slope too large");
     if (slope < 0.5)
-        return strdup("Failed: slope too small");
+        return cppStringToCString(output + ";Failed: slope too small");
 
     TSequence sequenceH = s1;
     TSequence sequenceV = s2;
@@ -136,20 +139,13 @@ char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, dou
     // We now get a Seqan global chain of the seeds.
     String<TSeed> seedChain;
     chainSeedsGlobally(seedChain, seedSet, SparseChaining());
-    int seedsInChain = length(seedChain);
-    if (seedsInChain == 0)
-        return strdup("Failed: no global seed chain");
+    if (length(seedChain) == 0)
+        return cppStringToCString(output + ";Failed: no global seed chain");
 
     if (verbosity > 3)
     {
-        std::cout << "  Globally chained seeds" << std::endl;
-        std::cout << "\tH start\tH end\tV start\tV end" << std::endl;
-        for (int i = 0; i < seedsInChain; ++i)
-        {
-            std::cout << "\t" << beginPositionH(seedChain[i]) << "\t" << endPositionH(seedChain[i]) << "\t";
-            std::cout << beginPositionV(seedChain[i]) << "\t" << endPositionV(seedChain[i]) << std::endl;
-        }
-        std::cout << std::endl;
+        output += "  Globally chained seeds\n";
+        output += getSeedChainTable(seedChain);
     }
 
 
@@ -238,7 +234,7 @@ char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, dou
     AlignConfig<true, true, true, true> alignConfig;
     int score = bandedChainAlignment(alignment, seedChain, scoringScheme, alignConfig, bandSize);
 
-    return turnAlignmentIntoDescriptiveString(&alignment, score, startTime);
+    return turnAlignmentIntoDescriptiveString(&alignment, score, startTime, output);
 }
 
 
@@ -251,17 +247,18 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
 {
     std::string s1Str(s1);
     std::string s2Str(s2);
+    std::string output;
 
     std::vector<CommonKmer> commonKmers = getCommonKmers(&s1Str, &s2Str, expectedSlope,
-                                                         verbosity);
+                                                         verbosity, output);
     if (commonKmers.size() < 2)
-        return strdup("Failed: too few common kmers");
+        return cppStringToCString(output + ";Failed: too few common kmers");
 
     int kSize = commonKmers[0].m_sequence.length();
 
     double commonKmerDensity = double(commonKmers.size()) / (double(s1Str.length()) * double(s2Str.length()));
     if (verbosity > 3)
-        std::cout << "  Common k-mer density: " << commonKmerDensity << std::endl;
+        output += "  Common k-mer density: " + std::to_string(commonKmerDensity) + "\n";
 
     // Sort by rotated vertical position so lines should be roughly horizontal.
     std::sort(commonKmers.begin(), commonKmers.end(), [](const CommonKmer & a, const CommonKmer & b) {
@@ -297,14 +294,9 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
 
     if (verbosity > 3)
     {
-        std::cout << "  Common k-mer positions:" << std::endl;
-        std::cout << "\tSeq 1 pos\tSeq 2 pos\tRotated seq 1 pos\tRotated seq 2 pos\tBand length\tBand count\tScore" << std::endl;
-        for (int i = 0; i < commonKmers.size(); ++i)
-            std::cout << "\t" << commonKmers[i].m_hPosition << "\t" << commonKmers[i].m_vPosition << "\t"
-                      << commonKmers[i].m_rotatedHPosition << "\t" << commonKmers[i].m_rotatedVPosition
-                      << "\t" << commonKmers[i].m_bandLength << "\t" << commonKmers[i].m_bandCount
-                      << "\t" << commonKmers[i].m_score << std::endl;
-        std::cout << "  Max score: " << maxScore << std::endl;
+        output += "  Common k-mer positions:\n";
+        output += getKmerTable(commonKmers);
+        output += "  Max score: " + std::to_string(maxScore) + "\n";
     }
 
     // Now group all of the line points. A line group begins when the score exceeds a threshold and
@@ -377,10 +369,10 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
                      lineGroups.end());
 
     if (lineGroups.size() == 0)
-        return strdup("Failed: no lines found");
-
+        return cppStringToCString(output + ";Failed: no lines found");
+    
     if (verbosity > 2)
-        std::cout << "  Lines found:\n";
+        output += "  Lines found:\n";
 
     
     std::string linesString;
@@ -399,19 +391,12 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
             linesString += "," + std::to_string(lineGroups[i][j].m_hPosition) + "," + std::to_string(lineGroups[i][j].m_vPosition);
 
         if (verbosity > 2)
-            std::cout << "    slope = " << slope << ", intercept = " << intercept << std::endl;
+            output += "    slope = " + std::to_string(slope) + ", intercept = " + std::to_string(intercept) + "\n";
 
         if (verbosity > 3)
-        {
-            std::cout << "\tSeq 1 pos\tSeq 2 pos\tRotated seq 1 pos\tRotated seq 2 pos\tBand length\tBand count\tScore" << std::endl;
-            for (int j = 0; j < lineGroups[i].size(); ++j)
-                std::cout << "\t" << lineGroups[i][j].m_hPosition << "\t" << lineGroups[i][j].m_vPosition << "\t"
-                          << lineGroups[i][j].m_rotatedHPosition << "\t" << lineGroups[i][j].m_rotatedVPosition
-                          << "\t" << lineGroups[i][j].m_bandLength << "\t" << lineGroups[i][j].m_bandCount
-                          << "\t" << lineGroups[i][j].m_score << std::endl;
-        }
+            output += getKmerTable(lineGroups[i]);
     }
-    return cppStringToCString(linesString);
+    return cppStringToCString(output + ";" + linesString);
 }
 
 
@@ -420,7 +405,7 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
 
 // This function returns a list of the k-mers common to the two sequences.
 std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, double expectedSlope,
-                                       int verbosity)
+                                       int verbosity, std::string & output)
 {
     std::vector<CommonKmer> commonKmers;
     double rotationAngle = CommonKmer::getRotationAngle(expectedSlope);
@@ -431,8 +416,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
         targetKCount = 40;
     int minimumKCount = targetKCount / 4;
     if (verbosity > 2)
-        std::cout << "  Target k-mer range: " << minimumKCount << " to " <<
-                     targetKCount << std::endl;
+        output += "  Target k-mer range: " + std::to_string(minimumKCount) + " to " + std::to_string(targetKCount) + "\n";
     int kSize = 10; // Starting k-mer size
 
     // The order used is based not on s1 or s2 but shorter sequence vs longer sequence.
@@ -447,7 +431,8 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
 
     std::map<std::string, std::vector<int> > commonLocations;
     commonLocations = getCommonLocations(shorter, longer, kSize);
-    if (verbosity > 2) printKmerSize(kSize, commonLocations.size());
+    if (verbosity > 2)
+        printKmerSize(kSize, commonLocations.size(), output);
 
     // If the starting k-mer gave too many locations, we increase it until we're in the correct
     // range.
@@ -457,7 +442,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
         {
             ++kSize;
             commonLocations = getCommonLocations(shorter, longer, kSize);
-            if (verbosity > 2) printKmerSize(kSize, commonLocations.size());
+            if (verbosity > 2) printKmerSize(kSize, commonLocations.size(), output);
 
             // If we're reached the target range, that's good...
             if (commonLocations.size() <= targetKCount)
@@ -468,7 +453,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
                 {
                     --kSize;
                     commonLocations = getCommonLocations(shorter, longer, kSize);
-                    if (verbosity > 2) printKmerSize(kSize, commonLocations.size());
+                    if (verbosity > 2) printKmerSize(kSize, commonLocations.size(), output);
                 }
                 break;
             }
@@ -487,7 +472,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
                 break;
             commonLocations = getCommonLocations(shorter, longer, kSize);
             if (verbosity > 2)
-                printKmerSize(kSize, commonLocations.size());
+                printKmerSize(kSize, commonLocations.size(), output);
             if (commonLocations.size() >= minimumKCount)
                 break;
 
@@ -498,7 +483,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
                 ++kSize;
                 commonLocations = getCommonLocations(shorter, longer, kSize);
                 if (verbosity > 2)
-                    printKmerSize(kSize, commonLocations.size());
+                    printKmerSize(kSize, commonLocations.size(), output);
                 break;
             }
             lastCount = commonLocations.size();
@@ -563,7 +548,7 @@ std::map<std::string, std::vector<int> > getCommonLocations(std::string * shorte
 
 
 char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment, int score,
-                                          long long startTime)
+                                          long long startTime, std::string output)
 {
     // Extract the alignment sequences into C++ strings, as the TRow type doesn't seem to have
     // constant time random access.
@@ -576,7 +561,7 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
 
     int alignmentLength = std::max(s1Alignment.size(), s2Alignment.size());
     if (alignmentLength == 0)
-        return strdup("Failed: alignment length zero");
+        return cppStringToCString(output + ";Failed: alignment length zero");
 
     // Build a CIGAR string of the alignment.
     std::string cigarString;
@@ -669,22 +654,23 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
     long long endTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count(); 
     int milliseconds = endTime - startTime;
 
-    std::string finalString = cigarString + "," +
-                              std::to_string(s1Start) + "," + 
-                              std::to_string(s1End) + "," + 
-                              std::to_string(s2Start) + "," + 
-                              std::to_string(s2End) + "," + 
-                              std::to_string(alignedLength) + "," + 
-                              std::to_string(matchCount) + "," + 
-                              std::to_string(mismatchCount) + "," + 
-                              vectorToString(&s2MismatchPositions) + "," + 
-                              std::to_string(insertionCount) + "," + 
-                              vectorToString(&s2InsertionPositions) + "," + 
-                              std::to_string(deletionCount) + "," + 
-                              vectorToString(&s2DeletionPositions) + "," + 
-                              std::to_string(editDistance) + "," + 
-                              std::to_string(percentIdentity) + "," + 
-                              std::to_string(score) + "," + 
+    std::string finalString = output + ";" + 
+                              cigarString + ";" +
+                              std::to_string(s1Start) + ";" + 
+                              std::to_string(s1End) + ";" + 
+                              std::to_string(s2Start) + ";" + 
+                              std::to_string(s2End) + ";" + 
+                              std::to_string(alignedLength) + ";" + 
+                              std::to_string(matchCount) + ";" + 
+                              std::to_string(mismatchCount) + ";" + 
+                              vectorToString(&s2MismatchPositions) + ";" + 
+                              std::to_string(insertionCount) + ";" + 
+                              vectorToString(&s2InsertionPositions) + ";" + 
+                              std::to_string(deletionCount) + ";" + 
+                              vectorToString(&s2DeletionPositions) + ";" + 
+                              std::to_string(editDistance) + ";" + 
+                              std::to_string(percentIdentity) + ";" + 
+                              std::to_string(score) + ";" + 
                               std::to_string(milliseconds);
 
     return cppStringToCString(finalString);
@@ -711,7 +697,7 @@ std::string vectorToString(std::vector<int> * v)
     for(size_t i = 0; i < v->size(); ++i)
     {
         if (i != 0)
-            ss << ";";
+            ss << ",";
         ss << (*v)[i];
     }
     return ss.str();
@@ -810,9 +796,9 @@ CommonKmer::CommonKmer(std::string sequence, int hPosition, int vPosition, doubl
     m_rotatedVPosition = (m_hPosition * s) + (m_vPosition * c);
 }
 
-void printKmerSize(int kmerSize, int locationCount)
+void printKmerSize(int kmerSize, int locationCount, std::string & output)
 {
-    std::cout << "  " << locationCount << " " << kmerSize << "-mers in common" << std::endl;
+    output += "  " + std::to_string(locationCount) + " " + std::to_string(kmerSize) + "-mers in common\n";
 }
 
 // Given a point, a slope and rectangle bounds, this function returns the length of the line
@@ -884,6 +870,36 @@ void parseKmerLocationsFromString(std::string & str, std::vector<int> & v1, std:
         v1.push_back(std::stoi(s1Location));
         v2.push_back(std::stoi(s2Location));
     }
+}
+
+std::string getKmerTable(std::vector<CommonKmer> & commonKmers)
+{
+    std::string table = "\tSeq 1 pos\tSeq 2 pos\tRotated seq 1 pos\tRotated seq 2 pos\tBand length\tBand count\tScore\n";
+    for (int i = 0; i < commonKmers.size(); ++i)
+    {
+        table += "\t" + std::to_string(commonKmers[i].m_hPosition) +
+                 "\t" + std::to_string(commonKmers[i].m_vPosition) + 
+                 "\t" + std::to_string(commonKmers[i].m_rotatedHPosition) +
+                 "\t" + std::to_string(commonKmers[i].m_rotatedVPosition) +
+                 "\t" + std::to_string(commonKmers[i].m_bandLength) +
+                 "\t" + std::to_string(commonKmers[i].m_bandCount) +
+                 "\t" + std::to_string(commonKmers[i].m_score) + "\n";
+    }
+    return table;
+}
+
+std::string getSeedChainTable(String<TSeed> & seedChain)
+{
+    std::string table = "\tH start\tH end\tV start\tV end\n";
+    int seedsInChain = length(seedChain);
+    for (int i = 0; i < seedsInChain; ++i)
+    {
+        table += "\t" + std::to_string(beginPositionH(seedChain[i])) +
+                 "\t" + std::to_string(endPositionH(seedChain[i])) +
+                 "\t" + std::to_string(beginPositionV(seedChain[i])) +
+                 "\t" + std::to_string(endPositionV(seedChain[i])) + "\n";
+    }
+    return table;
 }
 
 }

@@ -230,9 +230,25 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
         print_progress_line(completed_count, len(alignments_to_refine))
 
     # OLD SINGLE-THREADED APPROACH
+    # for alignment in alignments_to_refine:
+    #     refined_alignments, output = seqan_from_paf_alignment(alignment, reads, references,
+    #                                                           median_ref_to_read_ratio)
+    #     alignments += refined_alignments
+    #     if alignment in alignments_for_identity:
+    #         refined_alignments_for_identity += refined_alignments
+    #     completed_count += 1
+    #     if VERBOSITY == 1:
+    #         print_progress_line(completed_count, len(alignments_to_refine))
+    #     if VERBOSITY > 1:
+    #         print(output, end='')
+
+    # NEW MULTITHREADED APPROACH
+    pool = ThreadPool(threads)
+    arg_list = []
     for alignment in alignments_to_refine:
-        refined_alignments, output = seqan_from_paf_alignment(alignment, reads, references,
-                                                              median_ref_to_read_ratio)
+        arg_list.append((alignment, reads, references, median_ref_to_read_ratio))
+    for refined_alignments, output in pool.imap_unordered(seqan_from_paf_alignment_one_arg,
+                                                          arg_list, 1):
         alignments += refined_alignments
         if alignment in alignments_for_identity:
             refined_alignments_for_identity += refined_alignments
@@ -241,19 +257,6 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
             print_progress_line(completed_count, len(alignments_to_refine))
         if VERBOSITY > 1:
             print(output, end='')
-
-    # NEW MULTITHREADED APPROACH
-    # pool = ThreadPool(threads)
-    # arg_list = []
-    # for alignment in alignments_to_refine:
-    #     arg_list.append((alignment, reads, references, median_ref_to_read_ratio))
-    # for refined_alignments in pool.imap_unordered(seqan_from_paf_alignment_one_arg, arg_list, 1):
-    #     alignments += refined_alignments
-    #     if alignment in alignments_for_identity:
-    #         refined_alignments_for_identity += refined_alignments
-    #     completed_count += 1
-    #     if VERBOSITY == 1:
-    #         print_progress_line(completed_count, len(alignments_to_refine))
 
     alignments += alignments_not_to_refine
 

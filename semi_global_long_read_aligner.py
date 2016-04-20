@@ -81,8 +81,7 @@ C_LIB.bandedSemiGlobalAlignment.argtypes = [c_char_p, # Sequence 1
                                             c_int,    # K-mer size
                                             c_int,    # Band size
                                             c_int,    # Debug level
-                                            c_char_p, # K-mer location string
-                                            c_int]    # K-mer location string length
+                                            c_char_p] # K-mer location string
 C_LIB.bandedSemiGlobalAlignment.restype = c_void_p    # String describing alignment
 
 '''
@@ -719,8 +718,7 @@ def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, r
     else:
         read_seq = read.sequence
     ptr = C_LIB.bandedSemiGlobalAlignment(read_seq, ref_seq, len(read_seq), len(ref_seq), slope,
-                                          intercept, k_size, band_size, VERBOSITY, kmer_locations,
-                                          len(kmer_locations))
+                                          intercept, k_size, band_size, VERBOSITY, kmer_locations)
     alignment_result = cast(ptr, c_char_p).value    
     C_LIB.free_c_string(ptr)
 

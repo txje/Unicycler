@@ -48,7 +48,7 @@ public:
 // These are the functions that will be called by the Python script.
 char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, double slope,
                                  double intercept, int kSize, int bandSize, int verbosity,
-                                 char * kmerLocations, int kmerLocationsInt);
+                                 char * kmerLocations);
 char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double expectedSlope,
                           int verbosity);
 char * exhaustiveSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len);
@@ -73,6 +73,7 @@ double getMedian(std::vector<double> * v);
 void printKmerSize(int kmerSize, int locationCount);
 double getLineLength(double x, double y, double slope, double xSize, double ySize);
 void linearRegression(std::vector<CommonKmer> & pts, double * slope, double * intercept);
+void parseKmerLocationsFromString(std::string & str, std::vector<int> & v1, std::vector<int> & v2);
 
 
 
@@ -104,15 +105,27 @@ char * exhaustiveSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len)
 // much faster than exhaustiveSemiGlobalAlignment, though it may not find the optimal alignment.
 // A lower bandSize is faster with a larger chance of missing the optimal alignment.
 char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, double slope,
-                                     double intercept, int bandSize, int verbosity)
+                                 double intercept, int kSize, int bandSize, int verbosity,
+                                 char * kmerLocations)
 {
     long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 
-    // Extreme slope values will not work, so check for them now.
+    // Extreme slope values will not work.
     if (slope > 1.5)
         return strdup("Failed: slope too large");
     if (slope < 0.5)
         return strdup("Failed: slope too small");
+
+    std::string kmerLocationsStr(kmerLocations);
+    std::vector<int> s1KmerLocations;
+    std::vector<int> s2KmerLocations;
+    parseKmerLocationsFromString(kmerLocationsStr, s1KmerLocations, s2KmerLocations);
+
+    for (int i = 0; i < s1KmerLocations.size(); ++i)
+        std::cout << s1KmerLocations[i] << ", " << s2KmerLocations[i] << std::endl;
+
+    int ZERO = 0;
+    int CRASH = 5 / ZERO;
 
     TSequence sequenceH = s1;
     TSequence sequenceV = s2;
@@ -360,7 +373,7 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
 
         // Add the k-mer locations to the returned string.
         for (int j = 0; j < lineGroups[i].size(); ++j)
-            linesString += "," + std::to_string(lineGroups[i][j].m_hPosition) + "," + std::to_string(lineGroups[i][j].m_vPosition)
+            linesString += "," + std::to_string(lineGroups[i][j].m_hPosition) + "," + std::to_string(lineGroups[i][j].m_vPosition);
 
         if (verbosity > 2)
             std::cout << "    slope = " << slope << ", intercept = " << intercept << std::endl;
@@ -832,6 +845,21 @@ void linearRegression(std::vector<CommonKmer> & pts, double * slope, double * in
     double denominator = sumHH - (sumH * hMean);
     *slope = (sumHV - sumH * vMean) / denominator;
     *intercept = vMean - (*slope * hMean);
+}
+
+
+void parseKmerLocationsFromString(std::string & str, std::vector<int> & v1, std::vector<int> & v2)
+{
+    std::stringstream ss(str);
+    while(ss.good())
+    {
+        std::string s1Location;
+        std::string s2Location;
+        std::getline(ss, s1Location, ',');
+        std::getline(ss, s2Location, ',');
+        v1.push_back(std::stoi(s1Location));
+        v2.push_back(std::stoi(s2Location));
+    }
 }
 
 }

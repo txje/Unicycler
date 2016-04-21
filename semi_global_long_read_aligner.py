@@ -151,13 +151,14 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
     If seqan_all is False, then only the overlap alignments and a small set of long contained
     alignments will be run through Seqan.
     '''
-    reads = load_long_reads(long_reads_fastq)
-    references = {get_nice_header(header): seq for header, seq in load_fasta(ref_fasta)}
-
     global VERBOSITY
     VERBOSITY = verbosity
     if VERBOSITY > 0:
         print()
+
+    references = load_references(ref_fasta)
+    reads = load_long_reads(long_reads_fastq)
+
 
     if not paf_raw:
         temp_paf_raw = True
@@ -471,12 +472,59 @@ def write_reference_errors_to_table(ref_fasta, long_reads, table_prefix):
         if table_prefix:
             table.close()
 
+def load_references(fasta_filename):
+    '''
+    This function loads in reference sequences from a FASTA file and returns a dictionary where
+    key = ref name and value = reference sequence.
+    '''
+    references = {}
+    total_bases = 0
+    if VERBOSITY > 0:
+        print('Loading references')
+        print('------------------')
+        num_refs = sum(1 for line in open(fasta_filename) if line.startswith('>'))
+        if not num_refs:
+            quit_with_error('There are no references sequences in ' + fasta_filename)
+        print_progress_line(0, num_refs)
+    fasta_file = open(fasta_filename, 'r')
+    name = ''
+    sequence = ''
+    for line in fasta_file:
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith('>'): # Header line = start of new contig
+            if name:
+                references[get_nice_header(name)] = sequence
+                total_bases += len(sequence)
+                if VERBOSITY > 0:
+                    print_progress_line(len(references), num_refs, total_bases)
+                name = ''
+                sequence = ''
+            name = line[1:]
+        else:
+            sequence += line
+    fasta_file.close()
+    if name:
+        references[name.split()[0]] = sequence
+        total_bases += len(sequence)
+        if VERBOSITY > 0:
+            print_progress_line(len(references), num_refs, total_bases)
+            print('\n')
+    return references
+
 def load_long_reads(fastq_filename):
     '''
     This function loads in long reads from a FASTQ file and returns a dictionary where key = read
     name and value = LongRead object.
     '''
     reads = {}
+    total_bases = 0
+    if VERBOSITY > 0:
+        print('Loading reads')
+        print('-------------')
+        num_reads = sum(1 for line in open(fastq_filename)) // 4
+        print_progress_line(0, num_reads)
     fastq = open(fastq_filename, 'r')
     for line in fastq:
         name = line.strip()[1:]
@@ -484,7 +532,12 @@ def load_long_reads(fastq_filename):
         _ = next(fastq)
         qualities = next(fastq).strip()
         reads[name] = LongRead(name, sequence, qualities)
+        total_bases += len(sequence)
+        if VERBOSITY > 0:
+            print_progress_line(len(reads), num_reads, total_bases)
     fastq.close()
+    if VERBOSITY > 0:
+        print('\n')
     return reads
 
 def seq_by_seq_graphmap_alignment(ref_fasta, long_reads_fastq, paf_file, graphmap_path,
@@ -663,7 +716,7 @@ def make_seqan_alignment_one_line(reads, references, ref_name, ref_seq, read, re
     '''
     output = ''
     band_size = 5 # TO DO: make this a parameter?
-    max_band_size = 320 # TO DO: make this a parameter?
+    max_band_size = 160 # TO DO: make this a parameter?
 
     alignment, alignment_output = run_one_banded_seqan_alignment(reads, references, ref_name,
                                                                  ref_seq, read, rev_comp,
@@ -1013,14 +1066,16 @@ def get_median(num_list):
     else:
         return sorted_list[count // 2]
 
-def print_progress_line(completed, total):
+def print_progress_line(completed, total, base_pairs=None):
     '''
     Prints a progress line to the screen using a carriage return to overwrite the previous progress
     line.
     '''
-    fraction_str = str(completed) + ' / ' + str(total)
-    percent_str = '%.1f' % (100.0 * completed / total) + '%'
-    print('\r' + fraction_str + ' (' + percent_str + ')', end='')
+    progress_str = int_to_str(completed) + ' / ' + int_to_str(total)
+    progress_str += ' (' + '%.1f' % (100.0 * completed / total) + '%)'
+    if base_pairs is not None:
+        progress_str += ' - ' + int_to_str(base_pairs) + ' bp'
+    print('\r' + progress_str, end='')
     sys.stdout.flush()
 
 def group_reads_by_fraction_aligned(reads):

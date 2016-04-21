@@ -70,7 +70,11 @@ C_LIB.bandedSemiGlobalAlignment.argtypes = [c_char_p, # Sequence 1
                                             c_double, # Intercept
                                             c_int,    # K-mer size
                                             c_int,    # Band size
-                                            c_int,    # Debug level
+                                            c_int,    # Verbosity
+                                            c_int,    # Match score
+                                            c_int,    # Mismatch score
+                                            c_int,    # Gap open score
+                                            c_int,    # Gap extension score
                                             c_char_p] # K-mer location string
 C_LIB.bandedSemiGlobalAlignment.restype = c_void_p    # String describing alignment
 
@@ -83,7 +87,7 @@ C_LIB.findAlignmentLines.argtypes = [c_char_p, # Sequence 1
                                      c_int,    # Sequence 1 length
                                      c_int,    # Sequence 2 length
                                      c_double, # Expected slope
-                                     c_int]    # Debug output
+                                     c_int]    # Verbosity
 C_LIB.findAlignmentLines.restype = c_void_p    # String describing the found line(s)
 
 '''
@@ -229,18 +233,6 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
     if VERBOSITY == 1 and alignments_to_refine:
         print_progress_line(completed_count, len(alignments_to_refine))
 
-    # OLD SINGLE-THREADED APPROACH
-    # for alignment in alignments_to_refine:
-    #     refined_alignments, output = seqan_from_paf_alignment(alignment, reads, references,
-    #                                                           median_ref_to_read_ratio)
-    #     alignments += refined_alignments
-    #     if alignment in alignments_for_identity:
-    #         refined_alignments_for_identity += refined_alignments
-    #     completed_count += 1
-    #     if VERBOSITY == 1:
-    #         print_progress_line(completed_count, len(alignments_to_refine))
-    #     if VERBOSITY > 1:
-    #         print(output, end='')
 
     # NEW MULTITHREADED APPROACH
     pool = ThreadPool(threads)
@@ -249,6 +241,12 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
         arg_list.append((alignment, reads, references, median_ref_to_read_ratio))
     for refined_alignments, output in pool.imap_unordered(seqan_from_paf_alignment_one_arg,
                                                           arg_list, 1):
+
+    # # OLD SINGLE-THREADED APPROACH
+    # for alignment in alignments_to_refine:
+    #     refined_alignments, output = seqan_from_paf_alignment(alignment, reads, references,
+    #                                                           median_ref_to_read_ratio)
+
         alignments += refined_alignments
         if alignment in alignments_for_identity:
             refined_alignments_for_identity += refined_alignments
@@ -259,10 +257,6 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
             print(output, end='')
 
     alignments += alignments_not_to_refine
-
-
-
-
     if VERBOSITY == 1:
         print('\n')
 
@@ -697,7 +691,7 @@ def make_seqan_alignment_one_line(reads, references, ref_name, ref_seq, read, re
         # If our new alignment with a larger band size failed to improve upon our previous
         # alignment with a smaller band size, then we don't bother trying for larger bands and just
         # return our best alignment so far.
-        if new_alignment.score <= alignment.score:
+        if new_alignment.scaled_score <= alignment.scaled_score:
             return alignment, output
         else:
             alignment = new_alignment
@@ -715,7 +709,8 @@ def run_one_banded_seqan_alignment(reads, references, ref_name, ref_seq, read, r
     else:
         read_seq = read.sequence
     ptr = C_LIB.bandedSemiGlobalAlignment(read_seq, ref_seq, len(read_seq), len(ref_seq), slope,
-                                          intercept, k_size, band_size, VERBOSITY, kmer_locations)
+                                          intercept, k_size, band_size, VERBOSITY,
+                                          3, -6, -5, -2, kmer_locations)
     alignment_result = cast(ptr, c_char_p).value    
     C_LIB.free_c_string(ptr)
 
@@ -1176,7 +1171,8 @@ class Alignment(object):
         self.ref_insertion_positions = None
         self.ref_deletion_positions = None
         self.extension_length = None
-        self.score = None
+        self.raw_score = None
+        self.scaled_score = None
         self.milliseconds = None
 
         if seqan_output and read_name and ref_name:
@@ -1223,12 +1219,19 @@ class Alignment(object):
         self.alignment_length = int(seqan_parts[5])
         self.edit_distance = int(seqan_parts[13])
         self.percent_identity = float(seqan_parts[14])
-        self.ref_mismatch_positions = [int(x) for x in seqan_parts[8].split(',')]
-        self.ref_insertion_positions = [int(x) for x in seqan_parts[10].split(',')]
-        self.ref_deletion_positions = [int(x) for x in seqan_parts[12].split(',')]
+        self.ref_mismatch_positions = []
+        self.ref_insertion_positions = []
+        self.ref_deletion_positions = []
+        if seqan_parts[8]:
+            self.ref_mismatch_positions = [int(x) for x in seqan_parts[8].split(',')]
+        if seqan_parts[10]:
+            self.ref_insertion_positions = [int(x) for x in seqan_parts[10].split(',')]
+        if seqan_parts[12]:
+            self.ref_deletion_positions = [int(x) for x in seqan_parts[12].split(',')]
         self.extension_length = None
-        self.score = int(seqan_parts[15])
-        self.milliseconds = int(seqan_parts[16])
+        self.raw_score = int(seqan_parts[15])
+        self.scaled_score = float(seqan_parts[16])
+        self.milliseconds = int(seqan_parts[17])
 
     def setup_using_paf_line(self, paf_line, reads, references):
         '''
@@ -1305,7 +1308,7 @@ class Alignment(object):
                       str(self.ref_end_pos) + ')'
         if self.alignment_type == 'Seqan':
             return_str += ', ' + '%.2f' % self.percent_identity + '% ID'
-            return_str += ', score = ' + str(self.score)
+            return_str += ', score = ' + '%.2f' % self.scaled_score
             return_str += ', longest indel: ' + str(self.get_longest_indel_run())
             return_str += ', ' + str(self.milliseconds) + ' ms'
         return return_str

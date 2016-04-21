@@ -48,10 +48,11 @@ public:
 // These are the functions that will be called by the Python script.
 char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, double slope,
                                  double intercept, int kSize, int bandSize, int verbosity,
-                                 char * kmerLocations);
+                                 int matchScore, int mismatchScore, int gapOpenScore,
+                                 int gapExtensionScore, char * kmerLocations);
 char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double expectedSlope,
                           int verbosity);
-char * exhaustiveSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len);
+// char * exhaustiveSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len);
 void free_c_string(char * p);
 
 // These functions are internal to this C++ code.
@@ -59,7 +60,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
                                        int verbosity, std::string & output);
 std::map<std::string, std::vector<int> > getCommonLocations(std::string * s1, std::string * s2, int kSize);
 char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment, int score,
-                                          long long startTime, std::string output);
+                                          int matchScore, long long startTime, std::string output);
 CigarType getCigarType(char b1, char b2, bool alignmentStarted);
 std::string getCigarPart(CigarType type, int length);
 char * cppStringToCString(std::string cpp_string);
@@ -78,26 +79,26 @@ std::string getKmerTable(std::vector<CommonKmer> & commonKmers);
 std::string getSeedChainTable(String<TSeed> & seedChain);
 
 
-// This function does the full semi-global alignment using the entirety of both sequences. It will
-// be slow but will always find the ideal alignment.
-char * exhaustiveSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len)
-{
-    std::string output = "";
-    long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
+// // This function does the full semi-global alignment using the entirety of both sequences. It will
+// // be slow but will always find the ideal alignment.
+// char * exhaustiveSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len)
+// {
+//     std::string output = "";
+//     long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 
-    TSequence sequenceH = s1;
-    TSequence sequenceV = s2;
+//     TSequence sequenceH = s1;
+//     TSequence sequenceV = s2;
 
-    Align<Dna5String, ArrayGaps> alignment;
-    resize(rows(alignment), 2);
-    assignSource(row(alignment, 0), sequenceH);
-    assignSource(row(alignment, 1), sequenceV);
-    Score<int, Simple> scoringScheme(3, -6, -2, -5);
-    AlignConfig<true, true, true, true> alignConfig;
-    int score = globalAlignment(alignment, scoringScheme, alignConfig);
+//     Align<Dna5String, ArrayGaps> alignment;
+//     resize(rows(alignment), 2);
+//     assignSource(row(alignment, 0), sequenceH);
+//     assignSource(row(alignment, 1), sequenceV);
+//     Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
+//     AlignConfig<true, true, true, true> alignConfig;
+//     int score = globalAlignment(alignment, scoringScheme, alignConfig);
 
-    return turnAlignmentIntoDescriptiveString(&alignment, score, startTime, output);
-}
+//     return turnAlignmentIntoDescriptiveString(&alignment, score, startTime, output);
+// }
 
 
 
@@ -108,7 +109,8 @@ char * exhaustiveSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len)
 // A lower bandSize is faster with a larger chance of missing the optimal alignment.
 char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, double slope,
                                  double intercept, int kSize, int bandSize, int verbosity,
-                                 char * kmerLocations)
+                                 int matchScore, int mismatchScore, int gapOpenScore,
+                                 int gapExtensionScore, char * kmerLocations)
 {
     std::string output = "";
     long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
@@ -148,93 +150,15 @@ char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, dou
         output += getSeedChainTable(seedChain);
     }
 
-
-    // // Convert the slope and intercept into start/end coordinates for the two sequences.
-    // int hStart, hEnd, vStart, vEnd;
-    // if (intercept >= 0.0)
-    // {
-    //     hStart = 0;
-    //     vStart = std::round(intercept);
-    // }
-    // else
-    // {
-    //     hStart = std::round(-intercept / slope);
-    //     vStart = 0;
-    // }
-    // double vPosAtEndOfH = (slope * s1Len) + intercept;
-    // if (vPosAtEndOfH <= s2Len)
-    // {
-    //     hEnd = s1Len;
-    //     vEnd = std::round(vPosAtEndOfH);
-    // }
-    // else
-    // {
-    //     hEnd = std::round((s2Len - intercept) / slope);
-    //     vEnd = s2Len;
-    // }
-    // int hDiff = hEnd - hStart;
-    // int vDiff = vEnd - vStart;
-
-    // if (verbosity > 2)
-    //     std::cout << "  Alignment line start/end positions: " << hStart << "-" << hEnd << ", " << vStart << "-" << vEnd << std::endl;
-
-    // // Now that we have an estimate for the start/end of both sequences, we build a single seed
-    // // chain around that line.
-    // String<TSeed> seedChain;
-
-    // // If the two sequences are the same length, then a single seed will do.
-    // if (hDiff == vDiff)
-    //     appendValue(seedChain, TSeed(hStart, vStart, hEnd, vEnd));
-
-    // // If one of the distances is longer, then we need multiple seeds to step across at a slope
-    // // not equal to 1.
-    // else
-    // {
-    //     int additionalSteps = std::abs(vDiff - hDiff);
-    //     bool additionalHSteps = hDiff > vDiff;
-
-    //     int seedCount = additionalSteps + 1;
-    //     double pieceSize = double(std::min(hDiff, vDiff)) / seedCount;        
-    //     double targetPosition = 0;
-    //     int distanceSoFar = 0;
-    //     int hPos = hStart;
-    //     int vPos = vStart;
-    //     for (int i = 0; i < seedCount; ++i)
-    //     {
-    //         targetPosition += pieceSize;
-    //         int thisPieceSize = std::round(targetPosition - distanceSoFar);
-    //         distanceSoFar += thisPieceSize;
-    //         appendValue(seedChain, TSeed(hPos, vPos, hPos + thisPieceSize, vPos + thisPieceSize));
-    //         hPos += thisPieceSize;
-    //         vPos += thisPieceSize;
-    //         if (additionalHSteps)
-    //             hPos += 1;
-    //         else
-    //             vPos += 1;
-    //     }
-    // }
-
-    // if (verbosity > 3)
-    // {
-    //     int seedsInChain = length(seedChain);
-    //     std::cout << "  Line seed positions:" << std::endl;
-    //     std::cout << "\tH start\tH end\tV start\tV end" << std::endl;
-    //     for (int i = 0; i < seedsInChain; ++i)
-    //     {
-    //         std::cout << "\t" << beginPositionH(seedChain[i]) << "\t" << endPositionH(seedChain[i]) << "\t";
-    //         std::cout << beginPositionV(seedChain[i]) << "\t" << endPositionV(seedChain[i]) << std::endl;
-    //     }
-    // }
-
     Align<Dna5String, ArrayGaps> alignment;
     resize(rows(alignment), 2);
     assignSource(row(alignment, 0), sequenceH);
     assignSource(row(alignment, 1), sequenceV);
-    Score<int, Simple> scoringScheme(3, -6, -2, -5);
+    Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
     AlignConfig<true, true, true, true> alignConfig;
     int score = bandedChainAlignment(alignment, seedChain, scoringScheme, alignConfig, bandSize);
 
-    return turnAlignmentIntoDescriptiveString(&alignment, score, startTime, output);
+    return turnAlignmentIntoDescriptiveString(&alignment, score, matchScore, startTime, output);
 }
 
 
@@ -548,7 +472,7 @@ std::map<std::string, std::vector<int> > getCommonLocations(std::string * shorte
 
 
 char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment, int score,
-                                          long long startTime, std::string output)
+                                          int matchScore, long long startTime, std::string output)
 {
     // Extract the alignment sequences into C++ strings, as the TRow type doesn't seem to have
     // constant time random access.
@@ -577,12 +501,19 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
     int s1Start = -1, s2Start = -1;
     int s1Bases = 0, s2Bases = 0;
     bool alignmentStarted = false;
+    bool s1Started = false, s2Started = false;
     for (int i = 0; i < alignmentLength; ++i)
     {
         char base1 = s1Alignment[i];
         char base2 = s2Alignment[i];
 
-        if (base1 != '-' && base2 != '-' && !alignmentStarted)
+        // We consider the alignment to have started when we've encountered a base in both
+        // sequences (though not necessarily at the same time).
+        if (base1 != '-')
+            s1Started = true;
+        if (base2 != '-')
+            s2Started = true;
+        if (s1Started && s2Started && !alignmentStarted)
         {
             s1Start = s1Bases;
             s2Start = s2Bases;
@@ -593,6 +524,7 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
         if (i == 0)
             currentCigarType = cigarType;
 
+        // Tally up counts and positions for matches, mismatches, insertions and deletions.
         if (cigarType == MATCH)
         {
             if (base1 == base2)
@@ -651,6 +583,10 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
     int alignedLength = matchCount + mismatchCount + insertionCount + deletionCount;
     double percentIdentity = 100.0 * matchCount / alignedLength;
 
+    // Scale the score and adjust to the alignment length. 100 = perfect score.
+    double perfectScore = double(matchScore) * double(alignedLength);
+    double scaledScore = 100.0 * double(score) / perfectScore;
+
     long long endTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count(); 
     int milliseconds = endTime - startTime;
 
@@ -671,6 +607,7 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
                               std::to_string(editDistance) + ";" + 
                               std::to_string(percentIdentity) + ";" + 
                               std::to_string(score) + ";" + 
+                              std::to_string(scaledScore) + ";" + 
                               std::to_string(milliseconds);
 
     return cppStringToCString(finalString);

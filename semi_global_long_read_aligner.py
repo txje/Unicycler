@@ -506,7 +506,7 @@ def load_references(fasta_filename):
             sequence += line
     fasta_file.close()
     if name:
-        references[name.split()[0]] = sequence
+        references[get_nice_header(name)] = sequence
         total_bases += len(sequence)
         if VERBOSITY > 0:
             print_progress_line(len(references), num_refs, total_bases)
@@ -677,7 +677,7 @@ def make_seqan_alignment_all_lines(reads, references, ref_name, ref_seq, read, r
     else:
         read_seq = read.sequence
 
-    # First get the alignment line(s).
+    # Get the alignment line(s).
     ptr = C_LIB.findAlignmentLines(read_seq, ref_seq, len(read_seq), len(ref_seq),
                                    expected_ref_to_read_ratio, VERBOSITY)
     line_result = cast(ptr, c_char_p).value
@@ -1045,6 +1045,25 @@ def seqan_from_paf_alignment(paf_alignment, reads, references, expected_ref_to_r
     assert paf_alignment.alignment_type == 'PAF'
     if VERBOSITY > 1:
         output += 'PAF alignment before Seqan: ' + str(paf_alignment) + '\n'
+
+    # We can use the PAF alignment's range to trim the sequences down to the alignment region.
+    # This is especially useful if the reference sequence is very large (like a whole bacterial
+    # genome).
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
 
     alignments, alignment_output = make_seqan_alignment_all_lines(reads, references,
                                                                   paf_alignment.ref_name,

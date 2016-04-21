@@ -144,6 +144,12 @@ char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, dou
     if (length(seedChain) == 0)
         return cppStringToCString(output + ";Failed: no global seed chain");
 
+    // CREATE A SEED BRIDGE FOR THE START OF THE CHAIN: FROM THE FIRST SEED BACKWARDS, FOLLOWING THE SLOPE.
+
+    // FILL IN ANY GAPS IN THE CHAIN.
+
+    // CREATE A SEED BRIDGE FOR THE END OF THE CHAIN: FROM THE FIRST SEED FORWARDS, FOLLOWING THE SLOPE.
+
     if (verbosity > 3)
     {
         output += "  Globally chained seeds\n";
@@ -161,8 +167,54 @@ char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, dou
     return turnAlignmentIntoDescriptiveString(&alignment, score, matchScore, startTime, output);
 }
 
+// This function takes the seed chain which should end at the point hStart, vStart. New seeds will be
+// added to the chain to reach the point hEnd, vEnd.
+void addBridgingSeeds(String<TSeed> & seedChain, int hStart, int vStart, int hEnd, int vEnd)
+{
+    int hDiff = hEnd - hStart;
+    int vDiff = vEnd - vStart;
 
+    // If the two sequences are the same length, then a single seed will do.
+    if (hDiff == vDiff)
+        appendValue(seedChain, TSeed(hStart, vStart, hEnd, vEnd));
 
+    // If one of the distances is longer, then we need multiple seeds to step across at a slope
+    // not equal to 1.
+    else
+    {
+        int additionalSteps = std::abs(vDiff - hDiff);
+        bool additionalHSteps = hDiff > vDiff;
+
+        int seedCount = additionalSteps + 1;
+        double pieceSize = double(std::min(hDiff, vDiff)) / seedCount;        
+        double targetPosition = 0;
+        int distanceSoFar = 0;
+        int hPos = hStart;
+        int vPos = vStart;
+        for (int i = 0; i < seedCount; ++i)
+        {
+            targetPosition += pieceSize;
+            int thisPieceSize = std::round(targetPosition - distanceSoFar);
+            distanceSoFar += thisPieceSize;
+            appendValue(seedChain, TSeed(hPos, vPos, hPos + thisPieceSize, vPos + thisPieceSize));
+            hPos += thisPieceSize;
+            else
+                vPos += 1;
+        }
+    }
+
+    if (verbosity > 3)
+    {
+        int seedsInChain = length(seedChain);
+        std::cout << "  Line seed positions:" << std::endl;
+        std::cout << "\tH start\tH end\tV start\tV end" << std::endl;
+        for (int i = 0; i < seedsInChain; ++i)
+        {
+            std::cout << "\t" << beginPositionH(seedChain[i]) << "\t" << endPositionH(seedChain[i]) << "\t";
+            std::cout << beginPositionV(seedChain[i]) << "\t" << endPositionV(seedChain[i]) << std::endl;
+        }
+    }
+}
 
 // This function searches for lines in the 2D ref-read space that represent likely semi-global
 // alignments.
@@ -243,8 +295,14 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
             lineInProgress = false;
     }
 
-    //For each line group, throw out any point which is too divergent from its neighbours.
-    double maxSlope = 0.5; // TO DO: MAKE THIS A PARAMETER?
+    // For each line group, throw out any point which is too divergent from its neighbours. To do
+    // this, we determine the slope between each point and its nearest neighbours and how divergent
+    // it is from the expected slope. We discard the points with the most divergent slopes.
+
+    // Parameters for this filtering step. TO DO: MAKE THESE ADJUSTABLE?
+    double fractionToDiscard = 0.05;
+    int steps = 3;
+
     for (int i = 0; i < lineGroups.size(); ++i)
     {
         std::vector<CommonKmer> * lineGroup = &(lineGroups[i]);
@@ -254,35 +312,40 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
             return a.m_rotatedHPosition < b.m_rotatedHPosition;   
         });
 
-        std::vector<CommonKmer> fixedLineGroup;
+        // Store the max slope for each point in the line group.
+        std::vector<double> maxSlopes;
+        maxSlopes.reserve(lineGroup->size());
         int groupSize = lineGroup->size();
         for (int j = 0; j < groupSize; ++j)
         {
             CommonKmer * thisPoint = &((*lineGroup)[j]);
-            bool okaySlopeToPrevious, okaySlopeToNext;
-
-            if (j > 0)
+            double maxSlope = 0.0;
+            for (int k = -steps; k <= steps; ++k)
             {
-                CommonKmer * previousPoint = &((*lineGroup)[j - 1]);
-                double slopeToPrevious = (thisPoint->m_rotatedVPosition - previousPoint->m_rotatedVPosition) /
-                                         (thisPoint->m_rotatedHPosition - previousPoint->m_rotatedHPosition);
-                okaySlopeToPrevious = (fabs(slopeToPrevious) <= maxSlope);
+                int neighbourIndex = j + k;
+                if (neighbourIndex >= 0 && neighbourIndex < groupSize)
+                {
+                    CommonKmer * neighbour = &((*lineGroup)[neighbourIndex]);
+                    double slope = (thisPoint->m_rotatedVPosition - neighbour->m_rotatedVPosition) /
+                                   (thisPoint->m_rotatedHPosition - neighbour->m_rotatedHPosition);
+                    maxSlope = std::max(maxSlope, fabs(slope));
+                }
             }
-            else
-                okaySlopeToPrevious = false;
+            maxSlopes.push_back(maxSlope);
+        }
 
-            if (j < groupSize - 1)
-            {
-                CommonKmer * nextPoint = &((*lineGroup)[j + 1]);
-                double slopeToNext = (nextPoint->m_rotatedVPosition - thisPoint->m_rotatedVPosition) /
-                                     (nextPoint->m_rotatedHPosition - thisPoint->m_rotatedHPosition);
-                okaySlopeToNext = (fabs(slopeToNext) <= maxSlope);
-            }
-            else
-                okaySlopeToNext = false;
-
-            if (okaySlopeToPrevious || okaySlopeToNext)
-                fixedLineGroup.push_back(*thisPoint);
+        // Determine a slope cutoff that will exclude the correct fraction of points.
+        std::vector<double> sortedMaxSlopes = maxSlopes;
+        std::sort(sortedMaxSlopes.begin(), sortedMaxSlopes.end());
+        double slopeCutoff = sortedMaxSlopes[int(groupSize * (1.0 - fractionToDiscard))];
+  
+        // Create a new line group, excluding with excessively high slopes.
+        std::vector<CommonKmer> fixedLineGroup;
+        for (int j = 0; j < groupSize; ++j)
+        {
+            double maxSlope = maxSlopes[j];
+            if (maxSlope < slopeCutoff)
+                fixedLineGroup.push_back((*lineGroup)[j]);
         }
         lineGroups[i] = fixedLineGroup;
     }
@@ -297,7 +360,6 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
     
     if (verbosity > 2)
         output += "  Lines found:\n";
-
     
     std::string linesString;
     for (int i = 0; i < lineGroups.size(); ++i)

@@ -367,7 +367,7 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, paf_raw, sam_filte
     #         print()
 
     write_sam_file(filtered_alignments, sam_filtered)
-    if temp_paf_raw:
+    if temp_paf_raw and os.path.isfile(paf_raw):
         os.remove(paf_raw)
 
     return reads
@@ -592,10 +592,14 @@ def run_graphmap(fasta, long_reads_fastq, paf_file, graphmap_path, threads):
     command = [graphmap_path, '-w', 'owler', '-r', fasta, '-d', long_reads_fastq, '-o',
                paf_file, '-L', 'paf', '-t', str(threads)]
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    _, _ = process.communicate()
+    _, err = process.communicate()
 
     # Clean up.
-    os.remove(fasta + '.gmidxowl')
+    if os.path.isfile(fasta + '.gmidxowl'):
+        os.remove(fasta + '.gmidxowl')
+
+    if not os.path.isfile(paf_file):
+        quit_with_error('GraphMap failure:\n' + err)
 
 def load_paf_alignments(paf_filename, reads, references):
     '''

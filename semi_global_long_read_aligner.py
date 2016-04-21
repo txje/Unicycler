@@ -589,7 +589,7 @@ def run_graphmap(fasta, long_reads_fastq, paf_file, graphmap_path, threads):
     '''
     This function runs GraphMap for the given inputs and produces a SAM file at the given location.
     '''
-    command = [graphmap_path, '-w', 'owler', '-r', fasta, '-d', long_reads_fastq, '-o',
+    command = [graphmap_path, 'owler', '-r', fasta, '-d', long_reads_fastq, '-o',
                paf_file, '-L', 'paf', '-t', str(threads)]
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     _, err = process.communicate()

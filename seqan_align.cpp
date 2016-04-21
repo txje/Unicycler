@@ -56,6 +56,7 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
 void free_c_string(char * p);
 
 // These functions are internal to this C++ code.
+void addBridgingSeeds(String<TSeed> & seedChain, int hStart, int vStart, int hEnd, int vEnd);
 std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, double expectedSlope,
                                        int verbosity, std::string & output);
 std::map<std::string, std::vector<int> > getCommonLocations(std::string * s1, std::string * s2, int kSize);
@@ -174,6 +175,10 @@ void addBridgingSeeds(String<TSeed> & seedChain, int hStart, int vStart, int hEn
     int hDiff = hEnd - hStart;
     int vDiff = vEnd - vStart;
 
+    // If the start and end are against each other, then there's nothing to bridge.
+    if (hDiff == 0 || vDiff == 0)
+        return;
+
     // If the two sequences are the same length, then a single seed will do.
     if (hDiff == vDiff)
         appendValue(seedChain, TSeed(hStart, vStart, hEnd, vEnd));
@@ -187,7 +192,7 @@ void addBridgingSeeds(String<TSeed> & seedChain, int hStart, int vStart, int hEn
 
         int seedCount = additionalSteps + 1;
         double pieceSize = double(std::min(hDiff, vDiff)) / seedCount;        
-        double targetPosition = 0;
+        double targetPosition = 0.0;
         int distanceSoFar = 0;
         int hPos = hStart;
         int vPos = vStart;
@@ -198,20 +203,11 @@ void addBridgingSeeds(String<TSeed> & seedChain, int hStart, int vStart, int hEn
             distanceSoFar += thisPieceSize;
             appendValue(seedChain, TSeed(hPos, vPos, hPos + thisPieceSize, vPos + thisPieceSize));
             hPos += thisPieceSize;
+            vPos += thisPieceSize;
+            if (additionalHSteps)
+                hPos += 1;
             else
                 vPos += 1;
-        }
-    }
-
-    if (verbosity > 3)
-    {
-        int seedsInChain = length(seedChain);
-        std::cout << "  Line seed positions:" << std::endl;
-        std::cout << "\tH start\tH end\tV start\tV end" << std::endl;
-        for (int i = 0; i < seedsInChain; ++i)
-        {
-            std::cout << "\t" << beginPositionH(seedChain[i]) << "\t" << endPositionH(seedChain[i]) << "\t";
-            std::cout << beginPositionV(seedChain[i]) << "\t" << endPositionV(seedChain[i]) << std::endl;
         }
     }
 }

@@ -56,7 +56,7 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
 void free_c_string(char * p);
 
 // These functions are internal to this C++ code.
-void addBridgingSeeds(String<TSeed> & seedChain, int hStart, int vStart, int hEnd, int vEnd);
+void addBridgingSeeds(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int vEnd);
 std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, double expectedSlope,
                                        int verbosity, std::string & output);
 std::map<std::string, std::vector<int> > getCommonLocations(std::string * s1, std::string * s2, int kSize);
@@ -78,6 +78,7 @@ void linearRegression(std::vector<CommonKmer> & pts, double * slope, double * in
 void parseKmerLocationsFromString(std::string & str, std::vector<int> & v1, std::vector<int> & v2);
 std::string getKmerTable(std::vector<CommonKmer> & commonKmers);
 std::string getSeedChainTable(String<TSeed> & seedChain);
+void addSeedMerge(TSeedSet & seedSet, TSeed & seed);
 
 
 // // This function does the full semi-global alignment using the entirety of both sequences. It will
@@ -135,26 +136,76 @@ char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, dou
     for (int i = 0; i < s1KmerLocations.size(); ++i)
     {
         TSeed seed(s1KmerLocations[i], s2KmerLocations[i], kSize);
-        if (!addSeed(seedSet, seed, 1, Merge()))
-            addSeed(seedSet, seed, Single());
+        addSeedMerge(seedSet, seed);
     }
 
     // We now get a Seqan global chain of the seeds.
     String<TSeed> seedChain;
     chainSeedsGlobally(seedChain, seedSet, SparseChaining());
-    if (length(seedChain) == 0)
+    int seedsInChain = length(seedChain);
+    if (seedsInChain == 0)
         return cppStringToCString(output + ";Failed: no global seed chain");
-
-    // CREATE A SEED BRIDGE FOR THE START OF THE CHAIN: FROM THE FIRST SEED BACKWARDS, FOLLOWING THE SLOPE.
-
-    // FILL IN ANY GAPS IN THE CHAIN.
-
-    // CREATE A SEED BRIDGE FOR THE END OF THE CHAIN: FROM THE FIRST SEED FORWARDS, FOLLOWING THE SLOPE.
 
     if (verbosity > 3)
     {
-        output += "  Globally chained seeds\n";
+        output += "  Globally chained seeds before bridging\n";
         output += getSeedChainTable(seedChain);
+    }
+
+    // Now we create a new seed chain will all of the gaps bridged. This will help keep alignment
+    // in a narrow band, even when the seeds are spaced apart.
+    TSeedSet bridgedSeedSet;
+
+    // Create a seed bridge for the start of the chain by following the slope backwards from the
+    // first seed.
+    TSeed firstSeed = seedChain[0];
+    int firstSeedHStart = beginPositionH(firstSeed);
+    int firstSeedVStart = beginPositionV(firstSeed);
+    if (firstSeedHStart > 0 && firstSeedVStart > 0)
+    {
+        double vPosAtStartOfH = firstSeedVStart - (slope * firstSeedHStart);
+        if (vPosAtStartOfH >= 0.0)
+            addBridgingSeeds(bridgedSeedSet, 0, std::round(vPosAtStartOfH), firstSeedHStart, firstSeedVStart);
+        else
+            addBridgingSeeds(bridgedSeedSet, std::round(-vPosAtStartOfH / slope), 0, firstSeedHStart, firstSeedVStart);
+    }
+    addSeedMerge(bridgedSeedSet, firstSeed);
+    
+    // Fill in any gaps in the middle of the seed chain.
+    for (int i = 1; i < seedsInChain; ++i)
+    {
+        TSeed seed1 = seedChain[i-1];
+        TSeed seed2 = seedChain[i];
+        int seed1HEnd = endPositionH(seedChain[i-1]);
+        int seed1VEnd = endPositionV(seedChain[i-1]);
+        int seed2HStart = beginPositionH(seedChain[i]);
+        int seed2VStart = beginPositionV(seedChain[i]);
+        addBridgingSeeds(bridgedSeedSet, seed1HEnd, seed1VEnd, seed2HStart, seed2VStart);
+        addSeedMerge(bridgedSeedSet, seed2);
+    }
+
+    // Create a seed bridge for the end of the chain by following the slope forwards from the
+    // last seed.
+    TSeed lastSeed = seedChain[seedsInChain - 1];
+    int lastSeedHEnd = endPositionH(lastSeed);
+    int lastSeedVEnd = endPositionV(lastSeed);
+    if (lastSeedHEnd < s1Len && lastSeedVEnd < s2Len)
+    {
+        double vPosAtStartOfH = lastSeedVEnd - (slope * lastSeedHEnd);
+        double vPosAtEndOfH = (slope * s1Len) + vPosAtStartOfH;
+        if (vPosAtEndOfH <= s2Len)
+            addBridgingSeeds(bridgedSeedSet, lastSeedHEnd, lastSeedVEnd, s1Len, std::round(vPosAtEndOfH));
+        else
+            addBridgingSeeds(bridgedSeedSet, lastSeedHEnd, lastSeedVEnd, std::round((s2Len - vPosAtStartOfH) / slope), s2Len);
+    }
+
+    String<TSeed> bridgedSeedChain;
+    chainSeedsGlobally(bridgedSeedChain, bridgedSeedSet, SparseChaining());
+
+    if (verbosity > 3)
+    {
+        output += "  Seed chain after bridging\n";
+        output += getSeedChainTable(bridgedSeedChain);
     }
 
     Align<Dna5String, ArrayGaps> alignment;
@@ -163,14 +214,14 @@ char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, dou
     assignSource(row(alignment, 1), sequenceV);
     Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
     AlignConfig<true, true, true, true> alignConfig;
-    int score = bandedChainAlignment(alignment, seedChain, scoringScheme, alignConfig, bandSize);
+    int score = bandedChainAlignment(alignment, bridgedSeedChain, scoringScheme, alignConfig, bandSize);
 
     return turnAlignmentIntoDescriptiveString(&alignment, score, matchScore, startTime, output);
 }
 
 // This function takes the seed chain which should end at the point hStart, vStart. New seeds will be
 // added to the chain to reach the point hEnd, vEnd.
-void addBridgingSeeds(String<TSeed> & seedChain, int hStart, int vStart, int hEnd, int vEnd)
+void addBridgingSeeds(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int vEnd)
 {
     int hDiff = hEnd - hStart;
     int vDiff = vEnd - vStart;
@@ -181,7 +232,10 @@ void addBridgingSeeds(String<TSeed> & seedChain, int hStart, int vStart, int hEn
 
     // If the two sequences are the same length, then a single seed will do.
     if (hDiff == vDiff)
-        appendValue(seedChain, TSeed(hStart, vStart, hEnd, vEnd));
+    {
+        TSeed seed(hStart, vStart, hEnd, vEnd);
+        addSeedMerge(seedSet, seed);
+    }
 
     // If one of the distances is longer, then we need multiple seeds to step across at a slope
     // not equal to 1.
@@ -201,7 +255,8 @@ void addBridgingSeeds(String<TSeed> & seedChain, int hStart, int vStart, int hEn
             targetPosition += pieceSize;
             int thisPieceSize = std::round(targetPosition - distanceSoFar);
             distanceSoFar += thisPieceSize;
-            appendValue(seedChain, TSeed(hPos, vPos, hPos + thisPieceSize, vPos + thisPieceSize));
+            TSeed seed(hPos, vPos, hPos + thisPieceSize, vPos + thisPieceSize);
+            addSeedMerge(seedSet, seed);
             hPos += thisPieceSize;
             vPos += thisPieceSize;
             if (additionalHSteps)
@@ -895,6 +950,14 @@ std::string getSeedChainTable(String<TSeed> & seedChain)
                  "\t" + std::to_string(endPositionV(seedChain[i])) + "\n";
     }
     return table;
+}
+
+// This function adds a seed to a seed set. First it tries to merge the seed, and if that doesn't
+// work it adds it as a separate seed.
+void addSeedMerge(TSeedSet & seedSet, TSeed & seed)
+{
+    if (!addSeed(seedSet, seed, 1, Merge()))
+        addSeed(seedSet, seed, Single());
 }
 
 }

@@ -862,10 +862,12 @@ void linearRegression(std::vector<CommonKmer> & pts, double * slope, double * in
     double sumH = 0.0, sumV = 0.0, sumHV = 0.0, sumHH = 0.0;
     for (int i = 0; i < n; ++i)
     {
-        sumH += pts[i].m_hPosition;
-        sumV += pts[i].m_vPosition;
-        sumHV += pts[i].m_hPosition * pts[i].m_vPosition;
-        sumHH += pts[i].m_hPosition * pts[i].m_hPosition;
+        double hPos = pts[i].m_hPosition;
+        double vPos = pts[i].m_vPosition;
+        sumH += hPos;
+        sumV += vPos;
+        sumHV += hPos * vPos;
+        sumHH += hPos * hPos;
     }
     double hMean = sumH / n;
     double vMean = sumV / n;

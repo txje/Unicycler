@@ -719,7 +719,7 @@ def make_seqan_alignment_one_line(reads, references, ref_name, ref_seq, read, re
     It returns either an Alignment object or None, depending on whether or not it was successful.
     '''
     output = ''
-    band_size = 5 # TO DO: make this a parameter?
+    band_size = 20 # TO DO: make this a parameter?
     max_band_size = 160 # TO DO: make this a parameter?
 
     alignment, alignment_output = run_one_banded_seqan_alignment(reads, references, ref_name,

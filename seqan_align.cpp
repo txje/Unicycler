@@ -56,7 +56,7 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
 void free_c_string(char * p);
 
 // These functions are internal to this C++ code.
-void addBridgingSeeds(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int vEnd);
+void addBridgingSeed(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int vEnd);
 std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, double expectedSlope,
                                        int verbosity, std::string & output);
 std::map<std::string, std::vector<int> > getCommonLocations(std::string * s1, std::string * s2, int kSize);
@@ -165,9 +165,9 @@ char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, dou
     {
         double vPosAtStartOfH = firstSeedVStart - (slope * firstSeedHStart);
         if (vPosAtStartOfH >= 0.0)
-            addBridgingSeeds(bridgedSeedSet, 0, std::round(vPosAtStartOfH), firstSeedHStart, firstSeedVStart);
+            addBridgingSeed(bridgedSeedSet, 0, std::round(vPosAtStartOfH), firstSeedHStart, firstSeedVStart);
         else
-            addBridgingSeeds(bridgedSeedSet, std::round(-vPosAtStartOfH / slope), 0, firstSeedHStart, firstSeedVStart);
+            addBridgingSeed(bridgedSeedSet, std::round(-vPosAtStartOfH / slope), 0, firstSeedHStart, firstSeedVStart);
     }
     addSeedMerge(bridgedSeedSet, firstSeed);
     
@@ -180,7 +180,7 @@ char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, dou
         int seed1VEnd = endPositionV(seedChain[i-1]);
         int seed2HStart = beginPositionH(seedChain[i]);
         int seed2VStart = beginPositionV(seedChain[i]);
-        addBridgingSeeds(bridgedSeedSet, seed1HEnd, seed1VEnd, seed2HStart, seed2VStart);
+        addBridgingSeed(bridgedSeedSet, seed1HEnd, seed1VEnd, seed2HStart, seed2VStart);
         addSeedMerge(bridgedSeedSet, seed2);
     }
 
@@ -194,9 +194,9 @@ char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, dou
         double vPosAtStartOfH = lastSeedVEnd - (slope * lastSeedHEnd);
         double vPosAtEndOfH = (slope * s1Len) + vPosAtStartOfH;
         if (vPosAtEndOfH <= s2Len)
-            addBridgingSeeds(bridgedSeedSet, lastSeedHEnd, lastSeedVEnd, s1Len, std::round(vPosAtEndOfH));
+            addBridgingSeed(bridgedSeedSet, lastSeedHEnd, lastSeedVEnd, s1Len, std::round(vPosAtEndOfH));
         else
-            addBridgingSeeds(bridgedSeedSet, lastSeedHEnd, lastSeedVEnd, std::round((s2Len - vPosAtStartOfH) / slope), s2Len);
+            addBridgingSeed(bridgedSeedSet, lastSeedHEnd, lastSeedVEnd, std::round((s2Len - vPosAtStartOfH) / slope), s2Len);
     }
 
     String<TSeed> bridgedSeedChain;
@@ -221,7 +221,7 @@ char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, dou
 
 // This function takes the seed chain which should end at the point hStart, vStart. New seeds will be
 // added to the chain to reach the point hEnd, vEnd.
-void addBridgingSeeds(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int vEnd)
+void addBridgingSeed(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int vEnd)
 {
     int hDiff = hEnd - hStart;
     int vDiff = vEnd - vStart;
@@ -230,41 +230,8 @@ void addBridgingSeeds(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int 
     if (hDiff == 0 || vDiff == 0)
         return;
 
-    // If the two sequences are the same length, then a single seed will do.
-    if (hDiff == vDiff)
-    {
-        TSeed seed(hStart, vStart, hEnd, vEnd);
-        addSeedMerge(seedSet, seed);
-    }
-
-    // If one of the distances is longer, then we need multiple seeds to step across at a slope
-    // not equal to 1.
-    else
-    {
-        int additionalSteps = std::abs(vDiff - hDiff);
-        bool additionalHSteps = hDiff > vDiff;
-
-        int seedCount = additionalSteps + 1;
-        double pieceSize = double(std::min(hDiff, vDiff)) / seedCount;        
-        double targetPosition = 0.0;
-        int distanceSoFar = 0;
-        int hPos = hStart;
-        int vPos = vStart;
-        for (int i = 0; i < seedCount; ++i)
-        {
-            targetPosition += pieceSize;
-            int thisPieceSize = std::round(targetPosition - distanceSoFar);
-            distanceSoFar += thisPieceSize;
-            TSeed seed(hPos, vPos, hPos + thisPieceSize, vPos + thisPieceSize);
-            addSeedMerge(seedSet, seed);
-            hPos += thisPieceSize;
-            vPos += thisPieceSize;
-            if (additionalHSteps)
-                hPos += 1;
-            else
-                vPos += 1;
-        }
-    }
+    TSeed seed(hStart, vStart, hEnd, vEnd);
+    addSeedMerge(seedSet, seed);
 }
 
 // This function searches for lines in the 2D ref-read space that represent likely semi-global

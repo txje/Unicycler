@@ -557,10 +557,10 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
     // Extract the alignment sequences into C++ strings, as the TRow type doesn't seem to have
     // constant time random access.
     std::ostringstream stream1;
-    stream1 << row(*alignment, 0);;
+    stream1 << row(*alignment, 0);
     std::string s1Alignment =  stream1.str();
     std::ostringstream stream2;
-    stream2 << row(*alignment, 1);;
+    stream2 << row(*alignment, 1);
     std::string s2Alignment =  stream2.str();
 
     int alignmentLength = std::max(s1Alignment.size(), s2Alignment.size());

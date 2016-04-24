@@ -165,6 +165,9 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, output_sam, temp_d
     run_graphmap(ref_fasta, long_reads_fastq, graphmap_sam, graphmap_path, threads, scoring_scheme)
     graphmap_alignments = load_sam_alignments(graphmap_sam, reads, references, scoring_scheme)
 
+    for a in graphmap_alignments:
+        print(a)
+
 #     # Determine the median length ratio between reference and read. If there aren't any alignments,
 #     # then we just go with 1.0.
 #     ref_to_read_ratios = [x.get_ref_to_read_ratio() for x in paf_alignments]
@@ -1507,21 +1510,21 @@ class Alignment(object):
     #     assert new_slope / slope > 0.995
     #     assert new_slope / slope < 1.005
 
-#     def __repr__(self):
-#         read_start, read_end = self.read_start_end_positive_strand()
-#         return_str = self.read.name + ' (' + str(read_start) + '-' + str(read_end) + ', '
-#         if self.rev_comp:
-#             return_str += 'strand: -), '
-#         else:
-#             return_str += 'strand: +), '
-#         return_str += self.ref_name + ' (' + str(self.ref_start_pos) + '-' + \
-#                       str(self.ref_end_pos) + ')'
-#         if self.alignment_type == 'Seqan':
-#             return_str += ', ' + '%.2f' % self.percent_identity + '% ID'
-#             return_str += ', score = ' + '%.2f' % self.scaled_score
-#             return_str += ', longest indel: ' + str(self.get_longest_indel_run())
-#             return_str += ', ' + str(self.milliseconds) + ' ms'
-#         return return_str
+    def __repr__(self):
+        read_start, read_end = self.read_start_end_positive_strand()
+        return_str = self.read.name + ' (' + str(read_start) + '-' + str(read_end) + ', '
+        if self.rev_comp:
+            return_str += 'strand: -), '
+        else:
+            return_str += 'strand: +), '
+        return_str += self.ref_name + ' (' + str(self.ref_start_pos) + '-' + \
+                      str(self.ref_end_pos) + ')'
+        return_str += ', ' + '%.2f' % self.percent_identity + '% ID'
+        return_str += ', score = ' + '%.2f' % self.scaled_score
+        return_str += ', longest indel: ' + str(self.get_longest_indel_run())
+        if self.alignment_type == 'Seqan':
+            return_str += ', ' + str(self.milliseconds) + ' ms'
+        return return_str
 
 #     def get_ref_to_read_ratio(self):
 #         '''
@@ -1529,18 +1532,18 @@ class Alignment(object):
 #         '''
 #         return (self.ref_end_pos - self.ref_start_pos) / (self.read_end_pos - self.read_start_pos)
 
-#     def read_start_end_positive_strand(self):
-#         '''
-#         This function returns the read start/end coordinates for the positive strand of the read.
-#         For alignments on the positive strand, this is just the normal start/end. But for
-#         alignments on the negative strand, the coordinates are flipped to the other side.
-#         '''
-#         if not self.rev_comp:
-#             return self.read_start_pos, self.read_end_pos
-#         else:
-#             start = self.read.get_length() - self.read_end_pos
-#             end = self.read.get_length() - self.read_start_pos
-#             return start, end
+    def read_start_end_positive_strand(self):
+        '''
+        This function returns the read start/end coordinates for the positive strand of the read.
+        For alignments on the positive strand, this is just the normal start/end. But for
+        alignments on the negative strand, the coordinates are flipped to the other side.
+        '''
+        if not self.rev_comp:
+            return self.read_start_pos, self.read_end_pos
+        else:
+            start = self.read.get_length() - self.read_end_pos
+            end = self.read.get_length() - self.read_start_pos
+            return start, end
 
     def get_start_soft_clips(self):
         '''
@@ -1578,17 +1581,16 @@ class Alignment(object):
 #         '''
 #         return self.read_start_pos == 0 and self.read_end_gap == 0
 
-#     def get_longest_indel_run(self):
-#         '''
-#         Returns the longest indel in the alignment.
-#         '''
-#         assert self.alignment_type == 'Seqan'
-#         longest_indel_run = 0
-#         for cigar_part in self.cigar_parts:
-#             cigar_type = cigar_part[-1]
-#             if cigar_type == 'I' or cigar_type == 'D':
-#                 longest_indel_run = max(longest_indel_run, int(cigar_part[:-1]))
-#         return longest_indel_run
+    def get_longest_indel_run(self):
+        '''
+        Returns the longest indel in the alignment.
+        '''
+        longest_indel_run = 0
+        for cigar_part in self.cigar_parts:
+            cigar_type = cigar_part[-1]
+            if cigar_type == 'I' or cigar_type == 'D':
+                longest_indel_run = max(longest_indel_run, int(cigar_part[:-1]))
+        return longest_indel_run
 
 
 

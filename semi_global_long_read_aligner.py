@@ -591,10 +591,6 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
     '''
     This function runs GraphMap for the given inputs and produces a SAM file at the given location.
     '''
-    if VERBOSITY > 1:
-        print('Running GraphMap')
-        print('----------------')
-
     command = [graphmap_path, 'align',
                '-r', fasta,
                '-d', long_reads_fastq,
@@ -602,6 +598,13 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
                '-t', str(threads),
                '-a', 'anchorgotoh']
     command += scoring_scheme.get_graphmap_parameters()
+
+
+    if VERBOSITY > 1:
+        print('Running GraphMap')
+        print('----------------')
+        print(' '.join(command))
+
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     _, err = process.communicate()
 
@@ -1156,14 +1159,19 @@ class AlignmentScoringScheme(object):
             self.gap_open = int(scheme_parts[2])
             self.gap_extend = int(scheme_parts[3])
 
+        assert self.match > 0
+        assert self.mismatch < 0
+        assert self.gap_open < 0
+        assert self.gap_extend < 0
+
     def get_graphmap_parameters(self):
         '''
         Returns the scoring scheme in the form of GraphMap parameters for subprocess.
         '''
         return ['-M', str(self.match),
-                '-X', str(self.mismatch),
-                '-G', str(self.gap_open),
-                '-E', str(self.gap_extend)]
+                '-X', str(-self.mismatch),
+                '-G', str(-self.gap_open),
+                '-E', str(-self.gap_extend)]
 
 
 

@@ -1313,55 +1313,55 @@ class Alignment(object):
             self.setup_using_graphmap_sam(sam_line, reads, references, scoring_scheme)
 
 
-    def setup_using_seqan_output(self, seqan_output, reads, references, read_name, ref_name,
-                                 rev_comp):
-        '''
-        This function sets up the Alignment using the Seqan results. This kind of alignment has
-        complete details about the alignment.
-        '''
-        self.alignment_type = 'Seqan'
-        seqan_parts = seqan_output.split(';')
-        if len(seqan_parts) < 13:
-            return
+    # def setup_using_seqan_output(self, seqan_output, reads, references, read_name, ref_name,
+    #                              rev_comp):
+    #     '''
+    #     This function sets up the Alignment using the Seqan results. This kind of alignment has
+    #     complete details about the alignment.
+    #     '''
+    #     self.alignment_type = 'Seqan'
+    #     seqan_parts = seqan_output.split(';')
+    #     if len(seqan_parts) < 13:
+    #         return
 
-        # Read details
-        self.read = reads[read_name]
-        self.read_start_pos = int(seqan_parts[1])
-        self.read_end_pos = int(seqan_parts[2])
-        self.read_end_gap = self.read.get_length() - self.read_end_pos
-        self.aligned_read_seq = self.read.sequence[self.read_start_pos:self.read_end_pos]
+    #     # Read details
+    #     self.read = reads[read_name]
+    #     self.read_start_pos = int(seqan_parts[1])
+    #     self.read_end_pos = int(seqan_parts[2])
+    #     self.read_end_gap = self.read.get_length() - self.read_end_pos
+    #     self.aligned_read_seq = self.read.sequence[self.read_start_pos:self.read_end_pos]
 
-        # Reference details
-        self.ref_name = ref_name
-        self.full_ref_sequence = references[self.ref_name]
-        self.ref_start_pos = int(seqan_parts[3])
-        self.ref_end_pos = int(seqan_parts[4])
-        self.ref_end_gap = len(self.full_ref_sequence) - self.ref_end_pos
-        self.aligned_ref_seq = self.full_ref_sequence[self.ref_start_pos:self.ref_end_pos]
+    #     # Reference details
+    #     self.ref_name = ref_name
+    #     self.full_ref_sequence = references[self.ref_name]
+    #     self.ref_start_pos = int(seqan_parts[3])
+    #     self.ref_end_pos = int(seqan_parts[4])
+    #     self.ref_end_gap = len(self.full_ref_sequence) - self.ref_end_pos
+    #     self.aligned_ref_seq = self.full_ref_sequence[self.ref_start_pos:self.ref_end_pos]
 
-        # Alignment details
-        self.rev_comp = rev_comp
-        self.cigar = seqan_parts[0]
-        self.cigar_parts = re.findall(r'\d+\w', self.cigar)
-        self.match_count = int(seqan_parts[6])
-        self.mismatch_count = int(seqan_parts[7])
-        self.insertion_count = int(seqan_parts[9])
-        self.deletion_count = int(seqan_parts[11])
-        self.alignment_length = int(seqan_parts[5])
-        self.edit_distance = int(seqan_parts[13])
-        self.percent_identity = float(seqan_parts[14])
-        self.ref_mismatch_positions = []
-        self.ref_insertion_positions = []
-        self.ref_deletion_positions = []
-        if seqan_parts[8]:
-            self.ref_mismatch_positions = [int(x) for x in seqan_parts[8].split(',')]
-        if seqan_parts[10]:
-            self.ref_insertion_positions = [int(x) for x in seqan_parts[10].split(',')]
-        if seqan_parts[12]:
-            self.ref_deletion_positions = [int(x) for x in seqan_parts[12].split(',')]
-        self.raw_score = int(seqan_parts[15])
-        self.scaled_score = float(seqan_parts[16])
-        self.milliseconds = int(seqan_parts[17])
+    #     # Alignment details
+    #     self.rev_comp = rev_comp
+    #     self.cigar = seqan_parts[0]
+    #     self.cigar_parts = re.findall(r'\d+\w', self.cigar)
+    #     self.match_count = int(seqan_parts[6])
+    #     self.mismatch_count = int(seqan_parts[7])
+    #     self.insertion_count = int(seqan_parts[9])
+    #     self.deletion_count = int(seqan_parts[11])
+    #     self.alignment_length = int(seqan_parts[5])
+    #     self.edit_distance = int(seqan_parts[13])
+    #     self.percent_identity = float(seqan_parts[14])
+    #     self.ref_mismatch_positions = []
+    #     self.ref_insertion_positions = []
+    #     self.ref_deletion_positions = []
+    #     if seqan_parts[8]:
+    #         self.ref_mismatch_positions = [int(x) for x in seqan_parts[8].split(',')]
+    #     if seqan_parts[10]:
+    #         self.ref_insertion_positions = [int(x) for x in seqan_parts[10].split(',')]
+    #     if seqan_parts[12]:
+    #         self.ref_deletion_positions = [int(x) for x in seqan_parts[12].split(',')]
+    #     self.raw_score = int(seqan_parts[15])
+    #     self.scaled_score = float(seqan_parts[16])
+    #     self.milliseconds = int(seqan_parts[17])
 
     def setup_using_graphmap_sam(self, sam_line, reads, references, scoring_scheme):
         '''
@@ -1369,6 +1369,7 @@ class Alignment(object):
         '''
         self.alignment_type = 'GraphMap'
         sam_parts = sam_line.split('\t')
+        self.rev_comp = bool(int(sam_parts[1]) & 0x10)
 
         self.cigar = sam_parts[5]
         self.cigar_parts = re.findall(r'\d+\w', self.cigar)
@@ -1377,7 +1378,10 @@ class Alignment(object):
         self.read_start_pos = self.get_start_soft_clips()
         self.read_end_pos = self.read.get_length() - self.get_end_soft_clips()
         self.read_end_gap = self.get_end_soft_clips()
-        self.aligned_read_seq = self.read.sequence[self.read_start_pos:self.read_end_pos]
+        if self.rev_comp:
+            self.aligned_read_seq = self.read.rev_comp_sequence[self.read_start_pos:self.read_end_pos]
+        else:
+            self.aligned_read_seq = self.read.sequence[self.read_start_pos:self.read_end_pos]
 
         self.ref_name = get_nice_header(sam_parts[2])
         self.full_ref_sequence = references[self.ref_name]
@@ -1389,7 +1393,6 @@ class Alignment(object):
         self.aligned_ref_seq = self.full_ref_sequence[self.ref_start_pos:self.ref_end_pos]
 
         self.alignment_type = None
-        self.rev_comp = bool(int(sam_parts[1]) & 0x10)
         self.match_count = 0
         self.mismatch_count = 0
         self.insertion_count = 0

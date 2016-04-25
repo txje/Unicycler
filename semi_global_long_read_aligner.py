@@ -165,31 +165,28 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, output_sam, temp_d
     run_graphmap(ref_fasta, long_reads_fastq, graphmap_sam, graphmap_path, threads, scoring_scheme)
     graphmap_alignments = load_sam_alignments(graphmap_sam, reads, references, scoring_scheme)
 
-    for a in graphmap_alignments:
-        print(a)
+    # Determine the median length ratio between reference and read. If there aren't any alignments,
+    # then we just go with 1.0.
+    ref_to_read_ratios = [x.get_ref_to_read_ratio() for x in graphmap_alignments]
+    median_ref_to_read_ratio = get_median(ref_to_read_ratios)
+    if median_ref_to_read_ratio == 0.0:
+        median_ref_to_read_ratio = 1.0
+    median_read_to_ref_ratio = 1.0 / median_ref_to_read_ratio
 
-#     # Determine the median length ratio between reference and read. If there aren't any alignments,
-#     # then we just go with 1.0.
-#     ref_to_read_ratios = [x.get_ref_to_read_ratio() for x in paf_alignments]
-#     median_ref_to_read_ratio = get_median(ref_to_read_ratios)
-#     if median_ref_to_read_ratio == 0.0:
-#         median_ref_to_read_ratio = 1.0
-#     median_read_to_ref_ratio = 1.0 / median_ref_to_read_ratio
+    if VERBOSITY > 0:
+        # max_v = max(100, len(graphmap_alignments))
+        print('Alignment summary')
+        print('-----------------')
+        print('Total raw GraphMap alignments:', int_to_str(len(graphmap_alignments)))
+        print('Median read length / reference length:', '%.3f' % median_read_to_ref_ratio)
+        print()
 
-#     if VERBOSITY > 0:
-#         max_v = max(100, len(paf_alignments))
-#         print('Alignment summary')
-#         print('-----------------')
-#         print('Total raw GraphMap alignments:', int_to_str(len(paf_alignments)))
-#         print('Median read length / reference length:', '%.3f' % median_read_to_ref_ratio)
-#         print()
-
-#     if VERBOSITY > 2 and paf_alignments:
-#         print('All raw GraphMap alignments')
-#         print('---------------------------')
-#         for alignment in paf_alignments:
-#             print(alignment)
-#         print()
+    if VERBOSITY > 2 and graphmap_alignments:
+        print('All raw GraphMap alignments')
+        print('---------------------------')
+        for alignment in graphmap_alignments:
+            print(alignment)
+        print()
 
 #     # We now choose some alignments to use for the identity mean and std dev calculation.
 #     # We want long alignments that haven't been extended much (i.e. for which GraphMap already
@@ -602,24 +599,36 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
                '-a', 'anchorgotoh']
     command += scoring_scheme.get_graphmap_parameters()
 
-
-    if VERBOSITY > 1:
+    if VERBOSITY > 0:
         print('Running GraphMap')
         print('----------------')
         print(' '.join(command))
+        print()
 
+    # Print the GraphMap output as it comes. I gather up and display lines in a manual manner so
+    # I can replace carriage returns with newlines, which makes the progress a bit cleaner.
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    _, err = process.communicate()
-
-    if VERBOSITY > 1:
-        print(err)
+    line = ''
+    while process.poll() is None:
+        graphmap_output = process.stderr.read(1)
+        if VERBOSITY > 0:
+            line += graphmap_output
+            if line.endswith('\r'):
+                line = line[:-1] + '\n'
+            if line.endswith('\n'):
+                line = line.strip()
+                if line:
+                    print(line)
+                line = ''
+    if VERBOSITY > 0:
+        print()
 
     # Clean up.
     if os.path.isfile(fasta + '.gmidx'):
         os.remove(fasta + '.gmidx')
 
     if not os.path.isfile(sam_file):
-        quit_with_error('GraphMap failure:\n' + err)
+        quit_with_error('GraphMap failure')
 
 def load_sam_alignments(sam_filename, reads, references, scoring_scheme):
     '''
@@ -1095,18 +1104,18 @@ def complement_base(base):
 #         output += '\n'
 #     return alignments, output
 
-# def get_median(num_list):
-#     '''
-#     Returns the median of the given list of numbers.
-#     '''
-#     count = len(num_list)
-#     if count == 0:
-#         return 0.0
-#     sorted_list = sorted(num_list)
-#     if count % 2 == 0:
-#         return (sorted_list[count // 2 - 1] + sorted_list[count // 2]) / 2.0
-#     else:
-#         return sorted_list[count // 2]
+def get_median(num_list):
+    '''
+    Returns the median of the given list of numbers.
+    '''
+    count = len(num_list)
+    if count == 0:
+        return 0.0
+    sorted_list = sorted(num_list)
+    if count % 2 == 0:
+        return (sorted_list[count // 2 - 1] + sorted_list[count // 2]) / 2.0
+    else:
+        return sorted_list[count // 2]
 
 def print_progress_line(completed, total, base_pairs=None):
     '''
@@ -1529,11 +1538,11 @@ class Alignment(object):
             return_str += ', ' + str(self.milliseconds) + ' ms'
         return return_str
 
-#     def get_ref_to_read_ratio(self):
-#         '''
-#         Returns the length ratio between the aligned parts of the reference and read.
-#         '''
-#         return (self.ref_end_pos - self.ref_start_pos) / (self.read_end_pos - self.read_start_pos)
+    def get_ref_to_read_ratio(self):
+        '''
+        Returns the length ratio between the aligned parts of the reference and read.
+        '''
+        return (self.ref_end_pos - self.ref_start_pos) / (self.read_end_pos - self.read_start_pos)
 
     def read_start_end_positive_strand(self):
         '''

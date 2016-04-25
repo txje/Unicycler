@@ -108,6 +108,11 @@ def main():
     if not temp_dir_exist_at_start:
         os.makedirs(args.temp_dir)
 
+    global VERBOSITY
+    VERBOSITY = args.verbosity
+    if VERBOSITY > 0:
+        print()
+
     references = load_references(args.ref)
     reads = load_long_reads(args.reads)
 
@@ -149,7 +154,7 @@ def get_arguments():
     return parser.parse_args()
 
 def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, output_sam, temp_dir,
-                                 graphmap_path, threads, partial_ref, verbosity, scoring_scheme):
+                                 graphmap_path, threads, partial_ref, scoring_scheme):
     '''
     This function does the primary work of this module: aligning long reads to references in an
     end-gap-free, semi-global manner. It returns a list of LongRead objects which contain their
@@ -158,10 +163,6 @@ def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, outp
     If seqan_all is False, then only the overlap alignments and a small set of long contained
     alignments will be run through Seqan.
     '''
-    global VERBOSITY
-    VERBOSITY = verbosity
-    if VERBOSITY > 0:
-        print()
 
     graphmap_sam = os.path.join(temp_dir, 'graphmap_alignments.sam')
     run_graphmap(ref_fasta, reads_fastq, graphmap_sam, graphmap_path, threads, scoring_scheme)
@@ -369,7 +370,7 @@ def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, outp
 
     # write_sam_file(filtered_alignments, sam_filtered)
     
-    os.remove(graphmap_sam)
+    # os.remove(graphmap_sam)
 
     return reads
 

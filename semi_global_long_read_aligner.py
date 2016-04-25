@@ -393,7 +393,11 @@ def write_reference_errors_to_table(references, long_reads, table_prefix):
                 os.makedirs(directory)
 
     if VERBOSITY > 0:
-        max_v = max(100, sum([len(x.alignments) for x in long_reads.itervalues()]))
+
+        # So the numbers align nicely, we look for and remember the larger number to be displayed.
+        max_v = max(100,
+                    sum([len(x.alignments) for x in long_reads.itervalues()]),
+                    max([len(seq) for seq in references.itervalues()]))
         print('Alignment summaries per reference')
         print('---------------------------------')
 
@@ -425,6 +429,13 @@ def write_reference_errors_to_table(references, long_reads, table_prefix):
                         insertions[pos] += 1
                     for pos in alignment.ref_deletion_positions:
                         deletions[pos] += 1
+
+        # Determine how much of the reference sequence had at least one read aligning.
+        alignment_ranges = [(x.ref_start_pos, x.ref_end_pos) for x in alignments]
+        alignment_ranges = simplify_ranges(alignment_ranges)
+        aligned_length = sum([x[1] - x[0] for x in alignment_ranges])
+        aligned_percent =  100.0 * aligned_length / seq_len
+
         if table_prefix:
             for i in xrange(seq_len):
                 table.write('\t'.join([str(i+1), str(depths[i]), str(mismatches[i]),
@@ -440,9 +451,14 @@ def write_reference_errors_to_table(references, long_reads, table_prefix):
                     insertion_rates.append(insertions[i] / depth)
                     deletion_rates.append(deletions[i] / depth)
             mean_depth = sum(depths) / seq_len
-            mean_mismatch_rate = 100.0 * sum(mismatch_rates) / seq_len
-            mean_insertion_rate = 100.0 * sum(insertion_rates) / seq_len
-            mean_deletion_rate = 100.0 * sum(deletion_rates) / seq_len
+            if aligned_length > 0:
+                mean_mismatch_rate = 100.0 * sum(mismatch_rates) / aligned_length
+                mean_insertion_rate = 100.0 * sum(insertion_rates) / aligned_length
+                mean_deletion_rate = 100.0 * sum(deletion_rates) / aligned_length
+            else:
+                mean_mismatch_rate = 0.0
+                mean_insertion_rate = 0.0
+                mean_deletion_rate = 0.0
             contained_alignment_count = 0
             overlapping_alignment_count = 0
             for alignment in alignments:
@@ -450,17 +466,20 @@ def write_reference_errors_to_table(references, long_reads, table_prefix):
                     contained_alignment_count += 1
                 else:
                     overlapping_alignment_count += 1
-            print(header, '(' + str(len(seq)) + ') bp')
+            print(header)
+            print('  Total length:    ', int_to_str(seq_len, max_v) + ' bp')
             if alignments:
-                print('  Total alignments:      ', int_to_str(len(alignments), max_v))
-                print('  Contained alignments:  ', int_to_str(contained_alignment_count, max_v))
-                print('  Overlapping alignments:', int_to_str(overlapping_alignment_count, max_v))
-                print('  Mean read depth:       ', float_to_str(mean_depth, 2, max_v))
-                print('  Mismatch rate:         ', float_to_str(mean_mismatch_rate, 2, max_v) + '%')
-                print('  Insertion rate:        ', float_to_str(mean_insertion_rate, 2, max_v) + '%')
-                print('  Deletion rate:         ', float_to_str(mean_deletion_rate, 2, max_v) + '%')
+                print('  Covered length:  ', int_to_str(aligned_length, max_v) + ' bp')
+                print('  Covered fraction:', float_to_str(aligned_percent, 2, max_v) + '%')
+                print('  Total alignments:', int_to_str(len(alignments), max_v))
+                print('    Contained:     ', int_to_str(contained_alignment_count, max_v))
+                print('    Overlapping:   ', int_to_str(overlapping_alignment_count, max_v))
+                print('  Mean read depth: ', float_to_str(mean_depth, 2, max_v))
+                print('  Mismatch rate:   ', float_to_str(mean_mismatch_rate, 2, max_v) + '%')
+                print('  Insertion rate:  ', float_to_str(mean_insertion_rate, 2, max_v) + '%')
+                print('  Deletion rate:   ', float_to_str(mean_deletion_rate, 2, max_v) + '%')
             else:
-                print('  Total alignments:      ', int_to_str(0, max_v))
+                print('  Total alignments:', int_to_str(0, max_v))
             print()
         if table_prefix:
             table.close()
@@ -867,34 +886,35 @@ def get_ref_shift_from_cigar_part(cigar_part):
     if cigar_part[-1] == 'I':
         return 0
 
-# def simplify_ranges(ranges):
-#     '''
-#     Collapses overlapping ranges together.
-#     '''
-#     fixed_ranges = []
-#     for int_range in ranges:
-#         if int_range[0] > int_range[1]:
-#             fixed_ranges.append((int_range[1], int_range[0]))
-#         elif int_range[0] < int_range[1]:
-#             fixed_ranges.append(int_range)
-#     starts_ends = [(x[0], 1) for x in fixed_ranges]
-#     starts_ends += [(x[1], -1) for x in fixed_ranges]
-#     starts_ends.sort(key=lambda x: x[0])
-#     current_sum = 0
-#     cumulative_sum = []
-#     for start_end in starts_ends:
-#         current_sum += start_end[1]
-#         cumulative_sum.append((start_end[0], current_sum))
-#     prev_depth = 0
-#     start = 0
-#     combined = []
-#     for pos, depth in cumulative_sum:
-#         if prev_depth == 0:
-#             start = pos
-#         elif depth == 0:
-#             combined.append((start, pos))
-#         prev_depth = depth
-#     return combined
+def simplify_ranges(ranges):
+    '''
+    Collapses overlapping ranges together. Input ranges are tuples of (start, end) in the normal
+    Python manner where the end isn't included.
+    '''
+    fixed_ranges = []
+    for int_range in ranges:
+        if int_range[0] > int_range[1]:
+            fixed_ranges.append((int_range[1], int_range[0]))
+        elif int_range[0] < int_range[1]:
+            fixed_ranges.append(int_range)
+    starts_ends = [(x[0], 1) for x in fixed_ranges]
+    starts_ends += [(x[1], -1) for x in fixed_ranges]
+    starts_ends.sort(key=lambda x: x[0])
+    current_sum = 0
+    cumulative_sum = []
+    for start_end in starts_ends:
+        current_sum += start_end[1]
+        cumulative_sum.append((start_end[0], current_sum))
+    prev_depth = 0
+    start = 0
+    combined = []
+    for pos, depth in cumulative_sum:
+        if prev_depth == 0:
+            start = pos
+        elif depth == 0:
+            combined.append((start, pos))
+        prev_depth = depth
+    return combined
 
 # def range_is_contained(test_range, other_ranges):
 #     '''

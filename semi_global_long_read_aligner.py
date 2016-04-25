@@ -165,28 +165,18 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, output_sam, temp_d
     run_graphmap(ref_fasta, long_reads_fastq, graphmap_sam, graphmap_path, threads, scoring_scheme)
     graphmap_alignments = load_sam_alignments(graphmap_sam, reads, references, scoring_scheme)
 
-    # Determine the median length ratio between reference and read. If there aren't any alignments,
-    # then we just go with 1.0.
-    ref_to_read_ratios = [x.get_ref_to_read_ratio() for x in graphmap_alignments]
-    median_ref_to_read_ratio = get_median(ref_to_read_ratios)
-    if median_ref_to_read_ratio == 0.0:
-        median_ref_to_read_ratio = 1.0
-    median_read_to_ref_ratio = 1.0 / median_ref_to_read_ratio
-
-    if VERBOSITY > 0:
-        # max_v = max(100, len(graphmap_alignments))
-        print('Alignment summary')
-        print('-----------------')
-        print('Total raw GraphMap alignments:', int_to_str(len(graphmap_alignments)))
-        print('Median read length / reference length:', '%.3f' % median_read_to_ref_ratio)
-        print()
-
     if VERBOSITY > 2 and graphmap_alignments:
-        print('All raw GraphMap alignments')
-        print('---------------------------')
+        print('All GraphMap alignments')
+        print('-----------------------')
         for alignment in graphmap_alignments:
             print(alignment)
         print()
+
+    if VERBOSITY > 0:
+        print_alignment_summary_table(graphmap_alignments)
+
+
+
 
 #     # We now choose some alignments to use for the identity mean and std dev calculation.
 #     # We want long alignments that haven't been extended much (i.e. for which GraphMap already
@@ -473,6 +463,50 @@ def semi_global_align_long_reads(ref_fasta, long_reads_fastq, output_sam, temp_d
 #             print()
 #         if table_prefix:
 #             table.close()
+
+
+def print_alignment_summary_table(graphmap_alignments):
+    '''
+    Prints a small table showing some details about the GraphMap alignments.
+    '''
+    read_to_refs = [x.get_read_to_ref_ratio() for x in graphmap_alignments]
+    percent_ids = [x.percent_identity for x in graphmap_alignments]
+    scores = [x.scaled_score for x in graphmap_alignments]
+    read_to_ref_median, read_to_ref_mad = get_median_and_mad(read_to_refs)
+    percent_id_median, percent_id_mad = get_median_and_mad(percent_ids)
+    score_median, score_mad = get_median_and_mad(scores)
+
+    print('Alignment summary')
+    print('-----------------')
+    print('Total GraphMap alignments:', int_to_str(len(graphmap_alignments)))
+    print()
+
+    table_lines = ['',
+                   'Read / reference length:',
+                   'Percent identity:',
+                   'Score:']
+
+    pad_length = max([len(x) for x in table_lines]) + 2
+    table_lines = [x.ljust(pad_length) for x in table_lines]
+
+    table_lines[0] += 'Median'
+    table_lines[1] += float_to_str(read_to_ref_median, 3)
+    table_lines[2] += float_to_str(percent_id_median, 2) + '%'
+    table_lines[3] += float_to_str(score_median, 2)
+
+    pad_length = max([len(x) for x in table_lines]) + 2
+    table_lines = [x.ljust(pad_length) for x in table_lines]
+
+    table_lines[0] += 'MAD'
+    table_lines[1] += float_to_str(read_to_ref_mad, 3)
+    table_lines[2] += float_to_str(percent_id_mad, 2) + '%'
+    table_lines[3] += float_to_str(score_mad, 2)
+
+    for line in table_lines:
+        print(line)
+    print()
+
+
 
 def load_references(fasta_filename):
     '''
@@ -999,18 +1033,19 @@ def quit_with_error(message): # type: (str) -> None
     print('Error:', message, file=sys.stderr)
     sys.exit(1)
 
-# def float_to_str(num, max_num=0):
-#     '''
-#     Converts a number to a string. Will add left padding based on the max value to ensure numbers
-#     align well.
-#     '''
-#     num_str = '%.1f' % num
-#     after_decimal = num_str.split('.')[1]
-#     num_str = int_to_str(int(num)) + '.' + after_decimal
-#     if max_num > 0:
-#         max_str = float_to_str(max_num)
-#         num_str = num_str.rjust(len(max_str))
-#     return num_str
+def float_to_str(num, decimals, max_num=0):
+    '''
+    Converts a number to a string. Will add left padding based on the max value to ensure numbers
+    align well.
+    '''
+    num_str = '%.' + str(decimals) + 'f'
+    num_str = num_str % num
+    after_decimal = num_str.split('.')[1]
+    num_str = int_to_str(int(num)) + '.' + after_decimal
+    if max_num > 0:
+        max_str = float_to_str(max_num, decimals)
+        num_str = num_str.rjust(len(max_str))
+    return num_str
 
 def int_to_str(num, max_num=0):
     '''
@@ -1116,6 +1151,15 @@ def get_median(num_list):
         return (sorted_list[count // 2 - 1] + sorted_list[count // 2]) / 2.0
     else:
         return sorted_list[count // 2]
+
+def get_median_and_mad(num_list):
+    '''
+    Returns the median and MAD of the given list of numbers.
+    '''
+    median = get_median(num_list)
+    absolute_deviations = [abs(x - median) for x in num_list]
+    mad = 1.4826 * get_median(absolute_deviations)
+    return median, mad
 
 def print_progress_line(completed, total, base_pairs=None):
     '''
@@ -1543,6 +1587,12 @@ class Alignment(object):
         Returns the length ratio between the aligned parts of the reference and read.
         '''
         return (self.ref_end_pos - self.ref_start_pos) / (self.read_end_pos - self.read_start_pos)
+
+    def get_read_to_ref_ratio(self):
+        '''
+        Returns the length ratio between the aligned parts of the read and reference.
+        '''
+        return 1.0 / self.get_ref_to_read_ratio()
 
     def read_start_end_positive_strand(self):
         '''

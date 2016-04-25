@@ -172,6 +172,8 @@ def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, outp
         print('-----------------------')
         for alignment in graphmap_alignments:
             print(alignment)
+            if VERBOSITY > 3:
+                print(alignment.cigar)
         print()
 
     if VERBOSITY > 0:
@@ -645,7 +647,7 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
     '''
     This function runs GraphMap for the given inputs and produces a SAM file at the given location.
     '''
-    command = [graphmap_path, 'align',
+    command = [graphmap_path,
                '-r', fasta,
                '-d', long_reads_fastq,
                '-o', sam_file,
@@ -1522,9 +1524,6 @@ class Alignment(object):
         self.alignment_length = align_i
         perfect_score = scoring_scheme.match * self.alignment_length
         self.scaled_score = 100.0 * self.raw_score / perfect_score
-
-
-
 
     # def setup_using_paf_line(self, paf_line, reads, references):
     #     self.alignment_type = 'PAF'

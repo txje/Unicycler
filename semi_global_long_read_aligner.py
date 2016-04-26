@@ -199,7 +199,7 @@ def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, outp
     alignments will be run through Seqan.
     '''
     graphmap_sam = os.path.join(temp_dir, 'graphmap_alignments.sam')
-    # run_graphmap(ref_fasta, reads_fastq, graphmap_sam, graphmap_path, threads, scoring_scheme)
+    run_graphmap(ref_fasta, reads_fastq, graphmap_sam, graphmap_path, threads, scoring_scheme)
     graphmap_alignments = load_sam_alignments(graphmap_sam, reads, references, scoring_scheme)
 
     if VERBOSITY > 2 and graphmap_alignments:
@@ -440,7 +440,7 @@ def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, outp
 
     # write_sam_file(filtered_alignments, output_sam)
     
-    # os.remove(graphmap_sam)
+    os.remove(graphmap_sam)
 
     return reads
 
@@ -815,7 +815,7 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
     '''
     This function runs GraphMap for the given inputs and produces a SAM file at the given location.
     '''
-    command = [graphmap_path,
+    command = [graphmap_path, 'align',
                '-r', fasta,
                '-d', long_reads_fastq,
                '-o', sam_file,
@@ -833,6 +833,7 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
     # I can replace carriage returns with newlines, which makes the progress a bit cleaner.
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     line = ''
+    last_progress = 0.0
     while process.poll() is None:
         graphmap_output = process.stderr.read(1)
         if VERBOSITY > 0:
@@ -842,7 +843,14 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
             if line.endswith('\n'):
                 line = line.strip()
                 if line:
-                    print(line)
+                    if 'CPU time' in line:
+                        progress = float(line.split('(')[1].split(')')[0][:-1])
+                        progress_rounded_down = progress - (progress % 10)
+                        if progress_rounded_down > last_progress:
+                            print(line)
+                            last_progress = progress_rounded_down
+                    else:
+                        print(line)
                 line = ''
     if VERBOSITY > 0:
         print()

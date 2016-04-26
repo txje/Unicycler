@@ -200,9 +200,16 @@ def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, outp
     if VERBOSITY > 0:
         print_alignment_summary_table(graphmap_alignments)
 
-    semi_global_graphmap_alignments = extend_to_semi_global(graphmap_alignments,
-                                                                       scoring_scheme)
+    semi_global_graphmap_alignments = extend_to_semi_global(graphmap_alignments, scoring_scheme)
 
+    if VERBOSITY > 2 and semi_global_graphmap_alignments:
+        print('GraphMap alignments after extension')
+        print('-----------------------------------')
+        for alignment in semi_global_graphmap_alignments:
+            print(alignment)
+            if VERBOSITY > 3:
+                print(alignment.cigar)
+        print()
 
 
 
@@ -1638,7 +1645,7 @@ class Alignment(object):
         self.ref_mismatch_positions = []
         self.ref_insertion_positions_and_sizes = []
         self.ref_deletion_positions = []
-        
+
         # Remove the soft clipping parts of the CIGAR string for tallying.
         cigar_parts = self.cigar_parts[:]
         if cigar_parts[0][-1] == 'S':
@@ -1772,19 +1779,19 @@ class Alignment(object):
 
 
 
-        print('BEFORE')
-        print('------')
-        print(self)
-        print('CIGAR:', self.cigar[:50] + '...')
-        print('missing_start_bases:', missing_start_bases)
-        print('realigned_bases:', realigned_bases)
-        print('realigned_read_start:', realigned_read_start)
-        print('realigned_read_end:', realigned_read_end)
-        print('realigned_ref_start:', realigned_ref_start)
-        print('realigned_ref_end:', realigned_ref_end)
-        print('realigned_read_seq:', realigned_read_seq)
-        print('realigned_ref_seq:', realigned_ref_seq)
-        print('')
+        # print('BEFORE')
+        # print('------')
+        # print(self)
+        # print('CIGAR:', self.cigar[:50] + '...')
+        # print('missing_start_bases:', missing_start_bases)
+        # print('realigned_bases:', realigned_bases)
+        # print('realigned_read_start:', realigned_read_start)
+        # print('realigned_read_end:', realigned_read_end)
+        # print('realigned_ref_start:', realigned_ref_start)
+        # print('realigned_ref_end:', realigned_ref_end)
+        # print('realigned_read_seq:', realigned_read_seq)
+        # print('realigned_ref_seq:', realigned_ref_seq)
+        # print('')
 
 
 
@@ -1804,8 +1811,8 @@ class Alignment(object):
         assert len(seqan_parts) >= 18
 
 
-        print('alignment_result:', alignment_result)
-        print('')
+        # print('alignment_result:', alignment_result)
+        # print('')
 
         # Set the new read start.
         self.read_start_pos = int(seqan_parts[2])
@@ -1835,12 +1842,12 @@ class Alignment(object):
         self.tally_up_score_and_errors(scoring_scheme)
 
 
-        print('AFTER')
-        print('-----')
-        print(self)
-        print('CIGAR:', self.cigar[:50] + '...')
-        print('missing_start_bases:', self.get_missing_bases_at_start())
-        print('\n\n\n\n')
+        # print('AFTER')
+        # print('-----')
+        # print(self)
+        # print('CIGAR:', self.cigar[:50] + '...')
+        # print('missing_start_bases:', self.get_missing_bases_at_start())
+        # print('\n\n\n\n')
 
     def extend_end(self, scoring_scheme):
         '''

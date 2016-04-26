@@ -92,11 +92,29 @@ C_LIB.findAlignmentLines.argtypes = [c_char_p, # Sequence 1
 C_LIB.findAlignmentLines.restype = c_void_p    # String describing the found line(s)
 
 '''
+This function is used to conduct a short alignment for the sake of extending a GraphMap alignment.
+'''
+C_LIB.startExtensionAlignment.argtypes = [c_char_p, # Sequence 1
+                                          c_char_p, # Sequence 2
+                                          c_int,    # Sequence 1 length
+                                          c_int,    # Sequence 2 length
+                                          c_int,    # Verbosity
+                                          c_int,    # Match score
+                                          c_int,    # Mismatch score
+                                          c_int,    # Gap open score
+                                          c_int]    # Gap extension score
+C_LIB.startExtensionAlignment.restype = c_void_p    # String describing alignment
+
+'''
 This function cleans up the heap memory for the C strings returned by the other C functions. It
 must be called after them.
 '''
 C_LIB.free_c_string.argtypes = [c_void_p]
 C_LIB.free_c_string.restype = None
+
+
+
+
 
 def main():
     '''
@@ -167,7 +185,7 @@ def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, outp
     alignments will be run through Seqan.
     '''
     graphmap_sam = os.path.join(temp_dir, 'graphmap_alignments.sam')
-    run_graphmap(ref_fasta, reads_fastq, graphmap_sam, graphmap_path, threads, scoring_scheme)
+    # run_graphmap(ref_fasta, reads_fastq, graphmap_sam, graphmap_path, threads, scoring_scheme)
     graphmap_alignments = load_sam_alignments(graphmap_sam, reads, references, scoring_scheme)
 
     if VERBOSITY > 2 and graphmap_alignments:
@@ -182,12 +200,40 @@ def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, outp
     if VERBOSITY > 0:
         print_alignment_summary_table(graphmap_alignments)
 
+    semi_global_graphmap_alignments = extend_to_semi_global(graphmap_alignments,
+                                                                       scoring_scheme)
+
+
+
+
     # Give the alignments to their corresponding reads.
-    for alignment in graphmap_alignments:
+    for alignment in semi_global_graphmap_alignments:
         reads[alignment.read.name].alignments.append(alignment)
 
 
-    write_sam_file(graphmap_alignments, output_sam) # TEMP
+
+
+
+
+
+
+
+
+
+
+    write_sam_file(semi_global_graphmap_alignments, graphmap_sam, output_sam) # TEMP
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 #     # We now choose some alignments to use for the identity mean and std dev calculation.
@@ -597,6 +643,36 @@ def print_alignment_summary_table(graphmap_alignments):
     print()
 
 
+def extend_to_semi_global(alignments, scoring_scheme):
+    '''
+    This function returns truly semi-global alignments made from the input alignments.
+    '''
+    allowed_missing_bases = 100 # TO DO: MAKE THIS A PARAMETER
+    semi_global_alignments = []
+    for alignment in alignments:
+        total_missing_bases = alignment.get_total_missing_bases()
+
+        # If an input alignment is already semi-global, then it's included in the output.
+        if total_missing_bases == 0:
+            semi_global_alignments.append(alignment)
+
+        # If an input alignment is almost semi-global (below a threshold), and not too close to the
+        # end of the reference, then it is extended to make it semi-global.
+        elif total_missing_bases <= allowed_missing_bases:
+            missing_start = alignment.get_missing_bases_at_start()
+            missing_end = alignment.get_missing_bases_at_end()
+            if missing_start and alignment.ref_start_pos > 2 * missing_start:
+                alignment.extend_start(scoring_scheme)
+            if missing_end and alignment.ref_end_gap > 2 * missing_end:
+                alignment.extend_end(scoring_scheme)
+            semi_global_alignments.append(alignment)
+
+        # If an input alignment is above the threshold (not close to being semi-global), it is
+        # discarded.
+        else:
+            pass
+
+    return semi_global_alignments
 
 def load_references(fasta_filename):
     '''
@@ -998,11 +1074,20 @@ def get_ref_shift_from_cigar_part(cigar_part):
 #             return True
 #     return False
 
-def write_sam_file(alignments, sam_filename):
+def write_sam_file(alignments, graphmap_sam, sam_filename):
     '''
     Writes the given alignments to a SAM file.
     '''
     sam_file = open(sam_filename, 'w')
+
+    # Copy the header from the GraphMap SAM file.
+    graphmap_sam_file = open(graphmap_sam, 'r')
+    for line in graphmap_sam_file:
+        if line.startswith('@'):
+            sam_file.write(line)
+        else:
+            break
+
     for alignment in alignments:
         sam_file.write(alignment.get_sam_line())
         sam_file.write('\n')
@@ -1329,7 +1414,7 @@ class LongRead(object):
     def __init__(self, name, sequence, qualities):
         self.name = name
         self.sequence = sequence
-        self.rev_comp_sequence = reverse_complement(sequence)
+        self.rev_comp_seq = reverse_complement(sequence)
         self.qualities = qualities
         self.alignments = []
 
@@ -1466,8 +1551,7 @@ class Alignment(object):
     #     '''
     #     self.alignment_type = 'Seqan'
     #     seqan_parts = seqan_output.split(';')
-    #     if len(seqan_parts) < 13:
-    #         return
+    #     assert len(seqan_parts) >= 17
 
     #     # Read details
     #     self.read = reads[read_name]
@@ -1524,7 +1608,7 @@ class Alignment(object):
         self.read_end_pos = self.read.get_length() - self.get_end_soft_clips()
         self.read_end_gap = self.get_end_soft_clips()
         if self.rev_comp:
-            self.aligned_read_seq = self.read.rev_comp_sequence[self.read_start_pos:self.read_end_pos]
+            self.aligned_read_seq = self.read.rev_comp_seq[self.read_start_pos:self.read_end_pos]
         else:
             self.aligned_read_seq = self.read.sequence[self.read_start_pos:self.read_end_pos]
 
@@ -1537,7 +1621,15 @@ class Alignment(object):
         self.ref_end_gap = len(self.full_ref_sequence) - self.ref_end_pos
         self.aligned_ref_seq = self.full_ref_sequence[self.ref_start_pos:self.ref_end_pos]
 
-        self.alignment_type = None
+        self.tally_up_score_and_errors(scoring_scheme)
+
+
+    def tally_up_score_and_errors(self, scoring_scheme):
+        '''
+        This function steps through the CIGAR string for the alignment to get the score, identity
+        and count/locations of errors.
+        '''
+        # Clear any existing tallies.
         self.match_count = 0
         self.mismatch_count = 0
         self.insertion_count = 0
@@ -1546,7 +1638,7 @@ class Alignment(object):
         self.ref_mismatch_positions = []
         self.ref_insertion_positions_and_sizes = []
         self.ref_deletion_positions = []
-
+        
         # Remove the soft clipping parts of the CIGAR string for tallying.
         cigar_parts = self.cigar_parts[:]
         if cigar_parts[0][-1] == 'S':
@@ -1554,7 +1646,6 @@ class Alignment(object):
         if cigar_parts[-1][-1] == 'S':
             cigar_parts.pop()
 
-        # Tally up all aspects of the alignment using the CIGAR.
         read_i = 0
         ref_i = 0
         align_i = 0
@@ -1564,7 +1655,8 @@ class Alignment(object):
             cigar_type = cigar_part[-1]
             if cigar_type == 'I':
                 self.insertion_count += cigar_count
-                self.ref_insertion_positions_and_sizes.append((ref_i + self.ref_start_pos, cigar_count))
+                self.ref_insertion_positions_and_sizes.append((ref_i + self.ref_start_pos,
+                                                               cigar_count))
                 read_i += cigar_count
                 self.raw_score += scoring_scheme.gap_open + \
                                   ((cigar_count - 1) * scoring_scheme.gap_extend)
@@ -1655,6 +1747,118 @@ class Alignment(object):
     #     assert new_slope / slope > 0.995
     #     assert new_slope / slope < 1.005
 
+    def extend_start(self, scoring_scheme):
+        '''
+        This function extends the start of the alignment to remove any missing start bases.
+        '''
+        missing_start_bases = self.get_missing_bases_at_start()
+        realigned_bases = 2 * missing_start_bases
+
+        realigned_read_end = self.read_start_pos
+        realigned_read_start = max(0, realigned_read_end - realigned_bases)
+
+        realigned_ref_end = self.ref_start_pos
+        realigned_ref_start = max(0, realigned_ref_end - realigned_bases)
+
+        if self.rev_comp:
+            realigned_read_seq = \
+                reverse_complement(self.read.sequence)[realigned_read_start:realigned_read_end]
+        else:
+            realigned_read_seq = self.read.sequence[realigned_read_start:realigned_read_end]
+        realigned_ref_seq = self.full_ref_sequence[realigned_ref_start:realigned_ref_end]
+
+        assert len(realigned_ref_seq) >= len(realigned_read_seq)
+
+
+
+
+        print('BEFORE')
+        print('------')
+        print(self)
+        print('CIGAR:', self.cigar[:50] + '...')
+        print('missing_start_bases:', missing_start_bases)
+        print('realigned_bases:', realigned_bases)
+        print('realigned_read_start:', realigned_read_start)
+        print('realigned_read_end:', realigned_read_end)
+        print('realigned_ref_start:', realigned_ref_start)
+        print('realigned_ref_end:', realigned_ref_end)
+        print('realigned_read_seq:', realigned_read_seq)
+        print('realigned_ref_seq:', realigned_ref_seq)
+        print('')
+
+
+
+
+
+
+        # Call the C++ function to do the actual alignment.
+        ptr = C_LIB.startExtensionAlignment(realigned_read_seq, realigned_ref_seq,
+                                            len(realigned_read_seq), len(realigned_ref_seq),
+                                            VERBOSITY, scoring_scheme.match,
+                                            scoring_scheme.mismatch, scoring_scheme.gap_open,
+                                            scoring_scheme.gap_extend)
+        alignment_result = cast(ptr, c_char_p).value    
+        C_LIB.free_c_string(ptr)
+
+        seqan_parts = alignment_result.split(';')
+        assert len(seqan_parts) >= 18
+
+
+        print('alignment_result:', alignment_result)
+        print('')
+
+        # Set the new read start.
+        self.read_start_pos = int(seqan_parts[2])
+        assert self.read_start_pos == 0
+        if self.rev_comp:
+            self.aligned_read_seq = self.read.rev_comp_seq[self.read_start_pos:self.read_end_pos]
+        else:
+            self.aligned_read_seq = self.read.sequence[self.read_start_pos:self.read_end_pos]
+
+        # Set the new reference start
+        self.ref_start_pos = realigned_ref_start + int(seqan_parts[4])
+        self.aligned_ref_seq = self.full_ref_sequence[self.ref_start_pos:self.ref_end_pos]
+
+        # Replace the S part at the beginning the alignment's CIGAR with the CIGAR just made. If
+        # the last part of the new CIGAR is of the same type as the first part of the existing
+        # CIGAR, they will need to be merged.
+        new_cigar_parts = re.findall(r'\d+\w', seqan_parts[1])
+        old_cigar_parts = self.cigar_parts[1:]
+        if new_cigar_parts[-1][-1] == old_cigar_parts[0][-1]:
+            part_sum = int(new_cigar_parts[-1][:-1]) + int(old_cigar_parts[0][:-1])
+            merged_part = str(part_sum) + new_cigar_parts[-1][-1]
+            new_cigar_parts = new_cigar_parts[:-1] + [merged_part]
+            old_cigar_parts = old_cigar_parts[1:]
+        self.cigar_parts = new_cigar_parts + old_cigar_parts
+        self.cigar = ''.join(self.cigar_parts)
+
+        self.tally_up_score_and_errors(scoring_scheme)
+
+
+        print('AFTER')
+        print('-----')
+        print(self)
+        print('CIGAR:', self.cigar[:50] + '...')
+        print('missing_start_bases:', self.get_missing_bases_at_start())
+        print('\n\n\n\n')
+
+    def extend_end(self, scoring_scheme):
+        '''
+        This function extends the end of the alignment to remove any missing end bases.
+        '''
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+
     def __repr__(self):
         read_start, read_end = self.read_start_end_positive_strand()
         return_str = self.read.name + ' (' + str(read_start) + '-' + str(read_end) + ', '
@@ -1714,7 +1918,6 @@ class Alignment(object):
         else:
             return 0
 
-
     def get_sam_line(self):
         '''
         Returns a SAM alignment line.
@@ -1743,6 +1946,26 @@ class Alignment(object):
                 longest_indel_run = max(longest_indel_run, int(cigar_part[:-1]))
         return longest_indel_run
 
+    def get_missing_bases_at_start(self):
+        '''
+        Returns the number of bases at the start of the alignment which are missing in both the
+        read and the reference (preventing the alignment from being semi-global).
+        '''
+        return min(self.read_start_pos, self.ref_start_pos)
+
+    def get_missing_bases_at_end(self):
+        '''
+        Returns the number of bases at the end of the alignment which are missing in both the read
+        and the reference (preventing the alignment from being semi-global).
+        '''
+        return min(self.read_end_gap, self.ref_end_gap)
+
+    def get_total_missing_bases(self):
+        '''
+        Returns the number of bases at the start and end of the alignment which are missing in both
+        the read and the reference (preventing the alignment from being semi-global).
+        '''
+        return self.get_missing_bases_at_start() + self.get_missing_bases_at_end()
 
 
 if __name__ == '__main__':

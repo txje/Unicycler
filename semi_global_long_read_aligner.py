@@ -815,12 +815,18 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
     '''
     This function runs GraphMap for the given inputs and produces a SAM file at the given location.
     '''
-    command = [graphmap_path, 'align',
-               '-r', fasta,
-               '-d', long_reads_fastq,
-               '-o', sam_file,
-               '-t', str(threads),
-               '-a', 'anchorgotoh']
+    graphmap_version = get_graphmap_version(graphmap_path)
+
+    # Build the GraphMap command. There is a bit of difference if we're using a version before or
+    # after v0.3.0.
+    command = [graphmap_path]
+    if graphmap_version >= 0.3:
+        command.append('align')
+    command += ['-r', fasta,
+                '-d', long_reads_fastq,
+                '-o', sam_file,
+                '-t', str(threads),
+                '-a', 'anchorgotoh']
     command += scoring_scheme.get_graphmap_parameters()
 
     if VERBOSITY > 0:
@@ -863,6 +869,27 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
 
     if not os.path.isfile(sam_file):
         quit_with_error('GraphMap failure')
+
+def get_graphmap_version(graphmap_path):
+    '''
+    Returns the version of GraphMap.
+    '''
+    command = [graphmap_path, '-h']
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = process.communicate()
+    allout = out + err
+    if 'Version: v' not in allout:
+        command = [graphmap_path, 'align', '-h']
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = process.communicate()
+        allout = out + err
+    if 'Version: v' not in allout:
+        return 0.0
+    version_i = allout.find('Version: v')
+    version = allout[version_i + 10:]
+    version = version.split()[0]
+    version = '.'.join(version.split('.')[0:2])
+    return float(version)
 
 def load_sam_alignments(sam_filename, reads, references, scoring_scheme):
     '''

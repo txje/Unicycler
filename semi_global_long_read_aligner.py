@@ -663,11 +663,14 @@ def print_alignment_summary_table(graphmap_alignments):
         print(line)
     print()
 
-
 def extend_to_semi_global(alignments, scoring_scheme):
     '''
     This function returns truly semi-global alignments made from the input alignments.
     '''
+    if VERBOSITY > 3:
+        print('Extending aligments')
+        print('-------------------')
+
     allowed_missing_bases = 100 # TO DO: MAKE THIS A PARAMETER
     semi_global_alignments = []
     for alignment in alignments:
@@ -1787,27 +1790,10 @@ class Alignment(object):
         realigned_ref_seq = self.full_ref_sequence[realigned_ref_start:realigned_ref_end]
         assert len(realigned_ref_seq) >= len(realigned_read_seq)
 
-
-
-
-        # print('BEFORE')
-        # print('------')
-        # print(self)
-        # print('CIGAR:', self.cigar[:50] + '...')
-        # print('missing_start_bases:', missing_start_bases)
-        # print('realigned_bases:', realigned_bases)
-        # print('realigned_read_start:', realigned_read_start)
-        # print('realigned_read_end:', realigned_read_end)
-        # print('realigned_ref_start:', realigned_ref_start)
-        # print('realigned_ref_end:', realigned_ref_end)
-        # print('realigned_read_seq:', realigned_read_seq)
-        # print('realigned_ref_seq:', realigned_ref_seq)
-        # print('')
-
-
-
-
-
+        if VERBOSITY > 3:
+            print(self)
+            print('   ', self.cigar[:20] + '...')
+            cigar_length_before = len(self.cigar)
 
         # Call the C++ function to do the actual alignment.
         ptr = C_LIB.startExtensionAlignment(realigned_read_seq, realigned_ref_seq,
@@ -1820,10 +1806,6 @@ class Alignment(object):
 
         seqan_parts = alignment_result.split(';')
         assert len(seqan_parts) >= 18
-
-
-        # print('alignment_result:', alignment_result)
-        # print('')
 
         # Set the new read start.
         self.read_start_pos = int(seqan_parts[2])
@@ -1852,13 +1834,11 @@ class Alignment(object):
 
         self.tally_up_score_and_errors(scoring_scheme)
 
-
-        # print('AFTER')
-        # print('-----')
-        # print(self)
-        # print('CIGAR:', self.cigar[:50] + '...')
-        # print('missing_start_bases:', self.get_missing_bases_at_start())
-        # print('\n\n\n\n')
+        if VERBOSITY > 3:
+            cigar_length_increase = len(self.cigar) - cigar_length_before
+            print(self)
+            print('    ', self.cigar[:(20 + cigar_length_increase)] + '...')
+            print()
 
     def extend_end(self, scoring_scheme):
         '''
@@ -1879,23 +1859,10 @@ class Alignment(object):
         realigned_ref_seq = self.full_ref_sequence[realigned_ref_start:realigned_ref_end]
         assert len(realigned_ref_seq) >= len(realigned_read_seq)
 
-
-
-
-        print('BEFORE')
-        print('------')
-        print(self)
-        print('CIGAR:', '...' + self.cigar[-50:])
-        print('missing_end_bases:   ', missing_end_bases)
-        print('realigned_bases:     ', realigned_bases)
-        print('realigned_read_start:', realigned_read_start)
-        print('realigned_read_end:  ', realigned_read_end)
-        print('realigned_ref_start: ', realigned_ref_start)
-        print('realigned_ref_end:   ', realigned_ref_end)
-        print('realigned_read_seq:  ', realigned_read_seq)
-        print('realigned_ref_seq:   ', realigned_ref_seq)
-        print('')
-
+        if VERBOSITY > 3:
+            print(self)
+            print('    ...' + self.cigar[-20:])
+            cigar_length_before = len(self.cigar)
 
         # Call the C++ function to do the actual alignment.
         ptr = C_LIB.endExtensionAlignment(realigned_read_seq, realigned_ref_seq,
@@ -1908,13 +1875,6 @@ class Alignment(object):
 
         seqan_parts = alignment_result.split(';')
         assert len(seqan_parts) >= 18
-
-
-
-
-        print('alignment_result:', alignment_result)
-        print('')
-
 
         # Set the new read end.
         self.read_end_pos += int(seqan_parts[3])
@@ -1945,15 +1905,11 @@ class Alignment(object):
 
         self.tally_up_score_and_errors(scoring_scheme)
 
-
-
-        print('AFTER')
-        print('-----')
-        print(self)
-        print('CIGAR:', '...' + self.cigar[-50:])
-        print('missing_end_bases:', self.get_missing_bases_at_end())
-        print('\n\n\n\n')
-
+        if VERBOSITY > 3:
+            cigar_length_increase = len(self.cigar) - cigar_length_before
+            print(self)
+            print('    ...' + self.cigar[-(20 + cigar_length_increase):])
+            print()
 
     def __repr__(self):
         read_start, read_end = self.read_start_end_positive_strand()

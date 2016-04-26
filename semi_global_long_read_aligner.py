@@ -43,6 +43,7 @@ import re
 import random
 import argparse
 import string
+import math
 from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p
 from multiprocessing.dummy import Pool as ThreadPool
 
@@ -118,8 +119,8 @@ def main():
 
     reads = semi_global_align_long_reads(references, args.ref, reads, args.reads, args.sam,
                                          args.temp_dir, args.path, args.threads, args.partial_ref,
-                                         args.verbosity, AlignmentScoringScheme(args.scores))
-    write_reference_errors_to_table(references, reads, args.table)
+                                         AlignmentScoringScheme(args.scores))
+    summarise_errors(references, reads, args.table, args.keep)
 
     if not temp_dir_exist_at_start:
         os.rmdir(args.temp_dir)
@@ -151,6 +152,8 @@ def get_arguments():
                         help='Number of threads used by GraphMap')
     parser.add_argument('--verbosity', type=int, required=False, default=1,
                         help='Level of stdout information (0 to 4)')
+    parser.add_argument('--keep', type=float, required=False, default=75.0,
+                        help='Percentage of alignments to keep')
     return parser.parse_args()
 
 def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, output_sam, temp_dir,
@@ -163,7 +166,6 @@ def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, outp
     If seqan_all is False, then only the overlap alignments and a small set of long contained
     alignments will be run through Seqan.
     '''
-
     graphmap_sam = os.path.join(temp_dir, 'graphmap_alignments.sam')
     run_graphmap(ref_fasta, reads_fastq, graphmap_sam, graphmap_path, threads, scoring_scheme)
     graphmap_alignments = load_sam_alignments(graphmap_sam, reads, references, scoring_scheme)
@@ -185,6 +187,7 @@ def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, outp
         reads[alignment.read.name].alignments.append(alignment)
 
 
+    write_sam_file(graphmap_alignments, output_sam) # TEMP
 
 
 #     # We now choose some alignments to use for the identity mean and std dev calculation.
@@ -368,13 +371,13 @@ def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, outp
 #     #         print('Unaligned reads:        ', int_to_str(len(unaligned), max_v))
 #     #         print()
 
-    # write_sam_file(filtered_alignments, sam_filtered)
+    # write_sam_file(filtered_alignments, output_sam)
     
     # os.remove(graphmap_sam)
 
     return reads
 
-def write_reference_errors_to_table(references, long_reads, table_prefix):
+def summarise_errors(references, long_reads, table_prefix, percent_alignments_to_keep):
     '''
     Writes a table file summarising the alignment errors in terms of reference sequence position.
     Works in a brute force manner - could be made more efficient later if necessary.
@@ -383,6 +386,11 @@ def write_reference_errors_to_table(references, long_reads, table_prefix):
     # else to do.
     if not table_prefix and VERBOSITY == 0:
         return
+
+    # We are be willing to throw out the worst alignments for any particular location. This value
+    # specifies how many of our alignments we'll keep.
+    # E.g. if 0.75, we'll throw out up to 25% of the alignments for each reference location.
+    frac_alignments_to_keep = percent_alignments_to_keep / 100.0
 
     # Ensure the table prefix is nicely formatted and any necessary directories are made.
     if table_prefix:
@@ -396,8 +404,7 @@ def write_reference_errors_to_table(references, long_reads, table_prefix):
                 os.makedirs(directory)
 
     if VERBOSITY > 0:
-
-        # So the numbers align nicely, we look for and remember the larger number to be displayed.
+        # So the numbers align nicely, we look for and remember the largest number to be displayed.
         max_v = max(100,
                     sum([len(x.alignments) for x in long_reads.itervalues()]),
                     max([len(seq) for seq in references.itervalues()]))
@@ -405,6 +412,7 @@ def write_reference_errors_to_table(references, long_reads, table_prefix):
         print('---------------------------------')
 
     for header, seq in references.iteritems():
+        # Create a table file for the reference.
         if table_prefix:
             header_for_filename = clean_str_for_filename(header)
             if table_prefix.endswith('/'):
@@ -412,80 +420,139 @@ def write_reference_errors_to_table(references, long_reads, table_prefix):
             else:
                 table_filename = table_prefix + '_' + header_for_filename + '.txt'
             table = open(table_filename, 'w')
-            table.write('\t'.join(['base', 'read depth', 'mismatches', 'insertions',
-                                   'deletions']) + '\n')
+            table.write('\t'.join(['base',
+                                   'total read depth',
+                                   'filtered depth',
+                                   'mismatches',
+                                   'deletions',
+                                   'insertions',
+                                   'mismatch rate',
+                                   'deletion rate',
+                                   'insertion rate',
+                                   'insertion sizes']) + '\n')
+
+        # Gather up the alignments for this reference and count up the depth for each reference
+        # position.
         seq_len = len(seq)
-        depths = [0] * seq_len
-        mismatches = [0] * seq_len
-        insertions = [0] * seq_len
-        deletions = [0] * seq_len
+        total_depths = [0] * seq_len
         alignments = []
         for read in long_reads.itervalues():
             for alignment in read.alignments:
                 if alignment.ref_name == header:
                     alignments.append(alignment)
                     for pos in xrange(alignment.ref_start_pos, alignment.ref_end_pos):
-                        depths[pos] += 1
-                    for pos in alignment.ref_mismatch_positions:
-                        mismatches[pos] += 1
-                    for pos in alignment.ref_insertion_positions:
-                        insertions[pos] += 1
-                    for pos in alignment.ref_deletion_positions:
-                        deletions[pos] += 1
+                        total_depths[pos] += 1
 
-        # Determine how much of the reference sequence had at least one read aligning.
-        alignment_ranges = [(x.ref_start_pos, x.ref_end_pos) for x in alignments]
-        alignment_ranges = simplify_ranges(alignment_ranges)
-        aligned_length = sum([x[1] - x[0] for x in alignment_ranges])
-        aligned_percent =  100.0 * aligned_length / seq_len
+        # Discard as many of the worst alignments as we can while keeping a sufficient read depth
+        # at each position.
+        sufficient_depths = [math.ceil(frac_alignments_to_keep * x) for x in total_depths]
+        filtered_depths = total_depths[:]
+        filtered_alignments = []
+        alignments = sorted(alignments, key=lambda x: x.scaled_score)
+        for alignment in alignments:
+            removal_okay = True
+            for pos in xrange(alignment.ref_start_pos, alignment.ref_end_pos):
+                if filtered_depths[pos] - 1 < sufficient_depths[pos]:
+                    removal_okay = False
+                    break
+            if removal_okay:
+                for pos in xrange(alignment.ref_start_pos, alignment.ref_end_pos):
+                    filtered_depths[pos] -= 1
+            else:
+                filtered_alignments.append(alignment)
+
+        # Determine how much of the reference sequence has at least one aligned read.
+        aligned_len = sum([1 for x in filtered_depths if x > 0])
+        aligned_percent = 100.0 * aligned_len / seq_len
+
+        # Using the filtered alignments, add up mismatches, deletions and insertions and also get
+        # their rates (divided by the depth).
+        # Insertions are counted in two ways:
+        #   1) With multi-base insertions totalled up. E.g. 3I results in 3 counts all in the same
+        #      reference location.
+        #   2) With multi-base insertions counted only once. E.g. 3I results in 1 count at the
+        #      reference location.
+        mismatches = [0] * seq_len
+        deletions = [0] * seq_len
+        insertions = [0] * seq_len
+        insertion_sizes = {}
+
+        for alignment in filtered_alignments:
+            for pos in alignment.ref_mismatch_positions:
+                mismatches[pos] += 1
+            for pos in alignment.ref_deletion_positions:
+                deletions[pos] += 1
+            for pos, size in alignment.ref_insertion_positions_and_sizes:
+                insertions[pos] += 1
+                if pos not in insertion_sizes:
+                    insertion_sizes[pos] = []
+                insertion_sizes[pos].append(size)
+        mismatch_rates = []
+        deletion_rates = []
+        insertion_rates = []
+        insertion_rates_multi_base = []
+        for i in xrange(seq_len):
+            mismatch_rate = 0.0
+            deletion_rate = 0.0
+            insertion_rate = 0.0
+            insertion_rate_multi_base = 0.0
+            if filtered_depths[i] > 0:
+                mismatch_rate = mismatches[i] / filtered_depths[i]
+                deletion_rate = deletions[i] / filtered_depths[i]
+                insertion_rate = insertions[i] / filtered_depths[i]
+                if i in insertion_sizes:
+                    insertion_rate_multi_base = sum(insertion_sizes[i]) / filtered_depths[i]
+            mismatch_rates.append(mismatch_rate)
+            deletion_rates.append(deletion_rate)
+            insertion_rates.append(insertion_rate)
+            insertion_rates_multi_base.append(insertion_rate_multi_base)
 
         if table_prefix:
             for i in xrange(seq_len):
-                table.write('\t'.join([str(i+1), str(depths[i]), str(mismatches[i]),
-                                       str(insertions[i]), str(deletions[i])]) + '\n')
+                insertion_sizes_str = ''
+                if i in insertion_sizes:
+                    insertion_sizes_str = ', '.join([str(x) for x in insertion_sizes[i]])
+                table.write('\t'.join([str(i+1),
+                                       str(total_depths[i]),
+                                       str(filtered_depths[i]),
+                                       str(mismatches[i]),
+                                       str(deletions[i]),
+                                       str(insertions[i]),
+                                       str(mismatch_rates[i]),
+                                       str(deletion_rates[i]),
+                                       str(insertion_rates[i]),
+                                       insertion_sizes_str]))
+                table.write('\n')
+            table.close()
+
         if VERBOSITY > 0:
-            mismatch_rates = []
-            insertion_rates = []
-            deletion_rates = []
-            for i in xrange(seq_len):
-                depth = depths[i]
-                if depth > 0.0:
-                    mismatch_rates.append(mismatches[i] / depth)
-                    insertion_rates.append(insertions[i] / depth)
-                    deletion_rates.append(deletions[i] / depth)
-            mean_depth = sum(depths) / seq_len
-            if aligned_length > 0:
-                mean_mismatch_rate = 100.0 * sum(mismatch_rates) / aligned_length
-                mean_insertion_rate = 100.0 * sum(insertion_rates) / aligned_length
-                mean_deletion_rate = 100.0 * sum(deletion_rates) / aligned_length
-            else:
-                mean_mismatch_rate = 0.0
-                mean_insertion_rate = 0.0
-                mean_deletion_rate = 0.0
             contained_alignment_count = 0
             overlapping_alignment_count = 0
-            for alignment in alignments:
+            for alignment in filtered_alignments:
                 if alignment.is_whole_read():
                     contained_alignment_count += 1
                 else:
                     overlapping_alignment_count += 1
             print(header)
-            print('  Total length:    ', int_to_str(seq_len, max_v) + ' bp')
+            print('  Total length:       ', int_to_str(seq_len, max_v) + ' bp')
             if alignments:
-                print('  Covered length:  ', int_to_str(aligned_length, max_v) + ' bp')
-                print('  Covered fraction:', float_to_str(aligned_percent, 2, max_v) + '%')
-                print('  Total alignments:', int_to_str(len(alignments), max_v))
-                print('    Contained:     ', int_to_str(contained_alignment_count, max_v))
-                print('    Overlapping:   ', int_to_str(overlapping_alignment_count, max_v))
-                print('  Mean read depth: ', float_to_str(mean_depth, 2, max_v))
-                print('  Mismatch rate:   ', float_to_str(mean_mismatch_rate, 2, max_v) + '%')
-                print('  Insertion rate:  ', float_to_str(mean_insertion_rate, 2, max_v) + '%')
-                print('  Deletion rate:   ', float_to_str(mean_deletion_rate, 2, max_v) + '%')
+                mean_depth = sum(filtered_depths) / seq_len
+                mean_mismatch_rate = 100.0 * sum(mismatch_rates) / aligned_len
+                mean_insertion_rate = 100.0 * sum(insertion_rates_multi_base) / aligned_len
+                mean_deletion_rate = 100.0 * sum(deletion_rates) / aligned_len
+                print('  Total alignments:   ', int_to_str(len(alignments), max_v))
+                print('  Filtered alignments:', int_to_str(len(filtered_alignments), max_v))
+                print('    Contained:        ', int_to_str(contained_alignment_count, max_v))
+                print('    Overlapping:      ', int_to_str(overlapping_alignment_count, max_v))
+                print('  Covered length:     ', int_to_str(aligned_len, max_v) + ' bp')
+                print('  Covered fraction:   ', float_to_str(aligned_percent, 2, max_v) + '%')
+                print('  Mean read depth:    ', float_to_str(mean_depth, 2, max_v))
+                print('  Mismatch rate:      ', float_to_str(mean_mismatch_rate, 2, max_v) + '%')
+                print('  Insertion rate:     ', float_to_str(mean_insertion_rate, 2, max_v) + '%')
+                print('  Deletion rate:      ', float_to_str(mean_deletion_rate, 2, max_v) + '%')
             else:
-                print('  Total alignments:', int_to_str(0, max_v))
+                print('  Total alignments:   ', int_to_str(0, max_v))
             print()
-        if table_prefix:
-            table.close()
 
 
 def print_alignment_summary_table(graphmap_alignments):
@@ -683,6 +750,8 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
     # Clean up.
     if os.path.isfile(fasta + '.gmidx'):
         os.remove(fasta + '.gmidx')
+    if os.path.isfile(fasta + '.gmidxsec'):
+        os.remove(fasta + '.gmidxsec')
 
     if not os.path.isfile(sam_file):
         quit_with_error('GraphMap failure')
@@ -889,35 +958,35 @@ def get_ref_shift_from_cigar_part(cigar_part):
     if cigar_part[-1] == 'I':
         return 0
 
-def simplify_ranges(ranges):
-    '''
-    Collapses overlapping ranges together. Input ranges are tuples of (start, end) in the normal
-    Python manner where the end isn't included.
-    '''
-    fixed_ranges = []
-    for int_range in ranges:
-        if int_range[0] > int_range[1]:
-            fixed_ranges.append((int_range[1], int_range[0]))
-        elif int_range[0] < int_range[1]:
-            fixed_ranges.append(int_range)
-    starts_ends = [(x[0], 1) for x in fixed_ranges]
-    starts_ends += [(x[1], -1) for x in fixed_ranges]
-    starts_ends.sort(key=lambda x: x[0])
-    current_sum = 0
-    cumulative_sum = []
-    for start_end in starts_ends:
-        current_sum += start_end[1]
-        cumulative_sum.append((start_end[0], current_sum))
-    prev_depth = 0
-    start = 0
-    combined = []
-    for pos, depth in cumulative_sum:
-        if prev_depth == 0:
-            start = pos
-        elif depth == 0:
-            combined.append((start, pos))
-        prev_depth = depth
-    return combined
+# def simplify_ranges(ranges):
+#     '''
+#     Collapses overlapping ranges together. Input ranges are tuples of (start, end) in the normal
+#     Python manner where the end isn't included.
+#     '''
+#     fixed_ranges = []
+#     for int_range in ranges:
+#         if int_range[0] > int_range[1]:
+#             fixed_ranges.append((int_range[1], int_range[0]))
+#         elif int_range[0] < int_range[1]:
+#             fixed_ranges.append(int_range)
+#     starts_ends = [(x[0], 1) for x in fixed_ranges]
+#     starts_ends += [(x[1], -1) for x in fixed_ranges]
+#     starts_ends.sort(key=lambda x: x[0])
+#     current_sum = 0
+#     cumulative_sum = []
+#     for start_end in starts_ends:
+#         current_sum += start_end[1]
+#         cumulative_sum.append((start_end[0], current_sum))
+#     prev_depth = 0
+#     start = 0
+#     combined = []
+#     for pos, depth in cumulative_sum:
+#         if prev_depth == 0:
+#             start = pos
+#         elif depth == 0:
+#             combined.append((start, pos))
+#         prev_depth = depth
+#     return combined
 
 # def range_is_contained(test_range, other_ranges):
 #     '''
@@ -929,15 +998,15 @@ def simplify_ranges(ranges):
 #             return True
 #     return False
 
-# def write_sam_file(alignments, sam_filename):
-#     '''
-#     Writes the given alignments to a SAM file.
-#     '''
-#     sam_file = open(sam_filename, 'w')
-#     for alignment in alignments:
-#         sam_file.write(alignment.get_sam_line())
-#         sam_file.write('\n')
-#     sam_file.close()
+def write_sam_file(alignments, sam_filename):
+    '''
+    Writes the given alignments to a SAM file.
+    '''
+    sam_file = open(sam_filename, 'w')
+    for alignment in alignments:
+        sam_file.write(alignment.get_sam_line())
+        sam_file.write('\n')
+    sam_file.close()
 
 # def load_fasta(filename): # type: (str) -> list[tuple[str, str]]
 #     '''
@@ -1376,7 +1445,7 @@ class Alignment(object):
         self.edit_distance = None
         self.percent_identity = None
         self.ref_mismatch_positions = None
-        self.ref_insertion_positions = None
+        self.ref_insertion_positions_and_sizes = None
         self.ref_deletion_positions = None
         self.raw_score = None
         self.scaled_score = None
@@ -1450,7 +1519,7 @@ class Alignment(object):
         self.cigar = sam_parts[5]
         self.cigar_parts = re.findall(r'\d+\w', self.cigar)
 
-        self.read = reads[sam_parts[0].split('/')[0]]
+        self.read = reads[sam_parts[0]]
         self.read_start_pos = self.get_start_soft_clips()
         self.read_end_pos = self.read.get_length() - self.get_end_soft_clips()
         self.read_end_gap = self.get_end_soft_clips()
@@ -1475,7 +1544,7 @@ class Alignment(object):
         self.deletion_count = 0
         self.percent_identity = 0.0
         self.ref_mismatch_positions = []
-        self.ref_insertion_positions = []
+        self.ref_insertion_positions_and_sizes = []
         self.ref_deletion_positions = []
 
         # Remove the soft clipping parts of the CIGAR string for tallying.
@@ -1495,7 +1564,7 @@ class Alignment(object):
             cigar_type = cigar_part[-1]
             if cigar_type == 'I':
                 self.insertion_count += cigar_count
-                self.ref_insertion_positions += [ref_i + self.ref_start_pos] * cigar_count
+                self.ref_insertion_positions_and_sizes.append((ref_i + self.ref_start_pos, cigar_count))
                 read_i += cigar_count
                 self.raw_score += scoring_scheme.gap_open + \
                                   ((cigar_count - 1) * scoring_scheme.gap_extend)
@@ -1646,16 +1715,16 @@ class Alignment(object):
             return 0
 
 
-#     def get_sam_line(self):
-#         '''
-#         Returns a SAM alignment line.
-#         '''
-#         edit_distance = self.mismatch_count + self.insertion_count + self.deletion_count
-#         sam_flag = 0 #TEMP
-#         return '\t'.join([self.read.name, str(sam_flag), self.ref_name,
-#                           str(self.ref_start_pos + 1), '255', self.cigar,
-#                           '*', '0', '0', self.read.sequence, self.read.qualities,
-#                           'NM:i:' + str(edit_distance)])
+    def get_sam_line(self):
+        '''
+        Returns a SAM alignment line.
+        '''
+        edit_distance = self.mismatch_count + self.insertion_count + self.deletion_count
+        sam_flag = 0 #TEMP
+        return '\t'.join([self.read.name, str(sam_flag), self.ref_name,
+                          str(self.ref_start_pos + 1), '255', self.cigar,
+                          '*', '0', '0', self.read.sequence, self.read.qualities,
+                          'NM:i:' + str(edit_distance), 'AS:i:' + str(self.raw_score)])
 
     def is_whole_read(self):
         '''

@@ -55,6 +55,9 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
 char * startExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int verbosity,
                                int matchScore, int mismatchScore, int gapOpenScore,
                                int gapExtensionScore);
+char * endExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int verbosity,
+                             int matchScore, int mismatchScore, int gapOpenScore,
+                             int gapExtensionScore);
 void free_c_string(char * p);
 
 // These functions are internal to this C++ code.
@@ -414,6 +417,31 @@ char * startExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int v
                                               false, true);
 }
 
+// This function is used to conduct a short alignment for the sake of extending a GraphMap
+// alignment.
+char * endExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int verbosity,
+                             int matchScore, int mismatchScore, int gapOpenScore,
+                             int gapExtensionScore)
+{
+    long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
+    std::string output;
+
+    TSequence sequenceH = s1;
+    TSequence sequenceV = s2;
+
+    Align<Dna5String, ArrayGaps> alignment;
+    resize(rows(alignment), 2);
+    assignSource(row(alignment, 0), sequenceH);
+    assignSource(row(alignment, 1), sequenceV);
+    Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
+
+    // The only free gaps are at the end of s2 (the reference sequence).
+    AlignConfig<false, false, true, false> alignConfig;
+    int score = globalAlignment(alignment, scoringScheme, alignConfig);
+
+    return turnAlignmentIntoDescriptiveString(&alignment, score, matchScore, startTime, output,
+                                              true, false);
+}
 
 
 // This function returns a list of the k-mers common to the two sequences.
@@ -599,6 +627,8 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
         alignmentStarted = true;
         s1Started = true;
         s2Started = true;
+        s1Start = 0;
+        s2Start = 0;
     }
 
     for (int i = 0; i < alignmentLength; ++i)

@@ -198,10 +198,10 @@ def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, outp
     If seqan_all is False, then only the overlap alignments and a small set of long contained
     alignments will be run through Seqan.
     '''
+    # Run GraphMap and load in the resulting SAM file.
     graphmap_sam = os.path.join(temp_dir, 'graphmap_alignments.sam')
     run_graphmap(ref_fasta, reads_fastq, graphmap_sam, graphmap_path, threads, scoring_scheme)
     graphmap_alignments = load_sam_alignments(graphmap_sam, reads, references, scoring_scheme)
-
     if VERBOSITY > 2 and graphmap_alignments:
         print('All GraphMap alignments')
         print('-----------------------')
@@ -211,11 +211,9 @@ def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, outp
                 print(alignment.cigar)
         print()
 
-    if VERBOSITY > 0:
-        print_alignment_summary_table(graphmap_alignments)
-
+    # Use Seqan to extend the GraphMap alignments so they are fully semi-global. In this process,
+    # some alignments will be discarded (those too far from being semi-global).
     semi_global_graphmap_alignments = extend_to_semi_global(graphmap_alignments, scoring_scheme)
-
     if VERBOSITY > 2 and semi_global_graphmap_alignments:
         print('GraphMap alignments after extension')
         print('-----------------------------------')
@@ -225,12 +223,41 @@ def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, outp
                 print(alignment.cigar)
         print()
 
-
+    # Gather some statistics about the alignments.
+    read_to_refs = [x.get_read_to_ref_ratio() for x in graphmap_alignments]
+    percent_ids = [x.percent_identity for x in graphmap_alignments]
+    scores = [x.scaled_score for x in graphmap_alignments]
+    read_to_ref_median, read_to_ref_mad = get_median_and_mad(read_to_refs)
+    percent_id_median, percent_id_mad = get_median_and_mad(percent_ids)
+    score_median, score_mad = get_median_and_mad(scores)
+    if VERBOSITY > 0:
+        print_alignment_summary_table(graphmap_alignments, read_to_ref_median, read_to_ref_mad,
+                                      percent_id_median, percent_id_mad, score_median, score_mad)
 
     # Give the alignments to their corresponding reads.
     for alignment in semi_global_graphmap_alignments:
         reads[alignment.read.name].alignments.append(alignment)
 
+    # We can now sort our reads into two different categories for further action:
+    #   1) Reads with a single, high quality alignment in the middle of a reference. These reads
+    #      are done!
+    #   2) Reads that are incompletely (or not at all) aligned, have overlapping alignments or
+    #      low quality alignments. These reads will be aligned again using Seqan.
+    low_score_threshold = score_median - (3 * score_mad)
+    completed_reads = []
+    reads_to_be_realigned = []
+    for read in reads.itervalues():
+        if read.needs_realignment(partial_ref, low_score_threshold):
+            reads_to_be_realigned.append(reads)
+        else:
+            completed_reads.append(reads)
+    if VERBOSITY > 0:
+        max_v = len(reads)
+        print('Realigning reads')
+        print('----------------')
+        print('Completed reads:      ', int_to_str(len(completed_reads), max_v))
+        print('Reads to be realigned:', int_to_str(len(reads_to_be_realigned), max_v))
+        print()
 
 
 
@@ -242,7 +269,6 @@ def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, outp
 
 
 
-    write_sam_file(semi_global_graphmap_alignments, graphmap_sam, output_sam) # TEMP
 
 
 
@@ -255,23 +281,6 @@ def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, outp
 
 
 
-
-
-#     # We now choose some alignments to use for the identity mean and std dev calculation.
-#     # We want long alignments that haven't been extended much (i.e. for which GraphMap already
-#     # took the alignment close to the full length).
-#     sorted_alignments = sorted(paf_alignments, reverse=True,
-#                                key=lambda x: (x.ref_end_pos - x.ref_start_pos) /
-#                                (x.extension_length + 1))
-#     target_alignment_count = 20 # TO DO: MAKE THIS A PARAMETER?
-#     alignments_for_identity = sorted_alignments[:target_alignment_count]
-
-#     if VERBOSITY > 2 and alignments_for_identity:
-#         print('Alignments to be used for identity mean and std dev')
-#         print('---------------------------------------------------')
-#         for alignment in alignments_for_identity:
-#             print(alignment)
-#         print()
 
 #     # Determine which alignments to refine in Seqan.  If seqan_all is set, we refine them all. If
 #     # not, then we only refine overlapping alignments and the alignments that we'll use to get an
@@ -412,18 +421,6 @@ def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, outp
 #     #         reads[alignment.read.name].alignments.append(alignment)
 #     #     all_alignments_count = sum([len(x.alignments) for x in reads.itervalues()])
 
-#     #     # Filter the alignments based on conflicting read position.
-#     #     if VERBOSITY > 0:
-#     #         print('Filtering alignments')
-#     #         print('--------------------')
-#     #         print('Alignments before filtering:        ', int_to_str(all_alignments_count, max_v))
-#     #     filtered_alignments = []
-#     #     for read in reads.itervalues():
-#     #         read.remove_conflicting_alignments()
-#     #         filtered_alignments += read.alignments
-#     #     if VERBOSITY > 0:
-#     #         print('Alignments after conflict filtering:', int_to_str(len(filtered_alignments),
-#     #                                                                  max_v))
 
 #     #     fully_aligned, partially_aligned, unaligned = group_reads_by_fraction_aligned(reads)
 #     #     if VERBOSITY == 1:
@@ -438,7 +435,27 @@ def semi_global_align_long_reads(references, ref_fasta, reads, reads_fastq, outp
 #     #         print('Unaligned reads:        ', int_to_str(len(unaligned), max_v))
 #     #         print()
 
-    # write_sam_file(filtered_alignments, output_sam)
+
+    # Filter the alignments based on conflicting read position.
+    if VERBOSITY > 0:
+        all_alignments_count = sum([len(x.alignments) for x in reads.itervalues()])
+        print('Removing conflicting alignments')
+        print('-------------------------------')
+        print('Alignments before filtering:        ', int_to_str(all_alignments_count, max_v))
+    filtered_alignments = []
+    for read in reads.itervalues():
+        read.remove_conflicting_alignments()
+        filtered_alignments += read.alignments
+    if VERBOSITY > 0:
+        print('Alignments after conflict filtering:', int_to_str(len(filtered_alignments),
+                                                                 max_v))
+        print()
+
+    # Save the final alignments to SAM file.
+    final_alignments = []
+    for read in reads.itervalues():
+        final_alignments += read.alignments
+    write_sam_file(final_alignments, graphmap_sam, output_sam)
     
     os.remove(graphmap_sam)
 
@@ -607,32 +624,29 @@ def summarise_errors(references, long_reads, table_prefix, percent_alignments_to
                 mean_mismatch_rate = 100.0 * sum(mismatch_rates) / aligned_len
                 mean_insertion_rate = 100.0 * sum(insertion_rates_multi_base) / aligned_len
                 mean_deletion_rate = 100.0 * sum(deletion_rates) / aligned_len
-                print('  Total alignments:   ', int_to_str(len(alignments), max_v))
-                print('  Filtered alignments:', int_to_str(len(filtered_alignments), max_v))
-                print('    Contained:        ', int_to_str(contained_alignment_count, max_v))
-                print('    Overlapping:      ', int_to_str(overlapping_alignment_count, max_v))
+                if VERBOSITY == 1:
+                    print('  Alignments:         ', int_to_str(len(filtered_alignments), max_v))
+                if VERBOSITY > 1:
+                    print('  Total alignments:   ', int_to_str(len(alignments), max_v))
+                    print('  Filtered alignments:', int_to_str(len(filtered_alignments), max_v))
+                    print('    Contained:        ', int_to_str(contained_alignment_count, max_v))
+                    print('    Overlapping:      ', int_to_str(overlapping_alignment_count, max_v))
                 print('  Covered length:     ', int_to_str(aligned_len, max_v) + ' bp')
                 print('  Covered fraction:   ', float_to_str(aligned_percent, 2, max_v) + '%')
-                print('  Mean read depth:    ', float_to_str(mean_depth, 2, max_v))
-                print('  Mismatch rate:      ', float_to_str(mean_mismatch_rate, 2, max_v) + '%')
-                print('  Insertion rate:     ', float_to_str(mean_insertion_rate, 2, max_v) + '%')
-                print('  Deletion rate:      ', float_to_str(mean_deletion_rate, 2, max_v) + '%')
+                if VERBOSITY > 1:
+                    print('  Mean read depth:    ', float_to_str(mean_depth, 2, max_v))
+                    print('  Mismatch rate:      ', float_to_str(mean_mismatch_rate, 2, max_v) + '%')
+                    print('  Insertion rate:     ', float_to_str(mean_insertion_rate, 2, max_v) + '%')
+                    print('  Deletion rate:      ', float_to_str(mean_deletion_rate, 2, max_v) + '%')
             else:
                 print('  Total alignments:   ', int_to_str(0, max_v))
             print()
 
-
-def print_alignment_summary_table(graphmap_alignments):
+def print_alignment_summary_table(graphmap_alignments, read_to_ref_median, read_to_ref_mad,
+                                  percent_id_median, percent_id_mad, score_median, score_mad):
     '''
     Prints a small table showing some details about the GraphMap alignments.
     '''
-    read_to_refs = [x.get_read_to_ref_ratio() for x in graphmap_alignments]
-    percent_ids = [x.percent_identity for x in graphmap_alignments]
-    scores = [x.scaled_score for x in graphmap_alignments]
-    read_to_ref_median, read_to_ref_mad = get_median_and_mad(read_to_refs)
-    percent_id_median, percent_id_mad = get_median_and_mad(percent_ids)
-    score_median, score_mad = get_median_and_mad(scores)
-
     print('Alignment summary')
     print('-----------------')
     print('Total GraphMap alignments:', int_to_str(len(graphmap_alignments)))
@@ -1093,45 +1107,45 @@ def get_ref_shift_from_cigar_part(cigar_part):
     if cigar_part[-1] == 'I':
         return 0
 
-# def simplify_ranges(ranges):
-#     '''
-#     Collapses overlapping ranges together. Input ranges are tuples of (start, end) in the normal
-#     Python manner where the end isn't included.
-#     '''
-#     fixed_ranges = []
-#     for int_range in ranges:
-#         if int_range[0] > int_range[1]:
-#             fixed_ranges.append((int_range[1], int_range[0]))
-#         elif int_range[0] < int_range[1]:
-#             fixed_ranges.append(int_range)
-#     starts_ends = [(x[0], 1) for x in fixed_ranges]
-#     starts_ends += [(x[1], -1) for x in fixed_ranges]
-#     starts_ends.sort(key=lambda x: x[0])
-#     current_sum = 0
-#     cumulative_sum = []
-#     for start_end in starts_ends:
-#         current_sum += start_end[1]
-#         cumulative_sum.append((start_end[0], current_sum))
-#     prev_depth = 0
-#     start = 0
-#     combined = []
-#     for pos, depth in cumulative_sum:
-#         if prev_depth == 0:
-#             start = pos
-#         elif depth == 0:
-#             combined.append((start, pos))
-#         prev_depth = depth
-#     return combined
+def simplify_ranges(ranges):
+    '''
+    Collapses overlapping ranges together. Input ranges are tuples of (start, end) in the normal
+    Python manner where the end isn't included.
+    '''
+    fixed_ranges = []
+    for int_range in ranges:
+        if int_range[0] > int_range[1]:
+            fixed_ranges.append((int_range[1], int_range[0]))
+        elif int_range[0] < int_range[1]:
+            fixed_ranges.append(int_range)
+    starts_ends = [(x[0], 1) for x in fixed_ranges]
+    starts_ends += [(x[1], -1) for x in fixed_ranges]
+    starts_ends.sort(key=lambda x: x[0])
+    current_sum = 0
+    cumulative_sum = []
+    for start_end in starts_ends:
+        current_sum += start_end[1]
+        cumulative_sum.append((start_end[0], current_sum))
+    prev_depth = 0
+    start = 0
+    combined = []
+    for pos, depth in cumulative_sum:
+        if prev_depth == 0:
+            start = pos
+        elif depth == 0:
+            combined.append((start, pos))
+        prev_depth = depth
+    return combined
 
-# def range_is_contained(test_range, other_ranges):
-#     '''
-#     Returns True if test_range is entirely contained within any range in other_ranges.
-#     '''
-#     start, end = test_range
-#     for other_range in other_ranges:
-#         if other_range[0] <= start and other_range[1] >= end:
-#             return True
-#     return False
+def range_is_contained(test_range, other_ranges):
+    '''
+    Returns True if test_range is entirely contained within any range in other_ranges.
+    '''
+    start, end = test_range
+    for other_range in other_ranges:
+        if other_range[0] <= start and other_range[1] >= end:
+            return True
+    return False
 
 def write_sam_file(alignments, graphmap_sam, sam_filename):
     '''
@@ -1477,8 +1491,8 @@ class LongRead(object):
         self.qualities = qualities
         self.alignments = []
 
-#     def __repr__(self):
-#         return self.name + ' (' + str(len(self.sequence)) + ' bp)'
+    def __repr__(self):
+        return self.name + ' (' + str(len(self.sequence)) + ' bp)'
 
     def get_length(self):
         '''
@@ -1486,24 +1500,42 @@ class LongRead(object):
         '''
         return len(self.sequence)
 
-#     def remove_conflicting_alignments(self):
-#         '''
-#         This function removes alignments from the read which are likely to be spurious. It sorts
-#         alignments by identity and works through them from highest identity to lowest identity,
-#         only keeping alignments that cover new parts of the read.
-#         It also uses an identity threshold to remove alignments with very poor identity.
-#         '''
-#         self.alignments = sorted(self.alignments, reverse=True,
-#                                  key=lambda x: (x.percent_identity, random.random()))
-#         kept_alignments = []
-#         read_ranges = []
-#         for alignment in self.alignments:
-#             read_range = alignment.read_start_end_positive_strand()
-#             if not range_is_contained(read_range, read_ranges):
-#                 read_ranges.append(read_range)
-#                 read_ranges = simplify_ranges(read_ranges)
-#                 kept_alignments.append(alignment)
-#         self.alignments = kept_alignments
+    def needs_realignment(self, partial_ref, low_score_threshold):
+        '''
+        This function returns True or False based on whether a read was nicely aligned by GraphMap
+        or needs to be realigned with Seqan.
+        '''
+        # If we know the reference to be partial, then unaligned reads are expected. So in the case
+        # of a partial reference, we will not realign an unaligned read.
+        if partial_ref and not self.alignments:
+            return False
+
+        # Either zero or more than one alignments result in realignment.
+        if len(self.alignments) != 1:
+            return True
+
+        # Overlapping alignments or low quality alignments result in realignment.
+        only_alignment = self.alignments[0]
+        return (not only_alignment.is_whole_read() or
+                only_alignment.scaled_score < low_score_threshold)
+
+    def remove_conflicting_alignments(self):
+        '''
+        This function removes alignments from the read which are likely to be spurious. It sorts
+        alignments by score and works through them from highest score to lowest score, only keeping
+        alignments that cover new parts of the read.
+        '''
+        self.alignments = sorted(self.alignments, reverse=True,
+                                 key=lambda x: (x.scaled_score, random.random()))
+        kept_alignments = []
+        read_ranges = []
+        for alignment in self.alignments:
+            read_range = alignment.read_start_end_positive_strand()
+            if not range_is_contained(read_range, read_ranges):
+                read_ranges.append(read_range)
+                read_ranges = simplify_ranges(read_ranges)
+                kept_alignments.append(alignment)
+        self.alignments = kept_alignments
 
 #     def remove_low_id_alignments(self, id_threshold):
 #         '''
@@ -1677,6 +1709,13 @@ class Alignment(object):
         self.ref_end_pos = self.ref_start_pos
         for cigar_part in self.cigar_parts:
             self.ref_end_pos += get_ref_shift_from_cigar_part(cigar_part)
+
+        # If all is good with the CIGAR, then we should never end up with a ref_end_pos out of the
+        # reference range. But a CIGAR error (which has occurred in GraphMap) can cause this, so
+        # check here.
+        if self.ref_end_pos > len(self.full_ref_sequence):
+            self.ref_end_pos = len(self.full_ref_sequence)
+
         self.ref_end_gap = len(self.full_ref_sequence) - self.ref_end_pos
         self.aligned_ref_seq = self.full_ref_sequence[self.ref_start_pos:self.ref_end_pos]
 
@@ -1705,11 +1744,15 @@ class Alignment(object):
         if cigar_parts[-1][-1] == 'S':
             cigar_parts.pop()
 
+        read_len = len(self.aligned_read_seq)
+        ref_len = len(self.aligned_ref_seq)
         read_i = 0
         ref_i = 0
         align_i = 0
         self.raw_score = 0
         for cigar_part in cigar_parts:
+            previous_read_i = read_i
+            previous_ref_i = ref_i
             cigar_count = int(cigar_part[:-1])
             cigar_type = cigar_part[-1]
             if cigar_type == 'I':
@@ -1728,6 +1771,12 @@ class Alignment(object):
                                   ((cigar_count - 1) * scoring_scheme.gap_extend)
             else: # match/mismatch
                 for _ in xrange(cigar_count):
+                    # If all is good with the CIGAR, then we should never end up with a sequence
+                    # index out of the sequence range. But a CIGAR error (which has occurred in
+                    # GraphMap) can cause this, so check here.
+                    if read_i >= read_len or ref_i >= ref_len:
+                        break
+
                     read_base = self.aligned_read_seq[read_i]
                     ref_base = self.aligned_ref_seq[ref_i]
                     if read_base == ref_base:
@@ -1739,7 +1788,16 @@ class Alignment(object):
                         self.raw_score += scoring_scheme.mismatch
                     read_i += 1
                     ref_i += 1
+
             align_i += cigar_count
+            if read_i >= read_len or ref_i >= ref_len:
+                break
+
+            # # This print code can be useful for debugging CIGAR issues.
+            # print(cigar_part + '\t' +
+            #       self.aligned_read_seq[previous_read_i:read_i] + '\t' +
+            #       self.aligned_ref_seq[previous_ref_i:ref_i])
+
         self.percent_identity = 100.0 * self.match_count / align_i
         self.edit_distance = self.mismatch_count + self.insertion_count + self.deletion_count
         self.alignment_length = align_i
@@ -1955,8 +2013,10 @@ class Alignment(object):
             return_str += 'strand: +), '
         return_str += self.ref_name + ' (' + str(self.ref_start_pos) + '-' + \
                       str(self.ref_end_pos) + ')'
-        return_str += ', ' + '%.2f' % self.percent_identity + '% ID'
-        return_str += ', score = ' + '%.2f' % self.scaled_score
+        if self.percent_identity is not None:
+            return_str += ', ' + '%.2f' % self.percent_identity + '% ID'
+        if self.scaled_score is not None:
+            return_str += ', score = ' + '%.2f' % self.scaled_score
         return_str += ', longest indel: ' + str(self.get_longest_indel_run())
         if self.alignment_type == 'Seqan':
             return_str += ', ' + str(self.milliseconds) + ' ms'

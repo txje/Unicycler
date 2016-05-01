@@ -162,7 +162,7 @@ def get_arguments():
     '''
     parser = argparse.ArgumentParser(description='Semi-global long read aligner',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    
+
     parser.add_argument('--ref', type=str, required=True, default=argparse.SUPPRESS,
                         help='FASTA file containing one or more reference sequences')
     parser.add_argument('--partial_ref', action='store_true',
@@ -250,219 +250,61 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, reads_fastq, 
     #      low quality alignments. These reads will be aligned again using Seqan.
     low_score_threshold = score_median - (3 * score_mad)
     completed_reads = []
-    reads_to_be_realigned = []
+    reads_to_realign = []
     for read in read_dict.itervalues():
         if read.needs_realignment(partial_ref, low_score_threshold):
-            reads_to_be_realigned.append(read)
+            reads_to_realign.append(read)
         else:
             completed_reads.append(read)
-    if VERBOSITY > 0:
-        max_v = len(read_dict)
-        print('Realigning reads')
-        print('----------------')
-        print('Completed reads:      ', int_to_str(len(completed_reads), max_v))
-        print('Reads to be realigned:', int_to_str(len(reads_to_be_realigned), max_v))
-        print()
-
-
-
 
 
     # OPTIONAL TO DO: for reads which are completed, I could still try to refine them using my Seqan code.
     #                 I'm not sure if it's worth it, so I should give it a try to see what kind of difference it makes.
 
 
+    # Realign unfinished reads using Seqan.
+    if VERBOSITY > 0:
+        num_realignments = len(reads_to_realign)
+        max_v = len(read_dict)
+        print('Realigning reads')
+        print('----------------')
+        print('Completed reads:      ', int_to_str(len(completed_reads), max_v))
+        print('Reads to be realigned:', int_to_str(num_realignments, max_v))
+        print()
+    if VERBOSITY == 1:
+        print_progress_line(0, num_realignments)
+    expected_ref_to_read_ratio = 1.0 / read_to_ref_median
+    completed_count = 0
 
+    # If single-threaded, just do the work in a simple loop.
+    if threads == 1:
+        for read in reads_to_realign:
+            new_alignments, output = seqan_alignment_one_read_all_refs(read, references,
+                                                                       scoring_scheme,
+                                                                       expected_ref_to_read_ratio)
+            read.alignments += new_alignments
+            completed_count += 1
+            if VERBOSITY == 1:
+                print_progress_line(completed_count, num_realignments)
+            if VERBOSITY > 1:
+                print(output, end='')
 
-
-
-    # TO DO: realign reads using my Seqan code!
-    # TO DO: realign reads using my Seqan code!
-    # TO DO: realign reads using my Seqan code!
-    # TO DO: realign reads using my Seqan code!
-    # TO DO: realign reads using my Seqan code!
-    # TO DO: realign reads using my Seqan code!
-    # TO DO: realign reads using my Seqan code!
-    # TO DO: realign reads using my Seqan code!
-    # TO DO: realign reads using my Seqan code!
-    # TO DO: realign reads using my Seqan code!
-    # TO DO: realign reads using my Seqan code!
-    # TO DO: realign reads using my Seqan code!
-    # TO DO: realign reads using my Seqan code!
-    # TO DO: realign reads using my Seqan code!
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#     # Determine which alignments to refine in Seqan.  If seqan_all is set, we refine them all. If
-#     # not, then we only refine overlapping alignments and the alignments that we'll use to get an
-#     # identity mean and std dev.
-#     if seqan_all:
-#         alignments_to_refine = paf_alignments
-#         alignments_not_to_refine = []
-#         if VERBOSITY > 0 and alignments_to_refine:
-#             print('Refining all alignments with Seqan')
-#             print('----------------------------------')
-#     else:
-#         alignments_to_refine = [x for x in paf_alignments
-#                                 if x in alignments_for_identity or not x.is_whole_read()]
-#         alignments_not_to_refine = [x for x in paf_alignments if x not in alignments_to_refine]
-#         if VERBOSITY > 0 and alignments_to_refine:
-#             count_str = str(len(alignments_to_refine))
-#             print('Refining ' + count_str + ' alignments with Seqan')
-#             print('-------------------------------' + '-' * len(count_str))
-
-#     # Refine the appropriate alignments using Seqan.
-#     alignments = []
-#     refined_alignments_for_identity = []
-#     completed_count = 0
-#     if VERBOSITY == 1 and alignments_to_refine:
-#         print_progress_line(completed_count, len(alignments_to_refine))
-
-#     # If single-threaded, just do the work in a simple loop.
-#     if threads == 1:
-#         for alignment in alignments_to_refine:
-#             refined_alignments, output = seqan_from_paf_alignment(alignment, reads, references,
-#                                                                   median_ref_to_read_ratio)
-#             alignments += refined_alignments
-#             if alignment in alignments_for_identity:
-#                 refined_alignments_for_identity += refined_alignments
-#             completed_count += 1
-#             if VERBOSITY == 1:
-#                 print_progress_line(completed_count, len(alignments_to_refine))
-#             if VERBOSITY > 1:
-#                 print(output, end='')
-
-#     # If multi-threaded, use a thread pool.
-#     else:
-#         pool = ThreadPool(threads)
-#         arg_list = []
-#         for alignment in alignments_to_refine:
-#             arg_list.append((alignment, reads, references, median_ref_to_read_ratio))
-#         for refined_alignments, output in pool.imap_unordered(seqan_from_paf_alignment_one_arg,
-#                                                               arg_list, 1):
-#             alignments += refined_alignments
-#             if alignment in alignments_for_identity:
-#                 refined_alignments_for_identity += refined_alignments
-#             completed_count += 1
-#             if VERBOSITY == 1:
-#                 print_progress_line(completed_count, len(alignments_to_refine))
-#             if VERBOSITY > 1:
-#                 print(output, end='')
-
-#     alignments += alignments_not_to_refine
-#     if VERBOSITY == 1:
-#         print('\n')
-
-#     # Give the alignments to their corresponding reads.
-#     for alignment in alignments:
-#         reads[alignment.read.name].alignments.append(alignment)
-
-#     # Filter the alignments based on conflicting read position.
-#     if VERBOSITY > 0:
-#         print('Filtering alignments')
-#         print('--------------------')
-#         print('Alignments before filtering:        ', int_to_str(len(alignments), max_v))
-#     filtered_alignments = []
-#     for read in reads.itervalues():
-#         read.remove_conflicting_alignments()
-#         filtered_alignments += read.alignments
-#     if VERBOSITY > 0:
-#         print('Alignments after conflict filtering:', int_to_str(len(filtered_alignments), max_v))
-
-#     # If any of our alignments for identity mean/stddev were removed in conflict filtering then we
-#     # don't want to use them.
-#     refined_alignments_for_identity = [x for x in refined_alignments_for_identity \
-#                                        if x in filtered_alignments]
-#     mean_id, std_dev_id = get_mean_and_st_dev_identity(refined_alignments_for_identity)
-
-#     # Filter the alignments based on identity.
-#     if mean_id == 0.0 or std_dev_id == -1:
-#         low_id_cutoff = 75.0
-#         if VERBOSITY > 0:
-#             print('Not enough alignments to automatically set a low identity cutoff. Using 75%.')
-#     else:
-#         std_devs_below_mean = 3.0 # TO DO: make this a parameter?
-#         low_id_cutoff = mean_id - (std_devs_below_mean * std_dev_id)
-#         if VERBOSITY > 0:
-#             print('Complete alignment identity mean:   ', float_to_str(mean_id, max_v) + '%')
-#             print('              standard deviation:   ', float_to_str(std_dev_id, max_v) + '%')
-#             print('Low identity cutoff:                ', float_to_str(low_id_cutoff, max_v) + '%')
-#     filtered_alignments = []
-#     for read in reads.itervalues():
-#         read.remove_low_id_alignments(low_id_cutoff)
-#         filtered_alignments += read.alignments
-#     if VERBOSITY > 0:
-#         print('Alignments after identity filtering:', int_to_str(len(filtered_alignments), max_v))
-#         print()
-   
-#     fully_aligned, partially_aligned, unaligned = group_reads_by_fraction_aligned(reads)
-
-#     if VERBOSITY > 0:
-#         print('Read summary')
-#         print('------------')
-#         max_v = len(reads)
-#         print('Total read count:       ', int_to_str(len(reads), max_v))
-#         print('Fully aligned reads:    ', int_to_str(len(fully_aligned), max_v))
-#         print('Partially aligned reads:', int_to_str(len(partially_aligned), max_v))
-#         print('Unaligned reads:        ', int_to_str(len(unaligned), max_v))
-#         print()
-
-#     # # Try to realign any reads which are not completely aligned.
-#     # incomplete_reads = partially_aligned + unaligned
-#     # if incomplete_reads:
-#     #     completed_count = 0
-#     #     if VERBOSITY > 0:
-#     #         print('Attempting realignment of incomplete reads')
-#     #         print('------------------------------------------')
-#     #     if VERBOSITY == 1:
-#     #         print_progress_line(completed_count, len(incomplete_reads))
-#     #     new_alignments = []
-#     #     for read in incomplete_reads:
-#     #         new_alignments += seqan_alignment_one_read_all_refs(reads, references, read,
-#     #                                                             median_ref_to_read_ratio,
-#     #                                                             exhaustive)
-#     #         completed_count += 1
-#     #         if VERBOSITY == 1:
-#     #             print_progress_line(completed_count, len(incomplete_reads))
-#     #     if VERBOSITY == 1:
-#     #         print('\n')
-
-#     #     # Give the alignments to their corresponding reads.
-#     #     for alignment in new_alignments:
-#     #         reads[alignment.read.name].alignments.append(alignment)
-#     #     all_alignments_count = sum([len(x.alignments) for x in reads.itervalues()])
-
-
-#     #     fully_aligned, partially_aligned, unaligned = group_reads_by_fraction_aligned(reads)
-#     #     if VERBOSITY == 1:
-#     #         print()
-#     #     if VERBOSITY > 0:
-#     #         print('Updated read summary')
-#     #         print('--------------------')
-#     #         max_v = len(reads)
-#     #         print('Total read count:       ', int_to_str(len(reads), max_v))
-#     #         print('Fully aligned reads:    ', int_to_str(len(fully_aligned), max_v))
-#     #         print('Partially aligned reads:', int_to_str(len(partially_aligned), max_v))
-#     #         print('Unaligned reads:        ', int_to_str(len(unaligned), max_v))
-#     #         print()
-
+    # If multi-threaded, use a thread pool.
+    else:
+        pool = ThreadPool(threads)
+        arg_list = []
+        for read in reads_to_realign:
+            arg_list.append((read, references, scoring_scheme, expected_ref_to_read_ratio))
+        for new_alignments, output in pool.imap_unordered(seqan_alignment_one_read_all_refs_one_arg,
+                                                          arg_list, 1):
+            if new_alignments:
+                read = new_alignments[0].read
+                read.alignments.append(new_alignments)
+            completed_count += 1
+            if VERBOSITY == 1:
+                print_progress_line(completed_count, num_realignments)
+            if VERBOSITY > 1:
+                print(output, end='')
 
     # Filter the alignments based on conflicting read position.
     if VERBOSITY > 0:
@@ -477,6 +319,24 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, reads_fastq, 
     if VERBOSITY > 0:
         print('Alignments after conflict filtering:', int_to_str(len(filtered_alignments),
                                                                  max_v))
+        print()
+
+
+    # OPTIONAL TO DO: filter the alignments based on ID
+    #     for read in read_dict.itervalues():
+    #         read.remove_low_id_alignments(low_id_cutoff)
+
+
+    # Output a summary of the reads' alignments.
+    fully_aligned, partially_aligned, unaligned = group_reads_by_fraction_aligned(read_dict)
+    if VERBOSITY > 0:
+        print('Read summary')
+        print('------------')
+        max_v = len(read_dict)
+        print('Total read count:       ', int_to_str(len(read_dict), max_v))
+        print('Fully aligned reads:    ', int_to_str(len(fully_aligned), max_v))
+        print('Partially aligned reads:', int_to_str(len(partially_aligned), max_v))
+        print('Unaligned reads:        ', int_to_str(len(unaligned), max_v))
         print()
 
     # Save the final alignments to SAM file.
@@ -811,51 +671,6 @@ def load_long_reads(fastq_filename):
         print('\n')
     return reads
 
-# def graphmap_alignment(ref_fasta, long_reads_fastq, graphmap_sam, graphmap_path, working_dir,
-#                        threads):
-#     '''
-#     This function runs GraphMap separately for each individual sequence in the reference.
-#     Resulting alignments are collected in a single PAF file.
-#     '''
-#     references = load_fasta(ref_fasta)
-#     if VERBOSITY > 0:
-#         print('Raw GraphMap alignments per reference')
-#         print('-------------------------------------')
-
-#     final_paf = open(paf_file, 'w')
-#     if VERBOSITY > 0 and references:
-#         longest_header = max([len(get_nice_header_and_len(header, seq)) for \
-#                                    header, seq in references])
-#         read_count = line_count(long_reads_fastq) / 4
-#     for header, seq in references:
-#         nice_header = get_nice_header(header)
-#         one_seq_fasta = os.path.join(working_dir, nice_header + '.fasta')
-#         save_to_fasta(nice_header, seq, one_seq_fasta)
-#         paf_filename = os.path.join(working_dir, nice_header + '.paf')
-#         run_graphmap(one_seq_fasta, long_reads_fastq, paf_filename, graphmap_path, threads)
-
-#         # Copy the segment's SAM alignments to the final SAM file.
-#         alignment_count = 0
-#         one_seq_paf = open(paf_filename, 'r')
-#         for line in one_seq_paf:
-#             final_paf.write(line)
-#             alignment_count += 1
-#         one_seq_paf.close()
-
-#         if VERBOSITY > 0:
-#             nice_header = get_nice_header_and_len(header, seq, pad_length=longest_header) + ':'
-#             print(nice_header, int_to_str(alignment_count, read_count))
-#             sys.stdout.flush()
-
-#         # Clean up
-#         os.remove(one_seq_fasta)
-#         os.remove(paf_filename)
-
-#     if VERBOSITY > 0:
-#         print()
-
-#     final_paf.close()
-
 def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scoring_scheme):
     '''
     This function runs GraphMap for the given inputs and produces a SAM file at the given location.
@@ -951,11 +766,20 @@ def load_sam_alignments(sam_filename, read_dict, references, scoring_scheme):
                                             scoring_scheme=scoring_scheme))
     return sam_alignments
 
-def seqan_alignment_one_read_all_refs(reads, references, scoring_scheme, read,
+def seqan_alignment_one_read_all_refs_one_arg(all_args):
+    '''
+    This is just a one-argument version of seqan_alignment_one_read_all_refs to make it easier to
+    use that function in a thread pool.
+    '''
+    read, references, scoring_scheme, expected_ref_to_read_ratio = all_args
+    return seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
+                                             expected_ref_to_read_ratio)
+
+def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
                                       expected_ref_to_read_ratio):
     '''
     Aligns a single read against all reference sequences using Seqan. Both forward and reverse
-    complement alignments are tried. Returns a list of all alignments found.
+    complement alignments are tried. Returns a list of all alignments found and the console output.
     '''
     output = ''
     if VERBOSITY > 1:
@@ -987,7 +811,7 @@ def seqan_alignment_one_read_all_refs(reads, references, scoring_scheme, read,
             for alignment in alignments:
                 output += '  ' + str(alignment) + '\n'
         output += '\n'
-    return alignments
+    return alignments, output
 
 def make_seqan_alignment_all_lines(read, ref, rev_comp,
                                    scoring_scheme, expected_ref_to_read_ratio):
@@ -1012,7 +836,7 @@ def make_seqan_alignment_all_lines(read, ref, rev_comp,
     output = line_finding_output
 
     if line_result.startswith('Fail'):
-        if VERBOSITY > 1:
+        if VERBOSITY > 3:
             output += '  No alignment lines found\n'
         return [], output
 
@@ -1078,6 +902,41 @@ def run_one_banded_seqan_alignment(read, ref, rev_comp, scoring_scheme, band_siz
         read_seq = reverse_complement(read.sequence)
     else:
         read_seq = read.sequence
+
+
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+    # TO DO: TRIM THE REFERENCE DOWN
+
+
     ptr = C_LIB.bandedSemiGlobalAlignment(read_seq, ref.sequence, len(read_seq), len(ref.sequence),
                                           line.slope, line.intercept, line.k_size, band_size,
                                           VERBOSITY, 3, -6, -5, -2, line.kmer_locations)
@@ -1178,30 +1037,6 @@ def write_sam_file(alignments, graphmap_sam, sam_filename):
         sam_file.write('\n')
     sam_file.close()
 
-# def load_fasta(filename): # type: (str) -> list[tuple[str, str]]
-#     '''
-#     Returns the names and sequences for the given fasta file.
-#     '''
-#     fasta_seqs = []
-#     fasta_file = open(filename, 'r')
-#     name = ''
-#     sequence = ''
-#     for line in fasta_file:
-#         line = line.strip()
-#         if not line:
-#             continue
-#         if line[0] == '>': # Header line = start of new contig
-#             if name:
-#                 fasta_seqs.append((name.split()[0], sequence))
-#                 name = ''
-#                 sequence = ''
-#             name = line[1:]
-#         else:
-#             sequence += line
-#     if name:
-#         fasta_seqs.append((name.split()[0], sequence))
-#     return fasta_seqs
-
 def is_header_spades_format(contig_name):
     '''
     Returns whether or not the header appears to be in the SPAdes/Velvet format.
@@ -1222,49 +1057,6 @@ def get_nice_header(header):
         return 'NODE_' + header.split('_')[1]
     else:
         return header.split()[0]
-
-# def get_nice_header_and_len(header, seq, pad_length=0):
-#     '''
-#     Add the length in base pairs to the nice header. If there is a pad length, it will add spaces
-#     in between the header and length so things can line up nicely.
-#     '''
-#     part_1 = get_nice_header(header) + ' '
-#     part_2 = '(' + '{:,}'.format(len(seq)) + ' bp)'
-#     if len(part_1) + len(part_2) < pad_length:
-#         spaces = ' ' * (pad_length - len(part_1) - len(part_2))
-#     else:
-#         spaces = ''
-#     return part_1 + spaces + part_2
-
-# def save_to_fasta(header, sequence, filename):
-#     '''
-#     Saves the header/sequence to FASTA file.
-#     '''
-#     fasta = open(filename, 'w')
-#     fasta.write('>' + header + '\n')
-#     fasta.write(add_line_breaks_to_sequence(sequence, 60))
-#     fasta.close()
-
-# def save_reads_to_fastq(reads, fastq_filename):
-#     '''
-#     Writes the given reads to a FASTQ file.
-#     '''
-#     fastq = open(fastq_filename, 'w')
-#     for read in reads:
-#         fastq.write(read.get_fastq())
-
-# def add_line_breaks_to_sequence(sequence, length):
-#     '''
-#     Wraps sequences to the defined length.  All resulting sequences end in a line break.
-#     '''
-#     seq_with_breaks = ''
-#     while len(sequence) > length:
-#         seq_with_breaks += sequence[:length] + '\n'
-#         sequence = sequence[length:]
-#     if len(sequence) > 0:
-#         seq_with_breaks += sequence
-#         seq_with_breaks += '\n'
-#     return seq_with_breaks
 
 def check_file_exists(filename): # type: (str) -> bool
     '''
@@ -1337,55 +1129,6 @@ def complement_base(base):
     reverse = 'TACGtacgYRSWMKyrswmkVHDBvhdbNn.-?N'
     return reverse[forward.find(base)]
 
-
-# def seqan_from_paf_alignment_one_arg(all_args):
-#     '''
-#     This function is just a convenience for calling seqan_from_paf_alignment with a single argument
-#     (makes multithreading easier).
-#     '''
-#     paf_alignment, reads, references, expected_ref_to_read_ratio = all_args
-#     return seqan_from_paf_alignment(paf_alignment, reads, references, expected_ref_to_read_ratio)
-
-# def seqan_from_paf_alignment(paf_alignment, reads, references, expected_ref_to_read_ratio):
-#     '''
-#     This function is used on PAF alignments to turn them into Seqan alignments. This takes them
-#     from basic alignments with only approximate start/end positions into full alignments.
-#     '''
-#     output = ''
-#     assert paf_alignment.alignment_type == 'PAF'
-#     if VERBOSITY > 1:
-#         output += 'PAF alignment before Seqan: ' + str(paf_alignment) + '\n'
-
-#     # We can use the PAF alignment's range to trim the sequences down to the alignment region.
-#     # This is especially useful if the reference sequence is very large (like a whole bacterial
-#     # genome).
-#     # TO DO
-#     # TO DO
-#     # TO DO
-#     # TO DO
-#     # TO DO
-#     # TO DO
-#     # TO DO
-#     # TO DO
-#     # TO DO
-#     # TO DO
-#     # TO DO
-#     # TO DO
-#     # TO DO
-#     # TO DO
-#     # TO DO
-
-#     alignments, alignment_output = make_seqan_alignment_all_lines(reads, references,
-#                                                                   paf_alignment.ref_name,
-#                                                                   paf_alignment.ref.sequence,
-#                                                                   paf_alignment.read,
-#                                                                   paf_alignment.rev_comp,
-#                                                                   expected_ref_to_read_ratio)
-#     output += alignment_output
-#     if VERBOSITY > 1:
-#         output += '\n'
-#     return alignments, output
-
 def get_median(num_list):
     '''
     Returns the median of the given list of numbers.
@@ -1435,25 +1178,26 @@ def print_progress_line(completed, total, base_pairs=None):
     print('\r' + progress_str, end='')
     sys.stdout.flush()
 
-# def group_reads_by_fraction_aligned(reads):
-#     '''
-#     Groups reads into three groups:
-#       1) Fully aligned
-#       2) Partially aligned
-#       3) Unaligned
-#     '''
-#     fully_aligned_reads = []
-#     partially_aligned_reads = []
-#     unaligned_reads = []
-#     for read in reads.itervalues():
-#         fraction_aligned = read.get_fraction_aligned()
-#         if fraction_aligned == 1.0:
-#             fully_aligned_reads.append(read)
-#         elif fraction_aligned == 0.0:
-#             unaligned_reads.append(read)
-#         else:
-#             partially_aligned_reads.append(read)
-#     return fully_aligned_reads, partially_aligned_reads, unaligned_reads
+def group_reads_by_fraction_aligned(read_dict):
+    '''
+    Groups reads into three lists:
+      1) Fully aligned
+      2) Partially aligned
+      3) Unaligned
+    '''
+    fully_aligned_reads = []
+    partially_aligned_reads = []
+    unaligned_reads = []
+    for read in read_dict.itervalues():
+        fraction_aligned = read.get_fraction_aligned()
+        if fraction_aligned == 1.0:
+            fully_aligned_reads.append(read)
+        elif fraction_aligned == 0.0:
+            unaligned_reads.append(read)
+        else:
+            partially_aligned_reads.append(read)
+    return fully_aligned_reads, partially_aligned_reads, unaligned_reads
+
 
 
 
@@ -1589,15 +1333,15 @@ class Read(object):
 #             description += '\n'.join([str(x) for x in self.alignments])
 #         return description + '\n\n'
 
-#     def get_fraction_aligned(self):
-#         '''
-#         This function returns the fraction of the read which is covered by any of the read's
-#         alignments.
-#         '''
-#         read_ranges = [x.read_start_end_positive_strand() for x in self.alignments]
-#         read_ranges = simplify_ranges(read_ranges)
-#         aligned_length = sum([x[1] - x[0] for x in read_ranges])
-#         return aligned_length / len(self.sequence)
+    def get_fraction_aligned(self):
+        '''
+        This function returns the fraction of the read which is covered by any of the read's
+        alignments.
+        '''
+        read_ranges = [x.read_start_end_positive_strand() for x in self.alignments]
+        read_ranges = simplify_ranges(read_ranges)
+        aligned_length = sum([x[1] - x[0] for x in read_ranges])
+        return aligned_length / len(self.sequence)
 
 
 class Line(object):
@@ -1627,7 +1371,7 @@ class Alignment(object):
         # Make sure we have the appropriate inputs for one of the two ways to construct an
         # alignment.
         assert (sam_line and read_dict and reference_dict) or \
-               (seqan_output and read and ref_name and ref_seq)
+               (seqan_output and read and ref)
 
         # The scoring scheme is required for both types of construction.
         assert scoring_scheme is not None
@@ -1666,7 +1410,7 @@ class Alignment(object):
         self.milliseconds = None
 
         if seqan_output:
-            self.setup_using_seqan_output(seqan_output, read, ref, ref_seq, rev_comp)
+            self.setup_using_seqan_output(seqan_output, read, ref, rev_comp)
         elif sam_line:
             self.setup_using_graphmap_sam(sam_line, read_dict, reference_dict, scoring_scheme)
 
@@ -1836,66 +1580,6 @@ class Alignment(object):
         self.alignment_length = align_i
         perfect_score = scoring_scheme.match * self.alignment_length
         self.scaled_score = 100.0 * self.raw_score / perfect_score
-
-    # def setup_using_paf_line(self, paf_line, reads, references):
-    #     self.alignment_type = 'PAF'
-    #     paf_parts = paf_line.split()
-
-    #     # Read details
-    #     self.read = reads[paf_parts[0]]
-    #     self.read_start_pos = int(paf_parts[2])
-    #     self.read_end_pos = int(paf_parts[3])
-    #     self.read_end_gap = self.read.get_length() - self.read_end_pos
-
-    #     # Reference details
-    #     self.ref_name = paf_parts[5]
-    #     self.ref.sequence = references[self.ref_name]
-    #     self.ref_start_pos = int(paf_parts[7])
-    #     self.ref_end_pos = int(paf_parts[8])
-    #     self.ref_end_gap = len(self.ref.sequence) - self.ref_end_pos
-
-    #     # Alignment details
-    #     self.rev_comp = (paf_parts[4] == '-')
-    #     self.alignment_length = int(paf_parts[10])
-
-    #     # Extend the alignment to reach either the end of the read or reference, whichever comes
-    #     # first.
-    #     slope = (self.ref_end_pos - self.ref_start_pos) / (self.read_end_pos - self.read_start_pos)
-    #     intercept = self.ref_start_pos - (slope * self.read_start_pos)
-    #     missing_bases_at_start = min(self.read_start_pos, self.ref_start_pos)
-    #     missing_bases_at_end = min(self.read_end_gap, self.ref_end_gap)
-    #     old_read_start = self.read_start_pos
-    #     old_ref_start = self.ref_start_pos
-    #     old_read_end = self.read_end_pos
-    #     old_ref_end = self.ref_end_pos
-    #     if missing_bases_at_start:
-    #         if intercept >= 0:
-    #             self.read_start_pos = 0
-    #             self.ref_start_pos = int(round(intercept))
-    #         else:
-    #             self.read_start_pos = int(round(-intercept / slope))
-    #             self.ref_start_pos = 0
-    #     if missing_bases_at_end:
-    #         read_end_intercept = (slope * len(self.read.sequence)) + intercept
-    #         if read_end_intercept <= len(self.ref.sequence):
-    #             self.read_end_pos = len(self.read.sequence)
-    #             self.ref_end_pos = int(round(read_end_intercept))
-    #         else:
-    #             self.read_end_pos = int(round((len(self.ref.sequence) - intercept) / slope))
-    #             self.ref_end_pos = len(self.ref.sequence)
-    #     self.read_end_gap = self.read.get_length() - self.read_end_pos
-    #     self.ref_end_gap = len(self.ref.sequence) - self.ref_end_pos
-    #     self.extension_length = (old_read_start - self.read_start_pos) + \
-    #                             (old_ref_start - self.ref_start_pos) + \
-    #                             (self.read_end_pos - old_read_end) + \
-    #                             (self.ref_end_pos - old_ref_end)
-
-    #     # The alignment extension should not have made much of a change to the slope.
-    #     # TEMP CHECKING CODE - CAN BE REMOVED LATER
-    #     new_slope = (self.ref_end_pos - self.ref_start_pos) / \
-    #                 (self.read_end_pos - self.read_start_pos)
-    #     assert new_slope / slope > 0.995
-    #     assert new_slope / slope < 1.005
 
     def extend_start(self, scoring_scheme):
         '''

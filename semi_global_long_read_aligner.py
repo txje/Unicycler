@@ -299,7 +299,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, reads_fastq, 
                                                           arg_list, 1):
             if new_alignments:
                 read = new_alignments[0].read
-                read.alignments.append(new_alignments)
+                read.alignments += new_alignments
             completed_count += 1
             if VERBOSITY == 1:
                 print_progress_line(completed_count, num_realignments)
@@ -789,18 +789,18 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
     for ref in references:
         if VERBOSITY > 2:
             output += 'Reference:', ref.name + '+\n'
-        forward_alignment, forward_alignment_output = \
+        forward_alignments, forward_alignment_output = \
                         make_seqan_alignment_all_lines(read, ref, False, scoring_scheme,
                                                        expected_ref_to_read_ratio)
-        alignments += forward_alignment
+        alignments += forward_alignments
         output += forward_alignment_output
 
         if VERBOSITY > 2:
             output += 'Reference:', ref.name + '-\n'
-        reverse_alignment, reverse_alignment_output = \
+        reverse_alignments, reverse_alignment_output = \
                         make_seqan_alignment_all_lines(read, ref, True, scoring_scheme,
                                                        expected_ref_to_read_ratio)
-        alignments += reverse_alignment
+        alignments += reverse_alignments
         output += reverse_alignment_output
 
     if VERBOSITY > 1:

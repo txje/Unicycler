@@ -141,8 +141,6 @@ def main():
     if not temp_dir_exist_at_start:
         os.makedirs(args.temp_dir)
 
-    global VERBOSITY
-    VERBOSITY = args.verbosity
     if VERBOSITY > 0:
         print()
 
@@ -164,6 +162,7 @@ def get_arguments():
     '''
     parser = argparse.ArgumentParser(description='Semi-global long read aligner',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    
     parser.add_argument('--ref', type=str, required=True, default=argparse.SUPPRESS,
                         help='FASTA file containing one or more reference sequences')
     parser.add_argument('--partial_ref', action='store_true',
@@ -186,7 +185,13 @@ def get_arguments():
                         help='Level of stdout information (0 to 4)')
     parser.add_argument('--keep', type=float, required=False, default=75.0,
                         help='Percentage of alignments to keep')
-    return parser.parse_args()
+
+    args = parser.parse_args()
+
+    global VERBOSITY
+    VERBOSITY = args.verbosity
+
+    return args
 
 def semi_global_align_long_reads(references, ref_fasta, read_dict, reads_fastq, output_sam,
                                  temp_dir, graphmap_path, threads, partial_ref, scoring_scheme):
@@ -1016,22 +1021,15 @@ def make_seqan_alignment_all_lines(read, ref, rev_comp,
     alignments = []
     lines_info = line_result.split(';')
     for line_info in lines_info:
-        line_info_parts = line_info.split(',', 3)
-        slope = float(line_info_parts[0])
-        intercept = float(line_info_parts[1])
-        k_size = int(line_info_parts[2])
-        kmer_locations = line_info_parts[3]
-        alignment, alignment_output = make_seqan_alignment_one_line(read, ref,
-                                                                    rev_comp, scoring_scheme,
-                                                                    slope, intercept, k_size,
-                                                                    kmer_locations)
+        line = Line(line_info)
+        alignment, alignment_output = make_seqan_alignment_one_line(read, ref, rev_comp,
+                                                                    scoring_scheme, line)
         if alignment:
             alignments.append(alignment)
             output += alignment_output
     return alignments, output
 
-def make_seqan_alignment_one_line(read, ref, rev_comp, scoring_scheme, slope,
-                                  intercept, k_size, kmer_locations):
+def make_seqan_alignment_one_line(read, ref, rev_comp, scoring_scheme, line):
     '''
     Runs an alignment using Seqan between one read and one reference along one line.
     It starts with a smallish band size (fast) and works up to larger ones to see if they improve
@@ -1043,8 +1041,7 @@ def make_seqan_alignment_one_line(read, ref, rev_comp, scoring_scheme, slope,
     max_band_size = 160 # TO DO: make this a parameter?
 
     alignment, alignment_output = run_one_banded_seqan_alignment(read, ref, rev_comp,
-                                                                 scoring_scheme, band_size, slope,
-                                                                 intercept, k_size, kmer_locations)
+                                                                 scoring_scheme, band_size, line)
     output += alignment_output
     if not alignment:
         return None, output
@@ -1057,11 +1054,9 @@ def make_seqan_alignment_one_line(read, ref, rev_comp, scoring_scheme, slope,
         if band_size > max_band_size:
             return alignment, output
 
-        new_alignment, alignment_output = run_one_banded_seqan_alignment(read, ref,
-                                                                         rev_comp, scoring_scheme,
-                                                                         band_size, slope,
-                                                                         intercept, k_size,
-                                                                         kmer_locations)
+        new_alignment, alignment_output = run_one_banded_seqan_alignment(read, ref, rev_comp,
+                                                                         scoring_scheme, band_size,
+                                                                         line)
         output += alignment_output
 
         # If our new alignment with a larger band size failed to improve upon our previous
@@ -1072,8 +1067,7 @@ def make_seqan_alignment_one_line(read, ref, rev_comp, scoring_scheme, slope,
         else:
             alignment = new_alignment
 
-def run_one_banded_seqan_alignment(read, ref, rev_comp, scoring_scheme, band_size, slope,
-                                   intercept, k_size, kmer_locations):
+def run_one_banded_seqan_alignment(read, ref, rev_comp, scoring_scheme, band_size, line):
     '''
     Runs a single alignment using Seqan.
     Since this does a banded alignment, it is efficient but may or may not be successful. Returns
@@ -1085,8 +1079,8 @@ def run_one_banded_seqan_alignment(read, ref, rev_comp, scoring_scheme, band_siz
     else:
         read_seq = read.sequence
     ptr = C_LIB.bandedSemiGlobalAlignment(read_seq, ref.sequence, len(read_seq), len(ref.sequence),
-                                          slope, intercept, k_size, band_size, VERBOSITY,
-                                          3, -6, -5, -2, kmer_locations)
+                                          line.slope, line.intercept, line.k_size, band_size,
+                                          VERBOSITY, 3, -6, -5, -2, line.kmer_locations)
     result = cast(ptr, c_char_p).value    
     C_LIB.free_c_string(ptr)
 
@@ -1604,6 +1598,20 @@ class Read(object):
 #         read_ranges = simplify_ranges(read_ranges)
 #         aligned_length = sum([x[1] - x[0] for x in read_ranges])
 #         return aligned_length / len(self.sequence)
+
+
+class Line(object):
+    '''
+    This class holds the information about an alignment seed line. These lines are produced by the
+    C++/Seqan findAlignmentLines function.
+    '''
+    def __init__(self, line_string):
+        line_string_parts = line_string.split(',', 3)
+        self.slope = float(line_string_parts[0])
+        self.intercept = float(line_string_parts[1])
+        self.k_size = int(line_string_parts[2])
+        self.kmer_locations = line_string_parts[3]
+
 
 
 class Alignment(object):

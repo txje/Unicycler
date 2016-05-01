@@ -953,10 +953,10 @@ def run_one_banded_seqan_alignment(read, ref, rev_comp, scoring_scheme, band_siz
     alignment = Alignment(seqan_output=result, read=read, ref=ref, rev_comp=rev_comp,
                           scoring_scheme=scoring_scheme)
 
-    if VERBOSITY > 1:
-        output += 'Seqan alignment, bandwidth = ' + str(band_size) + ': ' + str(alignment) + '\n'
     if VERBOSITY > 2:
-        output += alignment.cigar + '\n'
+        output += '  Seqan alignment, bandwidth = ' + str(band_size) + ': ' + str(alignment) + '\n'
+    if VERBOSITY > 3:
+        output += '  ' + alignment.cigar + '\n'
 
     return alignment, output
 

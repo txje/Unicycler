@@ -1409,10 +1409,20 @@ class Alignment(object):
         self.scaled_score = None
         self.milliseconds = None
 
+        # How some of the values are gotten depends on whether this alignment came from a GraphMap
+        # SAM or a Seqan alignment.
         if seqan_output:
             self.setup_using_seqan_output(seqan_output, read, ref, rev_comp)
         elif sam_line:
-            self.setup_using_graphmap_sam(sam_line, read_dict, reference_dict, scoring_scheme)
+            self.setup_using_graphmap_sam(sam_line, read_dict, reference_dict)
+
+        if self.rev_comp:
+            self.aligned_read_seq = self.read.rev_comp_seq[self.read_start_pos:self.read_end_pos]
+        else:
+            self.aligned_read_seq = self.read.sequence[self.read_start_pos:self.read_end_pos]
+        self.aligned_ref_seq = self.ref.sequence[self.ref_start_pos:self.ref_end_pos]
+
+        self.tally_up_score_and_errors(scoring_scheme)
 
     def setup_using_seqan_output(self, seqan_output, read, ref, rev_comp):
         '''
@@ -1421,57 +1431,30 @@ class Alignment(object):
         '''
         self.alignment_type = 'Seqan'
         seqan_parts = seqan_output.split(';')
-        assert len(seqan_parts) >= 19
+        assert len(seqan_parts) >= 6
 
-        # Read details
+        self.rev_comp = rev_comp
+        self.cigar = seqan_parts[0]
+        self.cigar_parts = re.findall(r'\d+\w', self.cigar)
+        self.milliseconds = int(seqan_parts[5])
+
         self.read = read
         self.read_start_pos = int(seqan_parts[1])
         self.read_end_pos = int(seqan_parts[2])
         self.read_end_gap = self.read.get_length() - self.read_end_pos
-        self.aligned_read_seq = self.read.sequence[self.read_start_pos:self.read_end_pos]
 
-        # Reference details
         self.ref = ref
         self.ref_start_pos = int(seqan_parts[3])
         self.ref_end_pos = int(seqan_parts[4])
         self.ref_end_gap = len(self.ref.sequence) - self.ref_end_pos
-        self.aligned_ref_seq = self.ref.sequence[self.ref_start_pos:self.ref_end_pos]
 
-        # Alignment details
-        self.rev_comp = rev_comp
-        self.cigar = seqan_parts[0]
-        self.cigar_parts = re.findall(r'\d+\w', self.cigar)
-        self.match_count = int(seqan_parts[6])
-        self.mismatch_count = int(seqan_parts[7])
-        self.deletion_count = int(seqan_parts[9])
-        self.insertion_count = int(seqan_parts[11])
-        self.alignment_length = int(seqan_parts[5])
-        self.edit_distance = int(seqan_parts[14])
-        self.percent_identity = float(seqan_parts[15])
-        self.ref_mismatch_positions = []
-        self.ref_deletion_positions = []
-        self.ref_insertion_positions_and_sizes = []
-        if seqan_parts[8]:
-            self.ref_mismatch_positions = [int(x) for x in seqan_parts[8].split(',')]
-        if seqan_parts[10]:
-            self.ref_deletion_positions = [int(x) for x in seqan_parts[10].split(',')]
-        if seqan_parts[12]:
-            pos_list = [int(x) for x in seqan_parts[12].split(',')]
-            size_list = [int(x) for x in seqan_parts[13].split(',')]
-            self.ref_insertion_positions_and_sizes = [(pos_list[i], size_list[i]) \
-                                                      for i, _ in enumerate(pos_list)]
-        self.raw_score = int(seqan_parts[16])
-        self.scaled_score = float(seqan_parts[17])
-        self.milliseconds = int(seqan_parts[18])
-
-    def setup_using_graphmap_sam(self, sam_line, read_dict, reference_dict, scoring_scheme):
+    def setup_using_graphmap_sam(self, sam_line, read_dict, reference_dict):
         '''
         This function sets up the Alignment using a SAM line.
         '''
         self.alignment_type = 'GraphMap'
         sam_parts = sam_line.split('\t')
         self.rev_comp = bool(int(sam_parts[1]) & 0x10)
-
         self.cigar = sam_parts[5]
         self.cigar_parts = re.findall(r'\d+\w', self.cigar)
 
@@ -1479,10 +1462,6 @@ class Alignment(object):
         self.read_start_pos = self.get_start_soft_clips()
         self.read_end_pos = self.read.get_length() - self.get_end_soft_clips()
         self.read_end_gap = self.get_end_soft_clips()
-        if self.rev_comp:
-            self.aligned_read_seq = self.read.rev_comp_seq[self.read_start_pos:self.read_end_pos]
-        else:
-            self.aligned_read_seq = self.read.sequence[self.read_start_pos:self.read_end_pos]
 
         self.ref = reference_dict[get_nice_header(sam_parts[2])]
         self.ref_start_pos = int(sam_parts[3]) - 1
@@ -1497,10 +1476,6 @@ class Alignment(object):
             self.ref_end_pos = len(self.ref.sequence)
 
         self.ref_end_gap = len(self.ref.sequence) - self.ref_end_pos
-        self.aligned_ref_seq = self.ref.sequence[self.ref_start_pos:self.ref_end_pos]
-
-        self.tally_up_score_and_errors(scoring_scheme)
-
 
     def tally_up_score_and_errors(self, scoring_scheme):
         '''
@@ -1514,8 +1489,9 @@ class Alignment(object):
         self.deletion_count = 0
         self.percent_identity = 0.0
         self.ref_mismatch_positions = []
-        self.ref_insertion_positions_and_sizes = []
         self.ref_deletion_positions = []
+        self.ref_insertion_positions_and_sizes = []
+        self.raw_score = 0
 
         # Remove the soft clipping parts of the CIGAR string for tallying.
         cigar_parts = self.cigar_parts[:]
@@ -1529,7 +1505,6 @@ class Alignment(object):
         read_i = 0
         ref_i = 0
         align_i = 0
-        self.raw_score = 0
         for cigar_part in cigar_parts:
             # previous_read_i = read_i
             # previous_ref_i = ref_i
@@ -1618,7 +1593,7 @@ class Alignment(object):
         C_LIB.free_c_string(ptr)
 
         seqan_parts = alignment_result.split(';')
-        assert len(seqan_parts) >= 18
+        assert len(seqan_parts) >= 7
 
         # Set the new read start.
         self.read_start_pos = int(seqan_parts[2])
@@ -1687,7 +1662,7 @@ class Alignment(object):
         C_LIB.free_c_string(ptr)
 
         seqan_parts = alignment_result.split(';')
-        assert len(seqan_parts) >= 18
+        assert len(seqan_parts) >= 7
 
         # Set the new read end.
         self.read_end_pos += int(seqan_parts[3])

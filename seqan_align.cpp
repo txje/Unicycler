@@ -65,8 +65,8 @@ void addBridgingSeed(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int v
 std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, double expectedSlope,
                                        int verbosity, std::string & output);
 std::map<std::string, std::vector<int> > getCommonLocations(std::string * s1, std::string * s2, int kSize);
-char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment, int score,
-                                          int matchScore, long long startTime, std::string output,
+char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment,
+                                          long long startTime, std::string output,
                                           bool startImmediately, bool goToEnd);
 CigarType getCigarType(char b1, char b2, bool alignmentStarted);
 std::string getCigarPart(CigarType type, int length);
@@ -202,8 +202,7 @@ char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, dou
     int score = bandedChainAlignment(alignment, bridgedSeedChain, scoringScheme, alignConfig,
                                      bandSize);
 
-    return turnAlignmentIntoDescriptiveString(&alignment, score, matchScore, startTime, output,
-                                              false, false);
+    return turnAlignmentIntoDescriptiveString(&alignment, startTime, output, false, false);
 }
 
 // This function takes the seed chain which should end at the point hStart, vStart. New seeds will be
@@ -413,8 +412,7 @@ char * startExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int v
     AlignConfig<false, true, false, false> alignConfig;
     int score = globalAlignment(alignment, scoringScheme, alignConfig);
 
-    return turnAlignmentIntoDescriptiveString(&alignment, score, matchScore, startTime, output,
-                                              false, true);
+    return turnAlignmentIntoDescriptiveString(&alignment, startTime, output, false, true);
 }
 
 // This function is used to conduct a short alignment for the sake of extending a GraphMap
@@ -439,8 +437,7 @@ char * endExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int ver
     AlignConfig<false, false, true, false> alignConfig;
     int score = globalAlignment(alignment, scoringScheme, alignConfig);
 
-    return turnAlignmentIntoDescriptiveString(&alignment, score, matchScore, startTime, output,
-                                              true, false);
+    return turnAlignmentIntoDescriptiveString(&alignment, startTime, output, true, false);
 }
 
 
@@ -587,9 +584,10 @@ std::map<std::string, std::vector<int> > getCommonLocations(std::string * shorte
 
 
 
-
-char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment, int score,
-                                          int matchScore, long long startTime, std::string output,
+// This function turns an alignment into a string which has the start/end positions, the CIGAR and
+// the time it took to align.
+char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment,
+                                          long long startTime, std::string output,
                                           bool startImmediately, bool goToEnd)
 {
     // Extract the alignment sequences into C++ strings, as the TRow type doesn't seem to have
@@ -609,13 +607,6 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
     std::string cigarString;
     CigarType currentCigarType;
     int currentCigarLength = 0;
-    int matchCount = 0;
-    int mismatchCount = 0;
-    int insertionCount = 0;
-    int deletionCount = 0;
-    std::vector<int> s2MismatchPositions;
-    std::vector<int> s2DeletionPositions;
-    std::vector<int> s2InsertionPositionsWithDuplicates;
     int s1Start = -1, s2Start = -1;
     int s1Bases = 0, s2Bases = 0;
 
@@ -652,29 +643,6 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
         CigarType cigarType = getCigarType(base1, base2, alignmentStarted);
         if (i == 0)
             currentCigarType = cigarType;
-
-        // Tally up counts and positions for matches, mismatches, insertions and deletions.
-        if (cigarType == MATCH)
-        {
-            if (base1 == base2)
-                ++matchCount;
-            else
-            {
-                ++mismatchCount;
-                s2MismatchPositions.push_back(s2Bases);
-            }
-        }
-        else if (cigarType == DELETION)
-        {
-            ++deletionCount;
-            s2DeletionPositions.push_back(s2Bases);
-        }
-        else if (cigarType == INSERTION)
-        {
-            ++insertionCount;
-            s2InsertionPositionsWithDuplicates.push_back(s2Bases);
-        }
-
         if (cigarType == currentCigarType)
             ++currentCigarLength;
         else
@@ -695,53 +663,17 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
     if (currentCigarType == INSERTION && !goToEnd)
     {
         currentCigarType = CLIP;
-        insertionCount -= currentCigarLength;
-        s2InsertionPositionsWithDuplicates.resize(insertionCount);
         s1End -= currentCigarLength;
     }
     else if (currentCigarType == DELETION && !goToEnd)
     {
         currentCigarType = NOTHING;
-        deletionCount -= currentCigarLength;
-        s2DeletionPositions.resize(deletionCount);
         s2End -= currentCigarLength;
     }    
     cigarString.append(getCigarPart(currentCigarType, currentCigarLength));
 
-    // We now rebuild the insertion positions in two vectors: one for position and one for size.
-    // This prevents repeated positions.
-    // E.g. 2, 5, 5, 5, 8 becomes:
-    // Positions: 2, 5, 8
-    //     Sizes: 1, 3, 1
-    std::vector<int> s2InsertionPositions;
-    std::vector<int> s2InsertionSizes;
-    if (!s2InsertionPositionsWithDuplicates.empty())
-    {
-        s2InsertionPositions.push_back(s2InsertionPositionsWithDuplicates[0]);
-        s2InsertionSizes.push_back(1);
-        for (int i = 1; i < s2InsertionPositionsWithDuplicates.size(); ++i)
-        {
-            int pos = s2InsertionPositionsWithDuplicates[1];
-            if (pos == s2InsertionPositions.back())
-                ++(s2InsertionSizes.back());
-            else
-            {
-                s2InsertionPositions.push_back(pos);
-                s2InsertionSizes.push_back(1);
-            }
-        }
-    }
-
-    int editDistance = mismatchCount + insertionCount + deletionCount;
-    int alignedLength = matchCount + mismatchCount + insertionCount + deletionCount;
-    double percentIdentity = 100.0 * matchCount / alignedLength;
-
-    // Scale the score and adjust to the alignment length. 100 = perfect score.
-    double perfectScore = double(matchScore) * double(alignedLength);
-    double scaledScore = 100.0 * double(score) / perfectScore;
-
     long long endTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count(); 
-    int milliseconds = endTime - startTime;
+    int millisecs = endTime - startTime;
 
     std::string finalString = output + ";" + 
                               cigarString + ";" +
@@ -749,20 +681,7 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
                               std::to_string(s1End) + ";" + 
                               std::to_string(s2Start) + ";" + 
                               std::to_string(s2End) + ";" + 
-                              std::to_string(alignedLength) + ";" + 
-                              std::to_string(matchCount) + ";" + 
-                              std::to_string(mismatchCount) + ";" + 
-                              vectorToString(&s2MismatchPositions) + ";" + 
-                              std::to_string(deletionCount) + ";" + 
-                              vectorToString(&s2DeletionPositions) + ";" + 
-                              std::to_string(insertionCount) + ";" + 
-                              vectorToString(&s2InsertionPositions) + ";" + 
-                              vectorToString(&s2InsertionSizes) + ";" + 
-                              std::to_string(editDistance) + ";" + 
-                              std::to_string(percentIdentity) + ";" + 
-                              std::to_string(score) + ";" + 
-                              std::to_string(scaledScore) + ";" + 
-                              std::to_string(milliseconds);
+                              std::to_string(millisecs);
 
     return cppStringToCString(finalString);
 }

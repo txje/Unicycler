@@ -129,7 +129,7 @@ char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, dou
     if (seedsInChain == 0)
         return cppStringToCString(output + ";Failed: no global seed chain");
 
-    if (verbosity > 3)
+    if (verbosity > 4)
     {
         output += "  Globally chained seeds before bridging\n";
         output += getSeedChainTable(seedChain);
@@ -187,7 +187,7 @@ char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, dou
     String<TSeed> bridgedSeedChain;
     chainSeedsGlobally(bridgedSeedChain, bridgedSeedSet, SparseChaining());
 
-    if (verbosity > 3)
+    if (verbosity > 4)
     {
         output += "  Seed chain after bridging\n";
         output += getSeedChainTable(bridgedSeedChain);
@@ -237,7 +237,7 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
     int kSize = commonKmers[0].m_sequence.length();
 
     double commonKmerDensity = double(commonKmers.size()) / (double(s1Str.length()) * double(s2Str.length()));
-    if (verbosity > 3)
+    if (verbosity > 4)
         output += "  Common k-mer density: " + std::to_string(commonKmerDensity) + "\n";
 
     // Sort by rotated vertical position so lines should be roughly horizontal.
@@ -272,7 +272,7 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
         commonKmers[i].m_score = score;
     }
 
-    if (verbosity > 3)
+    if (verbosity > 4)
     {
         output += "  Common k-mer positions:\n";
         output += getKmerTable(commonKmers);
@@ -362,7 +362,7 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
     if (lineGroups.size() == 0)
         return cppStringToCString(output + ";Failed: no lines found");
     
-    if (verbosity > 2)
+    if (verbosity > 3)
         output += "  Lines found:\n";
     
     std::string linesString;
@@ -380,10 +380,10 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
         for (int j = 0; j < lineGroups[i].size(); ++j)
             linesString += "," + std::to_string(lineGroups[i][j].m_hPosition) + "," + std::to_string(lineGroups[i][j].m_vPosition);
 
-        if (verbosity > 2)
+        if (verbosity > 3)
             output += "    slope = " + std::to_string(slope) + ", intercept = " + std::to_string(intercept) + "\n";
 
-        if (verbosity > 3)
+        if (verbosity > 4)
             output += getKmerTable(lineGroups[i]);
     }
     return cppStringToCString(output + ";" + linesString);
@@ -453,7 +453,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
     if (targetKCount < 40)
         targetKCount = 40;
     int minimumKCount = targetKCount / 4;
-    if (verbosity > 2)
+    if (verbosity > 3)
         output += "  Target k-mer range: " + std::to_string(minimumKCount) + " to " + std::to_string(targetKCount) + "\n";
     int kSize = 10; // Starting k-mer size
 
@@ -469,7 +469,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
 
     std::map<std::string, std::vector<int> > commonLocations;
     commonLocations = getCommonLocations(shorter, longer, kSize);
-    if (verbosity > 2)
+    if (verbosity > 3)
         printKmerSize(kSize, commonLocations.size(), output);
 
     // If the starting k-mer gave too many locations, we increase it until we're in the correct
@@ -480,7 +480,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
         {
             ++kSize;
             commonLocations = getCommonLocations(shorter, longer, kSize);
-            if (verbosity > 2) printKmerSize(kSize, commonLocations.size(), output);
+            if (verbosity > 3) printKmerSize(kSize, commonLocations.size(), output);
 
             // If we're reached the target range, that's good...
             if (commonLocations.size() <= targetKCount)
@@ -491,7 +491,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
                 {
                     --kSize;
                     commonLocations = getCommonLocations(shorter, longer, kSize);
-                    if (verbosity > 2) printKmerSize(kSize, commonLocations.size(), output);
+                    if (verbosity > 3) printKmerSize(kSize, commonLocations.size(), output);
                 }
                 break;
             }
@@ -509,7 +509,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
             if (kSize < 2)
                 break;
             commonLocations = getCommonLocations(shorter, longer, kSize);
-            if (verbosity > 2)
+            if (verbosity > 3)
                 printKmerSize(kSize, commonLocations.size(), output);
             if (commonLocations.size() >= minimumKCount)
                 break;
@@ -520,7 +520,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
             {
                 ++kSize;
                 commonLocations = getCommonLocations(shorter, longer, kSize);
-                if (verbosity > 2)
+                if (verbosity > 3)
                     printKmerSize(kSize, commonLocations.size(), output);
                 break;
             }

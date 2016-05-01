@@ -787,16 +787,16 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
     alignments = []
 
     for ref in references:
-        if VERBOSITY > 2:
-            output += 'Reference:', ref.name + '+\n'
+        if VERBOSITY > 3:
+            output += 'Reference: ' + ref.name + '+\n'
         forward_alignments, forward_alignment_output = \
                         make_seqan_alignment_all_lines(read, ref, False, scoring_scheme,
                                                        expected_ref_to_read_ratio)
         alignments += forward_alignments
         output += forward_alignment_output
 
-        if VERBOSITY > 2:
-            output += 'Reference:', ref.name + '-\n'
+        if VERBOSITY > 3:
+            output += 'Reference: ' + ref.name + '-\n'
         reverse_alignments, reverse_alignment_output = \
                         make_seqan_alignment_all_lines(read, ref, True, scoring_scheme,
                                                        expected_ref_to_read_ratio)
@@ -861,14 +861,18 @@ def make_seqan_alignment_one_line(read, ref, rev_comp, scoring_scheme, line):
     It returns either an Alignment object or None, depending on whether or not it was successful.
     '''
     output = ''
-    band_size = 20 # TO DO: make this a parameter?
+    total_milliseconds = 0
+
+    band_size = 10 # TO DO: make this a parameter?
     max_band_size = 160 # TO DO: make this a parameter?
+
 
     alignment, alignment_output = run_one_banded_seqan_alignment(read, ref, rev_comp,
                                                                  scoring_scheme, band_size, line)
     output += alignment_output
     if not alignment:
         return None, output
+    total_milliseconds += alignment.milliseconds
 
     # If our alignment succeeded, we try larger bands to see if that helps.
     while True:
@@ -882,14 +886,18 @@ def make_seqan_alignment_one_line(read, ref, rev_comp, scoring_scheme, line):
                                                                          scoring_scheme, band_size,
                                                                          line)
         output += alignment_output
+        total_milliseconds += new_alignment.milliseconds
 
         # If our new alignment with a larger band size failed to improve upon our previous
         # alignment with a smaller band size, then we don't bother trying for larger bands and just
         # return our best alignment so far.
         if new_alignment.scaled_score <= alignment.scaled_score:
-            return alignment, output
+            break
         else:
             alignment = new_alignment
+
+    alignment.milliseconds = total_milliseconds
+    return alignment, output
 
 def run_one_banded_seqan_alignment(read, ref, rev_comp, scoring_scheme, band_size, line):
     '''

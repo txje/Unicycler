@@ -614,8 +614,8 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
     int insertionCount = 0;
     int deletionCount = 0;
     std::vector<int> s2MismatchPositions;
-    std::vector<int> s2InsertionPositions;
     std::vector<int> s2DeletionPositions;
+    std::vector<int> s2InsertionPositionsWithDuplicates;
     int s1Start = -1, s2Start = -1;
     int s1Bases = 0, s2Bases = 0;
 
@@ -672,7 +672,7 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
         else if (cigarType == INSERTION)
         {
             ++insertionCount;
-            s2InsertionPositions.push_back(s2Bases);
+            s2InsertionPositionsWithDuplicates.push_back(s2Bases);
         }
 
         if (cigarType == currentCigarType)
@@ -696,7 +696,7 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
     {
         currentCigarType = CLIP;
         insertionCount -= currentCigarLength;
-        s2InsertionPositions.resize(insertionCount);
+        s2InsertionPositionsWithDuplicates.resize(insertionCount);
         s1End -= currentCigarLength;
     }
     else if (currentCigarType == DELETION && !goToEnd)
@@ -707,6 +707,30 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
         s2End -= currentCigarLength;
     }    
     cigarString.append(getCigarPart(currentCigarType, currentCigarLength));
+
+    // We now rebuild the insertion positions in two vectors: one for position and one for size.
+    // This prevents repeated positions.
+    // E.g. 2, 5, 5, 5, 8 becomes:
+    // Positions: 2, 5, 8
+    //     Sizes: 1, 3, 1
+    std::vector<int> s2InsertionPositions;
+    std::vector<int> s2InsertionSizes;
+    if (!s2InsertionPositionsWithDuplicates.empty())
+    {
+        s2InsertionPositions.push_back(s2InsertionPositionsWithDuplicates[0]);
+        s2InsertionSizes.push_back(1);
+        for (int i = 1; i < s2InsertionPositionsWithDuplicates.size(); ++i)
+        {
+            int pos = s2InsertionPositionsWithDuplicates[1];
+            if (pos == s2InsertionPositions.back())
+                ++(s2InsertionSizes.back());
+            else
+            {
+                s2InsertionPositions.push_back(pos);
+                s2InsertionSizes.push_back(1);
+            }
+        }
+    }
 
     int editDistance = mismatchCount + insertionCount + deletionCount;
     int alignedLength = matchCount + mismatchCount + insertionCount + deletionCount;
@@ -729,10 +753,11 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
                               std::to_string(matchCount) + ";" + 
                               std::to_string(mismatchCount) + ";" + 
                               vectorToString(&s2MismatchPositions) + ";" + 
-                              std::to_string(insertionCount) + ";" + 
-                              vectorToString(&s2InsertionPositions) + ";" + 
                               std::to_string(deletionCount) + ";" + 
                               vectorToString(&s2DeletionPositions) + ";" + 
+                              std::to_string(insertionCount) + ";" + 
+                              vectorToString(&s2InsertionPositions) + ";" + 
+                              vectorToString(&s2InsertionSizes) + ";" + 
                               std::to_string(editDistance) + ";" + 
                               std::to_string(percentIdentity) + ";" + 
                               std::to_string(score) + ";" + 

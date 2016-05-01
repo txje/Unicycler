@@ -1403,8 +1403,8 @@ class Alignment(object):
         self.edit_distance = None
         self.percent_identity = None
         self.ref_mismatch_positions = None
-        self.ref_insertion_positions_and_sizes = None
         self.ref_deletion_positions = None
+        self.ref_insertion_positions_and_sizes = None
         self.raw_score = None
         self.scaled_score = None
         self.milliseconds = None
@@ -1421,7 +1421,7 @@ class Alignment(object):
         '''
         self.alignment_type = 'Seqan'
         seqan_parts = seqan_output.split(';')
-        assert len(seqan_parts) >= 17
+        assert len(seqan_parts) >= 19
 
         # Read details
         self.read = read
@@ -1443,23 +1443,26 @@ class Alignment(object):
         self.cigar_parts = re.findall(r'\d+\w', self.cigar)
         self.match_count = int(seqan_parts[6])
         self.mismatch_count = int(seqan_parts[7])
-        self.insertion_count = int(seqan_parts[9])
-        self.deletion_count = int(seqan_parts[11])
+        self.deletion_count = int(seqan_parts[9])
+        self.insertion_count = int(seqan_parts[11])
         self.alignment_length = int(seqan_parts[5])
-        self.edit_distance = int(seqan_parts[13])
-        self.percent_identity = float(seqan_parts[14])
+        self.edit_distance = int(seqan_parts[14])
+        self.percent_identity = float(seqan_parts[15])
         self.ref_mismatch_positions = []
-        self.ref_insertion_positions = []
         self.ref_deletion_positions = []
+        self.ref_insertion_positions_and_sizes = []
         if seqan_parts[8]:
             self.ref_mismatch_positions = [int(x) for x in seqan_parts[8].split(',')]
         if seqan_parts[10]:
-            self.ref_insertion_positions = [int(x) for x in seqan_parts[10].split(',')]
+            self.ref_deletion_positions = [int(x) for x in seqan_parts[10].split(',')]
         if seqan_parts[12]:
-            self.ref_deletion_positions = [int(x) for x in seqan_parts[12].split(',')]
-        self.raw_score = int(seqan_parts[15])
-        self.scaled_score = float(seqan_parts[16])
-        self.milliseconds = int(seqan_parts[17])
+            pos_list = [int(x) for x in seqan_parts[12].split(',')]
+            size_list = [int(x) for x in seqan_parts[13].split(',')]
+            self.ref_insertion_positions_and_sizes = [(pos_list[i], size_list[i]) \
+                                                      for i, _ in enumerate(pos_list)]
+        self.raw_score = int(seqan_parts[16])
+        self.scaled_score = float(seqan_parts[17])
+        self.milliseconds = int(seqan_parts[18])
 
     def setup_using_graphmap_sam(self, sam_line, read_dict, reference_dict, scoring_scheme):
         '''
@@ -1528,8 +1531,8 @@ class Alignment(object):
         align_i = 0
         self.raw_score = 0
         for cigar_part in cigar_parts:
-            previous_read_i = read_i
-            previous_ref_i = ref_i
+            # previous_read_i = read_i
+            # previous_ref_i = ref_i
             cigar_count = int(cigar_part[:-1])
             cigar_type = cigar_part[-1]
             if cigar_type == 'I':

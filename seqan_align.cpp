@@ -225,6 +225,8 @@ void addBridgingSeed(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int v
 char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double expectedSlope,
                           int verbosity)
 {
+    long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
+
     std::string s1Str(s1);
     std::string s2Str(s2);
     std::string output;
@@ -232,7 +234,10 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
     std::vector<CommonKmer> commonKmers = getCommonKmers(&s1Str, &s2Str, expectedSlope,
                                                          verbosity, output);
     if (commonKmers.size() < 2)
-        return cppStringToCString(output + ";Failed: too few common kmers");
+    {
+        long long endTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
+        return cppStringToCString(output + ";" + std::to_string(endTime - startTime) + ";Failed: too few common kmers");
+    }
 
     int kSize = commonKmers[0].m_sequence.length();
 
@@ -361,7 +366,10 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
                      lineGroups.end());
 
     if (lineGroups.size() == 0)
-        return cppStringToCString(output + ";Failed: no lines found");
+    {
+        long long endTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
+        return cppStringToCString(output + ";" + std::to_string(endTime - startTime) + ";Failed: no lines found");
+    }
     
     if (verbosity > 3)
         output += "  Lines found:\n";
@@ -388,7 +396,8 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
             output += getKmerTable(lineGroups[i]);
     }
 
-    return cppStringToCString(output + ";" + linesString);
+    long long endTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
+    return cppStringToCString(output + ";" + std::to_string(endTime - startTime) + ";" + linesString);
 }
 
 
@@ -450,14 +459,13 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
     std::vector<CommonKmer> commonKmers;
     double rotationAngle = CommonKmer::getRotationAngle(expectedSlope);
 
-    // We will dynamically choose a k-mer size that gives a useful density of common locations.
-    int targetKCount = double(s1->length()) * double(s2->length()) * 0.00001; // MIGHT NEED TO TUNE THIS CONSTANT
-    if (targetKCount < 40)
-        targetKCount = 40;
-    int minimumKCount = targetKCount / 4;
-    if (verbosity > 3)
-        output += "  Target k-mer range: " + std::to_string(minimumKCount) + " to " + std::to_string(targetKCount) + "\n";
-    int kSize = 10; // Starting k-mer size
+    // We will dynamically choose a k-mer size that gives the maximum number of common k-mers.
+    // Sizes too large will give fewer k-mers because it is less likely that sequences will share a
+    // large k-mer. Sizes too small will give fewer k-mers because there are fewer possible k-mers.
+    // Though we scale the value a little by multiplying by the k-mer size. This slightly pushs the
+    // function towards larger k-mers.
+
+    int startingKSize = 8;
 
     // The order used is based not on s1 or s2 but shorter sequence vs longer sequence.
     std::string * shorter = s1;
@@ -469,68 +477,56 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
         seq1IsShorter = false;
     }
 
+    int kSize = startingKSize;
     std::map<std::string, std::vector<int> > commonLocations;
     commonLocations = getCommonLocations(shorter, longer, kSize);
-    if (verbosity > 3)
-        printKmerSize(kSize, commonLocations.size(), output);
+    double bestScore = double(commonLocations.size()) * kSize;
+    int bestK = kSize;
+    if (verbosity > 3) printKmerSize(kSize, commonLocations.size(), output);
 
-    // If the starting k-mer gave too many locations, we increase it until we're in the correct
-    // range.
-    if (commonLocations.size() > targetKCount)
+    // Try larger k sizes, to see if that helps.
+    while (true)
     {
-        while (true)
+        ++kSize;
+        std::map<std::string, std::vector<int> > newCommonLocations = getCommonLocations(shorter, longer, kSize);
+        double score = double(newCommonLocations.size()) * kSize;
+        if (verbosity > 3) printKmerSize(kSize, newCommonLocations.size(), output);
+        if (score > bestScore)
         {
-            ++kSize;
-            commonLocations = getCommonLocations(shorter, longer, kSize);
-            if (verbosity > 3) printKmerSize(kSize, commonLocations.size(), output);
-
-            // If we're reached the target range, that's good...
-            if (commonLocations.size() <= targetKCount)
-            {
-                // But if we went under the minimum, then we need to back down one k-mer step, even
-                // if it takes us over our target.
-                if (commonLocations.size() < minimumKCount)
-                {
-                    --kSize;
-                    commonLocations = getCommonLocations(shorter, longer, kSize);
-                    if (verbosity > 3) printKmerSize(kSize, commonLocations.size(), output);
-                }
-                break;
-            }
+            bestK = kSize;
+            bestScore = score;
+            commonLocations = newCommonLocations;
         }
+        else
+            break;
     }
 
-    // If the starting k-mer gave too few locations, we decrease it until we're in the correct
-    // range. But if at any step our smaller k-mer size reduces our common k-mer count, then 
-    if (commonLocations.size() < minimumKCount)
+    // If larger k sizes didn't help, try smaller k sizes.
+    if (bestK == startingKSize)
     {
-        int lastCount = commonLocations.size();
+        kSize = startingKSize;
         while (true)
         {
             --kSize;
-            if (kSize < 2)
-                break;
-            commonLocations = getCommonLocations(shorter, longer, kSize);
-            if (verbosity > 3)
-                printKmerSize(kSize, commonLocations.size(), output);
-            if (commonLocations.size() >= minimumKCount)
-                break;
-
-            // If making the k-mer size smaller reduced the number of common k-mers, then we've
-            // gone too far. Back up and break out of the loop.
-            if (commonLocations.size() < lastCount)
+            std::map<std::string, std::vector<int> > newCommonLocations = getCommonLocations(shorter, longer, kSize);
+            double score = double(newCommonLocations.size()) * kSize;
+            if (verbosity > 3) printKmerSize(kSize, newCommonLocations.size(), output);
+            if (score > bestScore)
             {
-                ++kSize;
-                commonLocations = getCommonLocations(shorter, longer, kSize);
-                if (verbosity > 3)
-                    printKmerSize(kSize, commonLocations.size(), output);
-                break;
+                bestK = kSize;
+                bestScore = score;
+                commonLocations = newCommonLocations;
             }
-            lastCount = commonLocations.size();
+            else
+                break;
         }
     }
 
+    if (verbosity > 3)
+        output += "  Best k size: " + std::to_string(bestK) + "\n";
+
     // Build the vector of CommonKmer objects.
+    kSize = bestK;
     int kCount = shorter->size() - kSize;
     for (int i = 0; i < kCount; ++i)
     {

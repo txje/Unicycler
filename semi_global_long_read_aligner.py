@@ -273,7 +273,11 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, reads_fastq, 
         print()
     if VERBOSITY == 1:
         print_progress_line(0, num_realignments)
-    expected_ref_to_read_ratio = 1.0 / read_to_ref_median
+    if read_to_ref_median:
+        expected_ref_to_read_ratio = 1.0 / read_to_ref_median
+    else:
+        expected_ref_to_read_ratio = 0.95 # TO DO: SET THIS TO AN EMPIRICALLY-DERIVED VALUE
+        expected_ref_to_read_ratio = 0.9354536950421 # TEMP
     completed_count = 0
 
     # If single-threaded, just do the work in a simple loop.
@@ -832,8 +836,11 @@ def make_seqan_alignment_all_lines(read, ref, rev_comp,
     line_result = cast(ptr, c_char_p).value
     C_LIB.free_c_string(ptr)
 
-    line_finding_output, line_result = line_result.split(';', 1)
+    line_finding_output, milliseconds, line_result = line_result.split(';', 2)
     output = line_finding_output
+    
+    if VERBOSITY > 3:
+        output += '  Line finding milliseconds: ' + milliseconds + '\n'
 
     if line_result.startswith('Fail'):
         if VERBOSITY > 3:
@@ -865,7 +872,6 @@ def make_seqan_alignment_one_line(read, ref, rev_comp, scoring_scheme, line):
 
     band_size = 10 # TO DO: make this a parameter?
     max_band_size = 160 # TO DO: make this a parameter?
-
 
     alignment, alignment_output = run_one_banded_seqan_alignment(read, ref, rev_comp,
                                                                  scoring_scheme, band_size, line)
@@ -944,6 +950,12 @@ def run_one_banded_seqan_alignment(read, ref, rev_comp, scoring_scheme, band_siz
     # TO DO: TRIM THE REFERENCE DOWN
     # TO DO: TRIM THE REFERENCE DOWN
 
+
+    # I encountered a Seqan crash when the band size exceeded the sequence length, so don't let
+    # that happen.
+    shortest_seq_len = min(len(read_seq), len(ref.sequence))
+    if band_size > shortest_seq_len:
+        band_size = shortest_seq_len
 
     ptr = C_LIB.bandedSemiGlobalAlignment(read_seq, ref.sequence, len(read_seq), len(ref.sequence),
                                           line.slope, line.intercept, line.k_size, band_size,

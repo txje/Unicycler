@@ -348,15 +348,16 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
         for (int j = 0; j < groupSize; ++j)
         {
             double maxSlope = maxSlopes[j];
-            if (maxSlope < slopeCutoff)
+            if (maxSlope <= slopeCutoff)
                 fixedLineGroup.push_back((*lineGroup)[j]);
         }
         lineGroups[i] = fixedLineGroup;
     }
 
-    // Remove any line groups with fewer than two points.
+    // Remove any line groups with too few points.
+    int minPointCount = 4; // TO DO: MAKE A PARAMETER?
     lineGroups.erase(std::remove_if(lineGroups.begin(), lineGroups.end(), 
-                                    [](std::vector<CommonKmer> i) {return i.size() < 2;}),
+                                    [&minPointCount](std::vector<CommonKmer> i) {return i.size() < minPointCount;}),
                      lineGroups.end());
 
     if (lineGroups.size() == 0)
@@ -386,6 +387,7 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
         if (verbosity > 4)
             output += getKmerTable(lineGroups[i]);
     }
+
     return cppStringToCString(output + ";" + linesString);
 }
 

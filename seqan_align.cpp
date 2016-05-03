@@ -8,11 +8,13 @@
 #include <string>
 #include <set>
 #include <unordered_set>
+#include <unordered_map>
 #include <tuple>
 #include <vector>
 #include <map>
 #include <algorithm>
 #include <cmath>
+#include <utility>
 #include <iterator>
 
 using namespace seqan;
@@ -44,6 +46,22 @@ public:
     double m_bandLength; // Length of band at expected slope
     int m_bandCount; // Number of neighbour points in band
     double m_score; // Score calculated from bandCount, bandLength and overall kmer density
+};
+
+
+// KmerSets is a class that holds sets of k-mers for named sequences. It exists so we don't have to
+// repeatedly find the same k-mer sets over and over. Whenever it makes a k-mer set, it stores it
+// for later. On destruction it deletes all of its k-mer sets.
+class KmerSets
+{
+public:
+    KmerSets() {}
+     ~KmerSets();
+    std::unordered_set<std::string> * getKmerSet(std::string & name, std::string & sequence, int kSize);
+
+private:
+    std::unordered_map<std::string, std::unordered_set<std::string> *> m_kmerSets;
+    std::unordered_set<std::string> * makeKmerSet(std::string & sequence, int kSize);
 };
 
 
@@ -951,6 +969,33 @@ void addSeedMerge(TSeedSet & seedSet, TSeed & seed)
 {
     if (!addSeed(seedSet, seed, 1, Merge()))
         addSeed(seedSet, seed, Single());
+}
+
+
+// This is the destructor for KmerSets. It cleans up all stuff allocated on the heap.
+KmerSets::~KmerSets()
+{
+    for (std::unordered_map<std::string, std::unordered_set<std::string> *>::iterator i; i == m_kmerSets.begin(); i != m_kmerSets.end())
+        delete i->second;
+}
+
+// This function returns a k-mer set for a given sequence and k size. If the k-mer set already
+// exists, it will just return it immediately. If not, it will build it using the sequence.
+std::unordered_set<std::string> * KmerSets::getKmerSet(std::string & name, std::string & sequence, int kSize)
+{
+    std::string mapKey = name + std::to_string(kSize);
+    if (m_kmerSets.find(mapKey) == m_kmerSets.end())
+        m_kmerSets[mapKey] = makeKmerSet(sequence, kSize);
+    return m_kmerSets[mapKey];
+}
+
+std::unordered_set<std::string> * KmerSets::makeKmerSet(std::string & sequence, int kSize)
+{
+    std::unordered_set<std::string> * kmerSet = new std::unordered_set<std::string>();
+    int kCount = sequence.size() - kSize;
+    for (int i = 0; i < kCount; ++i)
+        kmerSet->insert(sequence.substr(i, kSize));
+    return kmerSet;
 }
 
 }

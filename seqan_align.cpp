@@ -97,7 +97,6 @@ std::vector<CommonKmer> getCommonKmers(std::string & readSeq, std::string & read
 long long getCommonKmerCount(std::string & readSeq, std::string & readName,
                              std::string & refSeq, std::string & refName,
                              int kSize, KmerSets * readKmerSets, KmerSets * refKmerSets);
-std::map<std::string, std::vector<int> > getCommonLocations(std::string & read, std::string & ref, int kSize);
 char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment,
                                           int refOffset, long long startTime, std::string output,
                                           bool startImmediately, bool goToEnd);
@@ -559,53 +558,39 @@ std::vector<CommonKmer> getCommonKmers(std::string & readSeq, std::string & read
     if (verbosity > 3)
         output += "  Best k size: " + std::to_string(bestK) + "\n";
 
-    // Now that we've chose a good k-mer size, build the vector of CommonKmer objects.
+    // Now that we've chose a good k-mer size, we can build the vector of CommonKmer objects.
     kSize = bestK;
-    std::map<std::string, std::vector<int> > commonLocations = getCommonLocations(readSeq, refSeq, kSize);
-    int kCount = readSeq.size() - kSize;
+    std::unordered_set<std::string> * readKmers = readKmerSets->getKmerSet(readName, readSeq, kSize);
+    std::unordered_set<std::string> * refKmers = refKmerSets->getKmerSet(refName, refSeq, kSize);
+
+    // Loop through the reference sequence, and for all kmers also present in the read sequence,
+    // add to a map.
+    std::map<std::string, std::vector<int> > refPositions;
+    int kCount = refSeq.size() - kSize;
+    for (int i = 0; i < kCount; ++i)
+    {
+        std::string kmer = refSeq.substr(i, kSize);
+        if (readKmers->find(kmer) != readKmers->end()) // If kmer is in readKmers
+        {
+            if (refPositions.find(kmer) == refPositions.end()) // If kmer is not in refPositions
+                refPositions[kmer] = std::vector<int>();
+            refPositions[kmer].push_back(i);
+        }
+    }
+    
+    // Loop through the read sequence, and for all kmers also present in the reference, create a
+    // CommonKmer object for each reference position.
+    kCount = readSeq.size() - kSize;
     for (int i = 0; i < kCount; ++i)
     {
         std::string kmer = readSeq.substr(i, kSize);
-        if (commonLocations.find(kmer) != commonLocations.end()) // If kmer is in commonLocations
+        if (refKmers->find(kmer) != refKmers->end()) // If kmer is in refKmers
         {
-            int readPos = i;
-            for (int j = 0; j < commonLocations[kmer].size(); ++j)
-            {
-                int refPos = commonLocations[kmer][j];
-                commonKmers.push_back(CommonKmer(kmer, readPos, refPos, rotationAngle));
-            }
+            for (int j = 0; j < refPositions[kmer].size(); ++j)
+                commonKmers.push_back(CommonKmer(kmer, i, refPositions[kmer][j], rotationAngle));
         }
     }
     return commonKmers;
-}
-
-
-// This function creates a map where the key is a kmer sequence and the value is a vector of 
-// sequence positions for the reference sequence.
-std::map<std::string, std::vector<int> > getCommonLocations(std::string & read, std::string & ref,
-                                                            int kSize)
-{
-    // Build a set of all k-mers in the read sequence.
-    std::set<std::string> readSeqKmers;
-    int kCount = read.size() - kSize;
-    for (int i = 0; i < kCount; ++i)
-        readSeqKmers.insert(read.substr(i, kSize));
-
-    // Loop through the reference sequence, and for all kmers also present in the read sequence,
-    // add to the map.
-    std::map<std::string, std::vector<int> > commonLocations;
-    kCount = ref.size() - kSize;
-    for (int i = 0; i < kCount; ++i)
-    {
-        std::string kmer = ref.substr(i, kSize);
-        if (readSeqKmers.find(kmer) != readSeqKmers.end()) // If kmer is in readSeqKmers
-        {
-            if (commonLocations.find(kmer) == commonLocations.end()) // If kmer is not in commonLocations
-                commonLocations[kmer] = std::vector<int>();
-            commonLocations[kmer].push_back(i);
-        }
-    }
-    return commonLocations;
 }
 
 // This function returns the number of k-mers the two sequences have in common.

@@ -759,7 +759,6 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
         if not alignments:
             output += 'No alignments found for read ' + read.name + '\n'
         else:
-            output += 'Alignments found for read ' + read.name + ':\n'
             for alignment in alignments:
                 output += '  ' + str(alignment) + '\n'
         output += '\n'

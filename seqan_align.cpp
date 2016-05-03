@@ -46,10 +46,13 @@ public:
 
 
 // These are the functions that will be called by the Python script.
-char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, double slope,
-                                 double intercept, int kSize, int bandSize, int verbosity,
-                                 int matchScore, int mismatchScore, int gapOpenScore,
-                                 int gapExtensionScore, char * kmerLocations);
+char * bandedSemiGlobalAlignment(char * s1, int s1Len,
+                                 char * s2, int s2Len, int s2Offset,
+                                 double slope, double intercept, int kSize, int bandSize,
+                                 int verbosity,
+                                 int matchScore, int mismatchScore,
+                                 int gapOpenScore, int gapExtensionScore,
+                                 char * kmerLocations);
 char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double expectedSlope,
                           int verbosity);
 char * startExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int verbosity,
@@ -66,7 +69,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
                                        int verbosity, std::string & output);
 std::map<std::string, std::vector<int> > getCommonLocations(std::string * s1, std::string * s2, int kSize);
 char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment,
-                                          long long startTime, std::string output,
+                                          int s2Offset, long long startTime, std::string output,
                                           bool startImmediately, bool goToEnd);
 CigarType getCigarType(char b1, char b2, bool alignmentStarted);
 std::string getCigarPart(CigarType type, int length);
@@ -81,7 +84,8 @@ double getMedian(std::vector<double> * v);
 void printKmerSize(int kmerSize, int locationCount, std::string & output);
 double getLineLength(double x, double y, double slope, double xSize, double ySize);
 void linearRegression(std::vector<CommonKmer> & pts, double * slope, double * intercept);
-void parseKmerLocationsFromString(std::string & str, std::vector<int> & v1, std::vector<int> & v2);
+void parseKmerLocationsFromString(std::string & str, std::vector<int> & v1, std::vector<int> & v2,
+                                  int s2Offset);
 std::string getKmerTable(std::vector<CommonKmer> & commonKmers);
 std::string getSeedChainTable(String<TSeed> & seedChain);
 void addSeedMerge(TSeedSet & seedSet, TSeed & seed);
@@ -92,10 +96,13 @@ void addSeedMerge(TSeedSet & seedSet, TSeed & seed);
 // bandSize parameter specifies how far of an area around the line is searched. It is generally
 // much faster than exhaustiveSemiGlobalAlignment, though it may not find the optimal alignment.
 // A lower bandSize is faster with a larger chance of missing the optimal alignment.
-char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, double slope,
-                                 double intercept, int kSize, int bandSize, int verbosity,
-                                 int matchScore, int mismatchScore, int gapOpenScore,
-                                 int gapExtensionScore, char * kmerLocations)
+char * bandedSemiGlobalAlignment(char * s1, int s1Len,
+                                 char * s2, int s2Len, int s2Offset,
+                                 double slope, double intercept, int kSize, int bandSize,
+                                 int verbosity,
+                                 int matchScore, int mismatchScore,
+                                 int gapOpenScore, int gapExtensionScore,
+                                 char * kmerLocations)
 {
     std::string output = "";
     long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
@@ -112,7 +119,7 @@ char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, dou
     std::string kmerLocationsStr(kmerLocations);
     std::vector<int> s1KmerLocations;
     std::vector<int> s2KmerLocations;
-    parseKmerLocationsFromString(kmerLocationsStr, s1KmerLocations, s2KmerLocations);
+    parseKmerLocationsFromString(kmerLocationsStr, s1KmerLocations, s2KmerLocations, s2Offset);
 
     // Build a Seqan seed set using our common k-mers.
     TSeedSet seedSet;
@@ -199,10 +206,12 @@ char * bandedSemiGlobalAlignment(char * s1, char * s2, int s1Len, int s2Len, dou
     assignSource(row(alignment, 1), sequenceV);
     Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
     AlignConfig<true, true, true, true> alignConfig;
+
     int score = bandedChainAlignment(alignment, bridgedSeedChain, scoringScheme, alignConfig,
                                      bandSize);
 
-    return turnAlignmentIntoDescriptiveString(&alignment, startTime, output, false, false);
+    return turnAlignmentIntoDescriptiveString(&alignment, s2Offset, startTime, output,
+                                              false, false);
 }
 
 // This function takes the seed chain which should end at the point hStart, vStart. New seeds will be
@@ -423,7 +432,7 @@ char * startExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int v
     AlignConfig<false, true, false, false> alignConfig;
     int score = globalAlignment(alignment, scoringScheme, alignConfig);
 
-    return turnAlignmentIntoDescriptiveString(&alignment, startTime, output, false, true);
+    return turnAlignmentIntoDescriptiveString(&alignment, 0, startTime, output, false, true);
 }
 
 // This function is used to conduct a short alignment for the sake of extending a GraphMap
@@ -448,7 +457,7 @@ char * endExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int ver
     AlignConfig<false, false, true, false> alignConfig;
     int score = globalAlignment(alignment, scoringScheme, alignConfig);
 
-    return turnAlignmentIntoDescriptiveString(&alignment, startTime, output, true, false);
+    return turnAlignmentIntoDescriptiveString(&alignment, 0, startTime, output, true, false);
 }
 
 
@@ -585,7 +594,7 @@ std::map<std::string, std::vector<int> > getCommonLocations(std::string * shorte
 // This function turns an alignment into a string which has the start/end positions, the CIGAR and
 // the time it took to align.
 char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment,
-                                          long long startTime, std::string output,
+                                          int s2Offset, long long startTime, std::string output,
                                           bool startImmediately, bool goToEnd)
 {
     // Extract the alignment sequences into C++ strings, as the TRow type doesn't seem to have
@@ -667,7 +676,7 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
     {
         currentCigarType = NOTHING;
         s2End -= currentCigarLength;
-    }    
+    }
     cigarString.append(getCigarPart(currentCigarType, currentCigarLength));
 
     long long endTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count(); 
@@ -677,8 +686,8 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
                               cigarString + ";" +
                               std::to_string(s1Start) + ";" + 
                               std::to_string(s1End) + ";" + 
-                              std::to_string(s2Start) + ";" + 
-                              std::to_string(s2End) + ";" + 
+                              std::to_string(s2Start + s2Offset) + ";" + 
+                              std::to_string(s2End + s2Offset) + ";" + 
                               std::to_string(millisecs);
 
     return cppStringToCString(finalString);
@@ -868,7 +877,8 @@ void linearRegression(std::vector<CommonKmer> & pts, double * slope, double * in
 }
 
 
-void parseKmerLocationsFromString(std::string & str, std::vector<int> & v1, std::vector<int> & v2)
+void parseKmerLocationsFromString(std::string & str, std::vector<int> & v1, std::vector<int> & v2,
+                                  int s2Offset)
 {
     std::stringstream ss(str);
     while(ss.good())
@@ -878,7 +888,7 @@ void parseKmerLocationsFromString(std::string & str, std::vector<int> & v1, std:
         std::getline(ss, s1Location, ',');
         std::getline(ss, s2Location, ',');
         v1.push_back(std::stoi(s1Location));
-        v2.push_back(std::stoi(s2Location));
+        v2.push_back(std::stoi(s2Location) - s2Offset);
     }
 }
 

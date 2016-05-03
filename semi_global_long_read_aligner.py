@@ -63,10 +63,11 @@ C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_al
 This function conducts a semi-global alignment surrounding the given line. Since the search is
 limited to a narrow band it is much more efficient than an exhaustive search.
 '''
-C_LIB.bandedSemiGlobalAlignment.argtypes = [c_char_p, # Sequence 1
-                                            c_char_p, # Sequence 2
+C_LIB.bandedSemiGlobalAlignment.argtypes = [c_char_p, # Sequence 1 (read)
                                             c_int,    # Sequence 1 length
+                                            c_char_p, # Sequence 2 (reference)
                                             c_int,    # Sequence 2 length
+                                            c_int,    # Sequence 2 start offset
                                             c_double, # Slope
                                             c_double, # Intercept
                                             c_int,    # K-mer size
@@ -838,7 +839,7 @@ def make_seqan_alignment_all_lines(read, ref, rev_comp,
 
     line_finding_output, milliseconds, line_result = line_result.split(';', 2)
     output = line_finding_output
-    
+
     if VERBOSITY > 3:
         output += '  Line finding milliseconds: ' + milliseconds + '\n'
 
@@ -917,49 +918,28 @@ def run_one_banded_seqan_alignment(read, ref, rev_comp, scoring_scheme, band_siz
     else:
         read_seq = read.sequence
 
-
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-    # TO DO: TRIM THE REFERENCE DOWN
-
+    # Use the line's slope and intercept to see where the reads should start/end in the reference.
+    # If it's in the middle of the reference, we'll trim the reference sequence down and only pass
+    # the relevant part to Seqan.
+    pad_size = 1000 # TO DO: MAKE THIS A PARAMETER?
+    approx_ref_start = int(round(line.intercept))
+    approx_ref_end = int(round(line.slope * len(read_seq) + line.intercept))
+    trimmed_ref_start = max(0, approx_ref_start - pad_size)
+    trimmed_ref_end = min(len(ref.sequence), approx_ref_end + pad_size)
+    trimmed_ref_seq = ref.sequence[trimmed_ref_start:trimmed_ref_end]
 
     # I encountered a Seqan crash when the band size exceeded the sequence length, so don't let
     # that happen.
-    shortest_seq_len = min(len(read_seq), len(ref.sequence))
+    shortest_seq_len = min(len(read_seq), len(trimmed_ref_seq))
     if band_size > shortest_seq_len:
         band_size = shortest_seq_len
 
-    ptr = C_LIB.bandedSemiGlobalAlignment(read_seq, ref.sequence, len(read_seq), len(ref.sequence),
+    ptr = C_LIB.bandedSemiGlobalAlignment(read_seq, len(read_seq),
+                                          trimmed_ref_seq, len(trimmed_ref_seq), trimmed_ref_start,
                                           line.slope, line.intercept, line.k_size, band_size,
-                                          VERBOSITY, 3, -6, -5, -2, line.kmer_locations)
+                                          VERBOSITY,
+                                          3, -6, -5, -2,
+                                          line.kmer_locations)
     result = cast(ptr, c_char_p).value    
     C_LIB.free_c_string(ptr)
 

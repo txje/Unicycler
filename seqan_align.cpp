@@ -576,7 +576,6 @@ std::vector<CommonKmer> getCommonKmers(std::string & readSeq, std::string & read
             }
         }
     }
-
     return commonKmers;
 }
 

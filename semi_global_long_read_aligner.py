@@ -853,11 +853,13 @@ def make_seqan_alignment_all_lines(read, ref, rev_comp,
     '''
     if rev_comp:
         read_seq = reverse_complement(read.sequence)
+        read_name = read.name + "-"
     else:
         read_seq = read.sequence
+        read_name = read.name + "+"
 
     # Get the alignment line(s).
-    ptr = C_LIB.findAlignmentLines(read_seq, read.name, ref.sequence, ref.name,
+    ptr = C_LIB.findAlignmentLines(read_seq, read_name, ref.sequence, ref.name,
                                    expected_ref_to_read_ratio, VERBOSITY,
                                    read_kmer_sets_ptr, ref_kmer_sets_ptr)
     line_result = cast(ptr, c_char_p).value

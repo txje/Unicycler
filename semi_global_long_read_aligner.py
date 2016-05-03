@@ -90,7 +90,8 @@ C_LIB.findAlignmentLines.argtypes = [c_char_p, # Sequence 1
                                      c_int,    # Sequence 2 length
                                      c_double, # Expected slope
                                      c_int,    # Verbosity
-                                     c_void_p] # KmerSets pointer
+                                     c_void_p, # Reference KmerSets pointer
+                                     c_void_p] # Read KmerSets pointer
 C_LIB.findAlignmentLines.restype = c_void_p    # String describing the found line(s)
 
 '''
@@ -288,8 +289,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, reads_fastq, 
         expected_ref_to_read_ratio = 0.95 # TO DO: SET THIS TO AN EMPIRICALLY-DERIVED VALUE
     completed_count = 0
 
-    # Create a C++ KmerSets object for the references.
-    kmer_sets_ptr = C_LIB.newKmerSets()
+    # Create a C++ KmerSets object for the references. These will be shared by all threads.
+    ref_kmer_sets_ptr = C_LIB.newKmerSets()
 
     # If single-threaded, just do the work in a simple loop.
     if threads == 1:
@@ -297,7 +298,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, reads_fastq, 
             new_alignments, output = seqan_alignment_one_read_all_refs(read, references,
                                                                        scoring_scheme,
                                                                        expected_ref_to_read_ratio,
-                                                                       kmer_sets_ptr)
+                                                                       ref_kmer_sets_ptr)
             read.alignments += new_alignments
             completed_count += 1
             if VERBOSITY == 1:
@@ -310,7 +311,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, reads_fastq, 
         pool = ThreadPool(threads)
         arg_list = []
         for read in reads_to_realign:
-            arg_list.append((read, references, scoring_scheme, expected_ref_to_read_ratio, kmer_sets_ptr))
+            arg_list.append((read, references, scoring_scheme, expected_ref_to_read_ratio, ref_kmer_sets_ptr))
         for new_alignments, output in pool.imap_unordered(seqan_alignment_one_read_all_refs_one_arg,
                                                           arg_list, 1):
             if new_alignments:
@@ -323,8 +324,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, reads_fastq, 
                 print(output, end='')
 
     # We're done with the C++ KmerSets object, so delete it now.
-    print('BEFORE DELETE')
-    C_LIB.deleteKmerSets(kmer_sets_ptr)
+    C_LIB.deleteKmerSets(ref_kmer_sets_ptr)
 
     # Filter the alignments based on conflicting read position.
     if VERBOSITY > 0:
@@ -791,12 +791,12 @@ def seqan_alignment_one_read_all_refs_one_arg(all_args):
     This is just a one-argument version of seqan_alignment_one_read_all_refs to make it easier to
     use that function in a thread pool.
     '''
-    read, references, scoring_scheme, expected_ref_to_read_ratio, kmer_sets_ptr = all_args
+    read, references, scoring_scheme, expected_ref_to_read_ratio, ref_kmer_sets_ptr = all_args
     return seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
-                                             expected_ref_to_read_ratio, kmer_sets_ptr)
+                                             expected_ref_to_read_ratio, ref_kmer_sets_ptr)
 
 def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
-                                      expected_ref_to_read_ratio, kmer_sets_ptr):
+                                      expected_ref_to_read_ratio, ref_kmer_sets_ptr):
     '''
     Aligns a single read against all reference sequences using Seqan. Both forward and reverse
     complement alignments are tried. Returns a list of all alignments found and the console output.
@@ -806,12 +806,17 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
         output += str(read) + '\n'
     alignments = []
 
+    # Create a KmerSets object for the read. This is deleted at the end of the function (keeping
+    # kmers of all reads would use too much RAM).
+    read_kmer_sets_ptr = C_LIB.newKmerSets()
+
     for ref in references:
         if VERBOSITY > 3:
             output += 'Reference: ' + ref.name + '+\n'
         forward_alignments, forward_alignment_output = \
                         make_seqan_alignment_all_lines(read, ref, False, scoring_scheme,
-                                                       expected_ref_to_read_ratio, kmer_sets_ptr)
+                                                       expected_ref_to_read_ratio,
+                                                       ref_kmer_sets_ptr, read_kmer_sets_ptr)
         alignments += forward_alignments
         output += forward_alignment_output
 
@@ -819,9 +824,12 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
             output += 'Reference: ' + ref.name + '-\n'
         reverse_alignments, reverse_alignment_output = \
                         make_seqan_alignment_all_lines(read, ref, True, scoring_scheme,
-                                                       expected_ref_to_read_ratio, kmer_sets_ptr)
+                                                       expected_ref_to_read_ratio,
+                                                       ref_kmer_sets_ptr, read_kmer_sets_ptr)
         alignments += reverse_alignments
         output += reverse_alignment_output
+
+    C_LIB.deleteKmerSets(read_kmer_sets_ptr)
 
     if VERBOSITY > 1:
         if not alignments:
@@ -831,10 +839,12 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
             for alignment in alignments:
                 output += '  ' + str(alignment) + '\n'
         output += '\n'
+
     return alignments, output
 
 def make_seqan_alignment_all_lines(read, ref, rev_comp,
-                                   scoring_scheme, expected_ref_to_read_ratio, kmer_sets_ptr):
+                                   scoring_scheme, expected_ref_to_read_ratio,
+                                   ref_kmer_sets_ptr, read_kmer_sets_ptr):
     '''
     Runs an alignment using Seqan between one read and one reference.
     Returns a list of Alignment objects: empty list means it did not succeed, a list of one means
@@ -848,7 +858,8 @@ def make_seqan_alignment_all_lines(read, ref, rev_comp,
 
     # Get the alignment line(s).
     ptr = C_LIB.findAlignmentLines(read_seq, ref.sequence, len(read_seq), len(ref.sequence),
-                                   expected_ref_to_read_ratio, VERBOSITY, kmer_sets_ptr)
+                                   expected_ref_to_read_ratio, VERBOSITY,
+                                   ref_kmer_sets_ptr, read_kmer_sets_ptr)
     line_result = cast(ptr, c_char_p).value
     C_LIB.free_c_string(ptr)
 

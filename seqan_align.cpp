@@ -75,7 +75,7 @@ char * bandedSemiGlobalAlignment(char * s1, int s1Len,
                                  int gapOpenScore, int gapExtensionScore,
                                  char * kmerLocations);
 char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double expectedSlope,
-                          int verbosity, KmerSets * kmerSets);
+                          int verbosity, KmerSets * refKmerSets, KmerSets * readKmerSets);
 char * startExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int verbosity,
                                int matchScore, int mismatchScore, int gapOpenScore,
                                int gapExtensionScore);
@@ -90,8 +90,10 @@ void deleteKmerSets(KmerSets * kmerSets) {delete kmerSets;}
 // These functions are internal to this C++ code.
 void addBridgingSeed(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int vEnd);
 std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, double expectedSlope,
-                                       int verbosity, std::string & output, KmerSets * kmerSets);
-long long getCommonKmerCount(std::string * shorter, std::string * longer, int kSize, KmerSets * kmerSets);
+                                       int verbosity, std::string & output,
+                                       KmerSets * refKmerSets, KmerSets * readKmerSets);
+long long getCommonKmerCount(std::string * shorter, std::string * longer, int kSize,
+                             KmerSets * refKmerSets, KmerSets * readKmerSets);
 std::map<std::string, std::vector<int> > getCommonLocations(std::string * s1, std::string * s2, int kSize);
 char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment,
                                           int s2Offset, long long startTime, std::string output,
@@ -258,7 +260,7 @@ void addBridgingSeed(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int v
 // This function searches for lines in the 2D ref-read space that represent likely semi-global
 // alignments.
 char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double expectedSlope,
-                          int verbosity, KmerSets * kmerSets)
+                          int verbosity, KmerSets * refKmerSets, KmerSets * readKmerSets)
 {
     long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 
@@ -267,7 +269,8 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
     std::string output;
 
     std::vector<CommonKmer> commonKmers = getCommonKmers(&s1Str, &s2Str, expectedSlope,
-                                                         verbosity, output, kmerSets);
+                                                         verbosity, output,
+                                                         refKmerSets, readKmerSets);
     if (commonKmers.size() < 2)
     {
         long long endTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
@@ -489,7 +492,8 @@ char * endExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int ver
 
 // This function returns a list of the k-mers common to the two sequences.
 std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, double expectedSlope,
-                                       int verbosity, std::string & output, KmerSets * kmerSets)
+                                       int verbosity, std::string & output,
+                                       KmerSets * refKmerSets, KmerSets * readKmerSets)
 {
     std::vector<CommonKmer> commonKmers;
     double rotationAngle = CommonKmer::getRotationAngle(expectedSlope);
@@ -513,7 +517,8 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
     }
 
     int kSize = startingKSize;
-    long long commonKmerCount = getCommonKmerCount(shorter, longer, kSize, kmerSets);
+    long long commonKmerCount = getCommonKmerCount(shorter, longer, kSize,
+                                                   refKmerSets, readKmerSets);
     long long bestScore = commonKmerCount * kSize;
     int bestK = kSize;
     if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
@@ -522,7 +527,8 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
     while (true)
     {
         ++kSize;
-        commonKmerCount = getCommonKmerCount(shorter, longer, kSize, kmerSets);
+        commonKmerCount = getCommonKmerCount(shorter, longer, kSize,
+                                                   refKmerSets, readKmerSets);
         long long score = commonKmerCount * kSize;
         if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
         if (score > bestScore)
@@ -541,7 +547,8 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
         while (true)
         {
             --kSize;
-            commonKmerCount = getCommonKmerCount(shorter, longer, kSize, kmerSets);
+            commonKmerCount = getCommonKmerCount(shorter, longer, kSize,
+                                                   refKmerSets, readKmerSets);
             long long score = commonKmerCount * kSize;
             if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
             if (score > bestScore)
@@ -611,7 +618,8 @@ std::map<std::string, std::vector<int> > getCommonLocations(std::string * shorte
 }
 
 // This function returns the number of k-mers the two sequences have in common.
-long long getCommonKmerCount(std::string * shorter, std::string * longer, int kSize, KmerSets * kmerSets)
+long long getCommonKmerCount(std::string * shorter, std::string * longer, int kSize,
+                             KmerSets * refKmerSets, KmerSets * readKmerSets)
 {
     // Build a set of all k-mers in the shorter sequence.
     std::unordered_set<std::string> shorterSeqKmers;

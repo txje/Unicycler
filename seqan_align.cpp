@@ -67,19 +67,19 @@ private:
 
 
 // These are the functions that will be called by the Python script.
-char * bandedSemiGlobalAlignment(char * s1, int s1Len,
-                                 char * s2, int s2Len, int s2Offset,
+char * bandedSemiGlobalAlignment(char * read, int readLen,
+                                 char * ref, int refLen, int refOffset,
                                  double slope, double intercept, int kSize, int bandSize,
                                  int verbosity,
                                  int matchScore, int mismatchScore,
                                  int gapOpenScore, int gapExtensionScore,
                                  char * kmerLocations);
-char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double expectedSlope,
-                          int verbosity, KmerSets * refKmerSets, KmerSets * readKmerSets);
-char * startExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int verbosity,
+char * findAlignmentLines(char * read, char * ref, double expectedSlope, int verbosity,
+                          KmerSets * readKmerSets, KmerSets * refKmerSets);
+char * startExtensionAlignment(char * read, char * ref, int readLen, int refLen, int verbosity,
                                int matchScore, int mismatchScore, int gapOpenScore,
                                int gapExtensionScore);
-char * endExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int verbosity,
+char * endExtensionAlignment(char * read, char * ref, int readLen, int refLen, int verbosity,
                              int matchScore, int mismatchScore, int gapOpenScore,
                              int gapExtensionScore);
 void free_c_string(char * p) {free(p);}
@@ -89,14 +89,14 @@ void deleteKmerSets(KmerSets * kmerSets) {delete kmerSets;}
 
 // These functions are internal to this C++ code.
 void addBridgingSeed(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int vEnd);
-std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, double expectedSlope,
+std::vector<CommonKmer> getCommonKmers(std::string & read, std::string & ref, double expectedSlope,
                                        int verbosity, std::string & output,
-                                       KmerSets * refKmerSets, KmerSets * readKmerSets);
-long long getCommonKmerCount(std::string * shorter, std::string * longer, int kSize,
-                             KmerSets * refKmerSets, KmerSets * readKmerSets);
-std::map<std::string, std::vector<int> > getCommonLocations(std::string * s1, std::string * s2, int kSize);
+                                       KmerSets * readKmerSets, KmerSets * refKmerSets);
+long long getCommonKmerCount(std::string & read, std::string & ref, int kSize,
+                             KmerSets * readKmerSets, KmerSets * refKmerSets);
+std::map<std::string, std::vector<int> > getCommonLocations(std::string & read, std::string & ref, int kSize);
 char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment,
-                                          int s2Offset, long long startTime, std::string output,
+                                          int refOffset, long long startTime, std::string output,
                                           bool startImmediately, bool goToEnd);
 CigarType getCigarType(char b1, char b2, bool alignmentStarted);
 std::string getCigarPart(CigarType type, int length);
@@ -112,7 +112,7 @@ void printKmerSize(int kmerSize, int locationCount, std::string & output);
 double getLineLength(double x, double y, double slope, double xSize, double ySize);
 void linearRegression(std::vector<CommonKmer> & pts, double * slope, double * intercept);
 void parseKmerLocationsFromString(std::string & str, std::vector<int> & v1, std::vector<int> & v2,
-                                  int s2Offset);
+                                  int refOffset);
 std::string getKmerTable(std::vector<CommonKmer> & commonKmers);
 std::string getSeedChainTable(String<TSeed> & seedChain);
 void addSeedMerge(TSeedSet & seedSet, TSeed & seed);
@@ -124,8 +124,8 @@ std::unordered_set<std::string> * makeKmerSet(std::string & sequence, int kSize)
 // bandSize parameter specifies how far of an area around the line is searched. It is generally
 // much faster than exhaustiveSemiGlobalAlignment, though it may not find the optimal alignment.
 // A lower bandSize is faster with a larger chance of missing the optimal alignment.
-char * bandedSemiGlobalAlignment(char * s1, int s1Len,
-                                 char * s2, int s2Len, int s2Offset,
+char * bandedSemiGlobalAlignment(char * read, int readLen,
+                                 char * ref, int refLen, int refOffset,
                                  double slope, double intercept, int kSize, int bandSize,
                                  int verbosity,
                                  int matchScore, int mismatchScore,
@@ -141,19 +141,19 @@ char * bandedSemiGlobalAlignment(char * s1, int s1Len,
     if (slope < 0.5)
         return cppStringToCString(output + ";Failed: slope too small");
 
-    TSequence sequenceH = s1;
-    TSequence sequenceV = s2;
+    TSequence sequenceH = read;
+    TSequence sequenceV = ref;
 
     std::string kmerLocationsStr(kmerLocations);
-    std::vector<int> s1KmerLocations;
-    std::vector<int> s2KmerLocations;
-    parseKmerLocationsFromString(kmerLocationsStr, s1KmerLocations, s2KmerLocations, s2Offset);
+    std::vector<int> readKmerLocations;
+    std::vector<int> refKmerLocations;
+    parseKmerLocationsFromString(kmerLocationsStr, readKmerLocations, refKmerLocations, refOffset);
 
     // Build a Seqan seed set using our common k-mers.
     TSeedSet seedSet;
-    for (int i = 0; i < s1KmerLocations.size(); ++i)
+    for (int i = 0; i < readKmerLocations.size(); ++i)
     {
-        TSeed seed(s1KmerLocations[i], s2KmerLocations[i], kSize);
+        TSeed seed(readKmerLocations[i], refKmerLocations[i], kSize);
         addSeedMerge(seedSet, seed);
     }
 
@@ -207,16 +207,16 @@ char * bandedSemiGlobalAlignment(char * s1, int s1Len,
     TSeed lastSeed = seedChain[seedsInChain - 1];
     int lastSeedHEnd = endPositionH(lastSeed);
     int lastSeedVEnd = endPositionV(lastSeed);
-    if (lastSeedHEnd < s1Len && lastSeedVEnd < s2Len)
+    if (lastSeedHEnd < readLen && lastSeedVEnd < refLen)
     {
         double vPosAtStartOfH = lastSeedVEnd - (slope * lastSeedHEnd);
-        double vPosAtEndOfH = (slope * s1Len) + vPosAtStartOfH;
-        if (vPosAtEndOfH <= s2Len)
-            addBridgingSeed(bridgedSeedSet, lastSeedHEnd, lastSeedVEnd, s1Len,
+        double vPosAtEndOfH = (slope * readLen) + vPosAtStartOfH;
+        if (vPosAtEndOfH <= refLen)
+            addBridgingSeed(bridgedSeedSet, lastSeedHEnd, lastSeedVEnd, readLen,
                             std::round(vPosAtEndOfH));
         else
             addBridgingSeed(bridgedSeedSet, lastSeedHEnd, lastSeedVEnd,
-                            std::round((s2Len - vPosAtStartOfH) / slope), s2Len);
+                            std::round((refLen - vPosAtStartOfH) / slope), refLen);
     }
 
     String<TSeed> bridgedSeedChain;
@@ -238,7 +238,7 @@ char * bandedSemiGlobalAlignment(char * s1, int s1Len,
     int score = bandedChainAlignment(alignment, bridgedSeedChain, scoringScheme, alignConfig,
                                      bandSize);
 
-    return turnAlignmentIntoDescriptiveString(&alignment, s2Offset, startTime, output,
+    return turnAlignmentIntoDescriptiveString(&alignment, refOffset, startTime, output,
                                               false, false);
 }
 
@@ -259,18 +259,18 @@ void addBridgingSeed(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int v
 
 // This function searches for lines in the 2D ref-read space that represent likely semi-global
 // alignments.
-char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double expectedSlope,
-                          int verbosity, KmerSets * refKmerSets, KmerSets * readKmerSets)
+char * findAlignmentLines(char * read, char * ref, double expectedSlope, int verbosity,
+                          KmerSets * readKmerSets, KmerSets * refKmerSets)
 {
     long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 
-    std::string s1Str(s1);
-    std::string s2Str(s2);
+    std::string readStr(read);
+    std::string refStr(ref);
     std::string output;
 
-    std::vector<CommonKmer> commonKmers = getCommonKmers(&s1Str, &s2Str, expectedSlope,
+    std::vector<CommonKmer> commonKmers = getCommonKmers(readStr, refStr, expectedSlope,
                                                          verbosity, output,
-                                                         refKmerSets, readKmerSets);
+                                                         readKmerSets, refKmerSets);
     if (commonKmers.size() < 2)
     {
         long long endTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
@@ -279,7 +279,7 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
 
     int kSize = commonKmers[0].m_sequence.length();
 
-    double commonKmerDensity = double(commonKmers.size()) / (double(s1Str.length()) * double(s2Str.length()));
+    double commonKmerDensity = double(commonKmers.size()) / (double(readStr.length()) * double(refStr.length()));
     if (verbosity > 4)
         output += "  Common k-mer density: " + std::to_string(commonKmerDensity) + "\n";
 
@@ -303,7 +303,7 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
                commonKmers[windowEnd].m_rotatedVPosition - y < bandSize)
             ++windowEnd;
         double bandLength = getLineLength(commonKmers[i].m_hPosition, commonKmers[i].m_vPosition,
-                                          expectedSlope, s1Len, s2Len);
+                                          expectedSlope, readStr.length(), refStr.length());
         int bandCount = windowEnd - windowStart;
         double bandKmerDensity = bandCount / (bandLength * 2.0 * bandSize);
         double score = bandKmerDensity / commonKmerDensity;
@@ -441,15 +441,15 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
 
 // This function is used to conduct a short alignment for the sake of extending a GraphMap
 // alignment.
-char * startExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int verbosity,
+char * startExtensionAlignment(char * read, char * ref, int readLen, int refLen, int verbosity,
                                int matchScore, int mismatchScore, int gapOpenScore,
                                int gapExtensionScore)
 {
     long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
     std::string output;
 
-    TSequence sequenceH = s1;
-    TSequence sequenceV = s2;
+    TSequence sequenceH = read;
+    TSequence sequenceV = ref;
 
     Align<Dna5String, ArrayGaps> alignment;
     resize(rows(alignment), 2);
@@ -457,7 +457,7 @@ char * startExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int v
     assignSource(row(alignment, 1), sequenceV);
     Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
 
-    // The only free gaps are at the start of s2 (the reference sequence).
+    // The only free gaps are at the start of ref (the reference sequence).
     AlignConfig<false, true, false, false> alignConfig;
     int score = globalAlignment(alignment, scoringScheme, alignConfig);
 
@@ -466,15 +466,15 @@ char * startExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int v
 
 // This function is used to conduct a short alignment for the sake of extending a GraphMap
 // alignment.
-char * endExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int verbosity,
+char * endExtensionAlignment(char * read, char * ref, int readLen, int refLen, int verbosity,
                              int matchScore, int mismatchScore, int gapOpenScore,
                              int gapExtensionScore)
 {
     long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
     std::string output;
 
-    TSequence sequenceH = s1;
-    TSequence sequenceV = s2;
+    TSequence sequenceH = read;
+    TSequence sequenceV = ref;
 
     Align<Dna5String, ArrayGaps> alignment;
     resize(rows(alignment), 2);
@@ -482,7 +482,7 @@ char * endExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int ver
     assignSource(row(alignment, 1), sequenceV);
     Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
 
-    // The only free gaps are at the end of s2 (the reference sequence).
+    // The only free gaps are at the end of ref (the reference sequence).
     AlignConfig<false, false, true, false> alignConfig;
     int score = globalAlignment(alignment, scoringScheme, alignConfig);
 
@@ -491,9 +491,9 @@ char * endExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int ver
 
 
 // This function returns a list of the k-mers common to the two sequences.
-std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, double expectedSlope,
+std::vector<CommonKmer> getCommonKmers(std::string & read, std::string & ref, double expectedSlope,
                                        int verbosity, std::string & output,
-                                       KmerSets * refKmerSets, KmerSets * readKmerSets)
+                                       KmerSets * readKmerSets, KmerSets * refKmerSets)
 {
     std::vector<CommonKmer> commonKmers;
     double rotationAngle = CommonKmer::getRotationAngle(expectedSlope);
@@ -503,22 +503,9 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
     // large k-mer. Sizes too small will give fewer k-mers because there are fewer possible k-mers.
     // Though we scale the value a little by multiplying by the k-mer size. This slightly pushs the
     // function towards larger k-mers.
-
     int startingKSize = 8;
-
-    // The order used is based not on s1 or s2 but shorter sequence vs longer sequence.
-    std::string * shorter = s1;
-    std::string * longer = s2;
-    bool seq1IsShorter = true;
-    if (s1->length() > s2->length())
-    {
-        std::swap(shorter, longer);
-        seq1IsShorter = false;
-    }
-
     int kSize = startingKSize;
-    long long commonKmerCount = getCommonKmerCount(shorter, longer, kSize,
-                                                   refKmerSets, readKmerSets);
+    long long commonKmerCount = getCommonKmerCount(read, ref, kSize, readKmerSets, refKmerSets);
     long long bestScore = commonKmerCount * kSize;
     int bestK = kSize;
     if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
@@ -527,8 +514,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
     while (true)
     {
         ++kSize;
-        commonKmerCount = getCommonKmerCount(shorter, longer, kSize,
-                                                   refKmerSets, readKmerSets);
+        commonKmerCount = getCommonKmerCount(read, ref, kSize, readKmerSets, refKmerSets);
         long long score = commonKmerCount * kSize;
         if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
         if (score > bestScore)
@@ -547,8 +533,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
         while (true)
         {
             --kSize;
-            commonKmerCount = getCommonKmerCount(shorter, longer, kSize,
-                                                   refKmerSets, readKmerSets);
+            commonKmerCount = getCommonKmerCount(read, ref, kSize, readKmerSets, refKmerSets);
             long long score = commonKmerCount * kSize;
             if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
             if (score > bestScore)
@@ -566,21 +551,18 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
 
     // Now that we've chose a good k-mer size, build the vector of CommonKmer objects.
     kSize = bestK;
-    std::map<std::string, std::vector<int> > commonLocations = getCommonLocations(shorter, longer, kSize);
-    int kCount = shorter->size() - kSize;
+    std::map<std::string, std::vector<int> > commonLocations = getCommonLocations(read, ref, kSize);
+    int kCount = read.size() - kSize;
     for (int i = 0; i < kCount; ++i)
     {
-        std::string kmer = shorter->substr(i, kSize);
+        std::string kmer = read.substr(i, kSize);
         if (commonLocations.find(kmer) != commonLocations.end()) // If kmer is in commonLocations
         {
-            int shorterPos = i;
+            int readPos = i;
             for (int j = 0; j < commonLocations[kmer].size(); ++j)
             {
-                int longerPos = commonLocations[kmer][j];
-                if (seq1IsShorter)
-                    commonKmers.push_back(CommonKmer(kmer, shorterPos, longerPos, rotationAngle));
-                else
-                    commonKmers.push_back(CommonKmer(kmer, longerPos, shorterPos, rotationAngle));
+                int refPos = commonLocations[kmer][j];
+                commonKmers.push_back(CommonKmer(kmer, readPos, refPos, rotationAngle));
             }
         }
     }
@@ -590,24 +572,24 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
 
 
 // This function creates a map where the key is a kmer sequence and the value is a vector of 
-// sequence positions for the longer sequence.
-std::map<std::string, std::vector<int> > getCommonLocations(std::string * shorter, std::string * longer,
+// sequence positions for the reference sequence.
+std::map<std::string, std::vector<int> > getCommonLocations(std::string & read, std::string & ref,
                                                             int kSize)
 {
-    // Build a set of all k-mers in the shorter sequence.
-    std::set<std::string> shorterSeqKmers;
-    int kCount = shorter->size() - kSize;
+    // Build a set of all k-mers in the read sequence.
+    std::set<std::string> readSeqKmers;
+    int kCount = read.size() - kSize;
     for (int i = 0; i < kCount; ++i)
-        shorterSeqKmers.insert(shorter->substr(i, kSize));
+        readSeqKmers.insert(read.substr(i, kSize));
 
-    // Loop through the longer sequence, and for all kmers also present in the shorter sequence,
+    // Loop through the reference sequence, and for all kmers also present in the read sequence,
     // add to the map.
     std::map<std::string, std::vector<int> > commonLocations;
-    kCount = longer->size() - kSize;
+    kCount = ref.size() - kSize;
     for (int i = 0; i < kCount; ++i)
     {
-        std::string kmer = longer->substr(i, kSize);
-        if (shorterSeqKmers.find(kmer) != shorterSeqKmers.end()) // If kmer is in shorterSeqKmers
+        std::string kmer = ref.substr(i, kSize);
+        if (readSeqKmers.find(kmer) != readSeqKmers.end()) // If kmer is in readSeqKmers
         {
             if (commonLocations.find(kmer) == commonLocations.end()) // If kmer is not in commonLocations
                 commonLocations[kmer] = std::vector<int>();
@@ -618,26 +600,30 @@ std::map<std::string, std::vector<int> > getCommonLocations(std::string * shorte
 }
 
 // This function returns the number of k-mers the two sequences have in common.
-long long getCommonKmerCount(std::string * shorter, std::string * longer, int kSize,
-                             KmerSets * refKmerSets, KmerSets * readKmerSets)
+long long getCommonKmerCount(std::string & read, std::string & ref, int kSize,
+                             KmerSets * readKmerSets, KmerSets * refKmerSets)
 {
-    // Build a set of all k-mers in the shorter sequence.
-    std::unordered_set<std::string> shorterSeqKmers;
-    int kCount = shorter->size() - kSize;
+    // Build a set of all k-mers in the read sequence.
+    std::unordered_set<std::string> readKmers;
+    int kCount = read.size() - kSize;
     for (int i = 0; i < kCount; ++i)
-        shorterSeqKmers.insert(shorter->substr(i, kSize));
+        readKmers.insert(read.substr(i, kSize));
 
-    // Build a set of all k-mers in the longer sequence.
-    std::unordered_set<std::string> longerSeqKmers;
-    kCount = longer->size() - kSize;
+    // Build a set of all k-mers in the reference sequence.
+    std::unordered_set<std::string> refKmers;
+    kCount = ref.size() - kSize;
     for (int i = 0; i < kCount; ++i)
-        longerSeqKmers.insert(longer->substr(i, kSize));
+        refKmers.insert(ref.substr(i, kSize));
 
     // Count the k-mers in both sets.
+    std::unordered_set<std::string> * smallerSet = &readKmers;
+    std::unordered_set<std::string> * largerSet = &refKmers;
+    if (readKmers.size() > refKmers.size())
+        std::swap(smallerSet, largerSet);
     int intersectionSize = 0;
-    for (std::unordered_set<std::string>::iterator i = shorterSeqKmers.begin(); i != shorterSeqKmers.end(); ++i)
+    for (std::unordered_set<std::string>::iterator i = smallerSet->begin(); i != smallerSet->end(); ++i)
     {
-        if (longerSeqKmers.find(*i) != longerSeqKmers.end())
+        if (largerSet->find(*i) != largerSet->end())
             ++intersectionSize;
     }
     return intersectionSize;
@@ -648,19 +634,19 @@ long long getCommonKmerCount(std::string * shorter, std::string * longer, int kS
 // This function turns an alignment into a string which has the start/end positions, the CIGAR and
 // the time it took to align.
 char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment,
-                                          int s2Offset, long long startTime, std::string output,
+                                          int refOffset, long long startTime, std::string output,
                                           bool startImmediately, bool goToEnd)
 {
     // Extract the alignment sequences into C++ strings, as the TRow type doesn't seem to have
     // constant time random access.
     std::ostringstream stream1;
     stream1 << row(*alignment, 0);
-    std::string s1Alignment =  stream1.str();
+    std::string readAlignment =  stream1.str();
     std::ostringstream stream2;
     stream2 << row(*alignment, 1);
-    std::string s2Alignment =  stream2.str();
+    std::string refAlignment =  stream2.str();
 
-    int alignmentLength = std::max(s1Alignment.size(), s2Alignment.size());
+    int alignmentLength = std::max(readAlignment.size(), refAlignment.size());
     if (alignmentLength == 0)
         return cppStringToCString(output + ";Failed: alignment length zero");
 
@@ -668,36 +654,36 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
     std::string cigarString;
     CigarType currentCigarType;
     int currentCigarLength = 0;
-    int s1Start = -1, s2Start = -1;
-    int s1Bases = 0, s2Bases = 0;
+    int readStart = -1, refStart = -1;
+    int readBases = 0, refBases = 0;
 
     bool alignmentStarted = false;
-    bool s1Started = false, s2Started = false;
+    bool readStarted = false, refStarted = false;
 
     if (startImmediately)
     {
         alignmentStarted = true;
-        s1Started = true;
-        s2Started = true;
-        s1Start = 0;
-        s2Start = 0;
+        readStarted = true;
+        refStarted = true;
+        readStart = 0;
+        refStart = 0;
     }
 
     for (int i = 0; i < alignmentLength; ++i)
     {
-        char base1 = s1Alignment[i];
-        char base2 = s2Alignment[i];
+        char base1 = readAlignment[i];
+        char base2 = refAlignment[i];
 
         // We consider the alignment to have started when we've encountered a base in both
         // sequences (though not necessarily at the same time).
         if (base1 != '-')
-            s1Started = true;
+            readStarted = true;
         if (base2 != '-')
-            s2Started = true;
-        if (s1Started && s2Started && !alignmentStarted)
+            refStarted = true;
+        if (readStarted && refStarted && !alignmentStarted)
         {
-            s1Start = s1Bases;
-            s2Start = s2Bases;
+            readStart = readBases;
+            refStart = refBases;
             alignmentStarted = true;
         }
 
@@ -714,22 +700,22 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
         }
 
         if (base1 != '-')
-            ++s1Bases;
+            ++readBases;
         if (base2 != '-')
-            ++s2Bases;
+            ++refBases;
     }
 
-    int s1End = s1Bases;
-    int s2End = s2Bases;
+    int readEnd = readBases;
+    int refEnd = refBases;
     if (currentCigarType == INSERTION && !goToEnd)
     {
         currentCigarType = CLIP;
-        s1End -= currentCigarLength;
+        readEnd -= currentCigarLength;
     }
     else if (currentCigarType == DELETION && !goToEnd)
     {
         currentCigarType = NOTHING;
-        s2End -= currentCigarLength;
+        refEnd -= currentCigarLength;
     }
     cigarString.append(getCigarPart(currentCigarType, currentCigarLength));
 
@@ -738,10 +724,10 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
 
     std::string finalString = output + ";" + 
                               cigarString + ";" +
-                              std::to_string(s1Start) + ";" + 
-                              std::to_string(s1End) + ";" + 
-                              std::to_string(s2Start + s2Offset) + ";" + 
-                              std::to_string(s2End + s2Offset) + ";" + 
+                              std::to_string(readStart) + ";" + 
+                              std::to_string(readEnd) + ";" + 
+                              std::to_string(refStart + refOffset) + ";" + 
+                              std::to_string(refEnd + refOffset) + ";" + 
                               std::to_string(millisecs);
 
     return cppStringToCString(finalString);
@@ -926,17 +912,17 @@ void linearRegression(std::vector<CommonKmer> & pts, double * slope, double * in
 
 
 void parseKmerLocationsFromString(std::string & str, std::vector<int> & v1, std::vector<int> & v2,
-                                  int s2Offset)
+                                  int refOffset)
 {
     std::stringstream ss(str);
     while(ss.good())
     {
-        std::string s1Location;
-        std::string s2Location;
-        std::getline(ss, s1Location, ',');
-        std::getline(ss, s2Location, ',');
-        v1.push_back(std::stoi(s1Location));
-        v2.push_back(std::stoi(s2Location) - s2Offset);
+        std::string readLocation;
+        std::string refLocation;
+        std::getline(ss, readLocation, ',');
+        std::getline(ss, refLocation, ',');
+        v1.push_back(std::stoi(readLocation));
+        v2.push_back(std::stoi(refLocation) - refOffset);
     }
 }
 

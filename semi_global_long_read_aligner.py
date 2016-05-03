@@ -57,87 +57,11 @@ VERBOSITY controls how much the script prints to the screen.
 '''
 VERBOSITY = 0
 
+'''
+This script makes use of several C++ functions which are in seqan_align.so. They are wrapped in
+similarly named Python functions.
+'''
 C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_align.so'))
-
-'''
-This function conducts a semi-global alignment surrounding the given line. Since the search is
-limited to a narrow band it is much more efficient than an exhaustive search.
-'''
-C_LIB.bandedSemiGlobalAlignment.argtypes = [c_char_p, # Read sequence
-                                            c_int,    # Read length
-                                            c_char_p, # Reference sequence
-                                            c_int,    # Reference length
-                                            c_int,    # Reference start offset
-                                            c_double, # Slope
-                                            c_double, # Intercept
-                                            c_int,    # K-mer size
-                                            c_int,    # Band size
-                                            c_int,    # Verbosity
-                                            c_int,    # Match score
-                                            c_int,    # Mismatch score
-                                            c_int,    # Gap open score
-                                            c_int,    # Gap extension score
-                                            c_char_p] # K-mer location string
-C_LIB.bandedSemiGlobalAlignment.restype = c_void_p    # String describing alignment
-
-'''
-This function looks for the most likely line representing the alignment. It is used to get a
-line to be given to C_LIB.bandedSemiGlobalAlignment.
-'''
-C_LIB.findAlignmentLines.argtypes = [c_char_p, # Read sequence
-                                     c_char_p, # Read name
-                                     c_char_p, # Reference sequence
-                                     c_char_p, # Reference name
-                                     c_double, # Expected slope
-                                     c_int,    # Verbosity
-                                     c_void_p, # Read KmerSets pointer
-                                     c_void_p] # Reference KmerSets pointer
-C_LIB.findAlignmentLines.restype = c_void_p    # String describing the found line(s)
-
-'''
-This function is used to conduct a short alignment for the sake of extending a GraphMap alignment.
-'''
-C_LIB.startExtensionAlignment.argtypes = [c_char_p, # Sequence 1
-                                          c_char_p, # Sequence 2
-                                          c_int,    # Sequence 1 length
-                                          c_int,    # Sequence 2 length
-                                          c_int,    # Verbosity
-                                          c_int,    # Match score
-                                          c_int,    # Mismatch score
-                                          c_int,    # Gap open score
-                                          c_int]    # Gap extension score
-C_LIB.startExtensionAlignment.restype = c_void_p    # String describing alignment
-
-'''
-This function is used to conduct a short alignment for the sake of extending a GraphMap alignment.
-'''
-C_LIB.endExtensionAlignment.argtypes = [c_char_p, # Sequence 1
-                                        c_char_p, # Sequence 2
-                                        c_int,    # Sequence 1 length
-                                        c_int,    # Sequence 2 length
-                                        c_int,    # Verbosity
-                                        c_int,    # Match score
-                                        c_int,    # Mismatch score
-                                        c_int,    # Gap open score
-                                        c_int]    # Gap extension score
-C_LIB.endExtensionAlignment.restype = c_void_p    # String describing alignment
-
-'''
-This function cleans up the heap memory for the C strings returned by the other C functions. It
-must be called after them.
-'''
-C_LIB.free_c_string.argtypes = [c_void_p]
-C_LIB.free_c_string.restype = None
-
-'''
-These functions make/delete a C++ object that will be used during line-finding.
-'''
-C_LIB.newKmerSets.argtypes = []
-C_LIB.newKmerSets.restype = c_void_p
-C_LIB.deleteKmerSets.argtypes = [c_void_p]
-C_LIB.deleteKmerSets.restype = None
-
-
 
 
 def main():
@@ -851,22 +775,9 @@ def make_seqan_alignment_all_lines(read, ref, rev_comp,
     it got one alignment (common) and a list of more than one means it got multiple alignments (not
     common but possible).
     '''
-    if rev_comp:
-        read_seq = reverse_complement(read.sequence)
-        read_name = read.name + "-"
-    else:
-        read_seq = read.sequence
-        read_name = read.name + "+"
-
-    # Get the alignment line(s).
-    ptr = C_LIB.findAlignmentLines(read_seq, read_name, ref.sequence, ref.name,
-                                   expected_ref_to_read_ratio, VERBOSITY,
-                                   read_kmer_sets_ptr, ref_kmer_sets_ptr)
-    line_result = cast(ptr, c_char_p).value
-    C_LIB.free_c_string(ptr)
-
-    line_finding_output, milliseconds, line_result = line_result.split(';', 2)
-    output = line_finding_output
+    line_result = find_alignment_lines(read, ref, rev_comp, expected_ref_to_read_ratio,
+                                       read_kmer_sets_ptr, ref_kmer_sets_ptr)
+    output, milliseconds, line_result = line_result.split(';', 2)
 
     if VERBOSITY > 3:
         output += '  Line finding milliseconds: ' + milliseconds + '\n'
@@ -962,15 +873,8 @@ def run_one_banded_seqan_alignment(read, ref, rev_comp, scoring_scheme, band_siz
     if band_size > shortest_seq_len:
         band_size = shortest_seq_len
 
-    ptr = C_LIB.bandedSemiGlobalAlignment(read_seq, len(read_seq),
-                                          trimmed_ref_seq, len(trimmed_ref_seq), trimmed_ref_start,
-                                          line.slope, line.intercept, line.k_size, band_size,
-                                          VERBOSITY,
-                                          3, -6, -5, -2,
-                                          line.kmer_locations)
-    result = cast(ptr, c_char_p).value    
-    C_LIB.free_c_string(ptr)
-
+    result = banded_semi_global_alignment(read_seq, trimmed_ref_seq, trimmed_ref_start, line,
+                                          band_size, scoring_scheme)
     alignment_output, result = result.split(';', 1)
     output += alignment_output
 
@@ -1612,14 +1516,8 @@ class Alignment(object):
             cigar_length_before = len(self.cigar)
 
         # Call the C++ function to do the actual alignment.
-        ptr = C_LIB.startExtensionAlignment(realigned_read_seq, realigned_ref_seq,
-                                            len(realigned_read_seq), len(realigned_ref_seq),
-                                            VERBOSITY, scoring_scheme.match,
-                                            scoring_scheme.mismatch, scoring_scheme.gap_open,
-                                            scoring_scheme.gap_extend)
-        alignment_result = cast(ptr, c_char_p).value    
-        C_LIB.free_c_string(ptr)
-
+        alignment_result = start_extension_alignment(realigned_read_seq, realigned_ref_seq,
+                                                     scoring_scheme)
         seqan_parts = alignment_result.split(';')
         assert len(seqan_parts) >= 7
 
@@ -1681,14 +1579,8 @@ class Alignment(object):
             cigar_length_before = len(self.cigar)
 
         # Call the C++ function to do the actual alignment.
-        ptr = C_LIB.endExtensionAlignment(realigned_read_seq, realigned_ref_seq,
-                                          len(realigned_read_seq), len(realigned_ref_seq),
-                                          VERBOSITY, scoring_scheme.match,
-                                          scoring_scheme.mismatch, scoring_scheme.gap_open,
-                                          scoring_scheme.gap_extend)
-        alignment_result = cast(ptr, c_char_p).value    
-        C_LIB.free_c_string(ptr)
-
+        alignment_result = end_extension_alignment(realigned_read_seq, realigned_ref_seq,
+                                                   scoring_scheme)
         seqan_parts = alignment_result.split(';')
         assert len(seqan_parts) >= 7
 
@@ -1836,6 +1728,151 @@ class Alignment(object):
         the read and the reference (preventing the alignment from being semi-global).
         '''
         return self.get_missing_bases_at_start() + self.get_missing_bases_at_end()
+
+
+
+'''
+This function conducts a semi-global alignment surrounding the given line. Since the search is
+limited to a narrow band it is much more efficient than an exhaustive search.
+'''
+C_LIB.bandedSemiGlobalAlignment.argtypes = [c_char_p, # Read sequence
+                                            c_int,    # Read length
+                                            c_char_p, # Reference sequence
+                                            c_int,    # Reference length
+                                            c_int,    # Reference start offset
+                                            c_double, # Slope
+                                            c_double, # Intercept
+                                            c_int,    # K-mer size
+                                            c_int,    # Band size
+                                            c_int,    # Verbosity
+                                            c_int,    # Match score
+                                            c_int,    # Mismatch score
+                                            c_int,    # Gap open score
+                                            c_int,    # Gap extension score
+                                            c_char_p] # K-mer location string
+C_LIB.bandedSemiGlobalAlignment.restype = c_void_p    # String describing alignment
+
+def banded_semi_global_alignment(read_seq, ref_seq, ref_offset, line, band_size, scoring_scheme):
+    '''
+    Python wrapper for bandedSemiGlobalAlignment C++ function.
+    '''
+    ptr = C_LIB.bandedSemiGlobalAlignment(read_seq, len(read_seq),
+                                          ref_seq, len(ref_seq), ref_offset,
+                                          line.slope, line.intercept, line.k_size, band_size,
+                                          VERBOSITY,
+                                          scoring_scheme.match, scoring_scheme.mismatch,
+                                          scoring_scheme.gap_open, scoring_scheme.gap_extend,
+                                          line.kmer_locations)
+    return c_string_to_python_string(ptr)
+
+
+'''
+This function looks for the most likely line representing the alignment. It is used to get a
+line to be given to C_LIB.bandedSemiGlobalAlignment.
+'''
+C_LIB.findAlignmentLines.argtypes = [c_char_p, # Read sequence
+                                     c_char_p, # Read name
+                                     c_char_p, # Reference sequence
+                                     c_char_p, # Reference name
+                                     c_double, # Expected slope
+                                     c_int,    # Verbosity
+                                     c_void_p, # Read KmerSets pointer
+                                     c_void_p] # Reference KmerSets pointer
+C_LIB.findAlignmentLines.restype = c_void_p    # String describing the found line(s)
+
+def find_alignment_lines(read, ref, rev_comp, expected_slope,
+                         read_kmer_sets_ptr, ref_kmer_sets_ptr):
+    '''
+    Python wrapper for findAlignmentLines C++ function.
+    '''
+    if rev_comp:
+        read_seq = reverse_complement(read.sequence)
+        read_name = read.name + "-"
+    else:
+        read_seq = read.sequence
+        read_name = read.name + "+"
+
+    ptr = C_LIB.findAlignmentLines(read_seq, read_name, ref.sequence, ref.name,
+                                   expected_slope, VERBOSITY,
+                                   read_kmer_sets_ptr, ref_kmer_sets_ptr)
+    return c_string_to_python_string(ptr)
+
+
+
+'''
+These functions are used to conduct short alignments for the sake of extending the start and end of
+a GraphMap alignment.
+'''
+C_LIB.startExtensionAlignment.argtypes = [c_char_p, # Read sequence
+                                          c_char_p, # Reference sequence
+                                          c_int,    # Read sequence length
+                                          c_int,    # Reference sequence length
+                                          c_int,    # Verbosity
+                                          c_int,    # Match score
+                                          c_int,    # Mismatch score
+                                          c_int,    # Gap open score
+                                          c_int]    # Gap extension score
+C_LIB.startExtensionAlignment.restype = c_void_p    # String describing alignment
+
+C_LIB.endExtensionAlignment.argtypes = [c_char_p, # Read sequence
+                                        c_char_p, # Reference sequence
+                                        c_int,    # Read sequence length
+                                        c_int,    # Reference sequence length
+                                        c_int,    # Verbosity
+                                        c_int,    # Match score
+                                        c_int,    # Mismatch score
+                                        c_int,    # Gap open score
+                                        c_int]    # Gap extension score
+C_LIB.endExtensionAlignment.restype = c_void_p    # String describing alignment
+
+
+def start_extension_alignment(realigned_read_seq, realigned_ref_seq, scoring_scheme):
+    '''
+    Python wrapper for startExtensionAlignment C++ function.
+    '''
+    ptr = C_LIB.startExtensionAlignment(realigned_read_seq, realigned_ref_seq,
+                                        len(realigned_read_seq), len(realigned_ref_seq),
+                                        VERBOSITY,
+                                        scoring_scheme.match, scoring_scheme.mismatch,
+                                        scoring_scheme.gap_open, scoring_scheme.gap_extend)
+    return c_string_to_python_string(ptr)
+
+def end_extension_alignment(realigned_read_seq, realigned_ref_seq, scoring_scheme):
+    '''
+    Python wrapper for endExtensionAlignment C++ function.
+    '''
+    ptr = C_LIB.endExtensionAlignment(realigned_read_seq, realigned_ref_seq,
+                                      len(realigned_read_seq), len(realigned_ref_seq),
+                                      VERBOSITY,
+                                      scoring_scheme.match, scoring_scheme.mismatch,
+                                      scoring_scheme.gap_open, scoring_scheme.gap_extend)
+    return c_string_to_python_string(ptr)
+
+
+'''
+This function cleans up the heap memory for the C strings returned by the other C functions. It
+must be called after them.
+'''
+C_LIB.free_c_string.argtypes = [c_void_p]
+C_LIB.free_c_string.restype = None
+
+def c_string_to_python_string(c_string):
+    '''
+    This function casts a C string to a Python string and then calls a function to delete the C
+    string from the heap.
+    '''
+    python_string = cast(c_string, c_char_p).value    
+    C_LIB.free_c_string(c_string)
+    return python_string
+
+
+'''
+These functions make/delete a C++ object that will be used during line-finding.
+'''
+C_LIB.newKmerSets.argtypes = []
+C_LIB.newKmerSets.restype = c_void_p
+C_LIB.deleteKmerSets.argtypes = [c_void_p]
+C_LIB.deleteKmerSets.restype = None
 
 
 if __name__ == '__main__':

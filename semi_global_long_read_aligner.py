@@ -63,11 +63,11 @@ C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_al
 This function conducts a semi-global alignment surrounding the given line. Since the search is
 limited to a narrow band it is much more efficient than an exhaustive search.
 '''
-C_LIB.bandedSemiGlobalAlignment.argtypes = [c_char_p, # Sequence 1 (read)
-                                            c_int,    # Sequence 1 length
-                                            c_char_p, # Sequence 2 (reference)
-                                            c_int,    # Sequence 2 length
-                                            c_int,    # Sequence 2 start offset
+C_LIB.bandedSemiGlobalAlignment.argtypes = [c_char_p, # Read sequence
+                                            c_int,    # Read length
+                                            c_char_p, # Reference sequence
+                                            c_int,    # Reference length
+                                            c_int,    # Reference start offset
                                             c_double, # Slope
                                             c_double, # Intercept
                                             c_int,    # K-mer size
@@ -84,8 +84,10 @@ C_LIB.bandedSemiGlobalAlignment.restype = c_void_p    # String describing alignm
 This function looks for the most likely line representing the alignment. It is used to get a
 line to be given to C_LIB.bandedSemiGlobalAlignment.
 '''
-C_LIB.findAlignmentLines.argtypes = [c_char_p, # Sequence 1
-                                     c_char_p, # Sequence 2
+C_LIB.findAlignmentLines.argtypes = [c_char_p, # Read sequence
+                                     c_char_p, # Read name
+                                     c_char_p, # Reference sequence
+                                     c_char_p, # Reference name
                                      c_double, # Expected slope
                                      c_int,    # Verbosity
                                      c_void_p, # Read KmerSets pointer
@@ -855,7 +857,7 @@ def make_seqan_alignment_all_lines(read, ref, rev_comp,
         read_seq = read.sequence
 
     # Get the alignment line(s).
-    ptr = C_LIB.findAlignmentLines(read_seq, ref.sequence,
+    ptr = C_LIB.findAlignmentLines(read_seq, read.name, ref.sequence, ref.name,
                                    expected_ref_to_read_ratio, VERBOSITY,
                                    read_kmer_sets_ptr, ref_kmer_sets_ptr)
     line_result = cast(ptr, c_char_p).value

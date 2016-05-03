@@ -7,11 +7,13 @@
 #include <seqan/seeds.h>
 #include <string>
 #include <set>
+#include <unordered_set>
 #include <tuple>
 #include <vector>
 #include <map>
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 using namespace seqan;
 using namespace std::chrono;
@@ -67,6 +69,7 @@ void free_c_string(char * p);
 void addBridgingSeed(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int vEnd);
 std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, double expectedSlope,
                                        int verbosity, std::string & output);
+long long getCommonKmerCount(std::string * shorter, std::string * longer, int kSize);
 std::map<std::string, std::vector<int> > getCommonLocations(std::string * s1, std::string * s2, int kSize);
 char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment,
                                           int s2Offset, long long startTime, std::string output,
@@ -487,24 +490,22 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
     }
 
     int kSize = startingKSize;
-    std::map<std::string, std::vector<int> > commonLocations;
-    commonLocations = getCommonLocations(shorter, longer, kSize);
-    double bestScore = double(commonLocations.size()) * kSize;
+    long long commonKmerCount = getCommonKmerCount(shorter, longer, kSize);
+    long long bestScore = commonKmerCount * kSize;
     int bestK = kSize;
-    if (verbosity > 3) printKmerSize(kSize, commonLocations.size(), output);
+    if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
 
     // Try larger k sizes, to see if that helps.
     while (true)
     {
         ++kSize;
-        std::map<std::string, std::vector<int> > newCommonLocations = getCommonLocations(shorter, longer, kSize);
-        double score = double(newCommonLocations.size()) * kSize;
-        if (verbosity > 3) printKmerSize(kSize, newCommonLocations.size(), output);
+        commonKmerCount = getCommonKmerCount(shorter, longer, kSize);
+        long long score = commonKmerCount * kSize;
+        if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
         if (score > bestScore)
         {
             bestK = kSize;
             bestScore = score;
-            commonLocations = newCommonLocations;
         }
         else
             break;
@@ -517,14 +518,13 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
         while (true)
         {
             --kSize;
-            std::map<std::string, std::vector<int> > newCommonLocations = getCommonLocations(shorter, longer, kSize);
-            double score = double(newCommonLocations.size()) * kSize;
-            if (verbosity > 3) printKmerSize(kSize, newCommonLocations.size(), output);
+            commonKmerCount = getCommonKmerCount(shorter, longer, kSize);
+            long long score = commonKmerCount * kSize;
+            if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
             if (score > bestScore)
             {
                 bestK = kSize;
                 bestScore = score;
-                commonLocations = newCommonLocations;
             }
             else
                 break;
@@ -534,8 +534,9 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
     if (verbosity > 3)
         output += "  Best k size: " + std::to_string(bestK) + "\n";
 
-    // Build the vector of CommonKmer objects.
+    // Now that we've chose a good k-mer size, build the vector of CommonKmer objects.
     kSize = bestK;
+    std::map<std::string, std::vector<int> > commonLocations = getCommonLocations(shorter, longer, kSize);
     int kCount = shorter->size() - kSize;
     for (int i = 0; i < kCount; ++i)
     {
@@ -559,9 +560,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
 
 
 // This function creates a map where the key is a kmer sequence and the value is a vector of 
-// sequence positions for the longer sequence. If the positions are for sequence 1, then it sets
-// *seq1Positions to true. If the positions are for sequence 2, then it sets *seq1Positions to
-// false.
+// sequence positions for the longer sequence.
 std::map<std::string, std::vector<int> > getCommonLocations(std::string * shorter, std::string * longer,
                                                             int kSize)
 {
@@ -588,6 +587,30 @@ std::map<std::string, std::vector<int> > getCommonLocations(std::string * shorte
     return commonLocations;
 }
 
+// This function returns the number of k-mers the two sequences have in common.
+long long getCommonKmerCount(std::string * shorter, std::string * longer, int kSize)
+{
+    // Build a set of all k-mers in the shorter sequence.
+    std::unordered_set<std::string> shorterSeqKmers;
+    int kCount = shorter->size() - kSize;
+    for (int i = 0; i < kCount; ++i)
+        shorterSeqKmers.insert(shorter->substr(i, kSize));
+
+    // Build a set of all k-mers in the longer sequence.
+    std::unordered_set<std::string> longerSeqKmers;
+    kCount = longer->size() - kSize;
+    for (int i = 0; i < kCount; ++i)
+        longerSeqKmers.insert(longer->substr(i, kSize));
+
+    // Count the k-mers in both sets.
+    int intersectionSize = 0;
+    for (std::unordered_set<std::string>::iterator i = shorterSeqKmers.begin(); i != shorterSeqKmers.end(); ++i)
+    {
+        if (longerSeqKmers.find(*i) != longerSeqKmers.end())
+            ++intersectionSize;
+    }
+    return intersectionSize;
+}
 
 
 

@@ -16,6 +16,7 @@
 #include <cmath>
 #include <utility>
 #include <iterator>
+#include <mutex>
 
 using namespace seqan;
 using namespace std::chrono;
@@ -61,7 +62,7 @@ public:
 
 private:
     std::unordered_map<std::string, std::unordered_set<std::string> *> m_kmerSets;
-    std::unordered_set<std::string> * makeKmerSet(std::string & sequence, int kSize);
+    std::mutex m_mutex;
 };
 
 
@@ -74,20 +75,23 @@ char * bandedSemiGlobalAlignment(char * s1, int s1Len,
                                  int gapOpenScore, int gapExtensionScore,
                                  char * kmerLocations);
 char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double expectedSlope,
-                          int verbosity);
+                          int verbosity, KmerSets * kmerSets);
 char * startExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int verbosity,
                                int matchScore, int mismatchScore, int gapOpenScore,
                                int gapExtensionScore);
 char * endExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int verbosity,
                              int matchScore, int mismatchScore, int gapOpenScore,
                              int gapExtensionScore);
-void free_c_string(char * p);
+void free_c_string(char * p) {free(p);}
+KmerSets * newKmerSets() {return new KmerSets();}
+void deleteKmerSets(KmerSets * kmerSets) {delete kmerSets;}
+
 
 // These functions are internal to this C++ code.
 void addBridgingSeed(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int vEnd);
 std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, double expectedSlope,
-                                       int verbosity, std::string & output);
-long long getCommonKmerCount(std::string * shorter, std::string * longer, int kSize);
+                                       int verbosity, std::string & output, KmerSets * kmerSets);
+long long getCommonKmerCount(std::string * shorter, std::string * longer, int kSize, KmerSets * kmerSets);
 std::map<std::string, std::vector<int> > getCommonLocations(std::string * s1, std::string * s2, int kSize);
 char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment,
                                           int s2Offset, long long startTime, std::string output,
@@ -110,6 +114,7 @@ void parseKmerLocationsFromString(std::string & str, std::vector<int> & v1, std:
 std::string getKmerTable(std::vector<CommonKmer> & commonKmers);
 std::string getSeedChainTable(String<TSeed> & seedChain);
 void addSeedMerge(TSeedSet & seedSet, TSeed & seed);
+std::unordered_set<std::string> * makeKmerSet(std::string & sequence, int kSize);
 
 
 
@@ -253,7 +258,7 @@ void addBridgingSeed(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int v
 // This function searches for lines in the 2D ref-read space that represent likely semi-global
 // alignments.
 char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double expectedSlope,
-                          int verbosity)
+                          int verbosity, KmerSets * kmerSets)
 {
     long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 
@@ -262,7 +267,7 @@ char * findAlignmentLines(char * s1, char * s2, int s1Len, int s2Len, double exp
     std::string output;
 
     std::vector<CommonKmer> commonKmers = getCommonKmers(&s1Str, &s2Str, expectedSlope,
-                                                         verbosity, output);
+                                                         verbosity, output, kmerSets);
     if (commonKmers.size() < 2)
     {
         long long endTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
@@ -484,7 +489,7 @@ char * endExtensionAlignment(char * s1, char * s2, int s1Len, int s2Len, int ver
 
 // This function returns a list of the k-mers common to the two sequences.
 std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, double expectedSlope,
-                                       int verbosity, std::string & output)
+                                       int verbosity, std::string & output, KmerSets * kmerSets)
 {
     std::vector<CommonKmer> commonKmers;
     double rotationAngle = CommonKmer::getRotationAngle(expectedSlope);
@@ -508,7 +513,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
     }
 
     int kSize = startingKSize;
-    long long commonKmerCount = getCommonKmerCount(shorter, longer, kSize);
+    long long commonKmerCount = getCommonKmerCount(shorter, longer, kSize, kmerSets);
     long long bestScore = commonKmerCount * kSize;
     int bestK = kSize;
     if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
@@ -517,7 +522,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
     while (true)
     {
         ++kSize;
-        commonKmerCount = getCommonKmerCount(shorter, longer, kSize);
+        commonKmerCount = getCommonKmerCount(shorter, longer, kSize, kmerSets);
         long long score = commonKmerCount * kSize;
         if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
         if (score > bestScore)
@@ -536,7 +541,7 @@ std::vector<CommonKmer> getCommonKmers(std::string * s1, std::string * s2, doubl
         while (true)
         {
             --kSize;
-            commonKmerCount = getCommonKmerCount(shorter, longer, kSize);
+            commonKmerCount = getCommonKmerCount(shorter, longer, kSize, kmerSets);
             long long score = commonKmerCount * kSize;
             if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
             if (score > bestScore)
@@ -606,7 +611,7 @@ std::map<std::string, std::vector<int> > getCommonLocations(std::string * shorte
 }
 
 // This function returns the number of k-mers the two sequences have in common.
-long long getCommonKmerCount(std::string * shorter, std::string * longer, int kSize)
+long long getCommonKmerCount(std::string * shorter, std::string * longer, int kSize, KmerSets * kmerSets)
 {
     // Build a set of all k-mers in the shorter sequence.
     std::unordered_set<std::string> shorterSeqKmers;
@@ -734,12 +739,6 @@ char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignme
     return cppStringToCString(finalString);
 }
 
-// Frees dynamically allocated memory for a c string. Called by Python after the string has been
-// received.
-void free_c_string(char * p)
-{
-    free(p);
-}
 
 char * cppStringToCString(std::string cpp_string)
 {
@@ -975,21 +974,28 @@ void addSeedMerge(TSeedSet & seedSet, TSeed & seed)
 // This is the destructor for KmerSets. It cleans up all stuff allocated on the heap.
 KmerSets::~KmerSets()
 {
-    for (std::unordered_map<std::string, std::unordered_set<std::string> *>::iterator i; i == m_kmerSets.begin(); i != m_kmerSets.end())
+    for (std::unordered_map<std::string, std::unordered_set<std::string> *>::iterator i = m_kmerSets.begin(); i != m_kmerSets.end(); ++i)
         delete i->second;
 }
 
 // This function returns a k-mer set for a given sequence and k size. If the k-mer set already
 // exists, it will just return it immediately. If not, it will build it using the sequence.
+// The function is locked by a mutex so multiple threads don't try to build the same k-mer set at
+// the same time.
 std::unordered_set<std::string> * KmerSets::getKmerSet(std::string & name, std::string & sequence, int kSize)
 {
+    m_mutex.lock();
     std::string mapKey = name + std::to_string(kSize);
     if (m_kmerSets.find(mapKey) == m_kmerSets.end())
         m_kmerSets[mapKey] = makeKmerSet(sequence, kSize);
+    m_mutex.unlock();
     return m_kmerSets[mapKey];
 }
 
-std::unordered_set<std::string> * KmerSets::makeKmerSet(std::string & sequence, int kSize)
+
+// This function produces a k-mer set for the given sequence. It allocates it on the heap and so
+// will need to be deleted later.
+std::unordered_set<std::string> * makeKmerSet(std::string & sequence, int kSize)
 {
     std::unordered_set<std::string> * kmerSet = new std::unordered_set<std::string>();
     int kCount = sequence.size() - kSize;

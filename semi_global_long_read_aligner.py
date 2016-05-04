@@ -787,7 +787,7 @@ def seqan_alignment_one_read_one_refs(read, ref, rev_comp,
     line_result = find_alignment_lines(read, ref, rev_comp, expected_ref_to_read_ratio,
                                        read_kmer_sets_ptr, ref_kmer_sets_ptr)
     output, milliseconds, line_result = line_result.split(';', 2)
-
+    
     if VERBOSITY > 3:
         output += '  Line finding milliseconds: ' + milliseconds + '\n'
 

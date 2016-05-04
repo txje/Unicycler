@@ -121,6 +121,7 @@ std::string getSeedChainTable(String<TSeed> & seedChain);
 void addSeedMerge(TSeedSet & seedSet, TSeed & seed);
 std::unordered_set<std::string> * makeKmerSet(std::string & sequence, int kSize);
 double getScoreThreshold(std::vector<CommonKmer> & commonKmers, int verbosity, std::string & output);
+void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdev);
 
 
 
@@ -410,6 +411,26 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
                                     [&minPointCount](std::vector<CommonKmer> i) {return i.size() < minPointCount;}),
                      lineGroups.end());
 
+    // Perform a simple least-squares linear regression on each line group.
+    // If the slope is too far from 1.0, we throw the line out.
+    double minSlope = 0.5; // TO DO: MAKE THIS A PARAMETER?
+    double maxSlope = 1.5; // TO DO: MAKE THIS A PARAMETER?
+    std::vector<double> slopes;
+    std::vector<double> intercepts;
+    std::vector<std::vector<CommonKmer> > filteredLineGroups;
+    for (int i = 0; i < lineGroups.size(); ++i)
+    {
+        double slope, intercept;
+        linearRegression(lineGroups[i], &slope, &intercept);
+        if (slope >= minSlope && slope <= maxSlope)
+        {
+            filteredLineGroups.push_back(lineGroups[i]);
+            slopes.push_back(slope);
+            intercepts.push_back(intercept);
+        }
+    }
+    lineGroups = filteredLineGroups;
+
     if (lineGroups.size() == 0)
     {
         long long endTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
@@ -418,30 +439,21 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
     
     if (verbosity > 3)
         output += "  Lines found:\n";
-    
+
     std::string linesString;
     for (int i = 0; i < lineGroups.size(); ++i)
     {
-        // Perform a simple least-squares linear regression on each line group.
-        // If the slope is too far from 1.0, we throw the line out.
-        double slope, intercept;
-        linearRegression(lineGroups[i], &slope, &intercept);
-        double minSlope = 0.5;
-        double maxSlope = 1.5;
-        if (slope < minSlope || slope > maxSlope)
-            continue;
 
         if (linesString.length() > 0)
             linesString += ";";
-        linesString += std::to_string(slope) + "," + std::to_string(intercept) + "," + std::to_string(kSize);
+        linesString += std::to_string(slopes[i]) + "," + std::to_string(intercepts[i]) + "," + std::to_string(kSize);
 
         // Add the k-mer locations to the returned string.
         for (int j = 0; j < lineGroups[i].size(); ++j)
             linesString += "," + std::to_string(lineGroups[i][j].m_hPosition) + "," + std::to_string(lineGroups[i][j].m_vPosition);
 
         if (verbosity > 3)
-            output += "    slope = " + std::to_string(slope) + ", intercept = " + std::to_string(intercept) + "\n";
-
+            output += "    slope = " + std::to_string(slopes[i]) + ", intercept = " + std::to_string(intercepts[i]) + "\n";
         if (verbosity > 4)
             output += getKmerTable(lineGroups[i]);
     }
@@ -1012,13 +1024,10 @@ double getScoreThreshold(std::vector<CommonKmer> & commonKmers, int verbosity, s
     int ninetyNinthPercentileIndex = int((99.0 * count / 100.0) + 0.5) - 1;
     double firstPercentileScore = scores[firstPercentileIndex];
     double ninetyNinthPercentileScore = scores[ninetyNinthPercentileIndex];
-    double threshold = (firstPercentileScore + ninetyNinthPercentileScore) / 2.0;
     if (verbosity > 4)
     {
         output += "  1st percentile score: " + std::to_string(firstPercentileScore) + "\n";
         output += "  99th percentile score: " + std::to_string(ninetyNinthPercentileScore) + "\n";
-        output += "  testing threshold of " + std::to_string(threshold) + "\n";
-
     }
 
     // We expect the scores to be distributed in three different ways:
@@ -1028,41 +1037,40 @@ double getScoreThreshold(std::vector<CommonKmer> & commonKmers, int verbosity, s
     //  3) Unimodal distribution well over 1.0 (all point are in a line).
 
     // We first distinguish between the unimodal possibilities and the bimodal possibility.
-    // This is done by getting the median and MAD for the scores below and above the threshold.
-    // If the distributions appear to overlap, we call it as unimodal.
-    std::vector<double> scoresBelow;
-    std::vector<double> scoresAbove;
-    for (int i = 0; i < count; ++i)
+    // This is done by getting the mean and stdev for the scores below and above the threshold.
+    // If the distributions appear to overlap, we decide the scores are unimodal.
+    if (ninetyNinthPercentileScore > firstPercentileScore)
     {
-        if (scores[i] < threshold)
-            scoresBelow.push_back(scores[i]);
-        else
-            scoresAbove.push_back(scores[i]);
-    }
-    double lowGroupMedian = getMedian(scoresBelow);
-    double highGroupMedian = getMedian(scoresAbove);
-    std::vector<double> absDevsBelow;
-    absDevsBelow.reserve(scoresBelow.size());
-    for (int i = 0; i < scoresBelow.size(); ++i)
-        absDevsBelow.push_back(fabs(scoresBelow[i] - lowGroupMedian));
-    std::vector<double> absDevsAbove;
-    absDevsAbove.reserve(scoresAbove.size());
-    for (int i = 0; i < scoresAbove.size(); ++i)
-        absDevsAbove.push_back(fabs(scoresAbove[i] - highGroupMedian));
-    std::sort(absDevsBelow.begin(), absDevsBelow.end());
-    std::sort(absDevsAbove.begin(), absDevsAbove.end());
-    double lowGroupMAD = getMedian(absDevsBelow);
-    double highGroupMAD = getMedian(absDevsAbove);
-    double topOfLowGroup = lowGroupMedian + (4.0 * lowGroupMAD);
-    double bottomOfHighGroup = highGroupMedian - (4.0 * highGroupMAD);
+        double threshold = (firstPercentileScore + ninetyNinthPercentileScore) / 2.0;
 
-    // If the low group and high group do not overlap, we conclude that the threshold really does
-    // split the groups apart and we have a bimodal distribution.
-    if (topOfLowGroup < bottomOfHighGroup)
-    {
+        std::vector<double> scoresBelow;
+        std::vector<double> scoresAbove;
+        for (int i = 0; i < count; ++i)
+        {
+            if (scores[i] < threshold)
+                scoresBelow.push_back(scores[i]);
+            else
+                scoresAbove.push_back(scores[i]);
+        }
+        double lowGroupMean, lowGroupStdDev;
+        getMeanAndStDev(scoresBelow, lowGroupMean, lowGroupStdDev);
+        double highGroupMean, highGroupStdDev;
+        getMeanAndStDev(scoresAbove, highGroupMean, highGroupStdDev);
+
+        // The zValue is how many standard deviations away from the means we must go before the
+        // upper and lower distributions meet. A low zValue means the two groups are close and
+        // likely to be two halves of a unimodal distribution. A high zValue means that the
+        // two groups are separate and probably from a bimodal distribution.
+        double zValue = (highGroupMean - lowGroupMean) / (highGroupStdDev + lowGroupStdDev);
+        double zValueCutoff = 2.0; //TO DO: MAKE A PARAMETER?
         if (verbosity > 4)
-            output += "  Scores have bimodal distribution, using score threshold of " + std::to_string(threshold) + "\n";
-        return threshold;
+            output += "  threshold of " + std::to_string(threshold) + " has zValue of " + std::to_string(zValue) + "\n";
+        if (zValue > zValueCutoff)
+        {
+            if (verbosity > 4)
+                output += "  Exceeded threshold, using bimodal distribution\n";
+            return threshold;
+        }
     }
 
     // If the code got here, then we seem to have a unimodal distribution. This means that either
@@ -1071,23 +1079,19 @@ double getScoreThreshold(std::vector<CommonKmer> & commonKmers, int verbosity, s
     // positions. If it's very small, we assume the points all form a line. If it's large, we
     // assume no line.
     double stdDevThreshold = 100.0; // TO DO: come up with a better empirical value for this.
-    double mean = 0.0, devSum = 0.0;
+    std::vector<double> rotatedVPositions;
+    rotatedVPositions.reserve(count);
     for (int i = 0; i < count; ++i)
-        mean += commonKmers[i].m_rotatedVPosition;
-    mean /= count;
-    for (int i = 0; i < count; ++i)
-    {
-        double dev = commonKmers[i].m_rotatedVPosition - mean;
-        devSum += dev * dev;
-    }
-    double stdDev = sqrt(devSum / count);
+        rotatedVPositions.push_back(commonKmers[i].m_rotatedVPosition);
+    double mean, stdDev;
+    getMeanAndStDev(rotatedVPositions, mean, stdDev);
 
     // A low standard deviation means all points are in a line. Set the threshold to 0 so all
     // points are included.
     if (stdDev < stdDevThreshold)
     {
         if (verbosity > 4)
-            output += "  Scores have unimodal distribution, all points in line\n";
+            output += "  Unimodal distribution, all points in line\n";
         return 0.0;
     }
 
@@ -1096,9 +1100,28 @@ double getScoreThreshold(std::vector<CommonKmer> & commonKmers, int verbosity, s
     else
     {
         if (verbosity > 4)
-            output += "  Scores have unimodal distribution, no line detected\n";
+            output += "  Unimodal distribution, no line detected\n";
         return std::numeric_limits<double>::max();
     }
+}
+
+void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdDev)
+{
+    mean = 0.0;
+    stdDev = 0.0;
+    int count = v.size();
+    if (count < 1)
+        return;
+    double devSum = 0.0;
+    for (int i = 0; i < count; ++i)
+        mean += v[i];
+    mean /= count;
+    for (int i = 0; i < count; ++i)
+    {
+        double dev = v[i] - mean;
+        devSum += dev * dev;
+    }
+    stdDev = sqrt(devSum / v.size());
 }
 
 }

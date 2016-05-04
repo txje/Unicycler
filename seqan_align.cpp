@@ -422,12 +422,17 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
     std::string linesString;
     for (int i = 0; i < lineGroups.size(); ++i)
     {
-        if (i > 0)
-            linesString += ";";
-
         // Perform a simple least-squares linear regression on each line group.
+        // If the slope is too far from 1.0, we throw the line out.
         double slope, intercept;
         linearRegression(lineGroups[i], &slope, &intercept);
+        double minSlope = 0.5;
+        double maxSlope = 1.5;
+        if (slope < minSlope || slope > maxSlope)
+            continue;
+
+        if (linesString.length() > 0)
+            linesString += ";";
         linesString += std::to_string(slope) + "," + std::to_string(intercept) + "," + std::to_string(kSize);
 
         // Add the k-mer locations to the returned string.
@@ -1008,15 +1013,19 @@ double getScoreThreshold(std::vector<CommonKmer> & commonKmers, int verbosity, s
     double firstPercentileScore = scores[firstPercentileIndex];
     double ninetyNinthPercentileScore = scores[ninetyNinthPercentileIndex];
     double threshold = (firstPercentileScore + ninetyNinthPercentileScore) / 2.0;
+    if (verbosity > 4)
+    {
+        output += "  1st percentile score: " + std::to_string(firstPercentileScore) + "\n";
+        output += "  99th percentile score: " + std::to_string(ninetyNinthPercentileScore) + "\n";
+        output += "  testing threshold of " + std::to_string(threshold) + "\n";
+
+    }
 
     // We expect the scores to be distributed in three different ways:
     //  1) Unimodal distribution near 1.0 (no line)
     //  2) Bimodal distribution: the first near 1.0 (points not in a line) and the second at a
     //     considerably higher value (points in a line).
     //  3) Unimodal distribution well over 1.0 (all point are in a line).
-
-
-
 
     // We first distinguish between the unimodal possibilities and the bimodal possibility.
     // This is done by getting the median and MAD for the scores below and above the threshold.

@@ -748,18 +748,18 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
         if VERBOSITY > 3:
             output += 'Reference: ' + ref.name + '+\n'
         forward_alignments, forward_alignment_output = \
-                        make_seqan_alignment_all_lines(read, ref, False, scoring_scheme,
-                                                       expected_ref_to_read_ratio,
-                                                       read_kmer_sets_ptr, ref_kmer_sets_ptr)
+                        seqan_alignment_one_read_one_refs(read, ref, False, scoring_scheme,
+                                                          expected_ref_to_read_ratio,
+                                                          read_kmer_sets_ptr, ref_kmer_sets_ptr)
         alignments += forward_alignments
         output += forward_alignment_output
 
         if VERBOSITY > 3:
             output += 'Reference: ' + ref.name + '-\n'
         reverse_alignments, reverse_alignment_output = \
-                        make_seqan_alignment_all_lines(read, ref, True, scoring_scheme,
-                                                       expected_ref_to_read_ratio,
-                                                       read_kmer_sets_ptr, ref_kmer_sets_ptr)
+                        seqan_alignment_one_read_one_refs(read, ref, True, scoring_scheme,
+                                                          expected_ref_to_read_ratio,
+                                                          read_kmer_sets_ptr, ref_kmer_sets_ptr)
         alignments += reverse_alignments
         output += reverse_alignment_output
 
@@ -775,7 +775,7 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
 
     return alignments, output
 
-def make_seqan_alignment_all_lines(read, ref, rev_comp,
+def seqan_alignment_one_read_one_refs(read, ref, rev_comp,
                                    scoring_scheme, expected_ref_to_read_ratio,
                                    read_kmer_sets_ptr, ref_kmer_sets_ptr):
     '''

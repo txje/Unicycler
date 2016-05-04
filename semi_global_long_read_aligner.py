@@ -563,6 +563,7 @@ def load_references(fasta_filename):
     fasta_file = open(fasta_filename, 'r')
     name = ''
     sequence = ''
+    last_progress = 0.0
     for line in fasta_file:
         line = line.strip()
         if not line:
@@ -572,7 +573,11 @@ def load_references(fasta_filename):
                 references.append(Reference(name, sequence))
                 total_bases += len(sequence)
                 if VERBOSITY > 0:
-                    print_progress_line(len(references), num_refs, total_bases)
+                    progress = 100.0 * len(references) / num_refs
+                    progress_rounded_down = float(int(progress))
+                    if progress_rounded_down > last_progress:
+                        print_progress_line(len(references), num_refs, total_bases)
+                        last_progress = progress_rounded_down    
                 name = ''
                 sequence = ''
             name = get_nice_header(line[1:])
@@ -595,6 +600,7 @@ def load_long_reads(fastq_filename):
     '''
     reads = {}
     total_bases = 0
+    last_progress = 0.0
     if VERBOSITY > 0:
         print('Loading reads')
         print('-------------')
@@ -609,7 +615,11 @@ def load_long_reads(fastq_filename):
         reads[name] = Read(name, sequence, qualities)
         total_bases += len(sequence)
         if VERBOSITY > 0:
-            print_progress_line(len(reads), num_reads, total_bases)
+            progress = 100.0 * len(reads) / num_reads
+            progress_rounded_down = float(int(progress))
+            if progress_rounded_down > last_progress:
+                print_progress_line(len(reads), num_reads, total_bases)
+                last_progress = progress_rounded_down    
     fastq.close()
     if VERBOSITY > 0:
         print('\n')
@@ -639,21 +649,28 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
         print(' '.join(command))
         print()
 
-    # Print the GraphMap output as it comes. I gather up and display lines in a manual manner so
-    # I can replace carriage returns with newlines, which makes the progress a bit cleaner.
+    # Print the GraphMap output as it comes. I gather up and display lines so I can display fewer
+    # progress lines. This helps when piping the output to file (otherwise the output can be
+    # excessively large).
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     line = ''
+    last_progress = -1.0
     while process.poll() is None:
         graphmap_output = process.stderr.read(1)
         if VERBOSITY > 0:
             line += graphmap_output
             if line.endswith('\r'):
                 line = line.strip() + '\r'
-                print(line, end='')
-            elif line.endswith('\n'):
-                line = line.strip()
-                if line:
-                    print(line)
+            if line.endswith('\n') or line.endswith('\r'):
+                if line.strip():
+                    if 'CPU time' in line:
+                        progress = float(line.split('(')[1].split(')')[0][:-1])
+                        progress_rounded_down = float(int(progress))
+                        if progress_rounded_down > last_progress:
+                            print(line, end='')
+                            last_progress = progress_rounded_down
+                    else:
+                        print(line, end='')
                 line = ''
     if VERBOSITY > 0:
         print()

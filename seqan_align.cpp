@@ -17,6 +17,7 @@
 #include <utility>
 #include <iterator>
 #include <mutex>
+#include <limits>
 
 using namespace seqan;
 using namespace std::chrono;
@@ -119,6 +120,7 @@ std::string getKmerTable(std::vector<CommonKmer> & commonKmers);
 std::string getSeedChainTable(String<TSeed> & seedChain);
 void addSeedMerge(TSeedSet & seedSet, TSeed & seed);
 std::unordered_set<std::string> * makeKmerSet(std::string & sequence, int kSize);
+double getScoreThreshold(std::vector<CommonKmer> & commonKmers, int verbosity, std::string & output);
 
 
 
@@ -330,7 +332,7 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
     // Now group all of the line points. A line group begins when the score exceeds a threshold and
     // it ends when the score drops below the threshold.
     std::vector<std::vector<CommonKmer> > lineGroups;
-    double scoreThreshold = 10.0; // TO DO: MAKE THIS A PARAMETER?
+    double scoreThreshold = getScoreThreshold(commonKmers, verbosity, output);
     bool lineInProgress = false;
     for (int i = 0; i < commonKmers.size(); ++i)
     {
@@ -985,6 +987,89 @@ std::unordered_set<std::string> * makeKmerSet(std::string & sequence, int kSize)
     for (int i = 0; i < kCount; ++i)
         kmerSet->insert(sequence.substr(i, kSize));
     return kmerSet;
+}
+
+
+// This function determines a good score threshold where points exceeding the threshold are
+// considered part of a line and points below are not.
+double getScoreThreshold(std::vector<CommonKmer> & commonKmers, int verbosity, std::string & output)
+{
+    int count = commonKmers.size();
+
+    // First we set an initial threshold by taking the mean of the 1% and 99% percentiles.
+    std::vector<double> scores;
+    scores.reserve(count);
+    for (int i = 0; i < count; ++i)
+        scores.push_back(commonKmers[i].m_score);
+    std::sort(scores.begin(), scores.end());
+    int firstPercentileIndex = int((count / 100.0) + 0.5) - 1;
+    int ninetyNinthPercentileIndex = int((99.0 * count / 100.0) + 0.5) - 1;
+    double firstPercentileScore = scores[firstPercentileIndex];
+    double ninetyNinthPercentileScore = scores[ninetyNinthPercentileIndex];
+    double threshold = (firstPercentileScore + ninetyNinthPercentileScore) / 2.0;
+
+    // We expect the scores to be distributed in three different ways:
+    //  1) Unimodal distribution near 1.0 (no line)
+    //  2) Bimodal distribution: the first near 1.0 (points not in a line) and the second at a
+    //     considerably higher value (points in a line).
+    //  3) Unimodal distribution well over 1.0 (all point are in a line).
+
+    // We first distinguish between the unimodal possibilities and the bimodal possibility.
+    // This is done by checking the fraction of scores near the threshold. If this fraction is low,
+    // we assume a bimodal distribution and return our threshold.
+    double windowSize = 0.1;
+    double firstToNinetyNinthScore = ninetyNinthPercentileScore - firstPercentileScore;
+    double nearThresholdDistance = firstToNinetyNinthScore * windowSize / 2.0;
+    double nearThresholdRegionMin = threshold - nearThresholdDistance;
+    double nearThresholdRegionMax = threshold + nearThresholdDistance;
+    std::vector<double>::iterator a = std::lower_bound(scores.begin(), scores.end(), nearThresholdRegionMin);
+    std::vector<double>::iterator b = std::upper_bound(scores.begin(), scores.end(), nearThresholdRegionMax);
+    int pointsNearThreshold = std::distance(a, b);
+    double fractionNearThrehold = double(pointsNearThreshold) / count;
+
+    // If the density of scores near the threshold is less than half the density we'd expect for a
+    // uniform score distribution, then we consider this bimodal and return our threshold.
+    if (fractionNearThrehold < windowSize / 2.0)
+    {
+        if (verbosity > 4)
+            output += "  Scores have bimodal distribution, using score threshold of " + std::to_string(threshold) + "\n";
+        return threshold;
+    }
+
+    // If the code got here, then we seem to have a unimodal distribution. This means that either
+    // none of the points are in a line (more likely) or all of the points are in a line (less
+    // likely). We will distinguish between the two by looking at the variance of rotated point
+    // positions. If it's very small, we assume the points all form a line. If it's large, we
+    // assume no line.
+    double stdDevThreshold = 100.0; // TO DO: come up with a better empirical value for this.
+    double mean = 0.0, devSum = 0.0;
+    for (int i = 0; i < count; ++i)
+        mean += commonKmers[i].m_rotatedVPosition;
+    mean /= count;
+    for (int i = 0; i < count; ++i)
+    {
+        double dev = commonKmers[i].m_rotatedVPosition - mean;
+        devSum += dev * dev;
+    }
+    double stdDev = sqrt(devSum / count);
+
+    // A low standard deviation means all points are in a line. Set the threshold to 0 so all
+    // points are included.
+    if (stdDev < stdDevThreshold)
+    {
+        if (verbosity > 4)
+            output += "  Scores have unimodal distribution, all points in line\n";
+        return 0.0;
+    }
+
+    //A high standard deviation means no points are in a line. Set the threshold to a high value
+    // so all points are excluded.
+    else
+    {
+        if (verbosity > 4)
+            output += "  Scores have unimodal distribution, no line detected\n";
+        return std::numeric_limits<double>::max();
+    }
 }
 
 }

@@ -516,7 +516,7 @@ def extend_to_semi_global(alignments, scoring_scheme):
     '''
     This function returns truly semi-global alignments made from the input alignments.
     '''
-    if VERBOSITY > 3:
+    if VERBOSITY > 3 and alignments:
         print('Extending aligments')
         print('-------------------')
 
@@ -643,24 +643,17 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
     # I can replace carriage returns with newlines, which makes the progress a bit cleaner.
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     line = ''
-    last_progress = 0.0
     while process.poll() is None:
         graphmap_output = process.stderr.read(1)
         if VERBOSITY > 0:
             line += graphmap_output
             if line.endswith('\r'):
-                line = line[:-1] + '\n'
-            if line.endswith('\n'):
+                line = line.strip() + '\r'
+                print(line, end='')
+            elif line.endswith('\n'):
                 line = line.strip()
                 if line:
-                    if 'CPU time' in line:
-                        progress = float(line.split('(')[1].split(')')[0][:-1])
-                        progress_rounded_down = progress - (progress % 10)
-                        if progress_rounded_down > last_progress:
-                            print(line)
-                            last_progress = progress_rounded_down
-                    else:
-                        print(line)
+                    print(line)
                 line = ''
     if VERBOSITY > 0:
         print()

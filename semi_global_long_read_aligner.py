@@ -107,7 +107,7 @@ def get_arguments():
                         help='SAM file of resulting alignments')
     parser.add_argument('--table', type=str, required=False,
                         help='Path and/or prefix for table files summarising reference errors')
-    parser.add_argument('--temp_dir', type=str, required=False, default='align_temp',
+    parser.add_argument('--temp_dir', type=str, required=False, default='align_temp_PID',
                         help='Temp directory for working files')
     parser.add_argument('--path', type=str, required=False, default='graphmap',
                         help='Path to the GraphMap executable')
@@ -124,6 +124,11 @@ def get_arguments():
 
     global VERBOSITY
     VERBOSITY = args.verbosity
+
+    # Add the process ID to the temp directory so multiple instances can run at once in the same
+    # directory.
+    if args.temp_dir == 'align_temp_PID':
+        args.temp_dir = 'align_temp_' + str(os.getpid())
 
     return args
 
@@ -290,6 +295,26 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, reads_fastq, 
     write_sam_file(final_alignments, graphmap_sam, output_sam)
     
     os.remove(graphmap_sam)
+
+
+
+    # # TEMP - print out information about reads with multiple alignments and save them to file.
+    # overlapping_reads_fasta = open('/Users/Ryan/Desktop/synthetic_aligning/overlapping_reads.fasta', 'w')
+    # overlapping_reads_fastq = open('/Users/Ryan/Desktop/synthetic_aligning/overlapping_reads.fastq', 'w')
+    # print('Multi-alignment reads')
+    # print('---------------------')
+    # for read in read_dict.itervalues():
+    #     if len(read.alignments) > 1:
+    #         print(read.get_descriptive_string())
+    #         overlapping_reads_fasta.write(read.get_fasta())
+    #         overlapping_reads_fastq.write(read.get_fastq())
+    # print('Incompletely aligned reads')
+    # print('--------------------------')
+    # for read in partially_aligned:
+    #     print(read.get_descriptive_string())
+    # quit()
+
+
 
     return read_dict
 
@@ -776,8 +801,8 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
     return alignments, output
 
 def seqan_alignment_one_read_one_refs(read, ref, rev_comp,
-                                   scoring_scheme, expected_ref_to_read_ratio,
-                                   read_kmer_sets_ptr, ref_kmer_sets_ptr):
+                                      scoring_scheme, expected_ref_to_read_ratio,
+                                      read_kmer_sets_ptr, ref_kmer_sets_ptr):
     '''
     Runs an alignment using Seqan between one read and one reference.
     Returns a list of Alignment objects: empty list means it did not succeed, a list of one means
@@ -787,7 +812,7 @@ def seqan_alignment_one_read_one_refs(read, ref, rev_comp,
     line_result = find_alignment_lines(read, ref, rev_comp, expected_ref_to_read_ratio,
                                        read_kmer_sets_ptr, ref_kmer_sets_ptr)
     output, milliseconds, line_result = line_result.split(';', 2)
-    
+
     if VERBOSITY > 3:
         output += '  Line finding milliseconds: ' + milliseconds + '\n'
 
@@ -1250,29 +1275,37 @@ class Read(object):
 #         '''
 #         self.alignments = [x for x in self.alignments if x.percent_identity >= id_threshold]
 
-#     def get_fastq(self):
-#         '''
-#         Returns a string for the read in FASTQ format. It contains four lines and ends in a line
-#         break.
-#         '''
-#         return '@' + self.name + '\n' + \
-#                self.sequence + '\n' + \
-#                '+' + self.name + '\n' + \
-#                self.qualities + '\n'
+    def get_fastq(self):
+        '''
+        Returns a string for the read in FASTQ format. It contains four lines and ends in a line
+        break.
+        '''
+        return '@' + self.name + '\n' + \
+               self.sequence + '\n' + \
+               '+' + self.name + '\n' + \
+               self.qualities + '\n'
 
-#     def get_descriptive_string(self):
-#         '''
-#         Returns a multi-line string that describes the read and its alignments.
-#         '''
-#         header = self.name + ' (' + str(len(self.sequence)) + ' bp)'
-#         line = '-' * len(header)
-#         description = header + '\n' + line + '\n'
-#         if not self.alignments:
-#             description += 'no alignments'
-#         else:
-#             description += '%.2f' % (100.0 * self.get_fraction_aligned()) + '% aligned\n'
-#             description += '\n'.join([str(x) for x in self.alignments])
-#         return description + '\n\n'
+    def get_fasta(self):
+        '''
+        Returns a string for the read in FASTA format. It contains two lines and ends in a line
+        break.
+        '''
+        return '>' + self.name + '\n' + \
+               self.sequence + '\n'
+
+    def get_descriptive_string(self):
+        '''
+        Returns a multi-line string that describes the read and its alignments.
+        '''
+        header = self.name + ' (' + str(len(self.sequence)) + ' bp)'
+        line = '-' * len(header)
+        description = header + '\n' + line + '\n'
+        if not self.alignments:
+            description += 'no alignments'
+        else:
+            description += '%.2f' % (100.0 * self.get_fraction_aligned()) + '% aligned\n'
+            description += '\n'.join([str(x) for x in self.alignments])
+        return description + '\n\n'
 
     def get_fraction_aligned(self):
         '''
@@ -1696,7 +1729,7 @@ class Alignment(object):
         Returns a SAM alignment line.
         '''
         edit_distance = self.mismatch_count + self.insertion_count + self.deletion_count
-        sam_flag = 0 #TEMP
+        sam_flag = 0 #TO DO: SET THIS PROPERLY
         return '\t'.join([self.read.name, str(sam_flag), self.ref.name,
                           str(self.ref_start_pos + 1), '255', self.cigar,
                           '*', '0', '0', self.read.sequence, self.read.qualities,

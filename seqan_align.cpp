@@ -110,7 +110,7 @@ void getSeedChainSlopeAndIntercept(String<TSeed> * seedChain, int firstI, int la
                                    double * slope, double * intercept);
 void getSlopeAndIntercept(int hStart, int hEnd, int vStart, int vEnd,
                                    double * slope, double * intercept);
-double getMedian(std::vector<double> * v);
+double getMedian(std::vector<double> & v);
 void printKmerSize(int kmerSize, int locationCount, std::string & output);
 double getLineLength(double x, double y, double slope, double xSize, double ySize);
 void linearRegression(std::vector<CommonKmer> & pts, double * slope, double * intercept);
@@ -813,14 +813,15 @@ void getSlopeAndIntercept(int hStart, int hEnd, int vStart, int vEnd,
     }
 }
 
-double getMedian(std::vector<double> * v)
+
+// Gets the median from an already-sorted vector.
+double getMedian(std::vector<double> & v)
 {
-    size_t size = v->size();
-    std::sort(v->begin(), v->end());
+    size_t size = v.size();
     if (size % 2 == 0)
-        return ((*v)[size / 2 - 1] + (*v)[size / 2]) / 2;
+        return (v[size / 2 - 1] + v[size / 2]) / 2;
     else 
-        return (*v)[size / 2];
+        return v[size / 2];
 }
 
 
@@ -1014,22 +1015,41 @@ double getScoreThreshold(std::vector<CommonKmer> & commonKmers, int verbosity, s
     //     considerably higher value (points in a line).
     //  3) Unimodal distribution well over 1.0 (all point are in a line).
 
-    // We first distinguish between the unimodal possibilities and the bimodal possibility.
-    // This is done by checking the fraction of scores near the threshold. If this fraction is low,
-    // we assume a bimodal distribution and return our threshold.
-    double windowSize = 0.1;
-    double firstToNinetyNinthScore = ninetyNinthPercentileScore - firstPercentileScore;
-    double nearThresholdDistance = firstToNinetyNinthScore * windowSize / 2.0;
-    double nearThresholdRegionMin = threshold - nearThresholdDistance;
-    double nearThresholdRegionMax = threshold + nearThresholdDistance;
-    std::vector<double>::iterator a = std::lower_bound(scores.begin(), scores.end(), nearThresholdRegionMin);
-    std::vector<double>::iterator b = std::upper_bound(scores.begin(), scores.end(), nearThresholdRegionMax);
-    int pointsNearThreshold = std::distance(a, b);
-    double fractionNearThrehold = double(pointsNearThreshold) / count;
 
-    // If the density of scores near the threshold is less than half the density we'd expect for a
-    // uniform score distribution, then we consider this bimodal and return our threshold.
-    if (fractionNearThrehold < windowSize / 2.0)
+
+
+    // We first distinguish between the unimodal possibilities and the bimodal possibility.
+    // This is done by getting the median and MAD for the scores below and above the threshold.
+    // If the distributions appear to overlap, we call it as unimodal.
+    std::vector<double> scoresBelow;
+    std::vector<double> scoresAbove;
+    for (int i = 0; i < count; ++i)
+    {
+        if (scores[i] < threshold)
+            scoresBelow.push_back(scores[i]);
+        else
+            scoresAbove.push_back(scores[i]);
+    }
+    double lowGroupMedian = getMedian(scoresBelow);
+    double highGroupMedian = getMedian(scoresAbove);
+    std::vector<double> absDevsBelow;
+    absDevsBelow.reserve(scoresBelow.size());
+    for (int i = 0; i < scoresBelow.size(); ++i)
+        absDevsBelow.push_back(fabs(scoresBelow[i] - lowGroupMedian));
+    std::vector<double> absDevsAbove;
+    absDevsAbove.reserve(scoresAbove.size());
+    for (int i = 0; i < scoresAbove.size(); ++i)
+        absDevsAbove.push_back(fabs(scoresAbove[i] - highGroupMedian));
+    std::sort(absDevsBelow.begin(), absDevsBelow.end());
+    std::sort(absDevsAbove.begin(), absDevsAbove.end());
+    double lowGroupMAD = getMedian(absDevsBelow);
+    double highGroupMAD = getMedian(absDevsAbove);
+    double topOfLowGroup = lowGroupMedian + (4.0 * lowGroupMAD);
+    double bottomOfHighGroup = highGroupMedian - (4.0 * highGroupMAD);
+
+    // If the low group and high group do not overlap, we conclude that the threshold really does
+    // split the groups apart and we have a bimodal distribution.
+    if (topOfLowGroup < bottomOfHighGroup)
     {
         if (verbosity > 4)
             output += "  Scores have bimodal distribution, using score threshold of " + std::to_string(threshold) + "\n";

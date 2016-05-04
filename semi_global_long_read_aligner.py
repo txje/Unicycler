@@ -44,6 +44,7 @@ import random
 import argparse
 import string
 import math
+import time
 from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p
 from multiprocessing.dummy import Pool as ThreadPool
 
@@ -760,6 +761,7 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
     Aligns a single read against all reference sequences using Seqan. Both forward and reverse
     complement alignments are tried. Returns a list of all alignments found and the console output.
     '''
+    start_time = time.time()
     output = ''
     if VERBOSITY > 1:
         output += str(read) + '\n'
@@ -773,18 +775,18 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
         if VERBOSITY > 3:
             output += 'Reference: ' + ref.name + '+\n'
         forward_alignments, forward_alignment_output = \
-                        seqan_alignment_one_read_one_refs(read, ref, False, scoring_scheme,
-                                                          expected_ref_to_read_ratio,
-                                                          read_kmer_sets_ptr, ref_kmer_sets_ptr)
+                        seqan_alignment_one_read_one_ref(read, ref, False, scoring_scheme,
+                                                         expected_ref_to_read_ratio,
+                                                         read_kmer_sets_ptr, ref_kmer_sets_ptr)
         alignments += forward_alignments
         output += forward_alignment_output
 
         if VERBOSITY > 3:
             output += 'Reference: ' + ref.name + '-\n'
         reverse_alignments, reverse_alignment_output = \
-                        seqan_alignment_one_read_one_refs(read, ref, True, scoring_scheme,
-                                                          expected_ref_to_read_ratio,
-                                                          read_kmer_sets_ptr, ref_kmer_sets_ptr)
+                        seqan_alignment_one_read_one_ref(read, ref, True, scoring_scheme,
+                                                         expected_ref_to_read_ratio,
+                                                         read_kmer_sets_ptr, ref_kmer_sets_ptr)
         alignments += reverse_alignments
         output += reverse_alignment_output
 
@@ -796,13 +798,15 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
         else:
             for alignment in alignments:
                 output += '  ' + str(alignment) + '\n'
+        if VERBOSITY > 2:
+            output += '  Time to align: ' + float_to_str(time.time() - start_time, 3) + ' s\n'
         output += '\n'
 
     return alignments, output
 
-def seqan_alignment_one_read_one_refs(read, ref, rev_comp,
-                                      scoring_scheme, expected_ref_to_read_ratio,
-                                      read_kmer_sets_ptr, ref_kmer_sets_ptr):
+def seqan_alignment_one_read_one_ref(read, ref, rev_comp,
+                                     scoring_scheme, expected_ref_to_read_ratio,
+                                     read_kmer_sets_ptr, ref_kmer_sets_ptr):
     '''
     Runs an alignment using Seqan between one read and one reference.
     Returns a list of Alignment objects: empty list means it did not succeed, a list of one means
@@ -811,10 +815,10 @@ def seqan_alignment_one_read_one_refs(read, ref, rev_comp,
     '''
     line_result = find_alignment_lines(read, ref, rev_comp, expected_ref_to_read_ratio,
                                        read_kmer_sets_ptr, ref_kmer_sets_ptr)
-    output, milliseconds, line_result = line_result.split(';', 2)
+    output, seqan_milliseconds, line_result = line_result.split(';', 2)
 
     if VERBOSITY > 3:
-        output += '  Line finding milliseconds: ' + milliseconds + '\n'
+        output += '  Seqan milliseconds: ' + seqan_milliseconds + '\n'
 
     if line_result.startswith('Fail'):
         if VERBOSITY > 3:
@@ -832,6 +836,7 @@ def seqan_alignment_one_read_one_refs(read, ref, rev_comp,
         if alignment:
             alignments.append(alignment)
             output += alignment_output
+
     return alignments, output
 
 def make_seqan_alignment_one_line(read, ref, rev_comp, scoring_scheme, line):

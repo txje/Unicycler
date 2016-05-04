@@ -1421,8 +1421,10 @@ class Alignment(object):
         cigar_parts = self.cigar_parts[:]
         if cigar_parts[0][-1] == 'S':
             cigar_parts.pop(0)
-        if cigar_parts[-1][-1] == 'S':
+        if cigar_parts and cigar_parts[-1][-1] == 'S':
             cigar_parts.pop()
+        if not cigar_parts:
+            return
 
         read_len = len(self.aligned_read_seq)
         ref_len = len(self.aligned_ref_seq)

@@ -45,11 +45,9 @@ public:
     int m_vPosition;
     double m_rotatedHPosition;
     double m_rotatedVPosition;
-    double m_bandLength; // Length of band at expected slope
-    int m_bandCount; // Number of neighbour points in band
-    double m_score; // Score calculated from bandCount, bandLength and overall kmer density
+    double m_bandArea;
+    double m_score; // Scaled kmer density
 };
-
 
 // KmerSets is a class that holds sets of k-mers for named sequences. It exists so we don't have to
 // repeatedly find the same k-mer sets over and over. Whenever it makes a k-mer set, it stores it
@@ -120,7 +118,6 @@ std::string getKmerTable(std::vector<CommonKmer> & commonKmers);
 std::string getSeedChainTable(String<TSeed> & seedChain);
 void addSeedMerge(TSeedSet & seedSet, TSeed & seed);
 std::unordered_set<std::string> * makeKmerSet(std::string & sequence, int kSize);
-double getScoreThreshold(std::vector<CommonKmer> & commonKmers, int verbosity, std::string & output);
 void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdev);
 
 
@@ -285,42 +282,130 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
         return cppStringToCString(output + ";" + std::to_string(endTime - startTime) + ";Failed: too few common kmers");
     }
 
+    // We scale the scores relative to the expected k-mer density.
     int kSize = commonKmers[0].m_sequence.length();
-
-    double commonKmerDensity = double(commonKmers.size()) / (double(readSeq.length()) * double(refSeq.length()));
+    double expectedDensity = 1.0 / pow(4.0, kSize);
     if (verbosity > 4)
-        output += "  Common k-mer density: " + std::to_string(commonKmerDensity) + "\n";
+        output += "  Expected k-mer density: " + std::to_string(expectedDensity) + "\n";
 
     // Sort by rotated vertical position so lines should be roughly horizontal.
     std::sort(commonKmers.begin(), commonKmers.end(), [](const CommonKmer & a, const CommonKmer & b) {
         return a.m_rotatedVPosition < b.m_rotatedVPosition;   
     });
 
-    // Score each point based on the number of other points in its band. The score is scaled by
-    // the length of the band so short bands aren't penalised.
-    double bandSize = 200.0; // TO DO: MAKE THIS A PARAMETER?
-    int windowStart = 0;
-    int windowEnd = 0;
+    // Score each point based on the number of other points in its band.
+    int bandSize = 16; // TO DO: MAKE THIS A PARAMETER?
+    int halfBandSize = bandSize / 2;
     double maxScore = 0.0;
-    for (int i = 0; i < commonKmers.size(); ++i)
-    {
-        double y = commonKmers[i].m_rotatedVPosition;
-        while (y - commonKmers[windowStart].m_rotatedVPosition > bandSize)
-            ++windowStart;
-        while (windowEnd < commonKmers.size() &&
-               commonKmers[windowEnd].m_rotatedVPosition - y < bandSize)
-            ++windowEnd;
-        double bandLength = getLineLength(commonKmers[i].m_hPosition, commonKmers[i].m_vPosition,
-                                          expectedSlope, readSeq.length(), refSeq.length());
-        int bandCount = windowEnd - windowStart;
-        double bandKmerDensity = bandCount / (bandLength * 2.0 * bandSize);
-        double score = bandKmerDensity / commonKmerDensity;
-        if (score > maxScore)
-            maxScore = score;
 
-        commonKmers[i].m_bandLength = bandLength;
-        commonKmers[i].m_bandCount = bandCount;
+    // Get the full band length using the middle point of the alignment rectangle.
+    double fullBandLength = getLineLength(readSeq.length() / 2.0, refSeq.length() / 2.0,
+                                          expectedSlope, readSeq.length(), refSeq.length());
+
+    // There are four corners of the alignment rectangle which we also need to rotate.
+    double rotationAngle = CommonKmer::getRotationAngle(expectedSlope);
+    CommonKmer c1("", 0, 0, rotationAngle);
+    CommonKmer c2("", 0, refSeq.length(), rotationAngle);
+    CommonKmer c3("", readSeq.length(), refSeq.length(), rotationAngle);
+    CommonKmer c4("", readSeq.length(), 0, rotationAngle);
+    double c1Y = c1.m_rotatedVPosition;
+    double c3Y = c3.m_rotatedVPosition;
+    double c1BandLength = getLineLength(c1.m_hPosition, c1.m_vPosition,
+                                        expectedSlope, readSeq.length(), refSeq.length());
+    double c3BandLength = getLineLength(c3.m_hPosition, c3.m_vPosition,
+                                        expectedSlope, readSeq.length(), refSeq.length());
+
+    int commonKmerCount = commonKmers.size();
+    int startKmerIndex = 0 + (halfBandSize - 1);
+    int endKmerIndex = commonKmerCount - (halfBandSize - 1); //One past last
+
+    // Now we loop through the CommonKmer points, calculating their k-mer density (score) along the way!
+    for (int i = startKmerIndex; i < endKmerIndex; ++i)
+    {
+        int bandStartIndex = i - halfBandSize;
+        int bandEndIndex = i + halfBandSize;
+
+        // Get the Y coordinates for the start and end of the band.
+        double bandStartY, bandEndY;
+        if (bandStartIndex < 0)
+            bandStartY = c4.m_rotatedVPosition;
+        else
+            bandStartY = commonKmers[bandStartIndex].m_rotatedVPosition;
+        if (bandEndIndex >= commonKmerCount)
+            bandEndY = c2.m_rotatedVPosition;
+        else
+            bandEndY = commonKmers[bandEndIndex].m_rotatedVPosition;
+
+
+        // Now we need to calculate the area of the band.
+        double bandArea;
+
+        // We'll need the starting point band length for all area possibilities, so we calculate
+        // that now.
+        double bandStartLength;
+        if (bandStartIndex < 0)
+            bandStartLength = 0.0;
+        else
+            bandStartLength = getLineLength(commonKmers[bandStartIndex].m_hPosition,
+                                            commonKmers[bandStartIndex].m_vPosition,
+                                            expectedSlope, readSeq.length(), refSeq.length());
+
+        // If both the start and end are in the middle of the rotated rectangle, then the area is a
+        // parallelogram and calculating its area is easy.
+        if (bandStartY >= c1Y && bandEndY <= c3Y)
+            bandArea = (bandEndY - bandStartY) * bandStartLength;
+
+        // Other cases are more complex, and we'll need the ending point band length too.
+        else
+        {
+            double bandEndLength;
+            if (bandEndIndex >= commonKmerCount)
+                bandEndLength = 0.0;
+            else
+                bandEndLength = getLineLength(commonKmers[bandEndIndex].m_hPosition,
+                                              commonKmers[bandEndIndex].m_vPosition,
+                                              expectedSlope, readSeq.length(), refSeq.length());
+
+            // If both the start and end are in the bottom or top of the rotated rectangle, then the
+            // area is a triangle/trapezoid.
+            if ( (bandStartY <= c1Y && bandEndY <= c1Y) || (bandStartY >= c3Y && bandEndY >= c3Y) )
+                bandArea = (bandEndY - bandStartY) * ((bandStartLength + bandEndLength) / 2.0);
+
+            // If the start and end span a rectangle's corner, then the area is more complex. We need
+            // to add both the parallelogram and trapezoid components.
+            else if (bandStartY <= c1Y && bandEndY >= c1Y && bandEndY <= c3Y)
+            {
+                double trapezoidArea = (c1Y - bandStartY) * ((bandStartLength + c1BandLength) / 2.0);
+                double parallelogramArea = (bandEndY - c1Y) * bandEndLength;
+                bandArea = trapezoidArea + parallelogramArea;
+            }
+            else if (bandStartY >= c1Y && bandStartY <= c3Y && bandEndY >= c3Y)
+            {
+                double trapezoidArea = (bandEndY - c3Y) * ((c3BandLength + bandEndLength) / 2.0);
+                double parallelogramArea = (c3Y - bandStartY) * bandStartLength;
+                bandArea = trapezoidArea + parallelogramArea;
+            }
+
+            // The final, most complex scenario is when the band start and end span both C1 and C3.
+            // This would be unusual, as it would require either a very large band or a very sparse
+            // set of CommonKmers.
+            else
+            {
+                double trapezoidArea1 = (c1Y - bandStartY) * ((bandStartLength + c1BandLength) / 2.0);
+                double parallelogramArea = (c3Y - c1Y) * c1BandLength;
+                double trapezoidArea2 = (bandEndY - c3Y) * ((c3BandLength + bandEndLength) / 2.0);
+                bandArea = trapezoidArea1 + parallelogramArea + trapezoidArea2;
+            }
+        }
+
+        // Now that we (FINALLY) have the band area, we can get the density of CommonKmers in the
+        // band. Also, we'll scale this to the expected level of CommonKmers (given a random
+        // sequence).
+        double kmerDensity = bandSize / bandArea;
+        double score = kmerDensity / expectedDensity;
+        commonKmers[i].m_bandArea = bandArea;
         commonKmers[i].m_score = score;
+        maxScore = std::max(maxScore, score);
     }
 
     if (verbosity > 4)
@@ -330,25 +415,89 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
         output += "  Max score: " + std::to_string(maxScore) + "\n";
     }
 
-    // Now group all of the line points. A line group begins when the score exceeds a threshold and
-    // it ends when the score drops below the threshold.
+    // Now group all of the line points. For a line group to form, a point must score above the
+    // high threshold. The group will continue (in both directions) until the score drops below
+    // the low threshold.
     std::vector<std::vector<CommonKmer> > lineGroups;
-    double scoreThreshold = getScoreThreshold(commonKmers, verbosity, output);
+    double lowThreshold = 2.0; //TO DO: MAKE THIS A PARAMETER?
+    double highThreshold = 20.0; //TO DO: MAKE THIS A PARAMETER?
     bool lineInProgress = false;
     for (int i = 0; i < commonKmers.size(); ++i)
     {
-        if (commonKmers[i].m_score > scoreThreshold)
+        if (lineInProgress)
         {
-            if (!lineInProgress)
-            {
-                lineGroups.push_back(std::vector<CommonKmer>());
-                lineInProgress = true;
-            }
-            lineGroups.back().push_back(commonKmers[i]);
+            if (commonKmers[i].m_score >= lowThreshold)
+                lineGroups.back().push_back(commonKmers[i]);
+            else // This line group is done.
+                lineInProgress = false;
         }
-        else // score is below threshold
-            lineInProgress = false;
+        else if (commonKmers[i].m_score >= highThreshold)
+        {
+            // It's time to start a new line group!
+            lineGroups.push_back(std::vector<CommonKmer>());
+            lineInProgress = true;
+
+            // Step backwards to find where the group should start (the first point over the low
+            // threshold).
+            int groupStartPoint = i;
+            while (groupStartPoint >= 0 && commonKmers[groupStartPoint].m_score >= lowThreshold)
+                --groupStartPoint;
+            ++groupStartPoint;
+
+            // Add the initial group points.
+            for (int j = groupStartPoint; j <= i; ++j)
+                lineGroups.back().push_back(commonKmers[j]);
+        }
     }
+    if (verbosity > 4)
+        output += "  Number of potential lines: " + std::to_string(lineGroups.size()) + "\n";
+
+    // We are only interested in line groups which seem to span their full possible length (i.e.
+    // not line groups caused by short, local alignments) and for which the band is reasonably 
+    // long (to avoid things like 3 bp alignments).
+    double minimumAlignmentLength = 20.0; //TO DO: MAKE THIS A PARAMETER?
+    std::vector<std::vector<CommonKmer> > lengthFilteredLineGroups;
+    for (int i = 0; i < lineGroups.size(); ++i)
+    {
+        // Determine the mean position for the line group and use it to calculate the band length.
+        int groupCount = lineGroups[i].size();
+        double vSum = 0.0, hSum = 0.0;
+        for (int j = 0; j < groupCount; ++j)
+        {
+            hSum += lineGroups[i][j].m_hPosition;
+            vSum += lineGroups[i][j].m_vPosition;
+        }
+        double meanH = hSum / groupCount;
+        double meanV = vSum / groupCount;
+        double bandLength = getLineLength(meanH, meanV, expectedSlope, readSeq.length(), refSeq.length());
+
+        // Exclude alignments which are too short.
+        if (bandLength < minimumAlignmentLength)
+            continue;
+
+        // Now we want to test whether the CommonKmers in the band seem to span the full band. To
+        // do so, we get the std dev of the rotated H position and compare it to the expected std
+        // dev of a uniform distribution.
+        std::vector<double> rotatedHPositions;
+        rotatedHPositions.reserve(groupCount);
+        for (int j = 0; j < groupCount; ++j)
+            rotatedHPositions.push_back(lineGroups[i][j].m_rotatedHPosition);
+        double meanRotatedH, rotatedHStdDev;
+        getMeanAndStDev(rotatedHPositions, meanRotatedH, rotatedHStdDev);
+        double uniformStdDev = bandLength / 3.464101615137754; // sqrt(12)
+
+        std::cout << "bandLength: " << bandLength << std::endl;
+        std::cout << "uniformStdDev: " << uniformStdDev << std::endl;
+        std::cout << "rotatedHStdDev: " << rotatedHStdDev << std::endl;
+        int CRASH = 5 / 0;
+
+        // At least 75% of the uniform distribution's std dev is required.
+        if (rotatedHStdDev > 0.75 * uniformStdDev)
+            lengthFilteredLineGroups.push_back(lineGroups[i]);
+    }
+    lineGroups = lengthFilteredLineGroups;
+    if (verbosity > 4)
+        output += "  Number of potential lines after length/span filtering: " + std::to_string(lineGroups.size()) + "\n";
 
     // For each line group, throw out any point which is too divergent from its neighbours. To do
     // this, we determine the slope between each point and its nearest neighbours and how divergent
@@ -410,6 +559,8 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
     lineGroups.erase(std::remove_if(lineGroups.begin(), lineGroups.end(), 
                                     [&minPointCount](std::vector<CommonKmer> i) {return i.size() < minPointCount;}),
                      lineGroups.end());
+    if (verbosity > 4)
+        output += "  Number of lines after point count filtering: " + std::to_string(lineGroups.size()) + "\n";
 
     // Perform a simple least-squares linear regression on each line group.
     // If the slope is too far from 1.0, we throw the line out.
@@ -417,19 +568,21 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
     double maxSlope = 1.5; // TO DO: MAKE THIS A PARAMETER?
     std::vector<double> slopes;
     std::vector<double> intercepts;
-    std::vector<std::vector<CommonKmer> > filteredLineGroups;
+    std::vector<std::vector<CommonKmer> > slopeFilteredLineGroups;
     for (int i = 0; i < lineGroups.size(); ++i)
     {
         double slope, intercept;
         linearRegression(lineGroups[i], &slope, &intercept);
         if (slope >= minSlope && slope <= maxSlope)
         {
-            filteredLineGroups.push_back(lineGroups[i]);
+            slopeFilteredLineGroups.push_back(lineGroups[i]);
             slopes.push_back(slope);
             intercepts.push_back(intercept);
         }
     }
-    lineGroups = filteredLineGroups;
+    lineGroups = slopeFilteredLineGroups;
+    if (verbosity > 4)
+        output += "  Number of lines after slope filtering: " + std::to_string(lineGroups.size()) + "\n";
 
     if (lineGroups.size() == 0)
     {
@@ -443,7 +596,6 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
     std::string linesString;
     for (int i = 0; i < lineGroups.size(); ++i)
     {
-
         if (linesString.length() > 0)
             linesString += ";";
         linesString += std::to_string(slopes[i]) + "," + std::to_string(intercepts[i]) + "," + std::to_string(kSize);
@@ -523,59 +675,73 @@ std::vector<CommonKmer> getCommonKmers(std::string & readSeq, std::string & read
     std::vector<CommonKmer> commonKmers;
     double rotationAngle = CommonKmer::getRotationAngle(expectedSlope);
 
-    // We will dynamically choose a k-mer size that gives the maximum number of common k-mers.
-    // Sizes too large will give fewer k-mers because it is less likely that sequences will share a
-    // large k-mer. Sizes too small will give fewer k-mers because there are fewer possible k-mers.
-    // Though we scale the value a little by multiplying by the k-mer size. This slightly pushs the
-    // function towards larger k-mers.
-    int startingKSize = 8;
-    int kSize = startingKSize;
-    long long commonKmerCount = getCommonKmerCount(readSeq, readName, refSeq, refName,
-                                                   kSize, readKmerSets, refKmerSets);
-    long long bestScore = commonKmerCount * kSize;
-    int bestK = kSize;
-    if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
+    // // We will dynamically choose a k-mer size that gives the maximum number of common k-mers.
+    // // Sizes too large will give fewer k-mers because it is less likely that sequences will share a
+    // // large k-mer. Sizes too small will give fewer k-mers because there are fewer possible k-mers.
+    // // Though we scale the value a little by multiplying by the k-mer size. This slightly pushs the
+    // // function towards larger k-mers.
+    // int startingKSize = 8;
+    // int kSize = startingKSize;
+    // long long commonKmerCount = getCommonKmerCount(readSeq, readName, refSeq, refName,
+    //                                                kSize, readKmerSets, refKmerSets);
+    // long long bestScore = commonKmerCount * kSize;
+    // int bestK = kSize;
+    // if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
 
-    // Try larger k sizes, to see if that helps.
-    while (true)
-    {
-        ++kSize;
-        commonKmerCount = getCommonKmerCount(readSeq, readName, refSeq, refName,
-                                             kSize, readKmerSets, refKmerSets);
-        long long score = commonKmerCount * kSize;
-        if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
-        if (score > bestScore)
-        {
-            bestK = kSize;
-            bestScore = score;
-        }
-        else
-            break;
-    }
+    // // Try larger k sizes, to see if that helps.
+    // while (true)
+    // {
+    //     ++kSize;
+    //     commonKmerCount = getCommonKmerCount(readSeq, readName, refSeq, refName,
+    //                                          kSize, readKmerSets, refKmerSets);
+    //     long long score = commonKmerCount * kSize;
+    //     if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
+    //     if (score > bestScore)
+    //     {
+    //         bestK = kSize;
+    //         bestScore = score;
+    //     }
+    //     else
+    //         break;
+    // }
 
-    // If larger k sizes didn't help, try smaller k sizes.
-    if (bestK == startingKSize)
-    {
-        kSize = startingKSize;
-        while (true)
-        {
-            --kSize;
-            commonKmerCount = getCommonKmerCount(readSeq, readName, refSeq, refName,
-                                                 kSize, readKmerSets, refKmerSets);
-            long long score = commonKmerCount * kSize;
-            if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
-            if (score > bestScore)
-            {
-                bestK = kSize;
-                bestScore = score;
-            }
-            else
-                break;
-        }
-    }
+    // // If larger k sizes didn't help, try smaller k sizes.
+    // if (bestK == startingKSize)
+    // {
+    //     kSize = startingKSize;
+    //     while (true)
+    //     {
+    //         --kSize;
+    //         commonKmerCount = getCommonKmerCount(readSeq, readName, refSeq, refName,
+    //                                              kSize, readKmerSets, refKmerSets);
+    //         long long score = commonKmerCount * kSize;
+    //         if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
+    //         if (score > bestScore)
+    //         {
+    //             bestK = kSize;
+    //             bestScore = score;
+    //         }
+    //         else
+    //             break;
+    //     }
+    // }
 
-    if (verbosity > 3)
-        output += "  Best k size: " + std::to_string(bestK) + "\n";
+    // if (verbosity > 3)
+    //     output += "  Best k size: " + std::to_string(bestK) + "\n";
+
+
+
+    // TEMP
+    int bestK = 5;
+    int kSize = 5;
+
+
+
+
+
+
+
+
 
     // Now that we've chose a good k-mer size, we can build the vector of CommonKmer objects.
     kSize = bestK;
@@ -848,7 +1014,8 @@ CommonKmer::CommonKmer(std::string sequence, int hPosition, int vPosition, doubl
     m_sequence(sequence),
     m_hPosition(hPosition),
     m_vPosition(vPosition),
-    m_score(0.0)
+    m_bandArea(0.0),
+    m_score(1.0)
 {
     double s = sin(angle);
     double c = cos(angle);
@@ -937,15 +1104,14 @@ void parseKmerLocationsFromString(std::string & str, std::vector<int> & v1, std:
 
 std::string getKmerTable(std::vector<CommonKmer> & commonKmers)
 {
-    std::string table = "\tSeq 1 pos\tSeq 2 pos\tRotated seq 1 pos\tRotated seq 2 pos\tBand length\tBand count\tScore\n";
+    std::string table = "\tSeq 1 pos\tSeq 2 pos\tRotated seq 1 pos\tRotated seq 2 pos\tBand area\tScore\n";
     for (int i = 0; i < commonKmers.size(); ++i)
     {
         table += "\t" + std::to_string(commonKmers[i].m_hPosition) +
                  "\t" + std::to_string(commonKmers[i].m_vPosition) + 
                  "\t" + std::to_string(commonKmers[i].m_rotatedHPosition) +
                  "\t" + std::to_string(commonKmers[i].m_rotatedVPosition) +
-                 "\t" + std::to_string(commonKmers[i].m_bandLength) +
-                 "\t" + std::to_string(commonKmers[i].m_bandCount) +
+                 "\t" + std::to_string(commonKmers[i].m_bandArea) +
                  "\t" + std::to_string(commonKmers[i].m_score) + "\n";
     }
     return table;
@@ -1005,104 +1171,6 @@ std::unordered_set<std::string> * makeKmerSet(std::string & sequence, int kSize)
     for (int i = 0; i < kCount; ++i)
         kmerSet->insert(sequence.substr(i, kSize));
     return kmerSet;
-}
-
-
-// This function determines a good score threshold where points exceeding the threshold are
-// considered part of a line and points below are not.
-double getScoreThreshold(std::vector<CommonKmer> & commonKmers, int verbosity, std::string & output)
-{
-    int count = commonKmers.size();
-
-    // First we set an initial threshold by taking the mean of the 1% and 99% percentiles.
-    std::vector<double> scores;
-    scores.reserve(count);
-    for (int i = 0; i < count; ++i)
-        scores.push_back(commonKmers[i].m_score);
-    std::sort(scores.begin(), scores.end());
-    int firstPercentileIndex = int((count / 100.0) + 0.5) - 1;
-    int ninetyNinthPercentileIndex = int((99.0 * count / 100.0) + 0.5) - 1;
-    double firstPercentileScore = scores[firstPercentileIndex];
-    double ninetyNinthPercentileScore = scores[ninetyNinthPercentileIndex];
-    if (verbosity > 4)
-    {
-        output += "  1st percentile score: " + std::to_string(firstPercentileScore) + "\n";
-        output += "  99th percentile score: " + std::to_string(ninetyNinthPercentileScore) + "\n";
-    }
-
-    // We expect the scores to be distributed in three different ways:
-    //  1) Unimodal distribution near 1.0 (no line)
-    //  2) Bimodal distribution: the first near 1.0 (points not in a line) and the second at a
-    //     considerably higher value (points in a line).
-    //  3) Unimodal distribution well over 1.0 (all point are in a line).
-
-    // We first distinguish between the unimodal possibilities and the bimodal possibility.
-    // This is done by getting the mean and stdev for the scores below and above the threshold.
-    // If the distributions appear to overlap, we decide the scores are unimodal.
-    if (ninetyNinthPercentileScore > firstPercentileScore)
-    {
-        double threshold = (firstPercentileScore + ninetyNinthPercentileScore) / 2.0;
-
-        std::vector<double> scoresBelow;
-        std::vector<double> scoresAbove;
-        for (int i = 0; i < count; ++i)
-        {
-            if (scores[i] < threshold)
-                scoresBelow.push_back(scores[i]);
-            else
-                scoresAbove.push_back(scores[i]);
-        }
-        double lowGroupMean, lowGroupStdDev;
-        getMeanAndStDev(scoresBelow, lowGroupMean, lowGroupStdDev);
-        double highGroupMean, highGroupStdDev;
-        getMeanAndStDev(scoresAbove, highGroupMean, highGroupStdDev);
-
-        // The zValue is how many standard deviations away from the means we must go before the
-        // upper and lower distributions meet. A low zValue means the two groups are close and
-        // likely to be two halves of a unimodal distribution. A high zValue means that the
-        // two groups are separate and probably from a bimodal distribution.
-        double zValue = (highGroupMean - lowGroupMean) / (highGroupStdDev + lowGroupStdDev);
-        double zValueCutoff = 2.0; //TO DO: MAKE A PARAMETER?
-        if (verbosity > 4)
-            output += "  threshold of " + std::to_string(threshold) + " has zValue of " + std::to_string(zValue) + "\n";
-        if (zValue > zValueCutoff)
-        {
-            if (verbosity > 4)
-                output += "  Exceeded threshold, using bimodal distribution\n";
-            return threshold;
-        }
-    }
-
-    // If the code got here, then we seem to have a unimodal distribution. This means that either
-    // none of the points are in a line (more likely) or all of the points are in a line (less
-    // likely). We will distinguish between the two by looking at the variance of rotated point
-    // positions. If it's very small, we assume the points all form a line. If it's large, we
-    // assume no line.
-    double stdDevThreshold = 100.0; // TO DO: come up with a better empirical value for this.
-    std::vector<double> rotatedVPositions;
-    rotatedVPositions.reserve(count);
-    for (int i = 0; i < count; ++i)
-        rotatedVPositions.push_back(commonKmers[i].m_rotatedVPosition);
-    double mean, stdDev;
-    getMeanAndStDev(rotatedVPositions, mean, stdDev);
-
-    // A low standard deviation means all points are in a line. Set the threshold to 0 so all
-    // points are included.
-    if (stdDev < stdDevThreshold)
-    {
-        if (verbosity > 4)
-            output += "  Unimodal distribution, all points in line\n";
-        return 0.0;
-    }
-
-    //A high standard deviation means no points are in a line. Set the threshold to a high value
-    // so all points are excluded.
-    else
-    {
-        if (verbosity > 4)
-            output += "  Unimodal distribution, no line detected\n";
-        return std::numeric_limits<double>::max();
-    }
 }
 
 void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdDev)

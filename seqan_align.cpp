@@ -320,10 +320,11 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
     int endKmerIndex = commonKmerCount - (halfBandSize - 1); //One past last
 
     // Now we loop through the CommonKmer points, calculating their k-mer density (score) along the way!
-    for (int i = startKmerIndex; i < endKmerIndex; ++i)
+    for (int i = 0; i < commonKmerCount; ++i)
     {
-        int bandStartIndex = i - halfBandSize;
-        int bandEndIndex = i + halfBandSize;
+        int bandStartIndex = std::max(i - halfBandSize, 0);
+        int bandEndIndex = std::min(i + halfBandSize, commonKmerCount - 1);
+        int thisBandSize = bandEndIndex - bandStartIndex;
 
         // Get the Y coordinates for the start and end of the band.
         double bandStartY, bandEndY;
@@ -401,7 +402,7 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
         // Now that we (FINALLY) have the band area, we can get the density of CommonKmers in the
         // band. Also, we'll scale this to the expected level of CommonKmers (given a random
         // sequence).
-        double kmerDensity = bandSize / bandArea;
+        double kmerDensity = thisBandSize / bandArea;
         double score = kmerDensity / expectedDensity;
         commonKmers[i].m_bandArea = bandArea;
         commonKmers[i].m_score = score;

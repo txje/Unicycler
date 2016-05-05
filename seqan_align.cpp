@@ -399,9 +399,8 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
             }
         }
 
-        // Now that we (FINALLY) have the band area, we can get the density of CommonKmers in the
-        // band. Also, we'll scale this to the expected level of CommonKmers (given a random
-        // sequence).
+        // Now that we have the band area, we can get the density of CommonKmers in the band. Also,
+        // we'll scale this to the expected level of CommonKmers (given a random sequence).
         double kmerDensity = thisBandSize / bandArea;
         double score = kmerDensity / expectedDensity;
         commonKmers[i].m_bandArea = bandArea;
@@ -452,6 +451,27 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
     }
     if (verbosity > 4)
         output += "  Number of potential lines: " + std::to_string(lineGroups.size()) + "\n";
+
+    // It's possible for one actual line group to be broken into multiple pieces because the scores
+    // dipped low in the middle. So now we go back through our line groups and merge together those
+    // that are sufficiently close to each other.
+    double mergeDistance = 100.0; // TO DO: MAKE THIS A PARAMETER?
+    std::vector<std::vector<CommonKmer> > mergedLineGroups;
+    if (lineGroups.size() > 0)
+        mergedLineGroups.push_back(lineGroups[0]);
+    for (int i = 1; i < lineGroups.size(); ++i)
+    {
+        std::vector<CommonKmer> * previousGroup = &(mergedLineGroups.back());
+        std::vector<CommonKmer> * thisGroup = &(lineGroups[i]);
+
+        if (thisGroup->front().m_rotatedVPosition - previousGroup->back().m_rotatedVPosition <= mergeDistance)
+            previousGroup->insert(previousGroup->end(), thisGroup->begin(), thisGroup->end());
+        else
+            mergedLineGroups.push_back(*thisGroup);
+    }
+    lineGroups = mergedLineGroups;
+    if (verbosity > 4)
+        output += "  Number of potential lines after merging: " + std::to_string(lineGroups.size()) + "\n";
 
     // We are only interested in line groups which seem to span their full possible length (i.e.
     // not line groups caused by short, local alignments) and for which the band is reasonably 

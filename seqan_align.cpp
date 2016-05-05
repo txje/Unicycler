@@ -473,7 +473,11 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
 
         // Exclude alignments which are too short.
         if (bandLength < minimumAlignmentLength)
+        {
+            if (verbosity > 4)
+                output += "    Band too short: " + std::to_string(bandLength) + "\n";
             continue;
+        }
 
         // Now we want to test whether the CommonKmers in the band seem to span the full band. To
         // do so, we get the std dev of the rotated H position and compare it to the expected std
@@ -486,14 +490,15 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
         getMeanAndStDev(rotatedHPositions, meanRotatedH, rotatedHStdDev);
         double uniformStdDev = bandLength / 3.464101615137754; // sqrt(12)
 
-        std::cout << "bandLength: " << bandLength << std::endl;
-        std::cout << "uniformStdDev: " << uniformStdDev << std::endl;
-        std::cout << "rotatedHStdDev: " << rotatedHStdDev << std::endl;
-        int CRASH = 5 / 0;
+        // At least half of the uniform distribution's std dev is required.
+        if (rotatedHStdDev < 0.5 * uniformStdDev)
+        {
+            if (verbosity > 4)
+                output += "    Distribution too narrow: " + std::to_string(rotatedHStdDev) + ", uniform std dev = "  + std::to_string(uniformStdDev) + "\n";
+            continue;
+        }
 
-        // At least 75% of the uniform distribution's std dev is required.
-        if (rotatedHStdDev > 0.75 * uniformStdDev)
-            lengthFilteredLineGroups.push_back(lineGroups[i]);
+        lengthFilteredLineGroups.push_back(lineGroups[i]);
     }
     lineGroups = lengthFilteredLineGroups;
     if (verbosity > 4)

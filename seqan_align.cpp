@@ -19,6 +19,9 @@
 #include <mutex>
 #include <limits>
 
+// This is the k-mer size used in the line-finding process. It is small, which leads to lots of
+// background noise in the alignment rectangle, but it means that alignments will still be found
+// for high-error reads.
 #define KMER_SIZE 5
 
 using namespace seqan;
@@ -37,6 +40,11 @@ typedef std::unordered_map<std::string, std::vector<int> > KmerPosMap;
 
 enum CigarType {MATCH, INSERTION, DELETION, CLIP, NOTHING};
 
+
+
+// CommonKmer is a class to hold the positions of common k-mers between a read and a reference.
+// It holds the position in both original and rotated coordinates, and will ultimately hold the
+// point's score as well.
 class CommonKmer
 {
 public:
@@ -48,13 +56,14 @@ public:
     int m_vPosition;
     double m_rotatedHPosition;
     double m_rotatedVPosition;
-    double m_bandArea;
+    double m_bandArea; // TO DO: DELETE LATER TO SAVE MEMORY
     double m_score; // Scaled kmer density
 };
 
+
+
 // KmerPositions is a class that holds maps of k-mer positions for named sequences. It exists so we
-// don't have to repeatedly find the same k-mer sets over and over. Whenever it makes a k-mer map,
-// it stores it for later. On destruction it deletes all of its k-mer maps.
+// don't have to repeatedly find the same k-mer sets over and over when finding alignment lines.
 class KmerPositions
 {
 public:
@@ -64,8 +73,39 @@ public:
     void deletePositions(std::string & name);
     KmerPosMap * getKmerPositions(std::string & name);
 
+private:
     std::unordered_map<std::string, KmerPosMap *> m_kmerPositions;
 };
+
+
+
+// LineFindingResults holds all of the information that results from the findAlignmentLines
+// function. A pointer to an object of this type is passed back to Python, and Python can get parts
+// of this by calling C++ functions.
+class LineFindingResults
+{
+public:
+    LineFindingResults();
+
+    std::string m_output;
+    int m_milliseconds;
+    std::vector<AlignmentLine> m_lines;
+};
+
+
+
+// AlignmentLine takes a list of common k-mers and builds a seed chain that Seqan can use in a
+// banded alignment.
+class AlignmentLine
+{
+public:
+    AlignmentLine(std::vector<CommonKmer> & commonKmers);
+
+    double m_slope;
+    double m_intercept;
+    String<TSeed> m_bridgedSeedChain;
+};
+
 
 
 // These are the functions that will be called by the Python script.
@@ -76,8 +116,10 @@ char * bandedSemiGlobalAlignment(char * read, int readLen,
                                  int matchScore, int mismatchScore,
                                  int gapOpenScore, int gapExtensionScore,
                                  char * kmerLocations);
-char * findAlignmentLines(char * readNameC, char * refNameC, int readLength, int refLength,
-                          double expectedSlope, int verbosity, KmerPositions * kmerPositions);
+LineFindingResults * findAlignmentLines(char * readNameC, char * refNameC,
+                                        int readLength, int refLength,
+                                        double expectedSlope, int verbosity,
+                                        KmerPositions * kmerPositions);
 char * startExtensionAlignment(char * read, char * ref, int readLen, int refLen, int verbosity,
                                int matchScore, int mismatchScore, int gapOpenScore,
                                int gapExtensionScore);
@@ -260,8 +302,10 @@ void addBridgingSeed(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int v
 
 // This function searches for lines in the 2D read-ref space that represent likely semi-global
 // alignments.
-char * findAlignmentLines(char * readNameC, char * refNameC, int readLength, int refLength,
-                          double expectedSlope, int verbosity, KmerPositions * kmerPositions)
+LineFindingResults * findAlignmentLines(char * readNameC, char * refNameC,
+                                        int readLength, int refLength,
+                                        double expectedSlope, int verbosity,
+                                        KmerPositions * kmerPositions);
 {
     long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 
@@ -728,89 +772,6 @@ std::vector<CommonKmer> getCommonKmers(std::string & readName, std::string & ref
     }
 
     return commonKmers;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    // // Now that we've chose a good k-mer size, we can build the vector of CommonKmer objects.
-    // std::unordered_set<std::string> * readKmers = readKmerSets->getKmerPositions(readName, readSeq, kSize);
-    // std::unordered_set<std::string> * refKmers = refKmerSets->getKmerPositions(refName, refSeq, kSize);
-
-    // // Loop through the reference sequence, and for all kmers also present in the read sequence,
-    // // add to a map.
-    // std::map<std::string, std::vector<int> > refPositions;
-    // int kCount = refSeq.size() - kSize;
-    // for (int i = 0; i < kCount; ++i)
-    // {
-    //     std::string kmer = refSeq.substr(i, kSize);
-    //     if (readKmers->find(kmer) != readKmers->end()) // If kmer is in readKmers
-    //     {
-    //         if (refPositions.find(kmer) == refPositions.end()) // If kmer is not in refPositions
-    //             refPositions[kmer] = std::vector<int>();
-    //         refPositions[kmer].push_back(i);
-    //     }
-    // }
-    
-    // // Loop through the read sequence, and for all kmers also present in the reference, create a
-    // // CommonKmer object for each reference position.
-    // kCount = readSeq.size() - kSize;
-    // for (int i = 0; i < kCount; ++i)
-    // {
-    //     std::string kmer = readSeq.substr(i, kSize);
-    //     if (refKmers->find(kmer) != refKmers->end()) // If kmer is in refKmers
-    //     {
-    //         for (int j = 0; j < refPositions[kmer].size(); ++j)
-    //             commonKmers.push_back(CommonKmer(kmer, i, refPositions[kmer][j], rotationAngle));
-    //     }
-    // }
-    // return commonKmers;
 }
 
 

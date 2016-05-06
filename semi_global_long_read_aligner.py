@@ -815,14 +815,14 @@ def seqan_alignment_one_read_one_ref(read, ref, rev_comp,
     it got one alignment (common) and a list of more than one means it got multiple alignments (not
     common but possible).
     '''
-    line_result = find_alignment_lines(read, ref, rev_comp, expected_ref_to_read_ratio,
-                                       kmer_positions_ptr)
-    output, seqan_milliseconds, line_result = line_result.split(';', 2)
+    result = find_alignment_lines(read, ref, rev_comp, expected_ref_to_read_ratio,
+                                  kmer_positions_ptr)
+    output, milliseconds, line_count, line_results_ptr = result
 
     if VERBOSITY > 3:
-        output += '  Seqan milliseconds: ' + seqan_milliseconds + '\n'
+        output += '  Milliseconds: ' + milliseconds + '\n'
 
-    if line_result.startswith('Fail'):
+    if not line_count:
         if VERBOSITY > 3:
             output += '  No alignment lines found\n'
         return [], output
@@ -830,18 +830,20 @@ def seqan_alignment_one_read_one_ref(read, ref, rev_comp,
     # If the code got here, then we have at least one line to use in a banded alignment. Conduct
     # an alignment for each line.
     alignments = []
-    lines_info = line_result.split(';')
-    for line_info in lines_info:
-        line = Line(line_info)
+    for line_num in range(line_count):
         alignment, alignment_output = make_seqan_alignment_one_line(read, ref, rev_comp,
-                                                                    scoring_scheme, line)
+                                                                    scoring_scheme,
+                                                                    line_results_ptr, line_num)
         if alignment:
             alignments.append(alignment)
             output += alignment_output
 
+
+    C_LIB.deleteLineResults(line_results_ptr)
+
     return alignments, output
 
-def make_seqan_alignment_one_line(read, ref, rev_comp, scoring_scheme, line):
+def make_seqan_alignment_one_line(read, ref, rev_comp, scoring_scheme, line_results_ptr, line_num):
     '''
     Runs an alignment using Seqan between one read and one reference along one line.
     It starts with a smallish band size (fast) and works up to larger ones to see if they improve
@@ -855,7 +857,8 @@ def make_seqan_alignment_one_line(read, ref, rev_comp, scoring_scheme, line):
     max_band_size = 160 # TO DO: make this a parameter?
 
     alignment, alignment_output = run_one_banded_seqan_alignment(read, ref, rev_comp,
-                                                                 scoring_scheme, band_size, line)
+                                                                 scoring_scheme, band_size,
+                                                                 line_results_ptr, line_num)
     output += alignment_output
     if not alignment:
         return None, output
@@ -871,7 +874,7 @@ def make_seqan_alignment_one_line(read, ref, rev_comp, scoring_scheme, line):
 
         new_alignment, alignment_output = run_one_banded_seqan_alignment(read, ref, rev_comp,
                                                                          scoring_scheme, band_size,
-                                                                         line)
+                                                                         line_results_ptr, line_num)
         output += alignment_output
         total_milliseconds += new_alignment.milliseconds
 
@@ -886,7 +889,8 @@ def make_seqan_alignment_one_line(read, ref, rev_comp, scoring_scheme, line):
     alignment.milliseconds = total_milliseconds
     return alignment, output
 
-def run_one_banded_seqan_alignment(read, ref, rev_comp, scoring_scheme, band_size, line):
+def run_one_banded_seqan_alignment(read, ref, rev_comp, scoring_scheme, band_size,
+                                   line_results_ptr, line_num):
     '''
     Runs a single alignment using Seqan.
     Since this does a banded alignment, it is efficient but may or may not be successful. Returns
@@ -914,8 +918,8 @@ def run_one_banded_seqan_alignment(read, ref, rev_comp, scoring_scheme, band_siz
     if band_size > shortest_seq_len:
         band_size = shortest_seq_len
 
-    result = banded_semi_global_alignment(read_seq, trimmed_ref_seq, trimmed_ref_start, line,
-                                          band_size, scoring_scheme)
+    result = banded_semi_global_alignment(read_seq, trimmed_ref_seq, trimmed_ref_start, band_size,
+                                          scoring_scheme, line_results_ptr, line_num)
     alignment_output, result = result.split(';', 1)
     output += alignment_output
 
@@ -1328,18 +1332,6 @@ class Read(object):
         read_ranges = simplify_ranges(read_ranges)
         aligned_length = sum([x[1] - x[0] for x in read_ranges])
         return aligned_length / len(self.sequence)
-
-
-class Line(object):
-    '''
-    This class holds the information about an alignment seed line. These lines are produced by the
-    C++/Seqan findAlignmentLines function.
-    '''
-    def __init__(self, line_string):
-        line_string_parts = line_string.split(',', 2)
-        self.slope = float(line_string_parts[0])
-        self.intercept = float(line_string_parts[1])
-        self.kmer_locations = line_string_parts[2]
 
 
 
@@ -1795,28 +1787,27 @@ C_LIB.bandedSemiGlobalAlignment.argtypes = [c_char_p, # Read sequence
                                             c_char_p, # Reference sequence
                                             c_int,    # Reference length
                                             c_int,    # Reference start offset
-                                            c_double, # Slope
-                                            c_double, # Intercept
                                             c_int,    # Band size
                                             c_int,    # Verbosity
                                             c_int,    # Match score
                                             c_int,    # Mismatch score
                                             c_int,    # Gap open score
                                             c_int,    # Gap extension score
-                                            c_char_p] # K-mer location string
+                                            c_void_p, # LineFindingResults pointer
+                                            c_int]    # Line number
 C_LIB.bandedSemiGlobalAlignment.restype = c_void_p    # String describing alignment
 
-def banded_semi_global_alignment(read_seq, ref_seq, ref_offset, line, band_size, scoring_scheme):
+def banded_semi_global_alignment(read_seq, ref_seq, ref_offset, band_size, scoring_scheme,
+                                 line_results_ptr, line_num):
     '''
     Python wrapper for bandedSemiGlobalAlignment C++ function.
     '''
     ptr = C_LIB.bandedSemiGlobalAlignment(read_seq, len(read_seq),
                                           ref_seq, len(ref_seq), ref_offset,
-                                          line.slope, line.intercept, band_size,
-                                          VERBOSITY,
+                                          band_size, VERBOSITY,
                                           scoring_scheme.match, scoring_scheme.mismatch,
                                           scoring_scheme.gap_open, scoring_scheme.gap_extend,
-                                          line.kmer_locations)
+                                          line_results_ptr, line_num)
     return c_string_to_python_string(ptr)
 
 
@@ -1829,9 +1820,9 @@ C_LIB.findAlignmentLines.argtypes = [c_char_p, # Read name
                                      c_int,    # Read length
                                      c_int,    # Reference length
                                      c_double, # Expected slope
-                                     c_int,    # Verbosity\
+                                     c_int,    # Verbosity
                                      c_void_p] # KmerPositions pointer
-C_LIB.findAlignmentLines.restype = c_void_p    # String describing the found line(s)
+C_LIB.findAlignmentLines.restype = c_void_p    # LineFindingResults pointer
 
 def find_alignment_lines(read, ref, rev_comp, expected_slope,
                          kmer_positions_ptr):
@@ -1843,9 +1834,14 @@ def find_alignment_lines(read, ref, rev_comp, expected_slope,
     else:
         read_name = read.name + '+'
 
-    ptr = C_LIB.findAlignmentLines(read_name, ref.name, read.get_length(), ref.get_length(),
-                                   expected_slope, VERBOSITY, kmer_positions_ptr)
-    return c_string_to_python_string(ptr)
+    results_ptr = C_LIB.findAlignmentLines(read_name, ref.name, read.get_length(),
+                                           ref.get_length(), expected_slope, VERBOSITY,
+                                           kmer_positions_ptr)
+    output = 
+    milliseconds = 
+    line_count = 
+
+    return output, milliseconds, line_count, results_ptr
 
 
 

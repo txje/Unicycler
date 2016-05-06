@@ -19,6 +19,8 @@
 #include <mutex>
 #include <limits>
 
+#define KMER_SIZE 5
+
 using namespace seqan;
 using namespace std::chrono;
 
@@ -31,6 +33,7 @@ typedef Seed<Simple> TSeed;
 typedef SeedSet<TSeed> TSeedSet;
 typedef Row<TAlign>::Type TRow;
 typedef Iterator<TRow>::Type TRowIterator;
+typedef std::unordered_map<std::string, std::vector<int> > KmerPosMap;
 
 enum CigarType {MATCH, INSERTION, DELETION, CLIP, NOTHING};
 
@@ -49,33 +52,32 @@ public:
     double m_score; // Scaled kmer density
 };
 
-// KmerSets is a class that holds sets of k-mers for named sequences. It exists so we don't have to
-// repeatedly find the same k-mer sets over and over. Whenever it makes a k-mer set, it stores it
-// for later. On destruction it deletes all of its k-mer sets.
-class KmerSets
+// KmerPositions is a class that holds maps of k-mer positions for named sequences. It exists so we
+// don't have to repeatedly find the same k-mer sets over and over. Whenever it makes a k-mer map,
+// it stores it for later. On destruction it deletes all of its k-mer maps.
+class KmerPositions
 {
 public:
-    KmerSets() {}
-     ~KmerSets();
-    std::unordered_set<std::string> * getKmerSet(std::string & name, std::string & sequence, int kSize);
+    KmerPositions() {}
+    ~KmerPositions();
+    void addPositions(char * nameC, char * sequenceC);
+    void deletePositions(std::string & name);
+    KmerPosMap * getKmerPositions(std::string & name);
 
-private:
-    std::unordered_map<std::string, std::unordered_set<std::string> *> m_kmerSets;
-    std::mutex m_mutex;
+    std::unordered_map<std::string, KmerPosMap *> m_kmerPositions;
 };
 
 
 // These are the functions that will be called by the Python script.
 char * bandedSemiGlobalAlignment(char * read, int readLen,
                                  char * ref, int refLen, int refOffset,
-                                 double slope, double intercept, int kSize, int bandSize,
+                                 double slope, double intercept, int bandSize,
                                  int verbosity,
                                  int matchScore, int mismatchScore,
                                  int gapOpenScore, int gapExtensionScore,
                                  char * kmerLocations);
-char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, char * refNameC,
-                          double expectedSlope, int verbosity,
-                          KmerSets * readKmerSets, KmerSets * refKmerSets);
+char * findAlignmentLines(char * readNameC, char * refNameC, int readLength, int refLength,
+                          double expectedSlope, int verbosity, KmerPositions * kmerPositions);
 char * startExtensionAlignment(char * read, char * ref, int readLen, int refLen, int verbosity,
                                int matchScore, int mismatchScore, int gapOpenScore,
                                int gapExtensionScore);
@@ -83,19 +85,17 @@ char * endExtensionAlignment(char * read, char * ref, int readLen, int refLen, i
                              int matchScore, int mismatchScore, int gapOpenScore,
                              int gapExtensionScore);
 void free_c_string(char * p) {free(p);}
-KmerSets * newKmerSets() {return new KmerSets();}
-void deleteKmerSets(KmerSets * kmerSets) {delete kmerSets;}
+KmerPositions * newKmerPositions() {return new KmerPositions();}
+void addKmerPositions(KmerPositions * kmerPositions, char * nameC, char * sequenceC);
+void deleteKmerPositions(KmerPositions * kmerPositions, char * nameC);
+void deleteAllKmerPositions(KmerPositions * kmerPositions) {delete kmerPositions;}
 
 
 // These functions are internal to this C++ code.
 void addBridgingSeed(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int vEnd);
-std::vector<CommonKmer> getCommonKmers(std::string & readSeq, std::string & readName,
-                                       std::string & refSeq, std::string & refName,
+std::vector<CommonKmer> getCommonKmers(std::string & readName, std::string & refName,
                                        double expectedSlope, int verbosity, std::string & output,
-                                       KmerSets * readKmerSets, KmerSets * refKmerSets);
-long long getCommonKmerCount(std::string & readSeq, std::string & readName,
-                             std::string & refSeq, std::string & refName,
-                             int kSize, KmerSets * readKmerSets, KmerSets * refKmerSets);
+                                       KmerPositions * kmerPositions);
 char * turnAlignmentIntoDescriptiveString(Align<Dna5String, ArrayGaps> * alignment,
                                           int refOffset, long long startTime, std::string output,
                                           bool startImmediately, bool goToEnd);
@@ -117,7 +117,6 @@ void parseKmerLocationsFromString(std::string & str, std::vector<int> & v1, std:
 std::string getKmerTable(std::vector<CommonKmer> & commonKmers);
 std::string getSeedChainTable(String<TSeed> & seedChain);
 void addSeedMerge(TSeedSet & seedSet, TSeed & seed);
-std::unordered_set<std::string> * makeKmerSet(std::string & sequence, int kSize);
 void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdev);
 
 
@@ -128,7 +127,7 @@ void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdev);
 // A lower bandSize is faster with a larger chance of missing the optimal alignment.
 char * bandedSemiGlobalAlignment(char * read, int readLen,
                                  char * ref, int refLen, int refOffset,
-                                 double slope, double intercept, int kSize, int bandSize,
+                                 double slope, double intercept, int bandSize,
                                  int verbosity,
                                  int matchScore, int mismatchScore,
                                  int gapOpenScore, int gapExtensionScore,
@@ -155,7 +154,7 @@ char * bandedSemiGlobalAlignment(char * read, int readLen,
     TSeedSet seedSet;
     for (int i = 0; i < readKmerLocations.size(); ++i)
     {
-        TSeed seed(readKmerLocations[i], refKmerLocations[i], kSize);
+        TSeed seed(readKmerLocations[i], refKmerLocations[i], KMER_SIZE);
         addSeedMerge(seedSet, seed);
     }
 
@@ -259,23 +258,20 @@ void addBridgingSeed(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int v
     addSeedMerge(seedSet, seed);
 }
 
-// This function searches for lines in the 2D ref-read space that represent likely semi-global
+// This function searches for lines in the 2D read-ref space that represent likely semi-global
 // alignments.
-char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, char * refNameC,
-                          double expectedSlope, int verbosity,
-                          KmerSets * readKmerSets, KmerSets * refKmerSets)
+char * findAlignmentLines(char * readNameC, char * refNameC, int readLength, int refLength,
+                          double expectedSlope, int verbosity, KmerPositions * kmerPositions)
 {
     long long startTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
 
-    std::string readSeq(readSeqC);
     std::string readName(readNameC);
-    std::string refSeq(refSeqC);
     std::string refName(refNameC);
     std::string output;
 
-    std::vector<CommonKmer> commonKmers = getCommonKmers(readSeq, readName, refSeq, refName,
-                                                         expectedSlope, verbosity, output,
-                                                         readKmerSets, refKmerSets);
+    std::vector<CommonKmer> commonKmers = getCommonKmers(readName, refName, expectedSlope,
+                                                         verbosity, output, kmerPositions);
+
     if (commonKmers.size() < 2)
     {
         long long endTime = duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();
@@ -283,8 +279,7 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
     }
 
     // We scale the scores relative to the expected k-mer density.
-    int kSize = commonKmers[0].m_sequence.length();
-    double expectedDensity = 1.0 / pow(4.0, kSize);
+    double expectedDensity = 1.0 / pow(4.0, KMER_SIZE);
     if (verbosity > 4)
         output += "  Expected k-mer density: " + std::to_string(expectedDensity) + "\n";
 
@@ -299,21 +294,21 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
     double maxScore = 0.0;
 
     // Get the full band length using the middle point of the alignment rectangle.
-    double fullBandLength = getLineLength(readSeq.length() / 2.0, refSeq.length() / 2.0,
-                                          expectedSlope, readSeq.length(), refSeq.length());
+    double fullBandLength = getLineLength(readLength / 2.0, refLength / 2.0,
+                                          expectedSlope, readLength, refLength);
 
     // There are four corners of the alignment rectangle which we also need to rotate.
     double rotationAngle = CommonKmer::getRotationAngle(expectedSlope);
     CommonKmer c1("", 0, 0, rotationAngle);
-    CommonKmer c2("", 0, refSeq.length(), rotationAngle);
-    CommonKmer c3("", readSeq.length(), refSeq.length(), rotationAngle);
-    CommonKmer c4("", readSeq.length(), 0, rotationAngle);
+    CommonKmer c2("", 0, refLength, rotationAngle);
+    CommonKmer c3("", readLength, refLength, rotationAngle);
+    CommonKmer c4("", readLength, 0, rotationAngle);
     double c1Y = c1.m_rotatedVPosition;
     double c3Y = c3.m_rotatedVPosition;
     double c1BandLength = getLineLength(c1.m_hPosition, c1.m_vPosition,
-                                        expectedSlope, readSeq.length(), refSeq.length());
+                                        expectedSlope, readLength, refLength);
     double c3BandLength = getLineLength(c3.m_hPosition, c3.m_vPosition,
-                                        expectedSlope, readSeq.length(), refSeq.length());
+                                        expectedSlope, readLength, refLength);
 
     int commonKmerCount = commonKmers.size();
     int startKmerIndex = 0 + (halfBandSize - 1);
@@ -349,7 +344,7 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
         else
             bandStartLength = getLineLength(commonKmers[bandStartIndex].m_hPosition,
                                             commonKmers[bandStartIndex].m_vPosition,
-                                            expectedSlope, readSeq.length(), refSeq.length());
+                                            expectedSlope, readLength, refLength);
 
         // If both the start and end are in the middle of the rotated rectangle, then the area is a
         // parallelogram and calculating its area is easy.
@@ -365,7 +360,7 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
             else
                 bandEndLength = getLineLength(commonKmers[bandEndIndex].m_hPosition,
                                               commonKmers[bandEndIndex].m_vPosition,
-                                              expectedSlope, readSeq.length(), refSeq.length());
+                                              expectedSlope, readLength, refLength);
 
             // If both the start and end are in the bottom or top of the rotated rectangle, then the
             // area is a triangle/trapezoid.
@@ -490,7 +485,7 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
         }
         double meanH = hSum / groupCount;
         double meanV = vSum / groupCount;
-        double bandLength = getLineLength(meanH, meanV, expectedSlope, readSeq.length(), refSeq.length());
+        double bandLength = getLineLength(meanH, meanV, expectedSlope, readLength, refLength);
 
         // Exclude alignments which are too short.
         if (bandLength < minimumAlignmentLength)
@@ -624,7 +619,7 @@ char * findAlignmentLines(char * readSeqC, char * readNameC, char * refSeqC, cha
     {
         if (linesString.length() > 0)
             linesString += ";";
-        linesString += std::to_string(slopes[i]) + "," + std::to_string(intercepts[i]) + "," + std::to_string(kSize);
+        linesString += std::to_string(slopes[i]) + "," + std::to_string(intercepts[i]);
 
         // Add the k-mer locations to the returned string.
         for (int j = 0; j < lineGroups[i].size(); ++j)
@@ -693,140 +688,129 @@ char * endExtensionAlignment(char * read, char * ref, int readLen, int refLen, i
 
 
 // This function returns a list of the k-mers common to the two sequences.
-std::vector<CommonKmer> getCommonKmers(std::string & readSeq, std::string & readName,
-                                       std::string & refSeq, std::string & refName,
+std::vector<CommonKmer> getCommonKmers(std::string & readName, std::string & refName,
                                        double expectedSlope, int verbosity, std::string & output,
-                                       KmerSets * readKmerSets, KmerSets * refKmerSets)
+                                       KmerPositions * kmerPositions)
 {
     std::vector<CommonKmer> commonKmers;
     double rotationAngle = CommonKmer::getRotationAngle(expectedSlope);
 
-    // // We will dynamically choose a k-mer size that gives the maximum number of common k-mers.
-    // // Sizes too large will give fewer k-mers because it is less likely that sequences will share a
-    // // large k-mer. Sizes too small will give fewer k-mers because there are fewer possible k-mers.
-    // // Though we scale the value a little by multiplying by the k-mer size. This slightly pushs the
-    // // function towards larger k-mers.
-    // int startingKSize = 8;
-    // int kSize = startingKSize;
-    // long long commonKmerCount = getCommonKmerCount(readSeq, readName, refSeq, refName,
-    //                                                kSize, readKmerSets, refKmerSets);
-    // long long bestScore = commonKmerCount * kSize;
-    // int bestK = kSize;
-    // if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
+    KmerPosMap * readKmerPositions = kmerPositions->getKmerPositions(readName);
+    KmerPosMap * refKmerPositions = kmerPositions->getKmerPositions(refName);
 
-    // // Try larger k sizes, to see if that helps.
-    // while (true)
-    // {
-    //     ++kSize;
-    //     commonKmerCount = getCommonKmerCount(readSeq, readName, refSeq, refName,
-    //                                          kSize, readKmerSets, refKmerSets);
-    //     long long score = commonKmerCount * kSize;
-    //     if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
-    //     if (score > bestScore)
-    //     {
-    //         bestK = kSize;
-    //         bestScore = score;
-    //     }
-    //     else
-    //         break;
-    // }
-
-    // // If larger k sizes didn't help, try smaller k sizes.
-    // if (bestK == startingKSize)
-    // {
-    //     kSize = startingKSize;
-    //     while (true)
-    //     {
-    //         --kSize;
-    //         commonKmerCount = getCommonKmerCount(readSeq, readName, refSeq, refName,
-    //                                              kSize, readKmerSets, refKmerSets);
-    //         long long score = commonKmerCount * kSize;
-    //         if (verbosity > 3) printKmerSize(kSize, commonKmerCount, output);
-    //         if (score > bestScore)
-    //         {
-    //             bestK = kSize;
-    //             bestScore = score;
-    //         }
-    //         else
-    //             break;
-    //     }
-    // }
-
-    // if (verbosity > 3)
-    //     output += "  Best k size: " + std::to_string(bestK) + "\n";
-
-
-
-    // TEMP
-    int bestK = 5;
-    int kSize = 5;
-
-
-
-
-
-
-
-
-
-    // Now that we've chose a good k-mer size, we can build the vector of CommonKmer objects.
-    kSize = bestK;
-    std::unordered_set<std::string> * readKmers = readKmerSets->getKmerSet(readName, readSeq, kSize);
-    std::unordered_set<std::string> * refKmers = refKmerSets->getKmerSet(refName, refSeq, kSize);
-
-    // Loop through the reference sequence, and for all kmers also present in the read sequence,
-    // add to a map.
-    std::map<std::string, std::vector<int> > refPositions;
-    int kCount = refSeq.size() - kSize;
-    for (int i = 0; i < kCount; ++i)
+    KmerPosMap * smaller = readKmerPositions;
+    KmerPosMap * larger = refKmerPositions;
+    bool refKmersSmaller = false;
+    if (smaller->size() > larger->size())
     {
-        std::string kmer = refSeq.substr(i, kSize);
-        if (readKmers->find(kmer) != readKmers->end()) // If kmer is in readKmers
+        std::swap(smaller, larger);
+        refKmersSmaller = true;
+    }
+
+    for (KmerPosMap::iterator i = smaller->begin(); i != smaller->end(); ++i)
+    {
+        std::string kmer = i->first;
+        KmerPosMap::iterator j = larger->find(kmer);
+        if (j != larger->end())
         {
-            if (refPositions.find(kmer) == refPositions.end()) // If kmer is not in refPositions
-                refPositions[kmer] = std::vector<int>();
-            refPositions[kmer].push_back(i);
+            // If the code got here, then a common k-mer was found!
+            std::vector<int> * readPositions = &(i->second);
+            std::vector<int> * refPositions = &(j->second);
+            if (refKmersSmaller)
+                std::swap(readPositions, refPositions);
+
+            for (int k = 0; k < readPositions->size(); ++k)
+            {
+                for (int l = 0; l < refPositions->size(); ++l)
+                    commonKmers.push_back(CommonKmer(kmer, (*readPositions)[k], (*refPositions)[l], rotationAngle));
+            }
         }
     }
-    
-    // Loop through the read sequence, and for all kmers also present in the reference, create a
-    // CommonKmer object for each reference position.
-    kCount = readSeq.size() - kSize;
-    for (int i = 0; i < kCount; ++i)
-    {
-        std::string kmer = readSeq.substr(i, kSize);
-        if (refKmers->find(kmer) != refKmers->end()) // If kmer is in refKmers
-        {
-            for (int j = 0; j < refPositions[kmer].size(); ++j)
-                commonKmers.push_back(CommonKmer(kmer, i, refPositions[kmer][j], rotationAngle));
-        }
-    }
+
     return commonKmers;
-}
 
-// This function returns the number of k-mers the two sequences have in common.
-long long getCommonKmerCount(std::string & readSeq, std::string & readName,
-                             std::string & refSeq, std::string & refName,
-                             int kSize, KmerSets * readKmerSets, KmerSets * refKmerSets)
-{
-    // Get the k-mer sets for both read and reference. If they have been accessed before, then this
-    // should be very fast as they'll already exist. But if they haven't, the set(s) will be built
-    // and this will take a bit longer.
-    std::unordered_set<std::string> * readKmers = readKmerSets->getKmerSet(readName, readSeq, kSize);
-    std::unordered_set<std::string> * refKmers = refKmerSets->getKmerSet(refName, refSeq, kSize);
 
-    // Count the k-mers in both sets.
-    std::unordered_set<std::string> * smallerSet = readKmers;
-    std::unordered_set<std::string> * largerSet = refKmers;
-    if (readKmers->size() > refKmers->size())
-        std::swap(smallerSet, largerSet);
-    int intersectionSize = 0;
-    for (std::unordered_set<std::string>::iterator i = smallerSet->begin(); i != smallerSet->end(); ++i)
-    {
-        if (largerSet->find(*i) != largerSet->end())
-            ++intersectionSize;
-    }
-    return intersectionSize;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // // Now that we've chose a good k-mer size, we can build the vector of CommonKmer objects.
+    // std::unordered_set<std::string> * readKmers = readKmerSets->getKmerPositions(readName, readSeq, kSize);
+    // std::unordered_set<std::string> * refKmers = refKmerSets->getKmerPositions(refName, refSeq, kSize);
+
+    // // Loop through the reference sequence, and for all kmers also present in the read sequence,
+    // // add to a map.
+    // std::map<std::string, std::vector<int> > refPositions;
+    // int kCount = refSeq.size() - kSize;
+    // for (int i = 0; i < kCount; ++i)
+    // {
+    //     std::string kmer = refSeq.substr(i, kSize);
+    //     if (readKmers->find(kmer) != readKmers->end()) // If kmer is in readKmers
+    //     {
+    //         if (refPositions.find(kmer) == refPositions.end()) // If kmer is not in refPositions
+    //             refPositions[kmer] = std::vector<int>();
+    //         refPositions[kmer].push_back(i);
+    //     }
+    // }
+    
+    // // Loop through the read sequence, and for all kmers also present in the reference, create a
+    // // CommonKmer object for each reference position.
+    // kCount = readSeq.size() - kSize;
+    // for (int i = 0; i < kCount; ++i)
+    // {
+    //     std::string kmer = readSeq.substr(i, kSize);
+    //     if (refKmers->find(kmer) != refKmers->end()) // If kmer is in refKmers
+    //     {
+    //         for (int j = 0; j < refPositions[kmer].size(); ++j)
+    //             commonKmers.push_back(CommonKmer(kmer, i, refPositions[kmer][j], rotationAngle));
+    //     }
+    // }
+    // return commonKmers;
 }
 
 
@@ -1165,40 +1149,6 @@ void addSeedMerge(TSeedSet & seedSet, TSeed & seed)
         addSeed(seedSet, seed, Single());
 }
 
-
-// This is the destructor for KmerSets. It cleans up all stuff allocated on the heap.
-KmerSets::~KmerSets()
-{
-    for (std::unordered_map<std::string, std::unordered_set<std::string> *>::iterator i = m_kmerSets.begin(); i != m_kmerSets.end(); ++i)
-        delete i->second;
-}
-
-// This function returns a k-mer set for a given sequence and k size. If the k-mer set already
-// exists, it will just return it immediately. If not, it will build it using the sequence.
-// The function is locked by a mutex so multiple threads don't try to build the same k-mer set at
-// the same time.
-std::unordered_set<std::string> * KmerSets::getKmerSet(std::string & name, std::string & sequence, int kSize)
-{
-    m_mutex.lock();
-    std::string mapKey = name + "_" + std::to_string(kSize);
-    if (m_kmerSets.find(mapKey) == m_kmerSets.end())
-        m_kmerSets[mapKey] = makeKmerSet(sequence, kSize);
-    m_mutex.unlock();
-    return m_kmerSets[mapKey];
-}
-
-
-// This function produces a k-mer set for the given sequence. It allocates it on the heap and so
-// will need to be deleted later.
-std::unordered_set<std::string> * makeKmerSet(std::string & sequence, int kSize)
-{
-    std::unordered_set<std::string> * kmerSet = new std::unordered_set<std::string>();
-    int kCount = sequence.size() - kSize;
-    for (int i = 0; i < kCount; ++i)
-        kmerSet->insert(sequence.substr(i, kSize));
-    return kmerSet;
-}
-
 void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdDev)
 {
     mean = 0.0;
@@ -1216,6 +1166,65 @@ void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdDev)
         devSum += dev * dev;
     }
     stdDev = sqrt(devSum / v.size());
+}
+
+// This is the destructor for KmerPositions. It cleans up all the KmerPosMaps which were allocated
+// on the heap.
+KmerPositions::~KmerPositions()
+{
+    for (std::unordered_map<std::string, KmerPosMap *>::iterator i = m_kmerPositions.begin(); i != m_kmerPositions.end(); ++i)
+        delete i->second;
+}
+
+// This function adds a sequence to the KmerPositions object. It creates a new KmerPosMap on the
+// heap (will be deleted in destructor), fills it up and adds it to m_kmerPositions.
+void KmerPositions::addPositions(char * nameC, char * sequenceC)
+{
+    std::string name(nameC);
+    std::string sequence(sequenceC);
+
+    KmerPosMap * posMap = new KmerPosMap();
+    int kCount = sequence.size() - KMER_SIZE + 1;
+    for (int i = 0; i < kCount; ++i)
+    {
+        std::string kmer = sequence.substr(i, KMER_SIZE);
+        if (posMap->find(kmer) == posMap->end())
+            (*posMap)[kmer] = std::vector<int>();
+        (*posMap)[kmer].push_back(i);
+    }
+
+    m_kmerPositions[name] = posMap;
+}
+
+void addKmerPositions(KmerPositions * kmerPositions, char * nameC, char * sequenceC)
+{
+    kmerPositions->addPositions(nameC, sequenceC);
+}
+
+void KmerPositions::deletePositions(std::string & name)
+{
+    KmerPosMap * kmerPosMap = getKmerPositions(name);
+    if (kmerPosMap != 0)
+    {
+        m_kmerPositions.erase(name);
+        delete kmerPosMap;
+    }
+}
+
+void deleteKmerPositions(KmerPositions * kmerPositions, char * nameC)
+{
+    std::string name(nameC);
+    kmerPositions->deletePositions(name);
+}
+
+// This function retrieves a KmerPosMap from the object using the name as a key. If the name isn't
+// in the map, it returns 0.
+KmerPosMap * KmerPositions::getKmerPositions(std::string & name)
+{
+    if (m_kmerPositions.find(name) == m_kmerPositions.end())
+        return 0;
+    else
+        return m_kmerPositions[name];
 }
 
 }

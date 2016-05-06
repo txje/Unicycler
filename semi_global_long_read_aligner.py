@@ -219,8 +219,10 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, reads_fastq, 
         expected_ref_to_read_ratio = 0.95 # TO DO: SET THIS TO AN EMPIRICALLY-DERIVED VALUE
     completed_count = 0
 
-    # Create a C++ KmerSets object for the references. These will be shared by all threads.
-    ref_kmer_sets_ptr = C_LIB.newKmerSets()
+    # Create a C++ KmerPositions object and add each reference sequence.
+    kmer_positions_ptr = C_LIB.newKmerPositions()
+    for ref in references:
+        C_LIB.addKmerPositions(kmer_positions_ptr, ref.name, ref.sequence)
 
     # If single-threaded, just do the work in a simple loop.
     if threads == 1:
@@ -228,7 +230,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, reads_fastq, 
             new_alignments, output = seqan_alignment_one_read_all_refs(read, references,
                                                                        scoring_scheme,
                                                                        expected_ref_to_read_ratio,
-                                                                       ref_kmer_sets_ptr)
+                                                                       kmer_positions_ptr)
             read.alignments += new_alignments
             completed_count += 1
             if VERBOSITY == 1:
@@ -241,7 +243,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, reads_fastq, 
         pool = ThreadPool(threads)
         arg_list = []
         for read in reads_to_realign:
-            arg_list.append((read, references, scoring_scheme, expected_ref_to_read_ratio, ref_kmer_sets_ptr))
+            arg_list.append((read, references, scoring_scheme, expected_ref_to_read_ratio, kmer_positions_ptr))
         for new_alignments, output in pool.imap_unordered(seqan_alignment_one_read_all_refs_one_arg,
                                                           arg_list, 1):
             if new_alignments:
@@ -253,8 +255,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, reads_fastq, 
             if VERBOSITY > 1:
                 print(output, end='')
 
-    # We're done with the C++ KmerSets object, so delete it now.
-    C_LIB.deleteKmerSets(ref_kmer_sets_ptr)
+    # We're done with the C++ KmerPositions object, so delete it now.
+    C_LIB.deleteAllKmerPositions(kmer_positions_ptr)
 
     # Filter the alignments based on conflicting read position.
     if VERBOSITY > 0:
@@ -751,12 +753,12 @@ def seqan_alignment_one_read_all_refs_one_arg(all_args):
     This is just a one-argument version of seqan_alignment_one_read_all_refs to make it easier to
     use that function in a thread pool.
     '''
-    read, references, scoring_scheme, expected_ref_to_read_ratio, ref_kmer_sets_ptr = all_args
+    read, references, scoring_scheme, expected_ref_to_read_ratio, kmer_positions_ptr = all_args
     return seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
-                                             expected_ref_to_read_ratio, ref_kmer_sets_ptr)
+                                             expected_ref_to_read_ratio, kmer_positions_ptr)
 
 def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
-                                      expected_ref_to_read_ratio, ref_kmer_sets_ptr):
+                                      expected_ref_to_read_ratio, kmer_positions_ptr):
     '''
     Aligns a single read against all reference sequences using Seqan. Both forward and reverse
     complement alignments are tried. Returns a list of all alignments found and the console output.
@@ -767,9 +769,7 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
         output += str(read) + '\n'
     alignments = []
 
-    # Create a KmerSets object for the read. This is deleted at the end of the function (keeping
-    # kmers of all reads would use too much RAM).
-    read_kmer_sets_ptr = C_LIB.newKmerSets()
+    add_read_kmer_positions(kmer_positions_ptr, read)
 
     for ref in references:
         if VERBOSITY > 3:
@@ -777,7 +777,7 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
         forward_alignments, forward_alignment_output = \
                         seqan_alignment_one_read_one_ref(read, ref, False, scoring_scheme,
                                                          expected_ref_to_read_ratio,
-                                                         read_kmer_sets_ptr, ref_kmer_sets_ptr)
+                                                         kmer_positions_ptr)
         alignments += forward_alignments
         output += forward_alignment_output
 
@@ -786,11 +786,10 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
         reverse_alignments, reverse_alignment_output = \
                         seqan_alignment_one_read_one_ref(read, ref, True, scoring_scheme,
                                                          expected_ref_to_read_ratio,
-                                                         read_kmer_sets_ptr, ref_kmer_sets_ptr)
+                                                         kmer_positions_ptr)
         alignments += reverse_alignments
         output += reverse_alignment_output
 
-    C_LIB.deleteKmerSets(read_kmer_sets_ptr)
 
     if VERBOSITY > 1:
         if not alignments:
@@ -802,11 +801,14 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
             output += '  Time to align: ' + float_to_str(time.time() - start_time, 3) + ' s\n'
         output += '\n'
 
+
+    delete_read_kmer_positions(kmer_positions_ptr, read)
+
     return alignments, output
 
 def seqan_alignment_one_read_one_ref(read, ref, rev_comp,
                                      scoring_scheme, expected_ref_to_read_ratio,
-                                     read_kmer_sets_ptr, ref_kmer_sets_ptr):
+                                     kmer_positions_ptr):
     '''
     Runs an alignment using Seqan between one read and one reference.
     Returns a list of Alignment objects: empty list means it did not succeed, a list of one means
@@ -814,7 +816,7 @@ def seqan_alignment_one_read_one_ref(read, ref, rev_comp,
     common but possible).
     '''
     line_result = find_alignment_lines(read, ref, rev_comp, expected_ref_to_read_ratio,
-                                       read_kmer_sets_ptr, ref_kmer_sets_ptr)
+                                       kmer_positions_ptr)
     output, seqan_milliseconds, line_result = line_result.split(';', 2)
 
     if VERBOSITY > 3:
@@ -1215,6 +1217,12 @@ class Reference(object):
         self.name = name
         self.sequence = sequence
 
+    def get_length(self):
+        '''
+        Returns the sequence length.
+        '''
+        return len(self.sequence)
+
 
 
 class Read(object):
@@ -1224,7 +1232,6 @@ class Read(object):
     def __init__(self, name, sequence, qualities):
         self.name = name
         self.sequence = sequence
-        self.rev_comp_seq = reverse_complement(sequence)
         self.qualities = qualities
         self.alignments = []
 
@@ -1329,11 +1336,10 @@ class Line(object):
     C++/Seqan findAlignmentLines function.
     '''
     def __init__(self, line_string):
-        line_string_parts = line_string.split(',', 3)
+        line_string_parts = line_string.split(',', 2)
         self.slope = float(line_string_parts[0])
         self.intercept = float(line_string_parts[1])
-        self.k_size = int(line_string_parts[2])
-        self.kmer_locations = line_string_parts[3]
+        self.kmer_locations = line_string_parts[2]
 
 
 
@@ -1396,7 +1402,7 @@ class Alignment(object):
             self.setup_using_graphmap_sam(sam_line, read_dict, reference_dict)
 
         if self.rev_comp:
-            self.aligned_read_seq = self.read.rev_comp_seq[self.read_start_pos:self.read_end_pos]
+            self.aligned_read_seq = reverse_complement(self.read.sequence)[self.read_start_pos:self.read_end_pos]
         else:
             self.aligned_read_seq = self.read.sequence[self.read_start_pos:self.read_end_pos]
         self.aligned_ref_seq = self.ref.sequence[self.ref_start_pos:self.ref_end_pos]
@@ -1574,7 +1580,7 @@ class Alignment(object):
         self.read_start_pos = int(seqan_parts[2])
         assert self.read_start_pos == 0
         if self.rev_comp:
-            self.aligned_read_seq = self.read.rev_comp_seq[self.read_start_pos:self.read_end_pos]
+            self.aligned_read_seq = reverse_complement(self.read.sequence)[self.read_start_pos:self.read_end_pos]
         else:
             self.aligned_read_seq = self.read.sequence[self.read_start_pos:self.read_end_pos]
 
@@ -1638,7 +1644,7 @@ class Alignment(object):
         assert self.read_end_pos == self.read.get_length()
         self.read_end_gap = self.read.get_length() - self.read_end_pos
         if self.rev_comp:
-            self.aligned_read_seq = self.read.rev_comp_seq[self.read_start_pos:self.read_end_pos]
+            self.aligned_read_seq = reverse_complement(self.read.sequence)[self.read_start_pos:self.read_end_pos]
         else:
             self.aligned_read_seq = self.read.sequence[self.read_start_pos:self.read_end_pos]
 
@@ -1791,7 +1797,6 @@ C_LIB.bandedSemiGlobalAlignment.argtypes = [c_char_p, # Read sequence
                                             c_int,    # Reference start offset
                                             c_double, # Slope
                                             c_double, # Intercept
-                                            c_int,    # K-mer size
                                             c_int,    # Band size
                                             c_int,    # Verbosity
                                             c_int,    # Match score
@@ -1807,7 +1812,7 @@ def banded_semi_global_alignment(read_seq, ref_seq, ref_offset, line, band_size,
     '''
     ptr = C_LIB.bandedSemiGlobalAlignment(read_seq, len(read_seq),
                                           ref_seq, len(ref_seq), ref_offset,
-                                          line.slope, line.intercept, line.k_size, band_size,
+                                          line.slope, line.intercept, band_size,
                                           VERBOSITY,
                                           scoring_scheme.match, scoring_scheme.mismatch,
                                           scoring_scheme.gap_open, scoring_scheme.gap_extend,
@@ -1819,31 +1824,27 @@ def banded_semi_global_alignment(read_seq, ref_seq, ref_offset, line, band_size,
 This function looks for the most likely line representing the alignment. It is used to get a
 line to be given to C_LIB.bandedSemiGlobalAlignment.
 '''
-C_LIB.findAlignmentLines.argtypes = [c_char_p, # Read sequence
-                                     c_char_p, # Read name
-                                     c_char_p, # Reference sequence
+C_LIB.findAlignmentLines.argtypes = [c_char_p, # Read name
                                      c_char_p, # Reference name
+                                     c_int,    # Read length
+                                     c_int,    # Reference length
                                      c_double, # Expected slope
-                                     c_int,    # Verbosity
-                                     c_void_p, # Read KmerSets pointer
-                                     c_void_p] # Reference KmerSets pointer
+                                     c_int,    # Verbosity\
+                                     c_void_p] # KmerPositions pointer
 C_LIB.findAlignmentLines.restype = c_void_p    # String describing the found line(s)
 
 def find_alignment_lines(read, ref, rev_comp, expected_slope,
-                         read_kmer_sets_ptr, ref_kmer_sets_ptr):
+                         kmer_positions_ptr):
     '''
     Python wrapper for findAlignmentLines C++ function.
     '''
     if rev_comp:
-        read_seq = reverse_complement(read.sequence)
-        read_name = read.name + "-"
+        read_name = read.name + '-'
     else:
-        read_seq = read.sequence
-        read_name = read.name + "+"
+        read_name = read.name + '+'
 
-    ptr = C_LIB.findAlignmentLines(read_seq, read_name, ref.sequence, ref.name,
-                                   expected_slope, VERBOSITY,
-                                   read_kmer_sets_ptr, ref_kmer_sets_ptr)
+    ptr = C_LIB.findAlignmentLines(read_name, ref.name, read.get_length(), ref.get_length(),
+                                   expected_slope, VERBOSITY, kmer_positions_ptr)
     return c_string_to_python_string(ptr)
 
 
@@ -1918,10 +1919,32 @@ def c_string_to_python_string(c_string):
 '''
 These functions make/delete a C++ object that will be used during line-finding.
 '''
-C_LIB.newKmerSets.argtypes = []
-C_LIB.newKmerSets.restype = c_void_p
-C_LIB.deleteKmerSets.argtypes = [c_void_p]
-C_LIB.deleteKmerSets.restype = None
+C_LIB.newKmerPositions.argtypes = []
+C_LIB.newKmerPositions.restype = c_void_p
+C_LIB.addKmerPositions.argtypes = [c_void_p, # KmerPositions pointer
+                                   c_char_p, # Name
+                                   c_char_p] # Sequence
+C_LIB.addKmerPositions.restype = None
+C_LIB.deleteKmerPositions.argtypes = [c_void_p, # KmerPositions pointer
+                                      c_char_p] # Name
+C_LIB.deleteKmerPositions.restype = None
+C_LIB.deleteAllKmerPositions.argtypes = [c_void_p]
+C_LIB.deleteAllKmerPositions.restype = None
+
+def add_read_kmer_positions(kmer_positions_ptr, read):
+    '''
+    Adds both positive and negative sequences of a read to KmerPositions.
+    '''
+    C_LIB.addKmerPositions(kmer_positions_ptr, read.name + '+', read.sequence)
+    C_LIB.addKmerPositions(kmer_positions_ptr, read.name + '-', reverse_complement(read.sequence))
+
+def delete_read_kmer_positions(kmer_positions_ptr, read):
+    '''
+    Adds both positive and negative sequences of a read to KmerPositions.
+    '''
+    C_LIB.deleteKmerPositions(kmer_positions_ptr, read.name + '+')
+    C_LIB.deleteKmerPositions(kmer_positions_ptr, read.name + '-')
+
 
 
 if __name__ == '__main__':

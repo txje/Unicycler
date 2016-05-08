@@ -801,141 +801,42 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
             output += '  Time to align: ' + float_to_str(time.time() - start_time, 3) + ' s\n'
         output += '\n'
 
-
     delete_read_kmer_positions(kmer_positions_ptr, read)
 
     return alignments, output
 
-def seqan_alignment_one_read_one_ref(read, ref, rev_comp,
-                                     scoring_scheme, expected_ref_to_read_ratio,
+def seqan_alignment_one_read_one_ref(read, ref, rev_comp, scoring_scheme, expected_slope,
                                      kmer_positions_ptr):
     '''
     Runs an alignment using Seqan between one read and one reference.
     Returns a list of Alignment objects: empty list means it did not succeed, a list of one means
-    it got one alignment (common) and a list of more than one means it got multiple alignments (not
-    common but possible).
+    it got one alignment and a list of more than one means it got multiple alignments.
     '''
-    result = find_alignment_lines(read, ref, rev_comp, expected_ref_to_read_ratio,
-                                  kmer_positions_ptr)
-    output, milliseconds, line_count, line_results_ptr = result
-
-    if VERBOSITY > 3:
-        output += '  Milliseconds: ' + milliseconds + '\n'
-
-    if not line_count:
-        if VERBOSITY > 3:
-            output += '  No alignment lines found\n'
-        return [], output
-
-    # If the code got here, then we have at least one line to use in a banded alignment. Conduct
-    # an alignment for each line.
-    alignments = []
-    for line_num in range(line_count):
-        alignment, alignment_output = make_seqan_alignment_one_line(read, ref, rev_comp,
-                                                                    scoring_scheme,
-                                                                    line_results_ptr, line_num)
-        if alignment:
-            alignments.append(alignment)
-            output += alignment_output
-
-
-    C_LIB.deleteLineResults(line_results_ptr)
-
-    return alignments, output
-
-def make_seqan_alignment_one_line(read, ref, rev_comp, scoring_scheme, line_results_ptr, line_num):
-    '''
-    Runs an alignment using Seqan between one read and one reference along one line.
-    It starts with a smallish band size (fast) and works up to larger ones to see if they improve
-    the alignment.
-    It returns either an Alignment object or None, depending on whether or not it was successful.
-    '''
-    output = ''
-    total_milliseconds = 0
-
-    band_size = 10 # TO DO: make this a parameter?
-    max_band_size = 160 # TO DO: make this a parameter?
-
-    alignment, alignment_output = run_one_banded_seqan_alignment(read, ref, rev_comp,
-                                                                 scoring_scheme, band_size,
-                                                                 line_results_ptr, line_num)
-    output += alignment_output
-    if not alignment:
-        return None, output
-    total_milliseconds += alignment.milliseconds
-
-    # If our alignment succeeded, we try larger bands to see if that helps.
-    while True:
-        band_size *= 2
-
-        # If we've reached the max band size, then we return what we've got.
-        if band_size > max_band_size:
-            return alignment, output
-
-        new_alignment, alignment_output = run_one_banded_seqan_alignment(read, ref, rev_comp,
-                                                                         scoring_scheme, band_size,
-                                                                         line_results_ptr, line_num)
-        output += alignment_output
-        total_milliseconds += new_alignment.milliseconds
-
-        # If our new alignment with a larger band size failed to improve upon our previous
-        # alignment with a smaller band size, then we don't bother trying for larger bands and just
-        # return our best alignment so far.
-        if new_alignment.scaled_score <= alignment.scaled_score:
-            break
-        else:
-            alignment = new_alignment
-
-    alignment.milliseconds = total_milliseconds
-    return alignment, output
-
-def run_one_banded_seqan_alignment(read, ref, rev_comp, scoring_scheme, band_size,
-                                   line_results_ptr, line_num):
-    '''
-    Runs a single alignment using Seqan.
-    Since this does a banded alignment, it is efficient but may or may not be successful. Returns
-    either an Alignment object (if successful) or None (if not).
-    '''
-    output = ''
     if rev_comp:
+        read_name = read.name + '-'
         read_seq = reverse_complement(read.sequence)
     else:
+        read_name = read.name + '+'
         read_seq = read.sequence
 
-    # Use the line's slope and intercept to see where the reads should start/end in the reference.
-    # If it's in the middle of the reference, we'll trim the reference sequence down and only pass
-    # the relevant part to Seqan.
-    pad_size = 1000 # TO DO: MAKE THIS A PARAMETER?
-    approx_ref_start = int(round(line.intercept))
-    approx_ref_end = int(round(line.slope * len(read_seq) + line.intercept))
-    trimmed_ref_start = max(0, approx_ref_start - pad_size)
-    trimmed_ref_end = min(len(ref.sequence), approx_ref_end + pad_size)
-    trimmed_ref_seq = ref.sequence[trimmed_ref_start:trimmed_ref_end]
+    ptr = C_LIB.semiGlobalAlignment(read_name, read_seq, ref.name, ref.sequence,
+                                    expected_slope, VERBOSITY, kmer_positions_ptr,
+                                    scoring_scheme.match, scoring_scheme.mismatch,
+                                    scoring_scheme.gap_open, scoring_scheme.gap_extend)
+    results = c_string_to_python_string(ptr).split(';')
+    alignment_strings = results[:-1]
+    output = results[-1]
 
-    # I encountered a Seqan crash when the band size exceeded the sequence length, so don't let
-    # that happen.
-    shortest_seq_len = min(len(read_seq), len(trimmed_ref_seq))
-    if band_size > shortest_seq_len:
-        band_size = shortest_seq_len
+    if VERBOSITY > 0:
+        print(output)
 
-    result = banded_semi_global_alignment(read_seq, trimmed_ref_seq, trimmed_ref_start, band_size,
-                                          scoring_scheme, line_results_ptr, line_num)
-    alignment_output, result = result.split(';', 1)
-    output += alignment_output
+    alignments = []
+    for alignment_string in alignment_strings:
+        alignment = Alignment(seqan_output=alignment_string, read=read, ref=ref, rev_comp=rev_comp,
+                              scoring_scheme=scoring_scheme)
+        alignments.append(alignment)
 
-    if result.startswith('Failed'):
-        output += result + '\n'
-        return None, output
-
-    alignment = Alignment(seqan_output=result, read=read, ref=ref, rev_comp=rev_comp,
-                          scoring_scheme=scoring_scheme)
-
-    if VERBOSITY > 2:
-        output += '  Seqan alignment, bandwidth = ' + str(band_size) + ': ' + str(alignment) + '\n'
-    if VERBOSITY > 3:
-        output += '  ' + alignment.cigar + '\n'
-
-    return alignment, output
+    return alignments
 
 def get_ref_shift_from_cigar_part(cigar_part):
     '''
@@ -1407,7 +1308,7 @@ class Alignment(object):
         complete details about the alignment.
         '''
         self.alignment_type = 'Seqan'
-        seqan_parts = seqan_output.split(';')
+        seqan_parts = seqan_output.split(',')
         assert len(seqan_parts) >= 6
 
         self.rev_comp = rev_comp
@@ -1778,71 +1679,22 @@ class Alignment(object):
 
 
 
-'''
-This function conducts a semi-global alignment surrounding the given line. Since the search is
-limited to a narrow band it is much more efficient than an exhaustive search.
-'''
-C_LIB.bandedSemiGlobalAlignment.argtypes = [c_char_p, # Read sequence
-                                            c_int,    # Read length
-                                            c_char_p, # Reference sequence
-                                            c_int,    # Reference length
-                                            c_int,    # Reference start offset
-                                            c_int,    # Band size
-                                            c_int,    # Verbosity
-                                            c_int,    # Match score
-                                            c_int,    # Mismatch score
-                                            c_int,    # Gap open score
-                                            c_int,    # Gap extension score
-                                            c_void_p, # LineFindingResults pointer
-                                            c_int]    # Line number
-C_LIB.bandedSemiGlobalAlignment.restype = c_void_p    # String describing alignment
-
-def banded_semi_global_alignment(read_seq, ref_seq, ref_offset, band_size, scoring_scheme,
-                                 line_results_ptr, line_num):
-    '''
-    Python wrapper for bandedSemiGlobalAlignment C++ function.
-    '''
-    ptr = C_LIB.bandedSemiGlobalAlignment(read_seq, len(read_seq),
-                                          ref_seq, len(ref_seq), ref_offset,
-                                          band_size, VERBOSITY,
-                                          scoring_scheme.match, scoring_scheme.mismatch,
-                                          scoring_scheme.gap_open, scoring_scheme.gap_extend,
-                                          line_results_ptr, line_num)
-    return c_string_to_python_string(ptr)
-
 
 '''
-This function looks for the most likely line representing the alignment. It is used to get a
-line to be given to C_LIB.bandedSemiGlobalAlignment.
+This is the big semi-global C++ Seqan alignment function.
 '''
-C_LIB.findAlignmentLines.argtypes = [c_char_p, # Read name
-                                     c_char_p, # Reference name
-                                     c_int,    # Read length
-                                     c_int,    # Reference length
-                                     c_double, # Expected slope
-                                     c_int,    # Verbosity
-                                     c_void_p] # KmerPositions pointer
-C_LIB.findAlignmentLines.restype = c_void_p    # LineFindingResults pointer
-
-def find_alignment_lines(read, ref, rev_comp, expected_slope,
-                         kmer_positions_ptr):
-    '''
-    Python wrapper for findAlignmentLines C++ function.
-    '''
-    if rev_comp:
-        read_name = read.name + '-'
-    else:
-        read_name = read.name + '+'
-
-    results_ptr = C_LIB.findAlignmentLines(read_name, ref.name, read.get_length(),
-                                           ref.get_length(), expected_slope, VERBOSITY,
-                                           kmer_positions_ptr)
-    output = 
-    milliseconds = 
-    line_count = 
-
-    return output, milliseconds, line_count, results_ptr
-
+C_LIB.semiGlobalAlignment.argtypes = [c_char_p, # Read name
+                                      c_char_p, # Read sequence
+                                      c_char_p, # Reference name
+                                      c_char_p, # Reference sequence
+                                      c_double, # Expected slope
+                                      c_int,    # Verbosity
+                                      c_void_p, # KmerPositions pointer
+                                      c_int,    # Match score
+                                      c_int,    # Mismatch score
+                                      c_int,    # Gap open score
+                                      c_int]    # Gap extension score
+C_LIB.semiGlobalAlignment.restype = c_void_p    # String describing alignments
 
 
 '''

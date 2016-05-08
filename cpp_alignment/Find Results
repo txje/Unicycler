@@ -1,0 +1,182 @@
+Searching 8 files for "fixSeedChainToLine" (regex)
+
+/Users/Ryan/Programs/Hybrid_assembler/cpp_alignment/cpp_alignment.cpp:
+  115  char * cppStringToCString(std::string cpp_string);
+  116  // std::string vectorToString(std::vector<int> * v);
+  117: void fixSeedChainToLine(String<TSeed> * seedChain, double bandSize);
+  118  void getSeedChainSlopeAndIntercept(String<TSeed> * seedChain, int firstI, int lastI,
+  119                                     double * slope, double * intercept);
+
+1 match in 1 file
+
+
+Searching 8 files for "getSeedChainSlopeAndIntercept" (regex)
+
+/Users/Ryan/Programs/Hybrid_assembler/cpp_alignment/cpp_alignment.cpp:
+  115  char * cppStringToCString(std::string cpp_string);
+  116  // std::string vectorToString(std::vector<int> * v);
+  117: void getSeedChainSlopeAndIntercept(String<TSeed> * seedChain, int firstI, int lastI,
+  118                                     double * slope, double * intercept);
+  119  void getSlopeAndIntercept(int hStart, int hEnd, int vStart, int vEnd,
+  ...
+  720  // given indices. Slope is defined as the change in V position over the change in H position.
+  721  // Intercept is defined as the V position at the H position of 0.
+  722: void getSeedChainSlopeAndIntercept(String<TSeed> * seedChain, int i1, int i2,
+  723                                     double * slope, double * intercept) {
+  724      int hStart = beginPositionH((*seedChain)[i1]);
+
+2 matches in 1 file
+
+
+Searching 8 files for "getSlopeAndIntercept" (regex)
+
+/Users/Ryan/Programs/Hybrid_assembler/cpp_alignment/cpp_alignment.cpp:
+  115  char * cppStringToCString(std::string cpp_string);
+  116  // std::string vectorToString(std::vector<int> * v);
+  117: void getSlopeAndIntercept(int hStart, int hEnd, int vStart, int vEnd,
+  118                                     double * slope, double * intercept);
+  119  // double getMedian(std::vector<double> & v);
+  ...
+  716  
+  717  
+  718: void getSlopeAndIntercept(int hStart, int hEnd, int vStart, int vEnd,
+  719                            double * slope, double * intercept) {
+  720      *slope = -1.0;
+
+2 matches in 1 file
+
+
+Searching 8 files for "getLineLength" (regex)
+
+/Users/Ryan/Programs/Hybrid_assembler/cpp_alignment/cpp_alignment.cpp:
+  117  // double getMedian(std::vector<double> & v);
+  118  // void printKmerSize(int kmerSize, int locationCount, std::string & output);
+  119: double getLineLength(double x, double y, double slope, double xSize, double ySize);
+  120  std::string getKmerTable(std::vector<CommonKmer> & commonKmers);
+  121  std::string getSeedChainTable(String<TSeed> & seedChain);
+  ...
+  299  
+  300      // Get the full band length using the middle point of the alignment rectangle.
+  301:     double fullBandLength = getLineLength(readLength / 2.0, refLength / 2.0,
+  302                                            expectedSlope, readLength, refLength);
+  303  
+  ...
+  310      double c1Y = c1.m_rotatedVPosition;
+  311      double c3Y = c3.m_rotatedVPosition;
+  312:     double c1BandLength = getLineLength(c1.m_hPosition, c1.m_vPosition,
+  313                                          expectedSlope, readLength, refLength);
+  314:     double c3BandLength = getLineLength(c3.m_hPosition, c3.m_vPosition,
+  315                                          expectedSlope, readLength, refLength);
+  316  
+  ...
+  345              bandStartLength = 0.0;
+  346          else
+  347:             bandStartLength = getLineLength(commonKmers[bandStartIndex].m_hPosition,
+  348                                              commonKmers[bandStartIndex].m_vPosition,
+  349                                              expectedSlope, readLength, refLength);
+  ...
+  360                  bandEndLength = 0.0;
+  361              else
+  362:                 bandEndLength = getLineLength(commonKmers[bandEndIndex].m_hPosition,
+  363                                                commonKmers[bandEndIndex].m_vPosition,
+  364                                                expectedSlope, readLength, refLength);
+  ...
+  474          double meanH = hSum / groupCount;
+  475          double meanV = vSum / groupCount;
+  476:         double bandLength = getLineLength(meanH, meanV, expectedSlope, readLength, refLength);
+  477  
+  478          // Exclude alignments which are too short.
+  ...
+  728  // Given a point, a slope and rectangle bounds, this function returns the length of the line
+  729  // segment which goes through that point with that slope and is in those bounds.
+  730: double getLineLength(double x, double y, double slope, double xSize, double ySize) {
+  731      double xStart, yStart, xEnd, yEnd;
+  732  
+
+8 matches in 1 file
+
+
+Searching 8 files for "getKmerTable" (regex)
+
+/Users/Ryan/Programs/Hybrid_assembler/cpp_alignment/cpp_alignment.cpp:
+  118  // void printKmerSize(int kmerSize, int locationCount, std::string & output);
+  119  double getLineLength(double x, double y, double slope, double xSize, double ySize);
+  120: std::string getKmerTable(std::vector<CommonKmer> & commonKmers);
+  121  std::string getSeedChainTable(String<TSeed> & seedChain);
+  122  void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdev);
+  ...
+  404      if (verbosity > 4) {
+  405          output += "  Common k-mer positions:\n";
+  406:         output += getKmerTable(commonKmers);
+  407          output += "  Max score: " + std::to_string(maxScore) + "\n";
+  408      }
+  ...
+  578              results->m_lines.push_back(line);
+  579              if (verbosity > 4)
+  580:                 output += getKmerTable(lineGroups[i]);
+  581          }
+  582      }
+  ...
+  757  
+  758  
+  759: std::string getKmerTable(std::vector<CommonKmer> & commonKmers) {
+  760      std::string table = "\tSeq 1 pos\tSeq 2 pos\tRotated seq 1 pos\tRotated seq 2 pos\tBand area\tScore\n";
+  761      for (int i = 0; i < commonKmers.size(); ++i) {
+
+4 matches in 1 file
+
+
+Searching 8 files for "getSeedChainTable" (regex)
+
+/Users/Ryan/Programs/Hybrid_assembler/cpp_alignment/alignmentline.cpp:
+   35      if (verbosity > 4) {
+   36          output += "  Globally chained seeds before bridging\n";
+   37:         output += getSeedChainTable(seedChain);
+   38      }
+   39  
+
+/Users/Ryan/Programs/Hybrid_assembler/cpp_alignment/cpp_alignment.cpp:
+  119  double getLineLength(double x, double y, double slope, double xSize, double ySize);
+  120  std::string getKmerTable(std::vector<CommonKmer> & commonKmers);
+  121: std::string getSeedChainTable(String<TSeed> & seedChain);
+  122  void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdev);
+  123  long long getTime() {return duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();}
+  ...
+  594                  if (verbosity > 4) {
+  595                      output += "  Seed chain after bridging\n";
+  596:                     output += getSeedChainTable(m_bridgedSeedChain);
+  597                  }
+  598              }
+  ...
+  770  }
+  771  
+  772: std::string getSeedChainTable(String<TSeed> & seedChain) {
+  773      std::string table = "\tH start\tH end\tV start\tV end\n";
+  774      int seedsInChain = length(seedChain);
+
+4 matches across 2 files
+
+
+Searching 8 files for "getMeanAndStDev" (regex)
+
+/Users/Ryan/Programs/Hybrid_assembler/cpp_alignment/alignmentline.cpp:
+  381              rotatedHPositions.push_back(lineGroups[i][j].m_rotatedHPosition);
+  382          double meanRotatedH, rotatedHStdDev;
+  383:         getMeanAndStDev(rotatedHPositions, meanRotatedH, rotatedHStdDev);
+  384          double uniformStdDev = bandLength / 3.464101615137754; // sqrt(12)
+  385  
+
+/Users/Ryan/Programs/Hybrid_assembler/cpp_alignment/cpp_alignment.cpp:
+  111  // void printKmerSize(int kmerSize, int locationCount, std::string & output);
+  112  std::string getKmerTable(std::vector<CommonKmer> & commonKmers);
+  113: void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdev);
+  114  long long getTime() {return duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();}
+  115  
+  ...
+  355  }
+  356  
+  357: void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdDev) {
+  358      mean = 0.0;
+  359      stdDev = 0.0;
+
+3 matches across 2 files

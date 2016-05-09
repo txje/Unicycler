@@ -1,4 +1,19 @@
-CXX=g++-5
+CXX       = g++-5
+CXXFLAGS  = -fPIC
+CXXFLAGS += -O3
+CXXFLAGS += -Wextra
+CXXFLAGS += -std=c++11
+CXXFLAGS += -I/Users/Ryan/Applications/seqan/include
+CXXFLAGS += -Iinclude
 
-seqan_align: alignmentline.cpp kmers.cpp semiglobalalignment.cpp seqan_align.cpp
-	$(CXX) -I/Users/Ryan/Applications/seqan/include -std=c++11 -shared -Wl,-install_name,seqan_align.so -o seqan_align.so -fPIC alignmentline.cpp kmers.cpp semiglobalalignment.cpp seqan_align.cpp -O3
+TARGET    = seqan_align.so
+SHELL     = /bin/sh
+SOURCES   = $(shell echo src/*.cpp)
+HEADERS   = $(shell echo include/*.h)
+OBJECTS   = $(SOURCES:.cpp=.o)
+
+$(TARGET): $(OBJECTS)
+	$(CXX) $(CXXFLAGS) -shared -Wl,-install_name,$(TARGET) -o $(TARGET) $(OBJECTS)
+
+clean:
+	$(RM) $(TARGET) $(OBJECTS)

@@ -2,6 +2,11 @@
 #ifndef KMERS_H
 #define KMERS_H
 
+#include <string>
+#include <cmath>
+#include <unordered_map>
+#include <vector>
+#include "settings.h"
 
 typedef std::unordered_map<std::string, std::vector<int> > KmerPosMap;
 
@@ -44,10 +49,10 @@ std::vector<CommonKmer> getCommonKmers(std::string & readName, std::string & ref
                                        KmerPositions * kmerPositions);
 
 
-KmerPositions * newKmerPositions() {return new KmerPositions();}
-void addKmerPositions(KmerPositions * kmerPositions, char * name, char * sequence) {kmerPositions->addPositions(name, sequence);}
-void deleteKmerPositions(KmerPositions * kmerPositions, char * name) {kmerPositions->deletePositions(name);}
-void deleteAllKmerPositions(KmerPositions * kmerPositions) {delete kmerPositions;}
+KmerPositions * newKmerPositions();
+void addKmerPositions(KmerPositions * kmerPositions, char * name, char * sequence);
+void deleteKmerPositions(KmerPositions * kmerPositions, char * name);
+void deleteAllKmerPositions(KmerPositions * kmerPositions);
 
 
 #endif // KMERS_H

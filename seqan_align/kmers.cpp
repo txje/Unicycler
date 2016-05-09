@@ -1,4 +1,7 @@
 
+#include "kmers.h"
+
+
 
 
 // Creates the CommonKmer object using the position in the two sequences.
@@ -101,5 +104,20 @@ std::vector<CommonKmer> getCommonKmers(std::string & readName, std::string & ref
 
 
 
+KmerPositions * newKmerPositions() {
+    return new KmerPositions();
+}
+
+void addKmerPositions(KmerPositions * kmerPositions, char * name, char * sequence) {
+    kmerPositions->addPositions(name, sequence);
+}
+
+void deleteKmerPositions(KmerPositions * kmerPositions, char * name) {
+    kmerPositions->deletePositions(name);
+}
+
+void deleteAllKmerPositions(KmerPositions * kmerPositions) {
+    delete kmerPositions;
+}
 
 

@@ -1,4 +1,6 @@
 
+#include "semiglobalalignment.h"
+
 
 SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignment, int refOffset, long long startTime,
                      bool startImmediately, bool goToEnd, Score<int, Simple> & scoringScheme):
@@ -91,7 +93,7 @@ SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignmen
     m_cigar = "";
     for (int i = 0; i < cigarTypes.size(); ++i) {
         m_cigar += getCigarPart(cigarTypes[i], cigarLengths[i]);
-        m_rawScore += getCigarScore(cigarTypes[i], cigarLengths[i]);
+        m_rawScore += getCigarScore(cigarTypes[i], cigarLengths[i], scoringScheme);
     }
     int perfectScore = scoreMatch(scoringScheme) * alignmentLength;
     m_scaledScore = 100.0 * double(m_rawScore) / perfectScore;
@@ -113,7 +115,7 @@ std::string SemiGlobalAlignment::getFullString() {
 std::string SemiGlobalAlignment::getShortDisplayString() {
     return "(" + std::to_string(m_readStartPos) + "-" +  std::to_string(m_readEndPos) + "), " + 
            "(" + std::to_string(m_refStartPos) + "-" +  std::to_string(m_refEndPos) + "), " + 
-           "raw score = " + std::to_string(m_rawScore) + ", scaled score = " + std::to_string(m_scaledScore)
+           "raw score = " + std::to_string(m_rawScore) + ", scaled score = " + std::to_string(m_scaledScore);
 }
 
 
@@ -154,12 +156,12 @@ std::string SemiGlobalAlignment::getCigarPart(CigarType type, int length) {
 // basis.
 int SemiGlobalAlignment::getCigarScore(CigarType type, int length, Score<int, Simple> & scoringScheme) {
     if (type == INSERTION || type == DELETION)
-        return scoreGapOpen(scoringScheme) + ((length - 1) * scoreGapExtend(scoringScheme);
+        return scoreGapOpen(scoringScheme) + ((length - 1) * scoreGapExtend(scoringScheme));
     else
         return 0;
 }
 
-int SemiGlobalAlignment::getIndelScore(int length, Score<int, Simple> & scoringScheme) {
-    return scoreGapOpen(scoringScheme) + ((currentCigarLength - 1) * scoreGapExtend(scoringScheme));
-}
 
+long long getTime() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}

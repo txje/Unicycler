@@ -1,28 +1,5 @@
 
 
-// This is the k-mer size used in the line-finding process. It is small, which leads to lots of
-// background noise in the alignment rectangle, but it means that alignments will still be found
-// for high-error reads.
-#define KMER_SIZE 5
-
-// Alignment lines that have an excessively small or large slope will be rejected.
-#define MIN_ALLOWED_SLOPE 0.5
-#define MAX_ALLOWED_SLOPE 1.5
-
-// Reference sequences are trimmed down before conducting an actual alignment.
-#define PAD_SIZE 1000
-
-// These are the settings relating to line finding.
-#define BAND_SIZE 16
-#define LOW_SCORE_THRESHOLD 2.0
-#define HIGH_SCORE_THRESHOLD 20.0
-#define MERGE_DISTANCE 100.0
-#define MIN_ALIGNMENT_LENGTH 20.0
-#define MIN_POINT_COUNT 4
-
-// These are the Seqan band widths used in a banded alignment.
-#define STARTING_BAND_SIZE 10
-#define MAX_BAND_SIZE 160
 
 #include <seqan/basic.h>
 #include <seqan/align.h>
@@ -30,7 +7,6 @@
 #include <seqan/stream.h>
 #include <seqan/seeds.h>
 #include <stdio.h>
-#include <chrono>
 #include <string>
 #include <set>
 #include <unordered_set>
@@ -52,6 +28,7 @@ typedef Align<Dna5String, ArrayGaps> TAlign;
 #include "semiglobalalignment.h"
 #include "alignmentline.h"
 #include "kmers.h"
+#include "settings.h"
 
 extern "C" {
 
@@ -82,18 +59,10 @@ void free_c_string(char * p) {free(p);}
 
 char * cppStringToCString(std::string cpp_string);
 
-long long getTime() {return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();}
-
-
-
 
 // std::string vectorToString(std::vector<int> * v);
 // double getMedian(std::vector<double> & v);
 // void printKmerSize(int kmerSize, int locationCount, std::string & output);
-
-
-
-
 
 
 
@@ -125,14 +94,17 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, char * refNameC, c
                                                                  kmerPositions, output);
     // Now conduct an alignment for each line.
     std::vector<SemiGlobalAlignment *> alignments;
-    Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
-    for (int i = 0; i < lineFindingResults->m_lines.size(); ++i) {
-        AlignmentLine * line = lineFindingResults->m_lines[i];
-        SemiGlobalAlignment * alignment = semiGlobalAlignmentOneLine(readSeq, refSeq, line, verbosity,
-                                                                     output, scoringScheme);
-        alignments.push_back(alignment);
+    if (lineFindingResults != 0)
+    {
+        Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
+        for (int i = 0; i < lineFindingResults->m_lines.size(); ++i) {
+            AlignmentLine * line = lineFindingResults->m_lines[i];
+            SemiGlobalAlignment * alignment = semiGlobalAlignmentOneLine(readSeq, refSeq, line, verbosity,
+                                                                         output, scoringScheme);
+            alignments.push_back(alignment);
+        }
+        delete lineFindingResults;
     }
-    delete lineFindingResults;
 
     // The returned string is semicolon-delimited. The last part is the console output and the
     // other parts are alignment description strings.

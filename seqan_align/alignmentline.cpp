@@ -1,10 +1,15 @@
 
-AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers) {
+
+#include "alignmentline.h"
+#include "semiglobalalignment.h"
+
+AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLength, int refLength,
+                             int verbosity, std::string & output) {
 
     // Perform a simple least-squares linear regression. If the slope is too far from 1.0, we 
     // don't bother continuing to the seed chaining step as we'll throw the line out.
     linearRegression(commonKmers, &m_slope, &m_intercept);
-    if (slope < MIN_ALLOWED_SLOPE && slope > MAX_ALLOWED_SLOPE)
+    if (m_slope < MIN_ALLOWED_SLOPE || m_slope > MAX_ALLOWED_SLOPE)
         return;
 
     // When we do a Seqan banded alignment, we won't use the full reference sequence but just the
@@ -17,7 +22,7 @@ AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers) {
     // Build a Seqan seed set using our common k-mers, offsetting by the trimmed reference start position.
     TSeedSet seedSet;
     for (int i = 0; i < commonKmers.size(); ++i) {
-        TSeed seed(commonKmers[i].m_hPosition, commonKmers[i].m_vPosition - trimmedRefStart], KMER_SIZE);
+        TSeed seed(commonKmers[i].m_hPosition, commonKmers[i].m_vPosition - m_trimmedRefStart, KMER_SIZE);
         addSeedMerge(seedSet, seed);
     }
 
@@ -28,7 +33,7 @@ AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers) {
     if (seedsInChain == 0)
     {
         if (verbosity > 4) 
-            output += "Global chaining failed");
+            output += "Global chaining failed";
         return;
     }
 
@@ -72,15 +77,15 @@ AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers) {
     TSeed lastSeed = seedChain[seedsInChain - 1];
     int lastSeedHEnd = endPositionH(lastSeed);
     int lastSeedVEnd = endPositionV(lastSeed);
-    if (lastSeedHEnd < readLen && lastSeedVEnd < refLen) {
+    if (lastSeedHEnd < readLength && lastSeedVEnd < refLength) {
         double vPosAtStartOfH = lastSeedVEnd - (m_slope * lastSeedHEnd);
-        double vPosAtEndOfH = (m_slope * readLen) + vPosAtStartOfH;
-        if (vPosAtEndOfH <= refLen)
-            addBridgingSeed(bridgedSeedSet, lastSeedHEnd, lastSeedVEnd, readLen,
+        double vPosAtEndOfH = (m_slope * readLength) + vPosAtStartOfH;
+        if (vPosAtEndOfH <= refLength)
+            addBridgingSeed(bridgedSeedSet, lastSeedHEnd, lastSeedVEnd, readLength,
                             std::round(vPosAtEndOfH));
         else
             addBridgingSeed(bridgedSeedSet, lastSeedHEnd, lastSeedVEnd,
-                            std::round((refLen - vPosAtStartOfH) / m_slope), refLen);
+                            std::round((refLength - vPosAtStartOfH) / m_slope), refLength);
     }
 
     chainSeedsGlobally(m_bridgedSeedChain, bridgedSeedSet, SparseChaining());
@@ -140,7 +145,7 @@ void AlignmentLine::addSeedMerge(TSeedSet & seedSet, TSeed & seed) {
 
 
 
-std::string AlignmentLine::getSeedChainTable(String<TSeed> & seedChain) {
+std::string getSeedChainTable(String<TSeed> & seedChain) {
     std::string table = "\tH start\tH end\tV start\tV end\n";
     int seedsInChain = length(seedChain);
     for (int i = 0; i < seedsInChain; ++i) {
@@ -169,8 +174,9 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
                                                          verbosity, output, kmerPositions);
 
     if (commonKmers.size() < 2) {
-        return cppStringToCString(output + ";" + std::to_string(getTime() - startTime) +
-                                  ";Failed: too few common kmers");
+        if (verbosity > 3)
+            output += "  No lines found: too few common k-mers";
+        return 0;
     }
 
     // We scale the scores relative to the expected k-mer density.
@@ -455,15 +461,16 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
 
     
     if (lineGroups.size() == 0) {
-        return cppStringToCString(output + ";" + std::to_string(getTime() - startTime) +
-                                  ";Failed: no lines found");
+        if (verbosity > 3)
+            output += "  No lines found";
+        return 0;
     }
     
     // Prepare the returned object.
     LineFindingResults * results = new LineFindingResults();
     results->m_milliseconds = getTime() - startTime;
     for (int i = 0; i < lineGroups.size(); ++i) {
-        AlignmentLine * line = new AlignmentLine(lineGroups[i]);
+        AlignmentLine * line = new AlignmentLine(lineGroups[i], readLength, refLength, verbosity, output);
         if (line->isBadLine())
             delete line;
         else {
@@ -480,12 +487,13 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
             output += "  No lines found";
         else {
             output += "  Lines found:\n";
-            output += "  Line finding milliseconds: " + milliseconds + "\n";
+            output += "  Line finding milliseconds: " + std::to_string(results->m_milliseconds) + "\n";
             for (int i = 0; i < results->m_lines.size(); ++i) {
-                output += "    " + results->m_lines[i]->getDescriptiveString();
+                AlignmentLine * line = results->m_lines[i];
+                output += "    " + line->getDescriptiveString();
                 if (verbosity > 4) {
                     output += "  Seed chain after bridging\n";
-                    output += getSeedChainTable(m_bridgedSeedChain);
+                    output += getSeedChainTable(line->m_bridgedSeedChain);
                 }
             }
         }
@@ -560,7 +568,5 @@ std::string getKmerTable(std::vector<CommonKmer> & commonKmers) {
     }
     return table;
 }
-
-
 
 

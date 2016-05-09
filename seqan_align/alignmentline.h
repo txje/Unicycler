@@ -3,7 +3,13 @@
 #ifndef ALIGNMENTLINE_H
 #define ALIGNMENTLINE_H
 
+#include <chrono>
+#include <seqan/basic.h>
+#include <seqan/seeds.h>
 #include "kmers.h"
+#include "settings.h"
+
+using namespace seqan;
 
 typedef Seed<Simple> TSeed;
 typedef SeedSet<TSeed> TSeedSet;
@@ -13,7 +19,8 @@ typedef SeedSet<TSeed> TSeedSet;
 // banded alignment.
 class AlignmentLine {
 public:
-    AlignmentLine(std::vector<CommonKmer> & commonKmers);
+    AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLength, int refLength,
+                  int verbosity, std::string & output);
 
     bool isBadLine() {return hasBadSlope() || hasNoSeedChain();}
     std::string getDescriptiveString();
@@ -29,7 +36,6 @@ private:
     void addSeedMerge(TSeedSet & seedSet, TSeed & seed);
     bool hasBadSlope() {return m_slope < MIN_ALLOWED_SLOPE || m_slope > MAX_ALLOWED_SLOPE;}
     bool hasNoSeedChain() {return length(m_bridgedSeedChain) == 0;}
-    std::string getSeedChainTable(String<TSeed> & seedChain);
 };
 
 
@@ -58,6 +64,8 @@ double getLineLength(double x, double y, double slope, double xSize, double ySiz
 void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdev);
 
 std::string getKmerTable(std::vector<CommonKmer> & commonKmers);
+
+std::string getSeedChainTable(String<TSeed> & seedChain);
 
 
 #endif // ALIGNMENTLINE_H

@@ -34,5 +34,6 @@ private:
     int getCigarScore(CigarType type, int length, Score<int, Simple> & scoringScheme);
 };
 
+long long getTime();
 
 #endif // SEMIGLOBALALIGNMENT_H

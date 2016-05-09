@@ -93,10 +93,6 @@ SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignmen
 
     // Build the CIGAR string and tally up the score.
     m_cigar = "";
-
-    // std::cout << readAlignment << std::endl;
-    // std::cout << refAlignment << std::endl;
-
     int alignmentPos = 0;
     for (size_t i = 0; i < cigarTypes.size(); ++i) {
         CigarType type = cigarTypes[i];
@@ -106,12 +102,6 @@ SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignmen
         m_cigar += cigarPart;
         int score = getCigarScore(type, length, scoringScheme, readAlignment, refAlignment, alignmentPos);
         m_rawScore += score;
-
-        // std::cout << cigarPart << ":" << score << " ";
-        // std::cout << readAlignment.substr(alignmentPos, length) << " ";
-        // std::cout << refAlignment.substr(alignmentPos, length) << " ";
-        // std::cout << std::endl;
-
         alignmentPos += length;
     }
     int alignmentLengthExcludingClips = alignmentEndPos - alignmentStartPos;
@@ -120,8 +110,6 @@ SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignmen
         m_scaledScore = 100.0 * double(m_rawScore) / perfectScore;
     else
         m_scaledScore = 0.0;
-
-    // std::cout << std::endl << std::endl;
 
     // Add the offset to the reference positions so they reflect the actual alignment location in
     // the full reference, not the trimmed reference that was given to Seqan.

@@ -176,7 +176,7 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
 
     if (commonKmers.size() < 2) {
         if (verbosity > 3)
-            output += "  No lines found: too few common k-mers";
+            output += "  No lines found, too few common k-mers (" + std::to_string(getTime() - startTime) + " ms):\n";
         return 0;
     }
 
@@ -454,8 +454,8 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
         output += "  Number of lines after point count filtering: " + std::to_string(lineGroups.size()) + "\n";
 
     if (lineGroups.size() == 0) {
-        if (verbosity > 3)
-            output += "  No lines found";
+        if (verbosity > 3) 
+            output += "  No lines found (" + std::to_string(getTime() - startTime) + " ms):\n";
         return 0;
     }
     
@@ -478,11 +478,13 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
     if (verbosity > 4)
         output += "  Number of lines after slope/chain filtering: " + std::to_string(lineGroups.size()) + "\n";
     if (verbosity > 3) {
-        if (results->m_lines.size() == 0)
-            output += "  No lines found";
+        if (results->m_lines.size() == 0) {
+            output += "  No lines found (" + std::to_string(results->m_milliseconds) + " ms):\n";
+            delete results;
+            return 0;
+        }
         else {
-            output += "  Lines found:\n";
-            output += "  Line finding milliseconds: " + std::to_string(results->m_milliseconds) + "\n";
+            output += "  Lines found (" + std::to_string(results->m_milliseconds) + " ms):\n";
             for (size_t i = 0; i < results->m_lines.size(); ++i) {
                 AlignmentLine * line = results->m_lines[i];
                 output += "    " + line->getDescriptiveString() + "\n";

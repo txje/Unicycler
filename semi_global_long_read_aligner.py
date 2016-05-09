@@ -796,13 +796,16 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
         alignments += reverse_alignments
         output += reverse_alignment_output
 
-
+    if VERBOSITY > 3:
+        output += 'Final alignments for ' + read.name + ':\n'
     if VERBOSITY > 1:
         if not alignments:
             output += 'No alignments found for read ' + read.name + '\n'
         else:
             for alignment in alignments:
                 output += '  ' + str(alignment) + '\n'
+                if VERBOSITY > 3:
+                    output += alignment.cigar + '\n'
         if VERBOSITY > 2:
             output += '  Time to align: ' + float_to_str(time.time() - start_time, 3) + ' s\n'
         output += '\n'
@@ -1264,14 +1267,12 @@ class Alignment(object):
         self.read_start_pos = None
         self.read_end_pos = None
         self.read_end_gap = None
-        self.aligned_read_seq = None
 
         # Reference details
         self.ref = None
         self.ref_start_pos = None
         self.ref_end_pos = None
         self.ref_end_gap = None
-        self.aligned_ref_seq = None
 
         # Alignment details
         self.alignment_type = None
@@ -1298,12 +1299,6 @@ class Alignment(object):
             self.setup_using_seqan_output(seqan_output, read, ref, rev_comp)
         elif sam_line:
             self.setup_using_graphmap_sam(sam_line, read_dict, reference_dict)
-
-        if self.rev_comp:
-            self.aligned_read_seq = reverse_complement(self.read.sequence)[self.read_start_pos:self.read_end_pos]
-        else:
-            self.aligned_read_seq = self.read.sequence[self.read_start_pos:self.read_end_pos]
-        self.aligned_ref_seq = self.ref.sequence[self.ref_start_pos:self.ref_end_pos]
 
         self.tally_up_score_and_errors(scoring_scheme)
 
@@ -1385,58 +1380,55 @@ class Alignment(object):
         if not cigar_parts:
             return
 
-        read_len = len(self.aligned_read_seq)
-        ref_len = len(self.aligned_ref_seq)
-        read_i = 0
-        ref_i = 0
+        read_len = self.read.get_length()
+        if self.rev_comp:
+            read_seq = reverse_complement(self.read.sequence)
+        else:
+            read_seq = self.read.sequence
+        read_i = self.read_start_pos
+
+        ref_len = self.ref.get_length()
+        ref_seq = self.ref.sequence
+        ref_i = self.ref_start_pos
         align_i = 0
+
         for cigar_part in cigar_parts:
-            # previous_read_i = read_i
-            # previous_ref_i = ref_i
             cigar_count = int(cigar_part[:-1])
             cigar_type = cigar_part[-1]
+            if cigar_type == 'I' or cigar_type == 'D':
+                cigar_score = scoring_scheme.gap_open + \
+                              ((cigar_count - 1) * scoring_scheme.gap_extend)
             if cigar_type == 'I':
                 self.insertion_count += cigar_count
-                self.ref_insertion_positions_and_sizes.append((ref_i + self.ref_start_pos,
-                                                               cigar_count))
+                self.ref_insertion_positions_and_sizes.append((ref_i, cigar_count))
                 read_i += cigar_count
-                self.raw_score += scoring_scheme.gap_open + \
-                                  ((cigar_count - 1) * scoring_scheme.gap_extend)
             elif cigar_type == 'D':
                 self.deletion_count += cigar_count
                 for i in xrange(cigar_count):
-                    self.ref_deletion_positions.append(ref_i + self.ref_start_pos + i)
+                    self.ref_deletion_positions.append(ref_i + i)
                 ref_i += cigar_count
-                self.raw_score += scoring_scheme.gap_open + \
-                                  ((cigar_count - 1) * scoring_scheme.gap_extend)
             else: # match/mismatch
+                cigar_score = 0
                 for _ in xrange(cigar_count):
                     # If all is good with the CIGAR, then we should never end up with a sequence
                     # index out of the sequence range. But a CIGAR error (which has occurred in
                     # GraphMap) can cause this, so check here.
                     if read_i >= read_len or ref_i >= ref_len:
                         break
-
-                    read_base = self.aligned_read_seq[read_i]
-                    ref_base = self.aligned_ref_seq[ref_i]
+                    read_base = read_seq[read_i]
+                    ref_base = ref_seq[ref_i]
                     if read_base == ref_base:
                         self.match_count += 1
-                        self.raw_score += scoring_scheme.match
+                        cigar_score += scoring_scheme.match
                     else:
                         self.mismatch_count += 1
-                        self.ref_mismatch_positions.append(ref_i + self.ref_start_pos)
-                        self.raw_score += scoring_scheme.mismatch
+                        self.ref_mismatch_positions.append(ref_i)
+                        cigar_score += scoring_scheme.mismatch
                     read_i += 1
                     ref_i += 1
 
+            self.raw_score += cigar_score
             align_i += cigar_count
-            if read_i >= read_len or ref_i >= ref_len:
-                break
-
-            # # This print code can be useful for debugging CIGAR issues.
-            # print(cigar_part + '\t' +
-            #       self.aligned_read_seq[previous_read_i:read_i] + '\t' +
-            #       self.aligned_ref_seq[previous_ref_i:ref_i])
 
         self.percent_identity = 100.0 * self.match_count / align_i
         self.edit_distance = self.mismatch_count + self.insertion_count + self.deletion_count
@@ -1478,14 +1470,9 @@ class Alignment(object):
         # Set the new read start.
         self.read_start_pos = int(seqan_parts[1])
         assert self.read_start_pos == 0
-        if self.rev_comp:
-            self.aligned_read_seq = reverse_complement(self.read.sequence)[self.read_start_pos:self.read_end_pos]
-        else:
-            self.aligned_read_seq = self.read.sequence[self.read_start_pos:self.read_end_pos]
 
         # Set the new reference start.
         self.ref_start_pos = realigned_ref_start + int(seqan_parts[3])
-        self.aligned_ref_seq = self.ref.sequence[self.ref_start_pos:self.ref_end_pos]
 
         # Replace the S part at the beginning the alignment's CIGAR with the CIGAR just made. If
         # the last part of the new CIGAR is of the same type as the first part of the existing
@@ -1542,15 +1529,10 @@ class Alignment(object):
         self.read_end_pos += int(seqan_parts[2])
         assert self.read_end_pos == self.read.get_length()
         self.read_end_gap = self.read.get_length() - self.read_end_pos
-        if self.rev_comp:
-            self.aligned_read_seq = reverse_complement(self.read.sequence)[self.read_start_pos:self.read_end_pos]
-        else:
-            self.aligned_read_seq = self.read.sequence[self.read_start_pos:self.read_end_pos]
 
         # Set the new reference end.
         self.ref_end_pos += int(seqan_parts[4])
         self.ref_end_gap = len(self.ref.sequence) - self.ref_end_pos
-        self.aligned_ref_seq = self.ref.sequence[self.ref_start_pos:self.ref_end_pos]
 
         # Replace the S part at the end the alignment's CIGAR with the CIGAR just made. If
         # the first part of the new CIGAR is of the same type as the last part of the existing
@@ -1585,7 +1567,7 @@ class Alignment(object):
         if self.percent_identity is not None:
             return_str += ', ' + '%.2f' % self.percent_identity + '% ID'
         if self.scaled_score is not None:
-            return_str += ', raw score = ' + '%.2f' % self.raw_score
+            return_str += ', raw score = ' + str(self.raw_score)
             return_str += ', scaled score = ' + '%.2f' % self.scaled_score
         return_str += ', longest indel: ' + str(self.get_longest_indel_run())
         if self.alignment_type == 'Seqan':

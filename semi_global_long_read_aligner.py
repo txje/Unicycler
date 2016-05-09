@@ -62,7 +62,8 @@ VERBOSITY = 0
 This script makes use of several C++ functions which are in seqan_align.so. They are wrapped in
 similarly named Python functions.
 '''
-C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_align.so'))
+C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                          'seqan_align/seqan_align.so'))
 
 
 def main():
@@ -827,16 +828,13 @@ def seqan_alignment_one_read_one_ref(read, ref, rev_comp, scoring_scheme, expect
     alignment_strings = results[:-1]
     output = results[-1]
 
-    if VERBOSITY > 0:
-        print(output)
-
     alignments = []
     for alignment_string in alignment_strings:
         alignment = Alignment(seqan_output=alignment_string, read=read, ref=ref, rev_comp=rev_comp,
                               scoring_scheme=scoring_scheme)
         alignments.append(alignment)
 
-    return alignments
+    return alignments, output
 
 def get_ref_shift_from_cigar_part(cigar_part):
     '''
@@ -1466,11 +1464,12 @@ class Alignment(object):
         # Call the C++ function to do the actual alignment.
         alignment_result = start_extension_alignment(realigned_read_seq, realigned_ref_seq,
                                                      scoring_scheme)
-        seqan_parts = alignment_result.split(';')
-        assert len(seqan_parts) >= 7
+
+        seqan_parts = alignment_result.split(',')
+        assert len(seqan_parts) >= 6
 
         # Set the new read start.
-        self.read_start_pos = int(seqan_parts[2])
+        self.read_start_pos = int(seqan_parts[1])
         assert self.read_start_pos == 0
         if self.rev_comp:
             self.aligned_read_seq = reverse_complement(self.read.sequence)[self.read_start_pos:self.read_end_pos]
@@ -1478,13 +1477,13 @@ class Alignment(object):
             self.aligned_read_seq = self.read.sequence[self.read_start_pos:self.read_end_pos]
 
         # Set the new reference start.
-        self.ref_start_pos = realigned_ref_start + int(seqan_parts[4])
+        self.ref_start_pos = realigned_ref_start + int(seqan_parts[3])
         self.aligned_ref_seq = self.ref.sequence[self.ref_start_pos:self.ref_end_pos]
 
         # Replace the S part at the beginning the alignment's CIGAR with the CIGAR just made. If
         # the last part of the new CIGAR is of the same type as the first part of the existing
         # CIGAR, they will need to be merged.
-        new_cigar_parts = re.findall(r'\d+\w', seqan_parts[1])
+        new_cigar_parts = re.findall(r'\d+\w', seqan_parts[0])
         old_cigar_parts = self.cigar_parts[1:]
         if new_cigar_parts[-1][-1] == old_cigar_parts[0][-1]:
             part_sum = int(new_cigar_parts[-1][:-1]) + int(old_cigar_parts[0][:-1])
@@ -1529,11 +1528,11 @@ class Alignment(object):
         # Call the C++ function to do the actual alignment.
         alignment_result = end_extension_alignment(realigned_read_seq, realigned_ref_seq,
                                                    scoring_scheme)
-        seqan_parts = alignment_result.split(';')
-        assert len(seqan_parts) >= 7
+        seqan_parts = alignment_result.split(',')
+        assert len(seqan_parts) >= 6
 
         # Set the new read end.
-        self.read_end_pos += int(seqan_parts[3])
+        self.read_end_pos += int(seqan_parts[2])
         assert self.read_end_pos == self.read.get_length()
         self.read_end_gap = self.read.get_length() - self.read_end_pos
         if self.rev_comp:
@@ -1542,7 +1541,7 @@ class Alignment(object):
             self.aligned_read_seq = self.read.sequence[self.read_start_pos:self.read_end_pos]
 
         # Set the new reference end.
-        self.ref_end_pos += int(seqan_parts[5])
+        self.ref_end_pos += int(seqan_parts[4])
         self.ref_end_gap = len(self.ref.sequence) - self.ref_end_pos
         self.aligned_ref_seq = self.ref.sequence[self.ref_start_pos:self.ref_end_pos]
 
@@ -1550,7 +1549,7 @@ class Alignment(object):
         # the first part of the new CIGAR is of the same type as the last part of the existing
         # CIGAR, they will need to be merged.
         old_cigar_parts = self.cigar_parts[:-1]
-        new_cigar_parts = re.findall(r'\d+\w', seqan_parts[1])
+        new_cigar_parts = re.findall(r'\d+\w', seqan_parts[0])
         if old_cigar_parts[-1][-1] == new_cigar_parts[0][-1]:
             part_sum = int(old_cigar_parts[-1][:-1]) + int(new_cigar_parts[0][:-1])
             merged_part = str(part_sum) + new_cigar_parts[0][-1]

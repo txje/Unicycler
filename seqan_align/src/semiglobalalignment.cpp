@@ -98,12 +98,17 @@ SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignmen
     int perfectScore = scoreMatch(scoringScheme) * alignmentLength;
     m_scaledScore = 100.0 * double(m_rawScore) / perfectScore;
 
+    // Add the offset to the reference positions so they reflect the actual alignment location in
+    // the full reference, not the trimmed reference that was given to Seqan.
+    m_refStartPos += refOffset;
+    m_refEndPos += refOffset;
+
     m_milliseconds = getTime() - startTime;
 }
 
 
 std::string SemiGlobalAlignment::getFullString() {
-    return m_cigar + ";" +
+    return m_cigar + "," +
            std::to_string(m_readStartPos) + "," + 
            std::to_string(m_readEndPos) + "," + 
            std::to_string(m_refStartPos) + "," + 

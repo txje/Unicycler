@@ -30,6 +30,8 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, char * refNameC, c
                                                                  readLength, refLength,
                                                                  expectedSlope, verbosity,
                                                                  kmerPositions, output);
+
+
     // Now conduct an alignment for each line.
     std::vector<SemiGlobalAlignment *> alignments;
     if (lineFindingResults != 0) {
@@ -74,7 +76,7 @@ SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readSeq, std::str
 
     int bandSize = STARTING_BAND_SIZE;
     SemiGlobalAlignment * alignment = semiGlobalAlignmentOneLineOneBand(readSeqSeqan, readLength, refSeqSeqan, trimmedRefLength,
-                                                              line, bandSize, verbosity, output, scoringScheme);
+                                                                        line, bandSize, verbosity, output, scoringScheme);
 
     SemiGlobalAlignment * bestAlignment = alignment;
 

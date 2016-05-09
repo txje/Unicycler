@@ -825,6 +825,8 @@ def seqan_alignment_one_read_one_ref(read, ref, rev_comp, scoring_scheme, expect
         read_name = read.name + '+'
         read_seq = read.sequence
 
+    # print('READ:', read_name, 'REF:', ref.name) # TEST CODE - USEFUL FOR DEBUGGING
+
     ptr = C_LIB.semiGlobalAlignment(read_name, read_seq, ref.name, ref.sequence,
                                     expected_slope, VERBOSITY, kmer_positions_ptr,
                                     scoring_scheme.match, scoring_scheme.mismatch,

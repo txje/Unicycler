@@ -18,6 +18,8 @@ AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLeng
     int approxRefEnd = int(round(m_slope * readLength + m_intercept));
     m_trimmedRefStart = std::max(0, approxRefStart - PAD_SIZE);
     m_trimmedRefEnd = std::min(refLength, approxRefEnd + PAD_SIZE);
+    int trimmedRefLength = m_trimmedRefEnd - m_trimmedRefStart;
+
 
     // Build a Seqan seed set using our common k-mers, offsetting by the trimmed reference start position.
     TSeedSet seedSet;
@@ -48,14 +50,14 @@ AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLeng
     // Create a seed bridge for the start of the chain by following the slope backwards from the
     // first seed.
     TSeed firstSeed = seedChain[0];
-    int firstSeedHStart = beginPositionH(firstSeed);
-    int firstSeedVStart = beginPositionV(firstSeed);
-    if (firstSeedHStart > 0 && firstSeedVStart > 0) {
-        double vPosAtStartOfH = firstSeedVStart - (m_slope * firstSeedHStart);
-        if (vPosAtStartOfH >= 0.0)
-            addBridgingSeed(bridgedSeedSet, 0, std::round(vPosAtStartOfH), firstSeedHStart, firstSeedVStart);
+    int firstSeedReadStart = beginPositionH(firstSeed);
+    int firstSeedRefStart = beginPositionV(firstSeed);
+    if (firstSeedReadStart > 0 && firstSeedRefStart > 0) {
+        double refPosAtStartOfRead = firstSeedRefStart - (m_slope * firstSeedReadStart);
+        if (refPosAtStartOfRead >= 0.0)
+            addBridgingSeed(bridgedSeedSet, 0, std::round(refPosAtStartOfRead), firstSeedReadStart, firstSeedRefStart);
         else
-            addBridgingSeed(bridgedSeedSet, std::round(-vPosAtStartOfH / m_slope), 0, firstSeedHStart, firstSeedVStart);
+            addBridgingSeed(bridgedSeedSet, std::round(-refPosAtStartOfRead / m_slope), 0, firstSeedReadStart, firstSeedRefStart);
     }
     addSeedMerge(bridgedSeedSet, firstSeed);
     
@@ -63,28 +65,28 @@ AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLeng
     for (int i = 1; i < seedsInChain; ++i) {
         TSeed seed1 = seedChain[i-1];
         TSeed seed2 = seedChain[i];
-        int seed1HEnd = endPositionH(seed1);
-        int seed1VEnd = endPositionV(seed1);
-        int seed2HStart = beginPositionH(seed2);
-        int seed2VStart = beginPositionV(seed2);
-        addBridgingSeed(bridgedSeedSet, seed1HEnd, seed1VEnd, seed2HStart, seed2VStart);
+        int seed1ReadEnd = endPositionH(seed1);
+        int seed1RefEnd = endPositionV(seed1);
+        int seed2ReadStart = beginPositionH(seed2);
+        int seed2RefStart = beginPositionV(seed2);
+        addBridgingSeed(bridgedSeedSet, seed1ReadEnd, seed1RefEnd, seed2ReadStart, seed2RefStart);
         addSeedMerge(bridgedSeedSet, seed2);
     }
 
     // Create a seed bridge for the end of the chain by following the slope forwards from the
     // last seed.
     TSeed lastSeed = seedChain[seedsInChain - 1];
-    int lastSeedHEnd = endPositionH(lastSeed);
-    int lastSeedVEnd = endPositionV(lastSeed);
-    if (lastSeedHEnd < readLength && lastSeedVEnd < refLength) {
-        double vPosAtStartOfH = lastSeedVEnd - (m_slope * lastSeedHEnd);
-        double vPosAtEndOfH = (m_slope * readLength) + vPosAtStartOfH;
-        if (vPosAtEndOfH <= refLength)
-            addBridgingSeed(bridgedSeedSet, lastSeedHEnd, lastSeedVEnd, readLength,
-                            std::round(vPosAtEndOfH));
+    int lastSeedReadEnd = endPositionH(lastSeed);
+    int lastSeedRefEnd = endPositionV(lastSeed);
+    if (lastSeedReadEnd < readLength && lastSeedRefEnd < trimmedRefLength) {
+        double refPosAtStartOfRead = lastSeedRefEnd - (m_slope * lastSeedReadEnd);
+        double refPosAtEndOfRead = (m_slope * readLength) + refPosAtStartOfRead;
+        if (refPosAtEndOfRead <= trimmedRefLength)
+            addBridgingSeed(bridgedSeedSet, lastSeedReadEnd, lastSeedRefEnd, readLength,
+                            std::round(refPosAtEndOfRead));
         else
-            addBridgingSeed(bridgedSeedSet, lastSeedHEnd, lastSeedVEnd,
-                            std::round((refLength - vPosAtStartOfH) / m_slope), refLength);
+            addBridgingSeed(bridgedSeedSet, lastSeedReadEnd, lastSeedRefEnd,
+                            std::round((trimmedRefLength - refPosAtStartOfRead) / m_slope), trimmedRefLength);
     }
 
     chainSeedsGlobally(m_bridgedSeedChain, bridgedSeedSet, SparseChaining());
@@ -451,7 +453,6 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
     if (verbosity > 4)
         output += "  Number of lines after point count filtering: " + std::to_string(lineGroups.size()) + "\n";
 
-    
     if (lineGroups.size() == 0) {
         if (verbosity > 3)
             output += "  No lines found";
@@ -462,13 +463,15 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
     LineFindingResults * results = new LineFindingResults();
     results->m_milliseconds = getTime() - startTime;
     for (size_t i = 0; i < lineGroups.size(); ++i) {
+        if (verbosity > 4) {
+            output += "  Line " + std::to_string(i+1) + "\n";
+            output += getKmerTable(lineGroups[i]);
+        }
         AlignmentLine * line = new AlignmentLine(lineGroups[i], readLength, refLength, verbosity, output);
         if (line->isBadLine())
             delete line;
         else {
             results->m_lines.push_back(line);
-            if (verbosity > 4)
-                output += getKmerTable(lineGroups[i]);
         }
     }
 
@@ -482,7 +485,7 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
             output += "  Line finding milliseconds: " + std::to_string(results->m_milliseconds) + "\n";
             for (size_t i = 0; i < results->m_lines.size(); ++i) {
                 AlignmentLine * line = results->m_lines[i];
-                output += "    " + line->getDescriptiveString();
+                output += "    " + line->getDescriptiveString() + "\n";
                 if (verbosity > 4) {
                     output += "  Seed chain after bridging\n";
                     output += getSeedChainTable(line->m_bridgedSeedChain);

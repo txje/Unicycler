@@ -1751,8 +1751,8 @@ def end_extension_alignment(realigned_read_seq, realigned_ref_seq, scoring_schem
 This function cleans up the heap memory for the C strings returned by the other C functions. It
 must be called after them.
 '''
-C_LIB.free_c_string.argtypes = [c_void_p]
-C_LIB.free_c_string.restype = None
+C_LIB.freeCString.argtypes = [c_void_p]
+C_LIB.freeCString.restype = None
 
 def c_string_to_python_string(c_string):
     '''
@@ -1760,7 +1760,7 @@ def c_string_to_python_string(c_string):
     string from the heap.
     '''
     python_string = cast(c_string, c_char_p).value    
-    C_LIB.free_c_string(c_string)
+    C_LIB.freeCString(c_string)
     return python_string
 
 

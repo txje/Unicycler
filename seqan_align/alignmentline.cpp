@@ -30,8 +30,7 @@ AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLeng
     String<TSeed> seedChain;
     chainSeedsGlobally(seedChain, seedSet, SparseChaining());
     int seedsInChain = length(seedChain);
-    if (seedsInChain == 0)
-    {
+    if (seedsInChain == 0) {
         if (verbosity > 4) 
             output += "Global chaining failed";
         return;

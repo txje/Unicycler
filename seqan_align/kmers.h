@@ -49,11 +49,18 @@ std::vector<CommonKmer> getCommonKmers(std::string & readName, std::string & ref
                                        KmerPositions * kmerPositions);
 
 
-KmerPositions * newKmerPositions();
-void addKmerPositions(KmerPositions * kmerPositions, char * name, char * sequence);
-void deleteKmerPositions(KmerPositions * kmerPositions, char * name);
-void deleteAllKmerPositions(KmerPositions * kmerPositions);
+// Functions that are called by the Python script must have C linkage, not C++ linkage.
+extern "C" {
 
+    KmerPositions * newKmerPositions();
+
+    void addKmerPositions(KmerPositions * kmerPositions, char * name, char * sequence);
+
+    void deleteKmerPositions(KmerPositions * kmerPositions, char * name);
+
+    void deleteAllKmerPositions(KmerPositions * kmerPositions);
+
+}
 
 #endif // KMERS_H
 

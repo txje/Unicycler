@@ -1,71 +1,9 @@
+#include "seqan_align.h"
 
-
-
-#include <seqan/basic.h>
 #include <seqan/align.h>
-#include <seqan/sequence.h>
-#include <seqan/stream.h>
-#include <seqan/seeds.h>
-#include <stdio.h>
-#include <string>
-#include <set>
-#include <unordered_set>
-#include <unordered_map>
-#include <tuple>
+#include <iostream>
 #include <vector>
-#include <map>
-#include <algorithm>
-#include <cmath>
-#include <utility>
-#include <iterator>
-#include <mutex>
-#include <limits>
-
-using namespace seqan;
-
-typedef Align<Dna5String, ArrayGaps> TAlign;
-
-#include "semiglobalalignment.h"
-#include "alignmentline.h"
-#include "kmers.h"
 #include "settings.h"
-
-extern "C" {
-
-char * semiGlobalAlignment(char * readNameC, char * readSeqC, char * refNameC, char * refSeqC,
-                           double expectedSlope, int verbosity, KmerPositions * kmerPositions,
-                           int matchScore, int mismatchScore, int gapOpenScore,
-                           int gapExtensionScore);
-
-SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readSeq, std::string & refSeq,
-                                       AlignmentLine * line, int verbosity, std::string & output,
-                                       Score<int, Simple> & scoringScheme);
-
-SemiGlobalAlignment * semiGlobalAlignmentOneLineOneBand(Dna5String & readSeq, int readLen,
-                                              Dna5String & refSeq, int refLen,
-                                              AlignmentLine * line, int bandSize,
-                                              int verbosity, std::string & output,
-                                              Score<int, Simple> & scoringScheme);
-
-char * startExtensionAlignment(char * read, char * ref, int readLen, int refLen, int verbosity,
-                               int matchScore, int mismatchScore, int gapOpenScore,
-                               int gapExtensionScore);
-
-char * endExtensionAlignment(char * read, char * ref, int readLen, int refLen, int verbosity,
-                             int matchScore, int mismatchScore, int gapOpenScore,
-                             int gapExtensionScore);
-
-void free_c_string(char * p) {free(p);}
-
-char * cppStringToCString(std::string cpp_string);
-
-
-// std::string vectorToString(std::vector<int> * v);
-// double getMedian(std::vector<double> & v);
-// void printKmerSize(int kmerSize, int locationCount, std::string & output);
-
-
-
 
 
 // This is the big function called by Python code. It conducts a semi-global Seqan alignment
@@ -94,8 +32,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, char * refNameC, c
                                                                  kmerPositions, output);
     // Now conduct an alignment for each line.
     std::vector<SemiGlobalAlignment *> alignments;
-    if (lineFindingResults != 0)
-    {
+    if (lineFindingResults != 0) {
         Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
         for (int i = 0; i < lineFindingResults->m_lines.size(); ++i) {
             AlignmentLine * line = lineFindingResults->m_lines[i];
@@ -109,8 +46,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, char * refNameC, c
     // The returned string is semicolon-delimited. The last part is the console output and the
     // other parts are alignment description strings.
     std::string returnString;
-    for (int i = 0; i < alignments.size(); ++i)
-    {
+    for (int i = 0; i < alignments.size(); ++i) {
         returnString += alignments[i]->getFullString() + ";";
         delete alignments[i];
     }
@@ -273,33 +209,3 @@ char * cppStringToCString(std::string cpp_string) {
     return c_string;
 }
 
-
-
-// std::string vectorToString(std::vector<int> * v) {
-//     std::stringstream ss;
-//     for(size_t i = 0; i < v->size(); ++i) {
-//         if (i != 0)
-//             ss << ",";
-//         ss << (*v)[i];
-//     }
-//     return ss.str();
-// }
-
-// // Gets the median from an already-sorted vector.
-// double getMedian(std::vector<double> & v) {
-//     size_t size = v.size();
-//     if (size % 2 == 0)
-//         return (v[size / 2 - 1] + v[size / 2]) / 2;
-//     else 
-//         return v[size / 2];
-// }
-
-
-// void printKmerSize(int kmerSize, int locationCount, std::string & output) {
-//     output += "  " + std::to_string(locationCount) + " " + std::to_string(kmerSize) + "-mers in common\n";
-// }
-
-
-
-
-}

@@ -464,7 +464,9 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
     results->m_milliseconds = getTime() - startTime;
     for (int i = 0; i < lineGroups.size(); ++i) {
         AlignmentLine * line = new AlignmentLine(lineGroups[i]);
-        if (!line.isBadLine()) {
+        if (line->isBadLine())
+            delete line;
+        else {
             results->m_lines.push_back(line);
             if (verbosity > 4)
                 output += getKmerTable(lineGroups[i]);

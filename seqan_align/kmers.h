@@ -1,4 +1,9 @@
 
+#ifndef KMERS_H
+#define KMERS_H
+
+
+typedef std::unordered_map<std::string, std::vector<int> > KmerPosMap;
 
 // CommonKmer is a class to hold the positions of common k-mers between a read and a reference.
 // It holds the position in both original and rotated coordinates, and will ultimately hold the
@@ -26,7 +31,7 @@ public:
     KmerPositions() {}
     ~KmerPositions();
     void addPositions(char * nameC, char * sequenceC);
-    void deletePositions(std::string & name);
+    void deletePositions(char * nameC);
     KmerPosMap * getKmerPositions(std::string & name);
 
 private:
@@ -43,4 +48,7 @@ KmerPositions * newKmerPositions() {return new KmerPositions();}
 void addKmerPositions(KmerPositions * kmerPositions, char * name, char * sequence) {kmerPositions->addPositions(name, sequence);}
 void deleteKmerPositions(KmerPositions * kmerPositions, char * name) {kmerPositions->deletePositions(name);}
 void deleteAllKmerPositions(KmerPositions * kmerPositions) {delete kmerPositions;}
+
+
+#endif // KMERS_H
 

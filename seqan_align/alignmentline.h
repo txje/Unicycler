@@ -1,5 +1,12 @@
 
 
+#ifndef ALIGNMENTLINE_H
+#define ALIGNMENTLINE_H
+
+#include "kmers.h"
+
+typedef Seed<Simple> TSeed;
+typedef SeedSet<TSeed> TSeedSet;
 
 
 // AlignmentLine takes a list of common k-mers and builds a seed chain that Seqan can use in a
@@ -52,3 +59,5 @@ void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdev);
 
 std::string getKmerTable(std::vector<CommonKmer> & commonKmers);
 
+
+#endif // ALIGNMENTLINE_H

@@ -24,23 +24,13 @@
 #define STARTING_BAND_SIZE 10
 #define MAX_BAND_SIZE 160
 
-typedef Align<Dna5String, ArrayGaps> TAlign;
-typedef Row<TAlign>::Type TRow;
-typedef Seed<Simple> TSeed;
-typedef SeedSet<TSeed> TSeedSet;
-typedef Row<TAlign>::Type TRow;
-typedef Iterator<TRow>::Type TRowIterator;
-typedef Score<int, Simple> ScoringScheme
-typedef std::unordered_map<std::string, std::vector<int> > KmerPosMap;
-
-
-#include <stdio.h>
-#include <chrono>
 #include <seqan/basic.h>
 #include <seqan/align.h>
 #include <seqan/sequence.h>
 #include <seqan/stream.h>
 #include <seqan/seeds.h>
+#include <stdio.h>
+#include <chrono>
 #include <string>
 #include <set>
 #include <unordered_set>
@@ -55,16 +45,13 @@ typedef std::unordered_map<std::string, std::vector<int> > KmerPosMap;
 #include <mutex>
 #include <limits>
 
-#include "alignment.h"
+using namespace seqan;
+
+typedef Align<Dna5String, ArrayGaps> TAlign;
+
+#include "semiglobalalignment.h"
 #include "alignmentline.h"
 #include "kmers.h"
-
-
-
-
-
-using namespace seqan;
-using namespace std::chrono;
 
 extern "C" {
 
@@ -73,16 +60,15 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, char * refNameC, c
                            int matchScore, int mismatchScore, int gapOpenScore,
                            int gapExtensionScore);
 
-Alignment * semiGlobalAlignmentOneLine(Dna5String & readSeq, int readLen,
-                                       Dna5String & refSeq, int refLen,
+SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readSeq, std::string & refSeq,
                                        AlignmentLine * line, int verbosity, std::string & output,
-                                       ScoringScheme & scoringScheme);
+                                       Score<int, Simple> & scoringScheme);
 
-Alignment * semiGlobalAlignmentOneLineOneBand(Dna5String & readSeq, int readLen,
+SemiGlobalAlignment * semiGlobalAlignmentOneLineOneBand(Dna5String & readSeq, int readLen,
                                               Dna5String & refSeq, int refLen,
                                               AlignmentLine * line, int bandSize,
                                               int verbosity, std::string & output,
-                                              ScoringScheme & scoringScheme);
+                                              Score<int, Simple> & scoringScheme);
 
 char * startExtensionAlignment(char * read, char * ref, int readLen, int refLen, int verbosity,
                                int matchScore, int mismatchScore, int gapOpenScore,
@@ -96,7 +82,7 @@ void free_c_string(char * p) {free(p);}
 
 char * cppStringToCString(std::string cpp_string);
 
-long long getTime() {return duration_cast< milliseconds >(system_clock::now().time_since_epoch()).count();}
+long long getTime() {return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();}
 
 
 
@@ -117,7 +103,9 @@ long long getTime() {return duration_cast< milliseconds >(system_clock::now().ti
 // the given read and reference and returns the console output and all found alignments in a
 // string.
 char * semiGlobalAlignment(char * readNameC, char * readSeqC, char * refNameC, char * refSeqC,
-                           double expectedSlope, int verbosity, KmerPositions * kmerPositions) {
+                           double expectedSlope, int verbosity, KmerPositions * kmerPositions,
+                           int matchScore, int mismatchScore, int gapOpenScore,
+                           int gapExtensionScore) {
     // This string will collect all of the console output for the alignment.
     std::string output;
 
@@ -134,15 +122,14 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, char * refNameC, c
     LineFindingResults * lineFindingResults = findAlignmentLines(readName, refName,
                                                                  readLength, refLength,
                                                                  expectedSlope, verbosity,
-                                                                 KmerPositions, output);
-
+                                                                 kmerPositions, output);
     // Now conduct an alignment for each line.
-    std::vector<Alignment *> alignments;
+    std::vector<SemiGlobalAlignment *> alignments;
     Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
     for (int i = 0; i < lineFindingResults->m_lines.size(); ++i) {
         AlignmentLine * line = lineFindingResults->m_lines[i];
-        Alignment * alignment = semiGlobalAlignmentOneLine(readSeq, refSeq, line, verbosity,
-                                                           output, scoringScheme);
+        SemiGlobalAlignment * alignment = semiGlobalAlignmentOneLine(readSeq, refSeq, line, verbosity,
+                                                                     output, scoringScheme);
         alignments.push_back(alignment);
     }
     delete lineFindingResults;
@@ -152,9 +139,8 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, char * refNameC, c
     std::string returnString;
     for (int i = 0; i < alignments.size(); ++i)
     {
-        returnString += alignments[i]->getFullString();
+        returnString += alignments[i]->getFullString() + ";";
         delete alignments[i];
-        returnString += ";";
     }
     returnString += output;
     return cppStringToCString(returnString);
@@ -166,13 +152,13 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, char * refNameC, c
  // Runs an alignment using Seqan between one read and one reference along one line.
  // It starts with a smallish band size (fast) and works up to larger ones to see if they improve
  // the alignment.
-Alignment * semiGlobalAlignmentOneLine(std::string & readSeq, std::string & refSeq,
+SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readSeq, std::string & refSeq,
                                        AlignmentLine * line, int verbosity, std::string & output,
-                                       ScoringScheme & scoringScheme) {
+                                       Score<int, Simple> & scoringScheme) {
     long long startTime = getTime();
 
-    int trimmedRefLength = line->m_trimmedRefEnd - line->m_trimmedRefStart
-    std::string trimmedRefSeq = refSeq.substr(trimmedRefStart, trimmedRefLength);
+    int trimmedRefLength = line->m_trimmedRefEnd - line->m_trimmedRefStart;
+    std::string trimmedRefSeq = refSeq.substr(line->m_trimmedRefStart, trimmedRefLength);
 
     Dna5String readSeqSeqan(readSeq);
     Dna5String refSeqSeqan(trimmedRefSeq);
@@ -180,10 +166,10 @@ Alignment * semiGlobalAlignmentOneLine(std::string & readSeq, std::string & refS
     int refLength = refSeq.length();
 
     int bandSize = STARTING_BAND_SIZE;
-    Alignment * alignment = semiGlobalAlignmentOneLineOneBand(readSeqSeqan, readLength, refSeqSeqan, trimmedRefLength,
+    SemiGlobalAlignment * alignment = semiGlobalAlignmentOneLineOneBand(readSeqSeqan, readLength, refSeqSeqan, trimmedRefLength,
                                                               line, bandSize, verbosity, output, scoringScheme);
 
-    Alignment * bestAlignment = alignment;
+    SemiGlobalAlignment * bestAlignment = alignment;
 
     // Now we try larger bands to see if that improves the alignment score. We keep trying bigger
     // bands until the score stops improving or we reach the max band size.
@@ -192,9 +178,9 @@ Alignment * semiGlobalAlignmentOneLine(std::string & readSeq, std::string & refS
         if (bandSize > MAX_BAND_SIZE)
             break;
 
-        Alignment * newAlignment = semiGlobalAlignmentOneLineOneBand(readSeqSeqan, readLength, refSeqSeqan, trimmedRefLength,
+        SemiGlobalAlignment * newAlignment = semiGlobalAlignmentOneLineOneBand(readSeqSeqan, readLength, refSeqSeqan, trimmedRefLength,
                                                                      line, bandSize, verbosity, output, scoringScheme);
-        if (newAlignment->m_scaledScore <= bestAlignment.scaledScore) {
+        if (newAlignment->m_scaledScore <= bestAlignment->m_scaledScore) {
             delete newAlignment;
             break;
         }
@@ -204,7 +190,7 @@ Alignment * semiGlobalAlignmentOneLine(std::string & readSeq, std::string & refS
         }
     }
 
-    bestAlignment.m_milliseconds = getTime() - startTime;
+    bestAlignment->m_milliseconds = getTime() - startTime;
     return bestAlignment;
 }
 
@@ -214,15 +200,13 @@ Alignment * semiGlobalAlignmentOneLine(std::string & readSeq, std::string & refS
 
 
 // This function, given a line, will search for semi-global alignments around that line. The
-// bandSize parameter specifies how far of an area around the line is searched. It is generally
-// much faster than exhaustiveSemiGlobalAlignment, though it may not find the optimal alignment.
-// A lower bandSize is faster with a larger chance of missing the optimal alignment.
-Alignment * semiGlobalAlignmentOneLineOneBand(Dna5String & readSeq, int readLen,
+// bandSize parameter specifies how far of an area around the line is searched.
+SemiGlobalAlignment * semiGlobalAlignmentOneLineOneBand(Dna5String & readSeq, int readLen,
                                               Dna5String & refSeq, int refLen,
                                               AlignmentLine * line, int bandSize,
                                               int verbosity, std::string & output,
-                                              ScoringScheme & scoringScheme) {
-
+                                              Score<int, Simple> & scoringScheme) {
+    long long startTime = getTime();
 
     // I encountered a Seqan crash when the band size exceeded the sequence length, so don't let
     // that happen.
@@ -234,25 +218,23 @@ Alignment * semiGlobalAlignmentOneLineOneBand(Dna5String & readSeq, int readLen,
     // sequence. But the seed chain was made using the same offset as the trimming, so everything
     // should line up nicely (no offset adjustment needed).
 
-    long long startTime = getTime();
-
     Align<Dna5String, ArrayGaps> alignment;
     resize(rows(alignment), 2);
-    assignSource(row(alignment, 0), sequenceH);
-    assignSource(row(alignment, 1), sequenceV);
+    assignSource(row(alignment, 0), readSeq);
+    assignSource(row(alignment, 1), refSeq);
     AlignConfig<true, true, true, true> alignConfig;
 
     bandedChainAlignment(alignment, line->m_bridgedSeedChain, scoringScheme, alignConfig,
                          bandSize);
 
-    Alignment * returnedAlignment = new Alignment(alignment, refOffset, startTime, false, false);
+    SemiGlobalAlignment * sgAlignment = new SemiGlobalAlignment(alignment, line->m_trimmedRefStart, startTime, false, false, scoringScheme);
 
     if (verbosity > 2)
-        output += "  Seqan alignment, bandwidth = " + std::to_string(bandSize) + ": " + alignment.getShortDisplayString() + "\n"
+        output += "  Seqan alignment, bandwidth = " + std::to_string(bandSize) + ": " + sgAlignment->getShortDisplayString() + "\n";
     if (verbosity > 3)
-        output += "    " + alignment.m_cigar + "\n";
+        output += "    " + sgAlignment->m_cigar + "\n";
 
-    return returnedAlignment;
+    return sgAlignment;
 }
 
 
@@ -279,8 +261,8 @@ char * startExtensionAlignment(char * read, char * ref, int readLen, int refLen,
     AlignConfig<false, true, false, false> alignConfig;
     globalAlignment(alignment, scoringScheme, alignConfig);
 
-    Alignment returnedAlignment(alignment, 0, startTime, false, true);
-    return cppStringToCString(returnedAlignment->getFullString());
+    SemiGlobalAlignment startAlignment(alignment, 0, startTime, false, true, scoringScheme);
+    return cppStringToCString(startAlignment.getFullString());
 }
 
 
@@ -306,8 +288,8 @@ char * endExtensionAlignment(char * read, char * ref, int readLen, int refLen, i
     AlignConfig<false, false, true, false> alignConfig;
     globalAlignment(alignment, scoringScheme, alignConfig);
 
-    Alignment returnedAlignment(alignment, 0, startTime, true, false);
-    return cppStringToCString(returnedAlignment->getFullString());
+    SemiGlobalAlignment endAlignment(alignment, 0, startTime, true, false, scoringScheme);
+    return cppStringToCString(endAlignment.getFullString());
 }
 
 

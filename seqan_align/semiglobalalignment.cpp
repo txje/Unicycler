@@ -1,10 +1,10 @@
 
 
-Alignment::Alignment(Align<Dna5String, ArrayGaps> & alignment, int refOffset, long long startTime,
-                     bool startImmediately, bool goToEnd, ScoringScheme & scoringScheme):
+SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignment, int refOffset, long long startTime,
+                     bool startImmediately, bool goToEnd, Score<int, Simple> & scoringScheme):
     m_readStartPos(-1), m_refStartPos(-1), m_rawScore(0) {
-    // Extract the alignment sequences into C++ strings, as the TRow type doesn't seem to have
-    // constant time random access.
+
+    // Extract the alignment sequences into C++ strings for constant time random access.
     std::ostringstream stream1;
     stream1 << row(alignment, 0);
     std::string readAlignment =  stream1.str();
@@ -100,7 +100,7 @@ Alignment::Alignment(Align<Dna5String, ArrayGaps> & alignment, int refOffset, lo
 }
 
 
-std::string Alignment::getFullString() {
+std::string SemiGlobalAlignment::getFullString() {
     return m_cigar + ";" +
            std::to_string(m_readStartPos) + "," + 
            std::to_string(m_readEndPos) + "," + 
@@ -110,7 +110,7 @@ std::string Alignment::getFullString() {
 }
 
 
-std::string Alignment::getShortDisplayString() {
+std::string SemiGlobalAlignment::getShortDisplayString() {
     return "(" + std::to_string(m_readStartPos) + "-" +  std::to_string(m_readEndPos) + "), " + 
            "(" + std::to_string(m_refStartPos) + "-" +  std::to_string(m_refEndPos) + "), " + 
            "raw score = " + std::to_string(m_rawScore) + ", scaled score = " + std::to_string(m_scaledScore)
@@ -118,7 +118,7 @@ std::string Alignment::getShortDisplayString() {
 
 
 
-CigarType Alignment::getCigarType(char b1, char b2, bool alignmentStarted) {
+CigarType SemiGlobalAlignment::getCigarType(char b1, char b2, bool alignmentStarted) {
     if (b1 == '-') {
         if (alignmentStarted)
             return DELETION;
@@ -135,7 +135,7 @@ CigarType Alignment::getCigarType(char b1, char b2, bool alignmentStarted) {
         return MATCH;
 }
 
-std::string Alignment::getCigarPart(CigarType type, int length) {
+std::string SemiGlobalAlignment::getCigarPart(CigarType type, int length) {
     std::string cigarPart = std::to_string(length);
     if (type == DELETION)
         cigarPart.append("D");
@@ -152,16 +152,14 @@ std::string Alignment::getCigarPart(CigarType type, int length) {
 
 // Only returns scores for indel cigar parts, as match/mismatch scores are done on a base-by-base
 // basis.
-int getCigarScore(CigarType type, int length, ScoringScheme & scoringScheme) {
+int SemiGlobalAlignment::getCigarScore(CigarType type, int length, Score<int, Simple> & scoringScheme) {
     if (type == INSERTION || type == DELETION)
         return scoreGapOpen(scoringScheme) + ((length - 1) * scoreGapExtend(scoringScheme);
     else
         return 0;
 }
 
-
-
-int Alignment::getIndelScore(int length, ScoringScheme & scoringScheme) {
+int SemiGlobalAlignment::getIndelScore(int length, Score<int, Simple> & scoringScheme) {
     return scoreGapOpen(scoringScheme) + ((currentCigarLength - 1) * scoreGapExtend(scoringScheme));
 }
 

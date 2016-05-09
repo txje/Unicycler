@@ -81,9 +81,9 @@ def main():
         print()
 
     references = load_references(args.ref)
-    read_dict = load_long_reads(args.reads)
+    read_dict, read_names = load_long_reads(args.reads)
 
-    reads = semi_global_align_long_reads(references, args.ref, read_dict, args.reads, args.sam,
+    reads = semi_global_align_long_reads(references, args.ref, read_dict, read_names, args.reads, args.sam,
                                          args.temp_dir, args.path, args.threads, args.partial_ref,
                                          AlignmentScoringScheme(args.scores))
     summarise_errors(references, reads, args.table, args.keep)
@@ -134,7 +134,7 @@ def get_arguments():
 
     return args
 
-def semi_global_align_long_reads(references, ref_fasta, read_dict, reads_fastq, output_sam,
+def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, reads_fastq, output_sam,
                                  temp_dir, graphmap_path, threads, partial_ref, scoring_scheme):
     '''
     This function does the primary work of this module: aligning long reads to references in an
@@ -192,7 +192,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, reads_fastq, 
     low_score_threshold = score_median - (3 * score_mad)
     completed_reads = []
     reads_to_realign = []
-    for read in read_dict.itervalues():
+    for read_name in read_names:
+        read = read_dict[read_name]
         if read.needs_realignment(partial_ref, low_score_threshold):
             reads_to_realign.append(read)
         else:
@@ -294,7 +295,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, reads_fastq, 
 
     # Save the final alignments to SAM file.
     final_alignments = []
-    for read in read_dict.itervalues():
+    for read_name in read_names:
+        read = read_dict[read_name]
         final_alignments += read.alignments
     write_sam_file(final_alignments, graphmap_sam, output_sam)
     
@@ -625,9 +627,11 @@ def load_references(fasta_filename):
 def load_long_reads(fastq_filename):
     '''
     This function loads in long reads from a FASTQ file and returns a dictionary where key = read
-    name and value = Read object.
+    name and value = Read object. It also returns a list of read names, in the order they are in
+    the file.
     '''
-    reads = {}
+    read_dict = {}
+    read_names = []
     total_bases = 0
     last_progress = 0.0
     if VERBOSITY > 0:
@@ -641,18 +645,19 @@ def load_long_reads(fastq_filename):
         sequence = next(fastq).strip()
         _ = next(fastq)
         qualities = next(fastq).strip()
-        reads[name] = Read(name, sequence, qualities)
+        read_dict[name] = Read(name, sequence, qualities)
+        read_names.append(name)
         total_bases += len(sequence)
         if VERBOSITY > 0:
-            progress = 100.0 * len(reads) / num_reads
+            progress = 100.0 * len(read_dict) / num_reads
             progress_rounded_down = float(int(progress))
             if progress_rounded_down > last_progress:
-                print_progress_line(len(reads), num_reads, total_bases)
+                print_progress_line(len(read_dict), num_reads, total_bases)
                 last_progress = progress_rounded_down    
     fastq.close()
     if VERBOSITY > 0:
         print('\n')
-    return reads
+    return read_dict, read_names
 
 def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scoring_scheme):
     '''
@@ -1578,7 +1583,8 @@ class Alignment(object):
         if self.percent_identity is not None:
             return_str += ', ' + '%.2f' % self.percent_identity + '% ID'
         if self.scaled_score is not None:
-            return_str += ', score = ' + '%.2f' % self.scaled_score
+            return_str += ', raw score = ' + '%.2f' % self.raw_score
+            return_str += ', scaled score = ' + '%.2f' % self.scaled_score
         return_str += ', longest indel: ' + str(self.get_longest_indel_run())
         if self.alignment_type == 'Seqan':
             return_str += ', ' + str(self.milliseconds) + ' ms'

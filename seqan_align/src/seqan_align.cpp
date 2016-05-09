@@ -34,7 +34,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, char * refNameC, c
     std::vector<SemiGlobalAlignment *> alignments;
     if (lineFindingResults != 0) {
         Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
-        for (int i = 0; i < lineFindingResults->m_lines.size(); ++i) {
+        for (size_t i = 0; i < lineFindingResults->m_lines.size(); ++i) {
             AlignmentLine * line = lineFindingResults->m_lines[i];
             SemiGlobalAlignment * alignment = semiGlobalAlignmentOneLine(readSeq, refSeq, line, verbosity,
                                                                          output, scoringScheme);
@@ -46,7 +46,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, char * refNameC, c
     // The returned string is semicolon-delimited. The last part is the console output and the
     // other parts are alignment description strings.
     std::string returnString;
-    for (int i = 0; i < alignments.size(); ++i) {
+    for (size_t i = 0; i < alignments.size(); ++i) {
         returnString += alignments[i]->getFullString() + ";";
         delete alignments[i];
     }
@@ -71,7 +71,6 @@ SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readSeq, std::str
     Dna5String readSeqSeqan(readSeq);
     Dna5String refSeqSeqan(trimmedRefSeq);
     int readLength = readSeq.length();
-    int refLength = refSeq.length();
 
     int bandSize = STARTING_BAND_SIZE;
     SemiGlobalAlignment * alignment = semiGlobalAlignmentOneLineOneBand(readSeqSeqan, readLength, refSeqSeqan, trimmedRefLength,

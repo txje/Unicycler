@@ -92,8 +92,8 @@ std::vector<CommonKmer> getCommonKmers(std::string & readName, std::string & ref
             if (refKmersSmaller)
                 std::swap(readPositions, refPositions);
 
-            for (int k = 0; k < readPositions->size(); ++k) {
-                for (int l = 0; l < refPositions->size(); ++l)
+            for (size_t k = 0; k < readPositions->size(); ++k) {
+                for (size_t l = 0; l < refPositions->size(); ++l)
                     commonKmers.push_back(CommonKmer(kmer, (*readPositions)[k], (*refPositions)[l], rotationAngle));
             }
         }

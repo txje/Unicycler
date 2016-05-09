@@ -45,7 +45,7 @@ private:
 class LineFindingResults {
 public:
     LineFindingResults() {}
-    ~LineFindingResults() {for (int i = 0; i < m_lines.size(); ++i) delete m_lines[i];}
+    ~LineFindingResults() {for (size_t i = 0; i < m_lines.size(); ++i) delete m_lines[i];}
 
     int m_milliseconds;
     std::vector<AlignmentLine *> m_lines;

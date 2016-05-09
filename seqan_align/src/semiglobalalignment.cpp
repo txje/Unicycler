@@ -91,7 +91,7 @@ SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignmen
 
     // Build the CIGAR string and tally up indel scores.
     m_cigar = "";
-    for (int i = 0; i < cigarTypes.size(); ++i) {
+    for (size_t i = 0; i < cigarTypes.size(); ++i) {
         m_cigar += getCigarPart(cigarTypes[i], cigarLengths[i]);
         m_rawScore += getCigarScore(cigarTypes[i], cigarLengths[i], scoringScheme);
     }

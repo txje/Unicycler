@@ -1,7 +1,7 @@
 CXX       = g++-5
 CXXFLAGS  = -fPIC
 CXXFLAGS += -O3
-CXXFLAGS += -Wextra
+CXXFLAGS += -Wall
 CXXFLAGS += -std=c++11
 CXXFLAGS += -I/Users/Ryan/Applications/seqan/include
 CXXFLAGS += -Iinclude

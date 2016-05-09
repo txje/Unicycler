@@ -21,7 +21,7 @@ AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLeng
 
     // Build a Seqan seed set using our common k-mers, offsetting by the trimmed reference start position.
     TSeedSet seedSet;
-    for (int i = 0; i < commonKmers.size(); ++i) {
+    for (size_t i = 0; i < commonKmers.size(); ++i) {
         TSeed seed(commonKmers[i].m_hPosition, commonKmers[i].m_vPosition - m_trimmedRefStart, KMER_SIZE);
         addSeedMerge(seedSet, seed);
     }
@@ -63,10 +63,10 @@ AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLeng
     for (int i = 1; i < seedsInChain; ++i) {
         TSeed seed1 = seedChain[i-1];
         TSeed seed2 = seedChain[i];
-        int seed1HEnd = endPositionH(seedChain[i-1]);
-        int seed1VEnd = endPositionV(seedChain[i-1]);
-        int seed2HStart = beginPositionH(seedChain[i]);
-        int seed2VStart = beginPositionV(seedChain[i]);
+        int seed1HEnd = endPositionH(seed1);
+        int seed1VEnd = endPositionV(seed1);
+        int seed2HStart = beginPositionH(seed2);
+        int seed2VStart = beginPositionV(seed2);
         addBridgingSeed(bridgedSeedSet, seed1HEnd, seed1VEnd, seed2HStart, seed2VStart);
         addSeedMerge(bridgedSeedSet, seed2);
     }
@@ -192,10 +192,6 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
     int halfBandSize = BAND_SIZE / 2;
     double maxScore = 0.0;
 
-    // Get the full band length using the middle point of the alignment rectangle.
-    double fullBandLength = getLineLength(readLength / 2.0, refLength / 2.0,
-                                          expectedSlope, readLength, refLength);
-
     // There are four corners of the alignment rectangle which we also need to rotate.
     double rotationAngle = CommonKmer::getRotationAngle(expectedSlope);
     CommonKmer c1("", 0, 0, rotationAngle);
@@ -209,11 +205,8 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
     double c3BandLength = getLineLength(c3.m_hPosition, c3.m_vPosition,
                                         expectedSlope, readLength, refLength);
 
+    // Now we loop through the CommonKmer points, calculating their k-mer density (score) along the way.
     int commonKmerCount = commonKmers.size();
-    int startKmerIndex = 0 + (halfBandSize - 1);
-    int endKmerIndex = commonKmerCount - (halfBandSize - 1); //One past last
-
-    // Now we loop through the CommonKmer points, calculating their k-mer density (score) along the way!
     for (int i = 0; i < commonKmerCount; ++i) {
         int bandStartIndex = std::max(i - halfBandSize, 0);
         int bandEndIndex = std::min(i + halfBandSize, commonKmerCount - 1);
@@ -307,7 +300,7 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
     // the low threshold.
     std::vector<std::vector<CommonKmer> > lineGroups;
     bool lineInProgress = false;
-    for (int i = 0; i < commonKmers.size(); ++i) {
+    for (int i = 0; i < commonKmerCount; ++i) {
         if (lineInProgress) {
             if (commonKmers[i].m_score >= LOW_SCORE_THRESHOLD)
                 lineGroups.back().push_back(commonKmers[i]);
@@ -341,7 +334,7 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
     std::vector<std::vector<CommonKmer> > mergedLineGroups;
     if (lineGroups.size() > 0)
         mergedLineGroups.push_back(lineGroups[0]);
-    for (int i = 1; i < lineGroups.size(); ++i) {
+    for (size_t i = 1; i < lineGroups.size(); ++i) {
         std::vector<CommonKmer> * previousGroup = &(mergedLineGroups.back());
         std::vector<CommonKmer> * thisGroup = &(lineGroups[i]);
 
@@ -358,7 +351,7 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
     // not line groups caused by short, local alignments) and for which the band is reasonably 
     // long (to avoid things like 3 bp alignments).
     std::vector<std::vector<CommonKmer> > lengthFilteredLineGroups;
-    for (int i = 0; i < lineGroups.size(); ++i) {
+    for (size_t i = 0; i < lineGroups.size(); ++i) {
         // Determine the mean position for the line group and use it to calculate the band length.
         int groupCount = lineGroups[i].size();
         double vSum = 0.0, hSum = 0.0;
@@ -409,7 +402,7 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
     double fractionToDiscard = 0.05;
     int steps = 3;
 
-    for (int i = 0; i < lineGroups.size(); ++i) {
+    for (size_t i = 0; i < lineGroups.size(); ++i) {
         std::vector<CommonKmer> * lineGroup = &(lineGroups[i]);
 
         // Sort by rotated horizontal position so we proceed along the line from start to end. 
@@ -468,7 +461,7 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
     // Prepare the returned object.
     LineFindingResults * results = new LineFindingResults();
     results->m_milliseconds = getTime() - startTime;
-    for (int i = 0; i < lineGroups.size(); ++i) {
+    for (size_t i = 0; i < lineGroups.size(); ++i) {
         AlignmentLine * line = new AlignmentLine(lineGroups[i], readLength, refLength, verbosity, output);
         if (line->isBadLine())
             delete line;
@@ -487,7 +480,7 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
         else {
             output += "  Lines found:\n";
             output += "  Line finding milliseconds: " + std::to_string(results->m_milliseconds) + "\n";
-            for (int i = 0; i < results->m_lines.size(); ++i) {
+            for (size_t i = 0; i < results->m_lines.size(); ++i) {
                 AlignmentLine * line = results->m_lines[i];
                 output += "    " + line->getDescriptiveString();
                 if (verbosity > 4) {
@@ -557,7 +550,7 @@ void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdDev) {
 
 std::string getKmerTable(std::vector<CommonKmer> & commonKmers) {
     std::string table = "\tSeq 1 pos\tSeq 2 pos\tRotated seq 1 pos\tRotated seq 2 pos\tBand area\tScore\n";
-    for (int i = 0; i < commonKmers.size(); ++i) {
+    for (size_t i = 0; i < commonKmers.size(); ++i) {
         table += "\t" + std::to_string(commonKmers[i].m_hPosition) +
                  "\t" + std::to_string(commonKmers[i].m_vPosition) + 
                  "\t" + std::to_string(commonKmers[i].m_rotatedHPosition) +

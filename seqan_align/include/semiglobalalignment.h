@@ -31,7 +31,9 @@ public:
 private:
     CigarType getCigarType(char b1, char b2, bool alignmentStarted);
     std::string getCigarPart(CigarType type, int length);
-    int getCigarScore(CigarType type, int length, Score<int, Simple> & scoringScheme);
+    int getCigarScore(CigarType type, int length, Score<int, Simple> & scoringScheme,
+                      std::string & readAlignment, std::string & refAlignment,
+                      int alignmentPos);
 };
 
 long long getTime();

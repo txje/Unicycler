@@ -1,6 +1,7 @@
 
 #include "semiglobalalignment.h"
 
+#include <iostream>
 
 SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignment, int refOffset, long long startTime,
                      bool startImmediately, bool goToEnd, Score<int, Simple> & scoringScheme):
@@ -26,6 +27,8 @@ SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignmen
 
     bool alignmentStarted = false;
     bool readStarted = false, refStarted = false;
+    int alignmentStartPos = -1;
+    int alignmentEndPos = -1;
 
     if (startImmediately) {
         alignmentStarted = true;
@@ -33,6 +36,7 @@ SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignmen
         refStarted = true;
         m_readStartPos = 0;
         m_refStartPos = 0;
+        alignmentStartPos = 0;
     }
 
     for (int i = 0; i < alignmentLength; ++i) {
@@ -49,15 +53,10 @@ SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignmen
             m_readStartPos = readBases;
             m_refStartPos = refBases;
             alignmentStarted = true;
+            alignmentStartPos = i;
         }
 
         CigarType cigarType = getCigarType(base1, base2, alignmentStarted);
-        if (cigarType == MATCH) {
-            if (base1 == base2)
-                m_rawScore += scoreMatch(scoringScheme);
-            else
-                m_rawScore += scoreMismatch(scoringScheme);
-        }
         if (i == 0)
             currentCigarType = cigarType;
         if (cigarType == currentCigarType)
@@ -74,29 +73,55 @@ SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignmen
         if (base2 != '-')
             ++refBases;
     }
+    alignmentEndPos = alignmentLength;
 
     m_readEndPos = readBases;
     m_refEndPos = refBases;
     if (currentCigarType == INSERTION && !goToEnd) {
         currentCigarType = CLIP;
         m_readEndPos -= currentCigarLength;
+        alignmentEndPos -= currentCigarLength;
     }
     else if (currentCigarType == DELETION && !goToEnd) {
         currentCigarType = NOTHING;
         m_refEndPos -= currentCigarLength;
+        alignmentEndPos -= currentCigarLength;
     }
 
     cigarTypes.push_back(currentCigarType);
     cigarLengths.push_back(currentCigarLength);
 
-    // Build the CIGAR string and tally up indel scores.
+    // Build the CIGAR string and tally up the score.
     m_cigar = "";
+
+    // std::cout << readAlignment << std::endl;
+    // std::cout << refAlignment << std::endl;
+
+    int alignmentPos = 0;
     for (size_t i = 0; i < cigarTypes.size(); ++i) {
-        m_cigar += getCigarPart(cigarTypes[i], cigarLengths[i]);
-        m_rawScore += getCigarScore(cigarTypes[i], cigarLengths[i], scoringScheme);
+        CigarType type = cigarTypes[i];
+        int length = cigarLengths[i];
+
+        std::string cigarPart = getCigarPart(type, length);
+        m_cigar += cigarPart;
+        int score = getCigarScore(type, length, scoringScheme, readAlignment, refAlignment, alignmentPos);
+        m_rawScore += score;
+
+        // std::cout << cigarPart << ":" << score << " ";
+        // std::cout << readAlignment.substr(alignmentPos, length) << " ";
+        // std::cout << refAlignment.substr(alignmentPos, length) << " ";
+        // std::cout << std::endl;
+
+        alignmentPos += length;
     }
-    int perfectScore = scoreMatch(scoringScheme) * alignmentLength;
-    m_scaledScore = 100.0 * double(m_rawScore) / perfectScore;
+    int alignmentLengthExcludingClips = alignmentEndPos - alignmentStartPos;
+    int perfectScore = scoreMatch(scoringScheme) * alignmentLengthExcludingClips;
+    if (perfectScore > 0)
+        m_scaledScore = 100.0 * double(m_rawScore) / perfectScore;
+    else
+        m_scaledScore = 0.0;
+
+    // std::cout << std::endl << std::endl;
 
     // Add the offset to the reference positions so they reflect the actual alignment location in
     // the full reference, not the trimmed reference that was given to Seqan.
@@ -157,13 +182,31 @@ std::string SemiGlobalAlignment::getCigarPart(CigarType type, int length) {
     return cigarPart;
 }
 
-// Only returns scores for indel cigar parts, as match/mismatch scores are done on a base-by-base
-// basis.
-int SemiGlobalAlignment::getCigarScore(CigarType type, int length, Score<int, Simple> & scoringScheme) {
+
+int SemiGlobalAlignment::getCigarScore(CigarType type, int length, Score<int, Simple> & scoringScheme,
+                                       std::string & readAlignment, std::string & refAlignment,
+                                       int alignmentPos) {
+
+    // Scoring indels is easy because we only need to know the length.
     if (type == INSERTION || type == DELETION)
         return scoreGapOpen(scoringScheme) + ((length - 1) * scoreGapExtend(scoringScheme));
-    else
-        return 0;
+
+    // To score matches we must actually look at the bases.
+    else if (type == MATCH)
+    {
+        int score = 0;
+        for (int i = 0; i < length; ++i)
+        {
+            int pos = alignmentPos + i;
+            bool match = (readAlignment[pos] == refAlignment[pos]);
+            if (match)
+                score += scoreMatch(scoringScheme);
+            else
+                score += scoreMismatch(scoringScheme);
+        }
+        return score;
+    }
+    return 0;
 }
 
 

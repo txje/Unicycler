@@ -219,6 +219,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         expected_ref_to_read_ratio = 1.0 / read_to_ref_median
     else:
         expected_ref_to_read_ratio = 0.95 # TO DO: SET THIS TO AN EMPIRICALLY-DERIVED VALUE
+        expected_ref_to_read_ratio = 0.93546195580997 # TEMP
+
     completed_count = 0
 
     # Create a C++ KmerPositions object and add each reference sequence.
@@ -527,7 +529,7 @@ def print_alignment_summary_table(graphmap_alignments, read_to_ref_median, read_
     table_lines = [x.ljust(pad_length) for x in table_lines]
 
     table_lines[0] += 'Median'
-    table_lines[1] += float_to_str(read_to_ref_median, 3)
+    table_lines[1] += float_to_str(read_to_ref_median, 8)
     table_lines[2] += float_to_str(percent_id_median, 2) + '%'
     table_lines[3] += float_to_str(score_median, 2)
 
@@ -535,7 +537,7 @@ def print_alignment_summary_table(graphmap_alignments, read_to_ref_median, read_
     table_lines = [x.ljust(pad_length) for x in table_lines]
 
     table_lines[0] += 'MAD'
-    table_lines[1] += float_to_str(read_to_ref_mad, 3)
+    table_lines[1] += float_to_str(read_to_ref_mad, 8)
     table_lines[2] += float_to_str(percent_id_mad, 2) + '%'
     table_lines[3] += float_to_str(score_mad, 2)
 
@@ -1692,9 +1694,6 @@ a GraphMap alignment.
 '''
 C_LIB.startExtensionAlignment.argtypes = [c_char_p, # Read sequence
                                           c_char_p, # Reference sequence
-                                          c_int,    # Read sequence length
-                                          c_int,    # Reference sequence length
-                                          c_int,    # Verbosity
                                           c_int,    # Match score
                                           c_int,    # Mismatch score
                                           c_int,    # Gap open score
@@ -1703,9 +1702,6 @@ C_LIB.startExtensionAlignment.restype = c_void_p    # String describing alignmen
 
 C_LIB.endExtensionAlignment.argtypes = [c_char_p, # Read sequence
                                         c_char_p, # Reference sequence
-                                        c_int,    # Read sequence length
-                                        c_int,    # Reference sequence length
-                                        c_int,    # Verbosity
                                         c_int,    # Match score
                                         c_int,    # Mismatch score
                                         c_int,    # Gap open score
@@ -1718,8 +1714,6 @@ def start_extension_alignment(realigned_read_seq, realigned_ref_seq, scoring_sch
     Python wrapper for startExtensionAlignment C++ function.
     '''
     ptr = C_LIB.startExtensionAlignment(realigned_read_seq, realigned_ref_seq,
-                                        len(realigned_read_seq), len(realigned_ref_seq),
-                                        VERBOSITY,
                                         scoring_scheme.match, scoring_scheme.mismatch,
                                         scoring_scheme.gap_open, scoring_scheme.gap_extend)
     return c_string_to_python_string(ptr)
@@ -1729,8 +1723,6 @@ def end_extension_alignment(realigned_read_seq, realigned_ref_seq, scoring_schem
     Python wrapper for endExtensionAlignment C++ function.
     '''
     ptr = C_LIB.endExtensionAlignment(realigned_read_seq, realigned_ref_seq,
-                                      len(realigned_read_seq), len(realigned_ref_seq),
-                                      VERBOSITY,
                                       scoring_scheme.match, scoring_scheme.mismatch,
                                       scoring_scheme.gap_open, scoring_scheme.gap_extend)
     return c_string_to_python_string(ptr)

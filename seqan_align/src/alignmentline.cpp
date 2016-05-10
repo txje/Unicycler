@@ -43,7 +43,7 @@ AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLeng
         output += getSeedChainTable(seedChain);
     }
 
-    // Now we create a new seed chain will all of the gaps bridged. This will help keep alignment
+    // Now we create a new seed chain with all of the gaps bridged. This will help keep alignment
     // in a narrow band, even when the seeds are spaced apart.
     TSeedSet bridgedSeedSet;
 
@@ -62,7 +62,7 @@ AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLeng
     addSeedMerge(bridgedSeedSet, firstSeed);
     
     // Fill in any gaps in the middle of the seed chain.
-    for (int i = 1; i < seedsInChain; ++i) {
+    for (int i = 1; i < seedsInChain; ++i) {    
         TSeed seed1 = seedChain[i-1];
         TSeed seed2 = seedChain[i];
         int seed1ReadEnd = endPositionH(seed1);
@@ -147,13 +147,15 @@ void AlignmentLine::addSeedMerge(TSeedSet & seedSet, TSeed & seed) {
 
 
 std::string getSeedChainTable(String<TSeed> & seedChain) {
-    std::string table = "\tH start\tH end\tV start\tV end\n";
+    std::string table = "\tH start\tH end\tV start\tV end\tLower diag\tUpper diag\n";
     int seedsInChain = length(seedChain);
     for (int i = 0; i < seedsInChain; ++i) {
         table += "\t" + std::to_string(beginPositionH(seedChain[i])) +
                  "\t" + std::to_string(endPositionH(seedChain[i])) +
                  "\t" + std::to_string(beginPositionV(seedChain[i])) +
-                 "\t" + std::to_string(endPositionV(seedChain[i])) + "\n";
+                 "\t" + std::to_string(endPositionV(seedChain[i])) +
+                 "\t" + std::to_string(lowerDiagonal(seedChain[i])) +
+                 "\t" + std::to_string(upperDiagonal(seedChain[i])) + "\n";
     }
     return table;
 }
@@ -171,8 +173,7 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
                                         KmerPositions * kmerPositions, std::string & output) {
     long long startTime = getTime();
 
-    std::vector<CommonKmer> commonKmers = getCommonKmers(readName, refName, expectedSlope,
-                                                         verbosity, output, kmerPositions);
+    std::vector<CommonKmer> commonKmers = getCommonKmers(readName, refName, expectedSlope, kmerPositions);
 
     if (commonKmers.size() < 2) {
         if (verbosity > 3)
@@ -467,6 +468,7 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
             output += "  Line " + std::to_string(i+1) + "\n";
             output += getKmerTable(lineGroups[i]);
         }
+
         AlignmentLine * line = new AlignmentLine(lineGroups[i], readLength, refLength, verbosity, output);
         if (line->isBadLine())
             delete line;

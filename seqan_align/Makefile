@@ -1,9 +1,9 @@
 CXX       = g++-5
 CXXFLAGS  = -fPIC
 CXXFLAGS += -O3
-CXXFLAGS += -Wall
+CXXFLAGS += -Wall -Wextra -pedantic
+CXXFLAGS += -lpthread -DSEQAN_ENABLE_DEBUG=1
 CXXFLAGS += -std=c++11
-CXXFLAGS += -I/Users/Ryan/Applications/seqan/include
 CXXFLAGS += -Iinclude
 
 TARGET    = seqan_align.so

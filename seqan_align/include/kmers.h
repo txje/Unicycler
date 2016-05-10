@@ -45,8 +45,7 @@ private:
 
 
 std::vector<CommonKmer> getCommonKmers(std::string & readName, std::string & refName,
-                                       double expectedSlope, int verbosity, std::string & output,
-                                       KmerPositions * kmerPositions);
+                                       double expectedSlope, KmerPositions * kmerPositions);
 
 
 // Functions that are called by the Python script must have C linkage, not C++ linkage.

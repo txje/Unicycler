@@ -16,11 +16,11 @@ extern "C" {
 	                           int matchScore, int mismatchScore, int gapOpenScore,
 	                           int gapExtensionScore);
 
-	char * startExtensionAlignment(char * read, char * ref, int readLen, int refLen, int verbosity,
+	char * startExtensionAlignment(char * read, char * ref,
 	                               int matchScore, int mismatchScore, int gapOpenScore,
 	                               int gapExtensionScore);
 
-	char * endExtensionAlignment(char * read, char * ref, int readLen, int refLen, int verbosity,
+	char * endExtensionAlignment(char * read, char * ref,
 	                             int matchScore, int mismatchScore, int gapOpenScore,
 	                             int gapExtensionScore);
 

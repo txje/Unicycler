@@ -20,5 +20,5 @@
 #define PAD_SIZE 1000
 
 // These are the Seqan band widths used in a banded alignment.
-#define STARTING_BAND_SIZE 10
-#define MAX_BAND_SIZE 160
+#define STARTING_BAND_SIZE 80
+#define MAX_BAND_SIZE 80

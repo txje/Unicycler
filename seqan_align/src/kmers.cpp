@@ -66,8 +66,7 @@ KmerPosMap * KmerPositions::getKmerPositions(std::string & name) {
 
 // This function returns a list of the k-mers common to the two sequences.
 std::vector<CommonKmer> getCommonKmers(std::string & readName, std::string & refName,
-                                       double expectedSlope, int verbosity, std::string & output,
-                                       KmerPositions * kmerPositions) {
+                                       double expectedSlope, KmerPositions * kmerPositions) {
     std::vector<CommonKmer> commonKmers;
     double rotationAngle = CommonKmer::getRotationAngle(expectedSlope);
 

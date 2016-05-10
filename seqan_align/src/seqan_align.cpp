@@ -30,8 +30,6 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, char * refNameC, c
                                                                  readLength, refLength,
                                                                  expectedSlope, verbosity,
                                                                  kmerPositions, output);
-
-
     // Now conduct an alignment for each line.
     std::vector<SemiGlobalAlignment *> alignments;
     if (lineFindingResults != 0) {
@@ -88,7 +86,8 @@ SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readSeq, std::str
             break;
 
         SemiGlobalAlignment * newAlignment = semiGlobalAlignmentOneLineOneBand(readSeqSeqan, readLength, refSeqSeqan, trimmedRefLength,
-                                                                     line, bandSize, verbosity, output, scoringScheme);
+                                                                               line, bandSize, verbosity, output, scoringScheme);
+
         if (newAlignment->m_scaledScore <= bestAlignment->m_scaledScore) {
             delete newAlignment;
             break;
@@ -135,7 +134,6 @@ SemiGlobalAlignment * semiGlobalAlignmentOneLineOneBand(Dna5String & readSeq, in
 
     bandedChainAlignment(alignment, line->m_bridgedSeedChain, scoringScheme, alignConfig,
                          bandSize);
-
     SemiGlobalAlignment * sgAlignment = new SemiGlobalAlignment(alignment, line->m_trimmedRefStart, startTime, false, false, scoringScheme);
 
     if (verbosity > 2)
@@ -151,7 +149,7 @@ SemiGlobalAlignment * semiGlobalAlignmentOneLineOneBand(Dna5String & readSeq, in
 
 // This function is used to conduct a short alignment for the sake of extending a GraphMap
 // alignment.
-char * startExtensionAlignment(char * read, char * ref, int readLen, int refLen, int verbosity,
+char * startExtensionAlignment(char * read, char * ref,
                                int matchScore, int mismatchScore, int gapOpenScore,
                                int gapExtensionScore) {
     long long startTime = getTime();
@@ -178,7 +176,7 @@ char * startExtensionAlignment(char * read, char * ref, int readLen, int refLen,
 
 // This function is used to conduct a short alignment for the sake of extending a GraphMap
 // alignment.
-char * endExtensionAlignment(char * read, char * ref, int readLen, int refLen, int verbosity,
+char * endExtensionAlignment(char * read, char * ref,
                              int matchScore, int mismatchScore, int gapOpenScore,
                              int gapExtensionScore) {
     long long startTime = getTime();

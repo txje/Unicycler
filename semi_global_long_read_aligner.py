@@ -259,6 +259,9 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
 
     # We're done with the C++ KmerPositions object, so delete it now.
     C_LIB.deleteAllKmerPositions(kmer_positions_ptr)
+    
+    if VERBOSITY == 1:
+        print('\n')
 
     # Filter the alignments based on conflicting read position.
     if VERBOSITY > 0:

@@ -57,7 +57,8 @@ public:
 LineFindingResults * findAlignmentLines(std::string & readName, std::string & refName,
                                         int readLength, int refLength,
                                         double expectedSlope, int verbosity,
-                                        KmerPositions * kmerPositions, std::string & output);
+                                        KmerPositions * kmerPositions, std::string & output,
+                                        int sensitivityLevel);
 
 double getLineLength(double x, double y, double slope, double xSize, double ySize);
 

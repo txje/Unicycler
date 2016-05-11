@@ -170,14 +170,47 @@ std::string getSeedChainTable(String<TSeed> & seedChain) {
 LineFindingResults * findAlignmentLines(std::string & readName, std::string & refName,
                                         int readLength, int refLength,
                                         double expectedSlope, int verbosity,
-                                        KmerPositions * kmerPositions, std::string & output) {
+                                        KmerPositions * kmerPositions, std::string & output,
+                                        int sensitivityLevel) {
+
+    // Set the algorithm settings using the sentitivity level.
+    double lowScoreThreshold, highScoreThreshold, mergeDistance, minAlignmentLength;
+    int bandSize, minPointCount;
+    if (sensitivityLevel == 0)
+    {
+        bandSize = BAND_SIZE_LEVEL_0;
+        lowScoreThreshold = LOW_SCORE_THRESHOLD_LEVEL_0;
+        highScoreThreshold = HIGH_SCORE_THRESHOLD_LEVEL_0;
+        mergeDistance = MERGE_DISTANCE_LEVEL_0;
+        minAlignmentLength = MIN_ALIGNMENT_LENGTH_LEVEL_0;
+        minPointCount = MIN_POINT_COUNT_LEVEL_0;
+    }
+    else if (sensitivityLevel == 1)
+    {
+        bandSize = BAND_SIZE_LEVEL_1;
+        lowScoreThreshold = LOW_SCORE_THRESHOLD_LEVEL_1;
+        highScoreThreshold = HIGH_SCORE_THRESHOLD_LEVEL_1;
+        mergeDistance = MERGE_DISTANCE_LEVEL_1;
+        minAlignmentLength = MIN_ALIGNMENT_LENGTH_LEVEL_1;
+        minPointCount = MIN_POINT_COUNT_LEVEL_1;
+    }
+    else // sensitivityLevel == 2
+    {
+        bandSize = BAND_SIZE_LEVEL_2;
+        lowScoreThreshold = LOW_SCORE_THRESHOLD_LEVEL_2;
+        highScoreThreshold = HIGH_SCORE_THRESHOLD_LEVEL_2;
+        mergeDistance = MERGE_DISTANCE_LEVEL_2;
+        minAlignmentLength = MIN_ALIGNMENT_LENGTH_LEVEL_2;
+        minPointCount = MIN_POINT_COUNT_LEVEL_2;
+    }
+
     long long startTime = getTime();
 
     std::vector<CommonKmer> commonKmers = getCommonKmers(readName, refName, expectedSlope, kmerPositions);
 
     if (commonKmers.size() < 2) {
         if (verbosity > 3)
-            output += "  No lines found, too few common k-mers (" + std::to_string(getTime() - startTime) + " ms):\n";
+            output += "  No lines found, too few common k-mers (" + std::to_string(getTime() - startTime) + " ms)\n";
         return 0;
     }
 
@@ -192,7 +225,7 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
     });
 
     // Score each point based on the number of other points in its band.
-    int halfBandSize = BAND_SIZE / 2;
+    int halfBandSize = bandSize / 2;
     double maxScore = 0.0;
 
     // There are four corners of the alignment rectangle which we also need to rotate.
@@ -305,12 +338,12 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
     bool lineInProgress = false;
     for (int i = 0; i < commonKmerCount; ++i) {
         if (lineInProgress) {
-            if (commonKmers[i].m_score >= LOW_SCORE_THRESHOLD)
+            if (commonKmers[i].m_score >= lowScoreThreshold)
                 lineGroups.back().push_back(commonKmers[i]);
             else // This line group is done.
                 lineInProgress = false;
         }
-        else if (commonKmers[i].m_score >= HIGH_SCORE_THRESHOLD) {
+        else if (commonKmers[i].m_score >= highScoreThreshold) {
             // It's time to start a new line group!
             lineGroups.push_back(std::vector<CommonKmer>());
             lineInProgress = true;
@@ -319,7 +352,7 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
             // threshold).
             int groupStartPoint = i;
             while (groupStartPoint >= 0 &&
-                   commonKmers[groupStartPoint].m_score >= LOW_SCORE_THRESHOLD)
+                   commonKmers[groupStartPoint].m_score >= lowScoreThreshold)
                 --groupStartPoint;
             ++groupStartPoint;
 
@@ -341,7 +374,7 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
         std::vector<CommonKmer> * previousGroup = &(mergedLineGroups.back());
         std::vector<CommonKmer> * thisGroup = &(lineGroups[i]);
 
-        if (thisGroup->front().m_rotatedVPosition - previousGroup->back().m_rotatedVPosition <= MERGE_DISTANCE)
+        if (thisGroup->front().m_rotatedVPosition - previousGroup->back().m_rotatedVPosition <= mergeDistance)
             previousGroup->insert(previousGroup->end(), thisGroup->begin(), thisGroup->end());
         else
             mergedLineGroups.push_back(*thisGroup);
@@ -367,7 +400,7 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
         double bandLength = getLineLength(meanH, meanV, expectedSlope, readLength, refLength);
 
         // Exclude alignments which are too short.
-        if (bandLength < MIN_ALIGNMENT_LENGTH) {
+        if (bandLength < minAlignmentLength) {
             if (verbosity > 4)
                 output += "    Band too short: " + std::to_string(bandLength) + "\n";
             continue;
@@ -449,14 +482,14 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
 
     // Remove any line groups with too few points.
     lineGroups.erase(std::remove_if(lineGroups.begin(), lineGroups.end(), 
-                                    [](std::vector<CommonKmer> i) {return i.size() < MIN_POINT_COUNT;}),
+                                    [&minPointCount](std::vector<CommonKmer> i) {return int(i.size()) < minPointCount;}),
                      lineGroups.end());
     if (verbosity > 4)
         output += "  Number of lines after point count filtering: " + std::to_string(lineGroups.size()) + "\n";
 
     if (lineGroups.size() == 0) {
         if (verbosity > 3) 
-            output += "  No lines found (" + std::to_string(getTime() - startTime) + " ms):\n";
+            output += "  No lines found (" + std::to_string(getTime() - startTime) + " ms)\n";
         return 0;
     }
     
@@ -481,7 +514,7 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
         output += "  Number of lines after slope/chain filtering: " + std::to_string(lineGroups.size()) + "\n";
     if (verbosity > 3) {
         if (results->m_lines.size() == 0) {
-            output += "  No lines found (" + std::to_string(results->m_milliseconds) + " ms):\n";
+            output += "  No lines found (" + std::to_string(results->m_milliseconds) + " ms)\n";
             delete results;
             return 0;
         }

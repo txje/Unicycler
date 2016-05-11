@@ -193,7 +193,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     reads_to_realign = []
     for read_name in read_names:
         read = read_dict[read_name]
-        if read.needs_realignment(partial_ref, low_score_threshold):
+        if read.needs_seqan_realignment(partial_ref, low_score_threshold):
             reads_to_realign.append(read)
         else:
             completed_reads.append(read)
@@ -232,7 +232,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
             new_alignments, output = seqan_alignment_one_read_all_refs(read, references,
                                                                        scoring_scheme,
                                                                        expected_ref_to_read_ratio,
-                                                                       kmer_positions_ptr)
+                                                                       kmer_positions_ptr,
+                                                                       low_score_threshold)
             read.alignments += new_alignments
             completed_count += 1
             if VERBOSITY == 1:
@@ -245,7 +246,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         pool = ThreadPool(threads)
         arg_list = []
         for read in reads_to_realign:
-            arg_list.append((read, references, scoring_scheme, expected_ref_to_read_ratio, kmer_positions_ptr))
+            arg_list.append((read, references, scoring_scheme, expected_ref_to_read_ratio,
+                             kmer_positions_ptr, low_score_threshold))
         for new_alignments, output in pool.imap_unordered(seqan_alignment_one_read_all_refs_one_arg,
                                                           arg_list, 1):
             if new_alignments:
@@ -282,7 +284,6 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     # OPTIONAL TO DO: filter the alignments based on ID
     #     for read in read_dict.itervalues():
     #         read.remove_low_id_alignments(low_id_cutoff)
-
 
     # Output a summary of the reads' alignments.
     fully_aligned, partially_aligned, unaligned = group_reads_by_fraction_aligned(read_dict)
@@ -762,12 +763,15 @@ def seqan_alignment_one_read_all_refs_one_arg(all_args):
     This is just a one-argument version of seqan_alignment_one_read_all_refs to make it easier to
     use that function in a thread pool.
     '''
-    read, references, scoring_scheme, expected_ref_to_read_ratio, kmer_positions_ptr = all_args
+    read, references, scoring_scheme, expected_ref_to_read_ratio, \
+                                        kmer_positions_ptr, low_score_threshold = all_args
     return seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
-                                             expected_ref_to_read_ratio, kmer_positions_ptr)
+                                             expected_ref_to_read_ratio, kmer_positions_ptr,
+                                             low_score_threshold)
 
 def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
-                                      expected_ref_to_read_ratio, kmer_positions_ptr):
+                                      expected_ref_to_read_ratio, kmer_positions_ptr,
+                                      low_score_threshold):
     '''
     Aligns a single read against all reference sequences using Seqan. Both forward and reverse
     complement alignments are tried. Returns a list of all alignments found and the console output.
@@ -780,26 +784,22 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
 
     add_read_kmer_positions(kmer_positions_ptr, read)
 
-    for ref in references:
-        if VERBOSITY > 3:
-            output += 'Reference: ' + ref.name + '+\n'
-        forward_alignments, forward_alignment_output = \
-                        seqan_alignment_one_read_one_ref(read, ref, False, scoring_scheme,
-                                                         expected_ref_to_read_ratio,
-                                                         kmer_positions_ptr)
-        alignments += forward_alignments
-        output += forward_alignment_output
+    # Align the read to all references at increasing levels of sensitivity until it looks
+    # complete.
+    for i in range(3):
+        level_alignments, level_output = \
+                seqan_alignment_one_read_all_refs_one_level(read, references, scoring_scheme,
+                                                            expected_ref_to_read_ratio,
+                                                            kmer_positions_ptr, i)
+        alignments += level_alignments
+        output += level_output
 
-        if VERBOSITY > 3:
-            output += 'Reference: ' + ref.name + '-\n'
-        reverse_alignments, reverse_alignment_output = \
-                        seqan_alignment_one_read_one_ref(read, ref, True, scoring_scheme,
-                                                         expected_ref_to_read_ratio,
-                                                         kmer_positions_ptr)
-        alignments += reverse_alignments
-        output += reverse_alignment_output
+        # If every part of the read has reached at least one alignment of decene quality, then we
+        # don't bother with more sensitive levels.
+        if not read.needs_more_sensitive_alignment(low_score_threshold):
+            break
 
-    if VERBOSITY > 3:
+    if VERBOSITY > 2:
         output += 'Final alignments for ' + read.name + ':\n'
     if VERBOSITY > 1:
         if not alignments:
@@ -817,8 +817,41 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
 
     return alignments, output
 
+def seqan_alignment_one_read_all_refs_one_level(read, references, scoring_scheme,
+                                                expected_ref_to_read_ratio, kmer_positions_ptr,
+                                                sensitivity_level):
+    '''
+    Aligns a single read against all reference sequences using Seqan at a single sensitivity level.
+    '''
+    output = ''
+    alignments = []
+
+    if VERBOSITY > 2:
+        output += 'Aligning at sensitity level ' + str(sensitivity_level) + ':\n'
+
+    for ref in references:
+        if VERBOSITY > 3:
+            output += 'Reference: ' + ref.name + '+\n'
+        forward_alignments, forward_alignment_output = \
+                        seqan_alignment_one_read_one_ref(read, ref, False, scoring_scheme,
+                                                         expected_ref_to_read_ratio,
+                                                         kmer_positions_ptr, sensitivity_level)
+        alignments += forward_alignments
+        output += forward_alignment_output
+
+        if VERBOSITY > 3:
+            output += 'Reference: ' + ref.name + '-\n'
+        reverse_alignments, reverse_alignment_output = \
+                        seqan_alignment_one_read_one_ref(read, ref, True, scoring_scheme,
+                                                         expected_ref_to_read_ratio,
+                                                         kmer_positions_ptr, sensitivity_level)
+        alignments += reverse_alignments
+        output += reverse_alignment_output
+
+    return alignments, output
+
 def seqan_alignment_one_read_one_ref(read, ref, rev_comp, scoring_scheme, expected_slope,
-                                     kmer_positions_ptr):
+                                     kmer_positions_ptr, sensitivity_level):
     '''
     Runs an alignment using Seqan between one read and one reference.
     Returns a list of Alignment objects: empty list means it did not succeed, a list of one means
@@ -836,7 +869,8 @@ def seqan_alignment_one_read_one_ref(read, ref, rev_comp, scoring_scheme, expect
     ptr = C_LIB.semiGlobalAlignment(read_name, read_seq, ref.name, ref.sequence,
                                     expected_slope, VERBOSITY, kmer_positions_ptr,
                                     scoring_scheme.match, scoring_scheme.mismatch,
-                                    scoring_scheme.gap_open, scoring_scheme.gap_extend)
+                                    scoring_scheme.gap_open, scoring_scheme.gap_extend,
+                                    sensitivity_level)
     results = c_string_to_python_string(ptr).split(';')
     alignment_strings = results[:-1]
     output = results[-1]
@@ -1160,7 +1194,7 @@ class Read(object):
         '''
         return len(self.sequence)
 
-    def needs_realignment(self, partial_ref, low_score_threshold):
+    def needs_seqan_realignment(self, partial_ref, low_score_threshold):
         '''
         This function returns True or False based on whether a read was nicely aligned by GraphMap
         or needs to be realigned with Seqan.
@@ -1178,6 +1212,44 @@ class Read(object):
         only_alignment = self.alignments[0]
         return (not only_alignment.is_whole_read() or
                 only_alignment.scaled_score < low_score_threshold)
+
+
+    def needs_more_sensitive_alignment(self, low_score_threshold):
+        '''
+        This function return False if for every part of the read there is at least one alignment
+        that exceeds the score threshold.
+        TO DO: perhaps also consider overlap here?
+        '''
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        return False # TEMP
 
     def remove_conflicting_alignments(self):
         '''
@@ -1686,7 +1758,8 @@ C_LIB.semiGlobalAlignment.argtypes = [c_char_p, # Read name
                                       c_int,    # Match score
                                       c_int,    # Mismatch score
                                       c_int,    # Gap open score
-                                      c_int]    # Gap extension score
+                                      c_int,    # Gap extension score
+                                      c_int]    # Sensitivity level
 C_LIB.semiGlobalAlignment.restype = c_void_p    # String describing alignments
 
 

@@ -13,7 +13,7 @@
 char * semiGlobalAlignment(char * readNameC, char * readSeqC, char * refNameC, char * refSeqC,
                            double expectedSlope, int verbosity, KmerPositions * kmerPositions,
                            int matchScore, int mismatchScore, int gapOpenScore,
-                           int gapExtensionScore) {
+                           int gapExtensionScore, int sensitivityLevel) {
     // This string will collect all of the console output for the alignment.
     std::string output;
 
@@ -30,7 +30,8 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, char * refNameC, c
     LineFindingResults * lineFindingResults = findAlignmentLines(readName, refName,
                                                                  readLength, refLength,
                                                                  expectedSlope, verbosity,
-                                                                 kmerPositions, output);
+                                                                 kmerPositions, output,
+                                                                 sensitivityLevel);
     // Now conduct an alignment for each line.
     std::vector<SemiGlobalAlignment *> alignments;
     if (lineFindingResults != 0) {

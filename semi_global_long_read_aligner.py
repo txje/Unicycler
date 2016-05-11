@@ -1434,7 +1434,8 @@ class Alignment(object):
         self.edit_distance = self.mismatch_count + self.insertion_count + self.deletion_count
         self.alignment_length = align_i
         perfect_score = scoring_scheme.match * self.alignment_length
-        self.scaled_score = 100.0 * self.raw_score / perfect_score
+        worst_score = scoring_scheme.mismatch * self.alignment_length
+        self.scaled_score = 100.0 * (self.raw_score - worst_score) / (perfect_score - worst_score)
 
     def extend_start(self, scoring_scheme):
         '''

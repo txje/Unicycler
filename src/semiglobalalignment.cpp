@@ -106,8 +106,9 @@ SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignmen
     }
     int alignmentLengthExcludingClips = alignmentEndPos - alignmentStartPos;
     int perfectScore = scoreMatch(scoringScheme) * alignmentLengthExcludingClips;
+    int worstScore = scoreMismatch(scoringScheme) * alignmentLengthExcludingClips;
     if (perfectScore > 0)
-        m_scaledScore = 100.0 * double(m_rawScore) / perfectScore;
+        m_scaledScore = 100.0 * double(m_rawScore - worstScore) / double(perfectScore - worstScore);
     else
         m_scaledScore = 0.0;
 

@@ -14,11 +14,11 @@
 
 // Alignment lines that have an excessively small or large slope will be rejected.
 #define MIN_ALLOWED_SLOPE 0.5
-#define MAX_ALLOWED_SLOPE 1.5
+#define MAX_ALLOWED_SLOPE 2.0
 
 // Reference sequences are trimmed down before conducting an actual alignment.
 #define PAD_SIZE 1000
 
 // These are the Seqan band widths used in a banded alignment.
-#define STARTING_BAND_SIZE 80
-#define MAX_BAND_SIZE 80
+#define STARTING_BAND_SIZE 10
+#define MAX_BAND_SIZE 160

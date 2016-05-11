@@ -921,6 +921,10 @@ _computeGapArea(TTraceSet & globalTraceSet,
     TTraceSet localTraceSet;
     TScoreValue score = _computeAlignment(localTraceSet, scoutState, infixH, infixV, scoreScheme, TBand(), dpProfile);
 
+    // THROW AN EXCEPTION IF THE SCORE LOOKS BAD!
+    if (score < -1000000)
+        throw std::runtime_error("Bad Seqan alignment score\n");
+
     // Adapt the local traces to match the positions of the  global grid.
     _adaptLocalTracesToGlobalGrid(localTraceSet, gridBegin);
     if (!empty(localTraceSet))

@@ -4,6 +4,7 @@
 #include <iostream>
 #include <vector>
 #include "settings.h"
+#include <limits>
 
 
 // This is the big function called by Python code. It conducts a semi-global Seqan alignment
@@ -38,7 +39,8 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, char * refNameC, c
             AlignmentLine * line = lineFindingResults->m_lines[i];
             SemiGlobalAlignment * alignment = semiGlobalAlignmentOneLine(readSeq, refSeq, line, verbosity,
                                                                          output, scoringScheme);
-            alignments.push_back(alignment);
+            if (alignment != 0)
+                alignments.push_back(alignment);
         }
         delete lineFindingResults;
     }
@@ -77,6 +79,7 @@ SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readSeq, std::str
                                                                         line, bandSize, verbosity, output, scoringScheme);
 
     SemiGlobalAlignment * bestAlignment = alignment;
+    double bestAlignmentScore = std::numeric_limits<double>::min();
 
     // Now we try larger bands to see if that improves the alignment score. We keep trying bigger
     // bands until the score stops improving or we reach the max band size.
@@ -87,18 +90,24 @@ SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readSeq, std::str
 
         SemiGlobalAlignment * newAlignment = semiGlobalAlignmentOneLineOneBand(readSeqSeqan, readLength, refSeqSeqan, trimmedRefLength,
                                                                                line, bandSize, verbosity, output, scoringScheme);
+        if (newAlignment == 0)
+            continue;
 
-        if (newAlignment->m_scaledScore <= bestAlignment->m_scaledScore) {
+        double newAlignmentScore = newAlignment->m_scaledScore;
+        if (newAlignmentScore <= bestAlignmentScore) {
             delete newAlignment;
             break;
         }
         else {
-            delete bestAlignment;
+            if (bestAlignment != 0)
+                delete bestAlignment;
             bestAlignment = newAlignment;
+            bestAlignmentScore = newAlignmentScore;
         }
     }
 
-    bestAlignment->m_milliseconds = getTime() - startTime;
+    if (bestAlignment != 0)
+        bestAlignment->m_milliseconds = getTime() - startTime;
     return bestAlignment;
 }
 
@@ -132,14 +141,22 @@ SemiGlobalAlignment * semiGlobalAlignmentOneLineOneBand(Dna5String & readSeq, in
     assignSource(row(alignment, 1), refSeq);
     AlignConfig<true, true, true, true> alignConfig;
 
-    bandedChainAlignment(alignment, line->m_bridgedSeedChain, scoringScheme, alignConfig,
-                         bandSize);
-    SemiGlobalAlignment * sgAlignment = new SemiGlobalAlignment(alignment, line->m_trimmedRefStart, startTime, false, false, scoringScheme);
+    SemiGlobalAlignment * sgAlignment;
+    try {
+        bandedChainAlignment(alignment, line->m_bridgedSeedChain, scoringScheme, alignConfig,
+                             bandSize);
+        sgAlignment = new SemiGlobalAlignment(alignment, line->m_trimmedRefStart, startTime, false, false, scoringScheme);
 
-    if (verbosity > 2)
-        output += "  Seqan alignment, bandwidth = " + std::to_string(bandSize) + ": " + sgAlignment->getShortDisplayString() + "\n";
-    if (verbosity > 3)
-        output += "    " + sgAlignment->m_cigar + "\n";
+        if (verbosity > 2)
+            output += "  Seqan alignment, bandwidth = " + std::to_string(bandSize) + ": " + sgAlignment->getShortDisplayString() + "\n";
+        if (verbosity > 3)
+            output += "    " + sgAlignment->m_cigar + "\n";
+    }
+    catch (...) {
+        if (verbosity > 2)
+            output += "  Seqan alignment, bandwidth = " + std::to_string(bandSize) + ": failed\n";
+        sgAlignment = 0;
+    }
 
     return sgAlignment;
 }

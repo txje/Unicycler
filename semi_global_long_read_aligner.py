@@ -218,7 +218,6 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         expected_ref_to_read_ratio = 1.0 / read_to_ref_median
     else:
         expected_ref_to_read_ratio = 0.95 # TO DO: SET THIS TO AN EMPIRICALLY-DERIVED VALUE
-        expected_ref_to_read_ratio = 0.93546195580997 # TEMP
 
     completed_count = 0
 

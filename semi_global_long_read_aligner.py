@@ -62,8 +62,7 @@ VERBOSITY = 0
 This script makes use of several C++ functions which are in seqan_align.so. They are wrapped in
 similarly named Python functions.
 '''
-C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                          'seqan_align/seqan_align.so'))
+C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_align.so'))
 
 
 def main():

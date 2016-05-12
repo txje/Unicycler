@@ -15,15 +15,14 @@ typedef std::unordered_map<std::string, std::vector<int> > KmerPosMap;
 // point's score as well.
 class CommonKmer {
 public:
-    CommonKmer(std::string sequence, int hPosition, int vPosition, double angle);
-    static double getRotationAngle(double slope) {return -atan(slope);}
+    CommonKmer(int hPosition, int vPosition, float angle);
+    static float getRotationAngle(float slope) {return -atan(slope);}
 
-    std::string m_sequence;
     int m_hPosition;
     int m_vPosition;
-    double m_rotatedHPosition;
-    double m_rotatedVPosition;
-    double m_score; // Scaled kmer density
+    float m_rotatedHPosition;
+    float m_rotatedVPosition;
+    float m_score; // Scaled kmer density
 };
 
 
@@ -44,7 +43,7 @@ private:
 
 
 std::vector<CommonKmer> getCommonKmers(std::string & readName, std::string & refName,
-                                       double expectedSlope, KmerPositions * kmerPositions);
+                                       float expectedSlope, KmerPositions * kmerPositions);
 
 
 // Functions that are called by the Python script must have C linkage, not C++ linkage.

@@ -6,13 +6,12 @@
 
 // Creates the CommonKmer object using the position in the two sequences.
 // It then rotates the point relative to the origin by the given angle (in radians).
-CommonKmer::CommonKmer(std::string sequence, int hPosition, int vPosition, double angle) :
-    m_sequence(sequence),
+CommonKmer::CommonKmer(int hPosition, int vPosition, float angle) :
     m_hPosition(hPosition),
     m_vPosition(vPosition),
     m_score(1.0) {
-    double s = sin(angle);
-    double c = cos(angle);
+    float s = sin(angle);
+    float c = cos(angle);
     m_rotatedHPosition = (m_hPosition * c) - (m_vPosition * s);
     m_rotatedVPosition = (m_hPosition * s) + (m_vPosition * c);
 }
@@ -65,9 +64,9 @@ KmerPosMap * KmerPositions::getKmerPositions(std::string & name) {
 
 // This function returns a list of the k-mers common to the two sequences.
 std::vector<CommonKmer> getCommonKmers(std::string & readName, std::string & refName,
-                                       double expectedSlope, KmerPositions * kmerPositions) {
+                                       float expectedSlope, KmerPositions * kmerPositions) {
     std::vector<CommonKmer> commonKmers;
-    double rotationAngle = CommonKmer::getRotationAngle(expectedSlope);
+    float rotationAngle = CommonKmer::getRotationAngle(expectedSlope);
 
     KmerPosMap * readKmerPositions = kmerPositions->getKmerPositions(readName);
     KmerPosMap * refKmerPositions = kmerPositions->getKmerPositions(refName);
@@ -92,7 +91,7 @@ std::vector<CommonKmer> getCommonKmers(std::string & readName, std::string & ref
 
             for (size_t k = 0; k < readPositions->size(); ++k) {
                 for (size_t l = 0; l < refPositions->size(); ++l)
-                    commonKmers.push_back(CommonKmer(kmer, (*readPositions)[k], (*refPositions)[l], rotationAngle));
+                    commonKmers.push_back(CommonKmer((*readPositions)[k], (*refPositions)[l], rotationAngle));
             }
         }
     }

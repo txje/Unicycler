@@ -230,10 +230,10 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
 
     // There are four corners of the alignment rectangle which we also need to rotate.
     double rotationAngle = CommonKmer::getRotationAngle(expectedSlope);
-    CommonKmer c1("", 0, 0, rotationAngle);
-    CommonKmer c2("", 0, refLength, rotationAngle);
-    CommonKmer c3("", readLength, refLength, rotationAngle);
-    CommonKmer c4("", readLength, 0, rotationAngle);
+    CommonKmer c1(0, 0, rotationAngle);
+    CommonKmer c2(0, refLength, rotationAngle);
+    CommonKmer c3(readLength, refLength, rotationAngle);
+    CommonKmer c4(readLength, 0, rotationAngle);
     double c1Y = c1.m_rotatedVPosition;
     double c3Y = c3.m_rotatedVPosition;
     double c1BandLength = getLineLength(c1.m_hPosition, c1.m_vPosition,

@@ -36,6 +36,7 @@ def main():
     check_file_exists(args.long)
     assembly_graph = get_best_spades_graph(args.short1, args.short2, args.out, log_file)
     assembly_graph.save_to_fastg(os.path.join(args.out, 'assembly_graph.fastg'))
+    assembly_graph.save_to_fasta(os.path.join(args.out, 'assembly_graph.fasta'))
     scaffold_with_long_reads(assembly_graph, args.long, args.out)
 
 

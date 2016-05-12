@@ -792,25 +792,33 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
         else:
             output += '  None\n'
 
-    # Align the read to all references at the first sensitivity level, and if they haven't all met
-    # the score threshold, then try the second sensitivity level.
-    for i in range(3):
-        alignments, level_output = \
+    # Align the read to all references at the first sensitivity level
+    level_1_alignments, level_1_output = \
+            seqan_alignment_one_read_all_refs_one_level(read, references, scoring_scheme,
+                                                        expected_ref_to_read_ratio,
+                                                        kmer_positions_ptr, 1)
+    read.alignments += level_1_alignments
+    output += level_1_output
+
+    # If the read still isn't covered by alignments which all meet the score threshold, then try
+    # the second sensitivity level.
+    if read.needs_more_sensitive_alignment(low_score_threshold):
+        level_2_alignments, level_2_output = \
                 seqan_alignment_one_read_all_refs_one_level(read, references, scoring_scheme,
                                                             expected_ref_to_read_ratio,
-                                                            kmer_positions_ptr, i)
-        read.alignments += alignments
-        output += level_output
+                                                            kmer_positions_ptr, 2)
+        read.alignments += level_2_alignments
+        output += level_2_output
 
-        # If after the first sensitivity level every part of the read has reached at least one
-        # alignment of decent quality, then we don't bother with more sensitive levels.
-        if not read.needs_more_sensitive_alignment(low_score_threshold):
-            break
-
-        # The third sensitivity level can take a long time, so we only try that if the read still
-        # has parts with no alignments (regardless of their score).
-        if i == 1 and read.get_fraction_aligned() == 1.0:
-            break
+    # The third sensitivity level can take a long time, so we only try that if the read still
+    # has parts with no alignments (regardless of their score).
+    if read.get_fraction_aligned() < 1.0:
+        level_3_alignments, level_3_output = \
+                seqan_alignment_one_read_all_refs_one_level(read, references, scoring_scheme,
+                                                            expected_ref_to_read_ratio,
+                                                            kmer_positions_ptr, 3)
+        read.alignments += level_3_alignments
+        output += level_3_output
 
     new_seqan_alignments = len(read.alignments) - starting_graphmap_alignments
 
@@ -851,11 +859,12 @@ def seqan_alignment_one_read_all_refs_one_level(read, references, scoring_scheme
     '''
     Aligns a single read against all reference sequences using Seqan at a single sensitivity level.
     '''
+    assert sensitivity_level == 1 or sensitivity_level == 2 or sensitivity_level == 3
     output = ''
     alignments = []
 
     if VERBOSITY > 2:
-        output += 'Seqan alignments at sensitity level ' + str(sensitivity_level + 1) + ':\n'
+        output += 'Seqan alignments at sensitity level ' + str(sensitivity_level) + ':\n'
 
     for ref in references:
         if VERBOSITY > 3:

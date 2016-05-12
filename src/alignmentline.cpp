@@ -176,16 +176,7 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
     // Set the algorithm settings using the sentitivity level.
     double lowScoreThreshold, highScoreThreshold, mergeDistance, minAlignmentLength;
     int bandSize, minPointCount;
-    if (sensitivityLevel == 0)
-    {
-        bandSize = BAND_SIZE_LEVEL_0;
-        lowScoreThreshold = LOW_SCORE_THRESHOLD_LEVEL_0;
-        highScoreThreshold = HIGH_SCORE_THRESHOLD_LEVEL_0;
-        mergeDistance = MERGE_DISTANCE_LEVEL_0;
-        minAlignmentLength = MIN_ALIGNMENT_LENGTH_LEVEL_0;
-        minPointCount = MIN_POINT_COUNT_LEVEL_0;
-    }
-    else if (sensitivityLevel == 1)
+    if (sensitivityLevel == 1)
     {
         bandSize = BAND_SIZE_LEVEL_1;
         lowScoreThreshold = LOW_SCORE_THRESHOLD_LEVEL_1;
@@ -194,7 +185,7 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
         minAlignmentLength = MIN_ALIGNMENT_LENGTH_LEVEL_1;
         minPointCount = MIN_POINT_COUNT_LEVEL_1;
     }
-    else // sensitivityLevel == 2
+    else if (sensitivityLevel == 2)
     {
         bandSize = BAND_SIZE_LEVEL_2;
         lowScoreThreshold = LOW_SCORE_THRESHOLD_LEVEL_2;
@@ -202,6 +193,15 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
         mergeDistance = MERGE_DISTANCE_LEVEL_2;
         minAlignmentLength = MIN_ALIGNMENT_LENGTH_LEVEL_2;
         minPointCount = MIN_POINT_COUNT_LEVEL_2;
+    }
+    else // sensitivityLevel == 3
+    {
+        bandSize = BAND_SIZE_LEVEL_3;
+        lowScoreThreshold = LOW_SCORE_THRESHOLD_LEVEL_3;
+        highScoreThreshold = HIGH_SCORE_THRESHOLD_LEVEL_3;
+        mergeDistance = MERGE_DISTANCE_LEVEL_3;
+        minAlignmentLength = MIN_ALIGNMENT_LENGTH_LEVEL_3;
+        minPointCount = MIN_POINT_COUNT_LEVEL_3;
     }
 
     long long startTime = getTime();

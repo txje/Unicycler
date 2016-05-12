@@ -85,7 +85,7 @@ def main():
     reads = semi_global_align_long_reads(references, args.ref, read_dict, read_names, args.reads,
                                          args.sam, args.temp_dir, args.path, args.threads,
                                          args.partial_ref, AlignmentScoringScheme(args.scores),
-                                         args.overlap, args.low_score)
+                                         args.low_score)
     summarise_errors(references, reads, args.table, args.keep)
 
     if not temp_dir_exist_at_start:
@@ -121,8 +121,6 @@ def get_arguments():
                         help='Level of stdout information (0 to 4)')
     parser.add_argument('--keep', type=float, required=False, default=75.0,
                         help='Percentage of alignments to keep')
-    parser.add_argument('--overlap', type=int, required=False, default=None,
-                        help='Known overlap between reference sequences')
     parser.add_argument('--low_score', type=float, required=False, default=None,
                         help='Score threshold - alignments below this are considered poor')
 
@@ -140,7 +138,7 @@ def get_arguments():
 
 def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, reads_fastq,
                                  output_sam, temp_dir, graphmap_path, threads, partial_ref,
-                                 scoring_scheme, contig_overlap, low_score_threshold):
+                                 scoring_scheme, low_score_threshold):
     '''
     This function does the primary work of this module: aligning long reads to references in an
     end-gap-free, semi-global manner. It returns a list of Read objects which contain their
@@ -254,8 +252,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         for read in reads_to_realign:
             output = seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
                                                        expected_ref_to_read_ratio,
-                                                       kmer_positions_ptr, low_score_threshold,
-                                                       contig_overlap)
+                                                       kmer_positions_ptr, low_score_threshold)
             completed_count += 1
             if VERBOSITY == 1:
                 print_progress_line(completed_count, num_realignments)
@@ -268,7 +265,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         arg_list = []
         for read in reads_to_realign:
             arg_list.append((read, references, scoring_scheme, expected_ref_to_read_ratio,
-                             kmer_positions_ptr, low_score_threshold, contig_overlap))
+                             kmer_positions_ptr, low_score_threshold))
         for output in pool.imap_unordered(seqan_alignment_one_read_all_refs_one_arg, arg_list, 1):
             completed_count += 1
             if VERBOSITY == 1:
@@ -765,14 +762,14 @@ def seqan_alignment_one_read_all_refs_one_arg(all_args):
     use that function in a thread pool.
     '''
     read, references, scoring_scheme, expected_ref_to_read_ratio, \
-                                kmer_positions_ptr, low_score_threshold, contig_overlap = all_args
+                                kmer_positions_ptr, low_score_threshold = all_args
     return seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
                                              expected_ref_to_read_ratio, kmer_positions_ptr,
-                                             low_score_threshold, contig_overlap)
+                                             low_score_threshold)
 
 def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
                                       expected_ref_to_read_ratio, kmer_positions_ptr,
-                                      low_score_threshold, contig_overlap):
+                                      low_score_threshold):
     '''
     Aligns a single read against all reference sequences using Seqan. Both forward and reverse
     complement alignments are tried. Returns the console output.
@@ -807,12 +804,12 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
 
         # If after the first sensitivity level every part of the read has reached at least one
         # alignment of decent quality, then we don't bother with more sensitive levels.
-        if not read.needs_more_sensitive_alignment(low_score_threshold, contig_overlap):
+        if not read.needs_more_sensitive_alignment(low_score_threshold):
             break
 
         # The third sensitivity level can take a long time, so we only try that if the read still
         # has parts with no alignments (regardless of their score).
-        if i == 1 and read.get_fraction_aligned(contig_overlap) == 1.0:
+        if i == 1 and read.get_fraction_aligned() == 1.0:
             break
 
     new_seqan_alignments = len(read.alignments) - starting_graphmap_alignments
@@ -831,7 +828,7 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
                     output += alignment.cigar + '\n'
             output += '  Time to align: ' + float_to_str(time.time() - start_time, 3) + ' s\n'
 
-    read.remove_conflicting_alignments(contig_overlap)
+    read.remove_conflicting_alignments()
 
     # OPTIONAL TO DO: filter the alignments based on ID
     #     for read in read_dict.itervalues():
@@ -1252,28 +1249,23 @@ class Read(object):
         return (not only_alignment.is_whole_read() or
                 only_alignment.scaled_score < low_score_threshold)
 
-    def needs_more_sensitive_alignment(self, low_score_threshold, contig_overlap):
+    def needs_more_sensitive_alignment(self, low_score_threshold):
         '''
         This function returns False if for every part of the read there is at least one alignment
         that exceeds the score threshold.
         ''' 
-        if not contig_overlap:
-            contig_overlap = 0
-        read_ranges = [x.read_start_end_positive_strand_minus_overlap(contig_overlap) \
+        read_ranges = [x.read_start_end_positive_strand() \
                        for x in self.alignments if x.scaled_score >= low_score_threshold]
         read_ranges = simplify_ranges(read_ranges)
         well_aligned_length = sum([x[1] - x[0] for x in read_ranges])
         return well_aligned_length < len(self.sequence)
 
-    def remove_conflicting_alignments(self, contig_overlap):
+    def remove_conflicting_alignments(self):
         '''
         This function removes alignments from the read which are likely to be spurious. It sorts
         alignments by score and works through them from highest score to lowest score, throwing out
         any alignments which only cover parts of the read which already have better alignments.
         '''
-        if not contig_overlap:
-            contig_overlap = 0
-
         self.alignments = sorted(self.alignments, reverse=True,
                                  key=lambda x: (x.scaled_score, random.random()))
         kept_alignments = []
@@ -1334,12 +1326,12 @@ class Read(object):
             description += '\n'.join([str(x) for x in self.alignments])
         return description + '\n\n'
 
-    def get_fraction_aligned(self, contig_overlap=0):
+    def get_fraction_aligned(self):
         '''
         This function returns the fraction of the read which is covered by any of the read's
         alignments.
         '''
-        read_ranges = [x.read_start_end_positive_strand_minus_overlap(contig_overlap) \
+        read_ranges = [x.read_start_end_positive_strand() \
                        for x in self.alignments]
         read_ranges = simplify_ranges(read_ranges)
         aligned_length = sum([x[1] - x[0] for x in read_ranges])
@@ -1660,7 +1652,7 @@ class Alignment(object):
             print()
 
     def __repr__(self):
-        read_start, read_end = self.read_start_end_positive_strand_minus_overlap(69)
+        read_start, read_end = self.read_start_end_positive_strand()
         return_str = self.read.name + ' (' + str(read_start) + '-' + str(read_end) + ', '
         if self.rev_comp:
             return_str += 'strand: -), '
@@ -1702,34 +1694,6 @@ class Alignment(object):
             start = self.read.get_length() - self.read_end_pos
             end = self.read.get_length() - self.read_start_pos
             return start, end
-
-    def read_start_end_positive_strand_minus_overlap(self, overlap_to_remove):
-        '''
-        This does the same as read_start_end_positive_strand, but it additionally will exclude
-        regions that fall in the end of the reference sequence.
-        '''
-        # Don't actually remove all overlap, to account for a bit of wiggle room in alignments.
-        overlap_to_remove -= 5 # TO DO: MAKE THIS A PARAMETER?
-        if overlap_to_remove < 0:
-            overlap_to_remove = 0
-
-        # Determine how close the alignment gets to the end of the reference (or the start of the
-        # reference in rev comp alignments).
-        if not self.rev_comp:
-            dist_to_ref_end = self.ref.get_length() - self.ref_end_pos
-        else:
-            dist_to_ref_end = self.ref_start_pos
-        overlap_to_remove -= dist_to_ref_end
-        if overlap_to_remove < 0:
-            overlap_to_remove = 0
-
-        # Return the start/end coordinates with the overlap distance removed from the end. When the
-        # alignment goes all the way to the referene end, this should remove all of the overlap.
-        start, end = self.read_start_end_positive_strand()
-        end -= overlap_to_remove
-        if end < start:
-            end = start
-        return start, end
 
     def get_start_soft_clips(self):
         '''

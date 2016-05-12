@@ -15,7 +15,6 @@
 #define STARTING_BAND_SIZE 10
 #define MAX_BAND_SIZE 160
 
-
 // Line finding settings come in different sensitivity levels.
 #define BAND_SIZE_LEVEL_0 16
 #define LOW_SCORE_THRESHOLD_LEVEL_0 2.0

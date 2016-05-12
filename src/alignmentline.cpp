@@ -530,7 +530,7 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
             }
         }
     }
-
+    
     return results;
 }
 

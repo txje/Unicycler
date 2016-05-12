@@ -192,10 +192,16 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
             print('Using user-supplied low score threshold: ' +
                   float_to_str(low_score_threshold, 2) + '\n')
     else:
-        low_score_threshold = score_median - (3 * score_mad)
-        if VERBOSITY > 0:
-            print('Using automatic low score threshold: ' + 
-                  float_to_str(low_score_threshold, 2) + '\n')
+        if score_median and score_mad:
+            low_score_threshold = score_median - (3 * score_mad)
+            if VERBOSITY > 0:
+                print('Using automatic low score threshold: ' + 
+                      float_to_str(low_score_threshold, 2) + '\n')
+        else:
+            low_score_threshold = 80.0 # TO DO: reassess this default
+            if VERBOSITY > 0:
+                print('Too few alignments to set automatic score threshold, using: ' + 
+                      float_to_str(low_score_threshold, 2) + '\n')
 
     # Give the alignments to their corresponding reads.
     for alignment in semi_global_graphmap_alignments:
@@ -522,16 +528,20 @@ def print_alignment_summary_table(graphmap_alignments, read_to_ref_median, read_
     table_lines = [x.ljust(pad_length) for x in table_lines]
 
     table_lines[0] += 'Median'
-    table_lines[1] += float_to_str(read_to_ref_median, 8)
-    table_lines[2] += float_to_str(percent_id_median, 2) + '%'
+    table_lines[1] += float_to_str(read_to_ref_median, 5)
+    table_lines[2] += float_to_str(percent_id_median, 2)
+    if percent_id_median:
+        table_lines[2] += '%'
     table_lines[3] += float_to_str(score_median, 2)
 
     pad_length = max([len(x) for x in table_lines]) + 2
     table_lines = [x.ljust(pad_length) for x in table_lines]
 
     table_lines[0] += 'MAD'
-    table_lines[1] += float_to_str(read_to_ref_mad, 8)
-    table_lines[2] += float_to_str(percent_id_mad, 2) + '%'
+    table_lines[1] += float_to_str(read_to_ref_mad, 5)
+    table_lines[2] += float_to_str(percent_id_mad, 2)
+    if percent_id_mad:
+        table_lines[2] += '%'
     table_lines[3] += float_to_str(score_mad, 2)
 
     for line in table_lines:
@@ -543,7 +553,7 @@ def extend_to_semi_global(alignments, scoring_scheme):
     This function returns truly semi-global alignments made from the input alignments.
     '''
     if VERBOSITY > 3 and alignments:
-        print('Extending aligments')
+        print('Extending alignments')
         print('-------------------')
 
     allowed_missing_bases = 100 # TO DO: MAKE THIS A PARAMETER
@@ -771,36 +781,53 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
     output = ''
     if VERBOSITY > 1:
         output += str(read) + '\n'
+    if VERBOSITY > 2:
+        output += '-' * len(str(read)) + '\n'
 
     add_read_kmer_positions(kmer_positions_ptr, read)
 
-    # Align the read to all references at increasing levels of sensitivity until it looks
-    # complete.
+    starting_graphmap_alignments = len(read.alignments)
+    if VERBOSITY > 2:
+        output += 'Graphmap alignments:\n'
+        if starting_graphmap_alignments:
+            for alignment in read.alignments:
+                output += '  ' + str(alignment) + '\n'
+        else:
+            output += '  None\n'
+
+    # Align the read to all references at the first sensitivity level, and if they haven't all met
+    # the score threshold, then try the second sensitivity level.
     for i in range(3):
-        level_alignments, level_output = \
+        alignments, level_output = \
                 seqan_alignment_one_read_all_refs_one_level(read, references, scoring_scheme,
                                                             expected_ref_to_read_ratio,
                                                             kmer_positions_ptr, i)
-        read.alignments += level_alignments
+        read.alignments += alignments
         output += level_output
 
-        # If every part of the read has reached at least one alignment of decent quality, then we
-        # don't bother with more sensitive levels.
+        # If after the first sensitivity level every part of the read has reached at least one
+        # alignment of decent quality, then we don't bother with more sensitive levels.
         if not read.needs_more_sensitive_alignment(low_score_threshold, contig_overlap):
             break
 
-    if not read.alignments:
-        if VERBOSITY > 1:
-            output += 'No alignments found for read ' + read.name + '\n'
-        return output
+        # The third sensitivity level can take a long time, so we only try that if the read still
+        # has parts with no alignments (regardless of their score).
+        if i == 1 and read.get_fraction_aligned(contig_overlap) == 1.0:
+            break
 
-    if VERBOSITY > 2:
-        output += 'All alignments for ' + read.name + ':\n'
-        for alignment in read.alignments:
-            output += '  ' + str(alignment) + '\n'
-            if VERBOSITY > 3:
-                output += alignment.cigar + '\n'
-        output += '  Time to align: ' + float_to_str(time.time() - start_time, 3) + ' s\n'
+    new_seqan_alignments = len(read.alignments) - starting_graphmap_alignments
+
+    if not new_seqan_alignments:
+        if VERBOSITY > 1:
+            output += 'No Seqan alignments found for read ' + read.name + '\n'
+    else:
+        if VERBOSITY > 2:
+            output += 'All Seqan alignments:\n'
+            for alignment in read.alignments:
+                output += '  ' + str(alignment) + '\n'
+                if VERBOSITY > 3:
+                    output += alignment.cigar + '\n'
+            output += '  Time to align: ' + float_to_str(time.time() - start_time, 3) + ' s\n'
 
     read.remove_conflicting_alignments(contig_overlap)
 
@@ -809,7 +836,7 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
     #         read.remove_low_id_alignments(low_id_cutoff)
 
     if VERBOSITY > 2:
-        output += 'Final alignments for ' + read.name + ':\n'
+        output += 'Final alignments:\n'
     if VERBOSITY > 1:
         for alignment in read.alignments:
             output += '  ' + str(alignment) + '\n'
@@ -829,7 +856,7 @@ def seqan_alignment_one_read_all_refs_one_level(read, references, scoring_scheme
     alignments = []
 
     if VERBOSITY > 2:
-        output += 'Aligning at sensitity level ' + str(sensitivity_level + 1) + ':\n'
+        output += 'Seqan alignments at sensitity level ' + str(sensitivity_level + 1) + ':\n'
 
     for ref in references:
         if VERBOSITY > 3:
@@ -866,7 +893,8 @@ def seqan_alignment_one_read_one_ref(read, ref, rev_comp, scoring_scheme, expect
         read_name = read.name + '+'
         read_seq = read.sequence
 
-    # print('READ:', read_name, 'REF:', ref.name) # TEST CODE - USEFUL FOR DEBUGGING
+    # print('READ:', read_name, 'REF:', ref.name, 'LEVEL:', sensitivity_level) # TEST CODE - USEFUL FOR DEBUGGING
+    sys.stdout.flush() # TEST CODE - USEFUL FOR DEBUGGING
 
     ptr = C_LIB.semiGlobalAlignment(read_name, read_seq, ref.name, ref.sequence,
                                     expected_slope, VERBOSITY, kmer_positions_ptr,
@@ -1002,10 +1030,13 @@ def float_to_str(num, decimals, max_num=0):
     Converts a number to a string. Will add left padding based on the max value to ensure numbers
     align well.
     '''
-    num_str = '%.' + str(decimals) + 'f'
-    num_str = num_str % num
-    after_decimal = num_str.split('.')[1]
-    num_str = int_to_str(int(num)) + '.' + after_decimal
+    if num is None:
+        num_str = 'n/a'
+    else:
+        num_str = '%.' + str(decimals) + 'f'
+        num_str = num_str % num
+        after_decimal = num_str.split('.')[1]
+        num_str = int_to_str(int(num)) + '.' + after_decimal
     if max_num > 0:
         max_str = float_to_str(max_num, decimals)
         num_str = num_str.rjust(len(max_str))
@@ -1071,11 +1102,15 @@ def get_median_and_mad(num_list):
     '''
     Returns the median and MAD of the given list of numbers.
     '''
+    if not num_list:
+        return None, None
+    if len(num_list) == 1:
+        return num_list[0], None
+
     median = get_median(num_list)
     absolute_deviations = [abs(x - median) for x in num_list]
     mad = 1.4826 * get_median(absolute_deviations)
     return median, mad
-
 
 def get_mean_and_st_dev(num_list):
     '''
@@ -1219,23 +1254,12 @@ class Read(object):
         '''
         This function returns False if for every part of the read there is at least one alignment
         that exceeds the score threshold.
-        '''
-        read_ranges = [x.read_start_end_positive_strand() for x in self.alignments \
-                       if x.scaled_score >= low_score_threshold]
-
-        # If we expect the contigs overlap by a certain amount, trim that amount off the range of
-        # any alignment which does not reach the end of the read.
-        if contig_overlap:
-            trimmed_read_ranges = []
-            for read_range in read_ranges:
-                start, end = read_range
-                if end < self.get_length():
-                    end -= contig_overlap
-                trimmed_read_ranges.append((start, end))
-            trimmed_read_ranges = simplify_ranges(trimmed_read_ranges)
-        else:
-            trimmed_read_ranges = simplify_ranges(read_ranges)
-
+        ''' 
+        if not contig_overlap:
+            contig_overlap = 0
+        read_ranges = [x.read_start_end_positive_strand_minus_overlap(contig_overlap) \
+                       for x in self.alignments if x.scaled_score >= low_score_threshold]
+        read_ranges = simplify_ranges(read_ranges)
         well_aligned_length = sum([x[1] - x[0] for x in read_ranges])
         return well_aligned_length < len(self.sequence)
 
@@ -1245,14 +1269,15 @@ class Read(object):
         alignments by score and works through them from highest score to lowest score, throwing out
         any alignments which only cover parts of the read which already have better alignments.
         '''
+        if not contig_overlap:
+            contig_overlap = 0
+
         self.alignments = sorted(self.alignments, reverse=True,
                                  key=lambda x: (x.scaled_score, random.random()))
         read_ranges = []
         kept_alignments = []
-        for alignment in self.alignments:
+        for i, alignment in enumerate(self.alignments):
             start, end = alignment.read_start_end_positive_strand()
-            if contig_overlap and end < self.get_length():
-                end -= contig_overlap
             this_read_range = (start, end)
             if not range_is_contained(this_read_range, read_ranges):
                 read_ranges.append((start, end))
@@ -1301,12 +1326,13 @@ class Read(object):
             description += '\n'.join([str(x) for x in self.alignments])
         return description + '\n\n'
 
-    def get_fraction_aligned(self):
+    def get_fraction_aligned(self, contig_overlap=0):
         '''
         This function returns the fraction of the read which is covered by any of the read's
         alignments.
         '''
-        read_ranges = [x.read_start_end_positive_strand() for x in self.alignments]
+        read_ranges = [x.read_start_end_positive_strand_minus_overlap(contig_overlap) \
+                       for x in self.alignments]
         read_ranges = simplify_ranges(read_ranges)
         aligned_length = sum([x[1] - x[0] for x in read_ranges])
         return aligned_length / len(self.sequence)
@@ -1668,6 +1694,34 @@ class Alignment(object):
             start = self.read.get_length() - self.read_end_pos
             end = self.read.get_length() - self.read_start_pos
             return start, end
+
+    def read_start_end_positive_strand_minus_overlap(self, overlap_to_remove):
+        '''
+        This does the same as read_start_end_positive_strand, but it additionally will exclude
+        regions that fall in the end of the reference sequence.
+        '''
+        # Don't actually remove all overlap, to account for a bit of wiggle room in alignments.
+        overlap_to_remove -= 1 # TO DO: MAKE THIS A PARAMETER?
+        if overlap_to_remove < 0:
+            overlap_to_remove = 0
+
+        # Determine how close the alignment gets to the end of the reference (or the start of the
+        # reference in rev comp alignments).
+        if not self.rev_comp:
+            dist_to_ref_end = self.ref.get_length() - self.ref_end_pos
+        else:
+            dist_to_ref_end = self.ref_start_pos
+        overlap_to_remove -= dist_to_ref_end
+        if overlap_to_remove < 0:
+            overlap_to_remove = 0
+
+        # Return the start/end coordinates with the overlap distance removed from the end. When the
+        # alignment goes all the way to the referene end, this should remove all of the overlap.
+        start, end = self.read_start_end_positive_strand()
+        end -= overlap_to_remove
+        if end < start:
+            end = start
+        return start, end
 
     def get_start_soft_clips(self):
         '''

@@ -64,8 +64,8 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, char * refNameC, c
  // It starts with a smallish band size (fast) and works up to larger ones to see if they improve
  // the alignment.
 SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readSeq, std::string & refSeq,
-                                       AlignmentLine * line, int verbosity, std::string & output,
-                                       Score<int, Simple> & scoringScheme) {
+                                                 AlignmentLine * line, int verbosity, std::string & output,
+                                                 Score<int, Simple> & scoringScheme) {
     long long startTime = getTime();
 
     int trimmedRefLength = line->m_trimmedRefEnd - line->m_trimmedRefStart;
@@ -76,35 +76,30 @@ SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readSeq, std::str
     int readLength = readSeq.length();
 
     int bandSize = STARTING_BAND_SIZE;
-    SemiGlobalAlignment * alignment = semiGlobalAlignmentOneLineOneBand(readSeqSeqan, readLength, refSeqSeqan, trimmedRefLength,
-                                                                        line, bandSize, verbosity, output, scoringScheme);
-
-    SemiGlobalAlignment * bestAlignment = alignment;
+    SemiGlobalAlignment * bestAlignment = 0;
     double bestAlignmentScore = std::numeric_limits<double>::min();
 
-    // Now we try larger bands to see if that improves the alignment score. We keep trying bigger
-    // bands until the score stops improving or we reach the max band size.
+    // We perform the alignment with increasing band sizes until the score stops improving or we
+    // reach the max band size.
     while (true) {
+        SemiGlobalAlignment * alignment = semiGlobalAlignmentOneLineOneBand(readSeqSeqan, readLength, refSeqSeqan, trimmedRefLength,
+                                                                            line, bandSize, verbosity, output, scoringScheme);
+        if (alignment != 0) {
+            double alignmentScore = alignment->m_scaledScore;
+            if (alignmentScore <= bestAlignmentScore) {
+                delete alignment;
+                break;
+            }
+            else {
+                if (bestAlignment != 0)
+                    delete bestAlignment;
+                bestAlignment = alignment;
+                bestAlignmentScore = alignmentScore;
+            }
+        }    
         bandSize *= 2;
         if (bandSize > MAX_BAND_SIZE)
             break;
-
-        SemiGlobalAlignment * newAlignment = semiGlobalAlignmentOneLineOneBand(readSeqSeqan, readLength, refSeqSeqan, trimmedRefLength,
-                                                                               line, bandSize, verbosity, output, scoringScheme);
-        if (newAlignment == 0)
-            continue;
-
-        double newAlignmentScore = newAlignment->m_scaledScore;
-        if (newAlignmentScore <= bestAlignmentScore) {
-            delete newAlignment;
-            break;
-        }
-        else {
-            if (bestAlignment != 0)
-                delete bestAlignment;
-            bestAlignment = newAlignment;
-            bestAlignmentScore = newAlignmentScore;
-        }
     }
 
     if (bestAlignment != 0)
@@ -120,10 +115,10 @@ SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readSeq, std::str
 // This function, given a line, will search for semi-global alignments around that line. The
 // bandSize parameter specifies how far of an area around the line is searched.
 SemiGlobalAlignment * semiGlobalAlignmentOneLineOneBand(Dna5String & readSeq, int readLen,
-                                              Dna5String & refSeq, int refLen,
-                                              AlignmentLine * line, int bandSize,
-                                              int verbosity, std::string & output,
-                                              Score<int, Simple> & scoringScheme) {
+                                                        Dna5String & refSeq, int refLen,
+                                                        AlignmentLine * line, int bandSize,
+                                                        int verbosity, std::string & output,
+                                                        Score<int, Simple> & scoringScheme) {
     long long startTime = getTime();
 
     // I encountered a Seqan crash when the band size exceeded the sequence length, so don't let

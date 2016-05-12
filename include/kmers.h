@@ -23,7 +23,6 @@ public:
     int m_vPosition;
     double m_rotatedHPosition;
     double m_rotatedVPosition;
-    double m_bandArea; // TO DO: DELETE LATER TO SAVE MEMORY
     double m_score; // Scaled kmer density
 };
 

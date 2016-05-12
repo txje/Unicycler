@@ -320,7 +320,6 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
         // we'll scale this to the expected level of CommonKmers (given a random sequence).
         double kmerDensity = thisBandSize / bandArea;
         double score = kmerDensity / expectedDensity;
-        commonKmers[i].m_bandArea = bandArea;
         commonKmers[i].m_score = score;
         maxScore = std::max(maxScore, score);
     }
@@ -589,13 +588,12 @@ void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdDev) {
 
 
 std::string getKmerTable(std::vector<CommonKmer> & commonKmers) {
-    std::string table = "\tSeq 1 pos\tSeq 2 pos\tRotated seq 1 pos\tRotated seq 2 pos\tBand area\tScore\n";
+    std::string table = "\tSeq 1 pos\tSeq 2 pos\tRotated seq 1 pos\tRotated seq 2 pos\tScore\n";
     for (size_t i = 0; i < commonKmers.size(); ++i) {
         table += "\t" + std::to_string(commonKmers[i].m_hPosition) +
                  "\t" + std::to_string(commonKmers[i].m_vPosition) + 
                  "\t" + std::to_string(commonKmers[i].m_rotatedHPosition) +
                  "\t" + std::to_string(commonKmers[i].m_rotatedVPosition) +
-                 "\t" + std::to_string(commonKmers[i].m_bandArea) +
                  "\t" + std::to_string(commonKmers[i].m_score) + "\n";
     }
     return table;

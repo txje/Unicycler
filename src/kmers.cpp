@@ -10,7 +10,6 @@ CommonKmer::CommonKmer(std::string sequence, int hPosition, int vPosition, doubl
     m_sequence(sequence),
     m_hPosition(hPosition),
     m_vPosition(vPosition),
-    m_bandArea(0.0),
     m_score(1.0) {
     double s = sin(angle);
     double c = cos(angle);

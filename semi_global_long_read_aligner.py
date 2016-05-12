@@ -1222,7 +1222,7 @@ class Reference(object):
     '''
     def __init__(self, name, sequence):
         self.name = name
-        self.sequence = sequence
+        self.sequence = sequence.upper()
 
     def get_length(self):
         '''
@@ -1238,7 +1238,7 @@ class Read(object):
     '''
     def __init__(self, name, sequence, qualities):
         self.name = name
-        self.sequence = sequence
+        self.sequence = sequence.upper()
         self.qualities = qualities
         self.alignments = []
 

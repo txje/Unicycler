@@ -183,6 +183,10 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         print_alignment_summary_table(graphmap_alignments, read_to_ref_median, read_to_ref_mad,
                                       percent_id_median, percent_id_mad, score_median, score_mad)
 
+    if VERBOSITY > 0:
+        print('Realigning reads with Seqan')
+        print('---------------------------')
+
     # If the user supplied a low score threshold, we use that. Otherwise, we'll use the median
     # score minus three times the MAD.
     if low_score_threshold:
@@ -228,10 +232,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     if VERBOSITY > 0:
         num_realignments = len(reads_to_realign)
         max_v = len(read_dict)
-        print('Realigning reads')
-        print('----------------')
-        print('Completed reads:      ', int_to_str(len(completed_reads), max_v))
-        print('Reads to be realigned:', int_to_str(num_realignments, max_v))
+        print('Already finished reads:', int_to_str(len(completed_reads), max_v))
+        print('Reads to be realigned: ', int_to_str(num_realignments, max_v))
         print()
     if VERBOSITY == 1:
         print_progress_line(0, num_realignments)
@@ -511,9 +513,9 @@ def print_alignment_summary_table(graphmap_alignments, read_to_ref_median, read_
     '''
     Prints a small table showing some details about the GraphMap alignments.
     '''
-    print('Alignment summary')
-    print('-----------------')
-    print('Total GraphMap alignments:', int_to_str(len(graphmap_alignments)))
+    print('Graphmap alignment summary')
+    print('--------------------------')
+    print('Total alignments:', int_to_str(len(graphmap_alignments)))
     print()
 
     table_lines = ['',
@@ -525,7 +527,7 @@ def print_alignment_summary_table(graphmap_alignments, read_to_ref_median, read_
     table_lines = [x.ljust(pad_length) for x in table_lines]
 
     table_lines[0] += 'Median'
-    table_lines[1] += float_to_str(read_to_ref_median, 5)
+    table_lines[1] += float_to_str(read_to_ref_median, 4)
     table_lines[2] += float_to_str(percent_id_median, 2)
     if percent_id_median:
         table_lines[2] += '%'
@@ -535,7 +537,7 @@ def print_alignment_summary_table(graphmap_alignments, read_to_ref_median, read_
     table_lines = [x.ljust(pad_length) for x in table_lines]
 
     table_lines[0] += 'MAD'
-    table_lines[1] += float_to_str(read_to_ref_mad, 5)
+    table_lines[1] += float_to_str(read_to_ref_mad, 4)
     table_lines[2] += float_to_str(percent_id_mad, 2)
     if percent_id_mad:
         table_lines[2] += '%'
@@ -683,7 +685,8 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
         print('Running GraphMap')
         print('----------------')
         print(' '.join(command))
-        print()
+        if VERBOSITY > 1:
+            print()
 
     # Print the GraphMap output as it comes. I gather up and display lines so I can display fewer
     # progress lines. This helps when piping the output to file (otherwise the output can be
@@ -705,7 +708,7 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
                         if progress_rounded_down > last_progress:
                             print(line, end='')
                             last_progress = progress_rounded_down
-                    else:
+                    elif VERBOSITY > 1:
                         print(line, end='')
                 line = ''
     if VERBOSITY > 0:
@@ -898,11 +901,12 @@ def seqan_alignment_one_read_one_ref(read, ref, rev_comp, scoring_scheme, expect
     it got one alignment and a list of more than one means it got multiple alignments.
     '''
     if rev_comp:
-        read_name = read.name + '-'
+        strand_str = '-'
         read_seq = reverse_complement(read.sequence)
     else:
-        read_name = read.name + '+'
+        strand_str = '+'
         read_seq = read.sequence
+    read_name = read.name + strand_str
 
     # print('READ:', read_name, 'REF:', ref.name, 'LEVEL:', sensitivity_level) # TEST CODE - USEFUL FOR DEBUGGING
     sys.stdout.flush() # TEST CODE - USEFUL FOR DEBUGGING
@@ -915,6 +919,11 @@ def seqan_alignment_one_read_one_ref(read, ref, rev_comp, scoring_scheme, expect
     results = c_string_to_python_string(ptr).split(';')
     alignment_strings = results[:-1]
     output = results[-1]
+
+    output = output.replace('READ_NAME', read.name)
+    output = output.replace('REF_NAME', ref.name)
+    output = output.replace('STRAND', strand_str)
+
 
     alignments = []
     for alignment_string in alignment_strings:
@@ -1674,14 +1683,12 @@ class Alignment(object):
             return_str += 'strand: +), '
         return_str += self.ref.name + ' (' + str(self.ref_start_pos) + '-' + \
                       str(self.ref_end_pos) + ')'
-        if self.percent_identity is not None:
-            return_str += ', ' + '%.2f' % self.percent_identity + '% ID'
         if self.scaled_score is not None:
             return_str += ', raw score = ' + str(self.raw_score)
             return_str += ', scaled score = ' + '%.2f' % self.scaled_score
+        if self.percent_identity is not None:
+            return_str += ', ' + '%.2f' % self.percent_identity + '% ID'
         return_str += ', longest indel: ' + str(self.get_longest_indel_run())
-        if self.alignment_type == 'Seqan':
-            return_str += ', ' + str(self.milliseconds) + ' ms'
         return return_str
 
     def get_ref_to_read_ratio(self):

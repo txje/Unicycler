@@ -144,13 +144,13 @@ SemiGlobalAlignment * semiGlobalAlignmentOneLineOneBand(Dna5String & readSeq, in
         sgAlignment = new SemiGlobalAlignment(alignment, line->m_trimmedRefStart, startTime, false, false, scoringScheme);
 
         if (verbosity > 2)
-            output += "  Seqan alignment, bandwidth = " + std::to_string(bandSize) + ": " + sgAlignment->getShortDisplayString() + "\n";
+            output += "  " + sgAlignment->getShortDisplayString() + ", band size = " + std::to_string(bandSize) + "\n";
         if (verbosity > 3)
             output += "    " + sgAlignment->m_cigar + "\n";
     }
     catch (...) {
         if (verbosity > 2)
-            output += "  Seqan alignment, bandwidth = " + std::to_string(bandSize) + ": failed\n";
+            output += "  Alignment failed, bandwidth = " + std::to_string(bandSize) + "\n";
         sgAlignment = 0;
     }
 

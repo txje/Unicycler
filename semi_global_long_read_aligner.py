@@ -864,7 +864,7 @@ def seqan_alignment_one_read_all_refs_one_level(read, references, scoring_scheme
     alignments = []
 
     if VERBOSITY > 2:
-        output += 'Seqan alignments at sensitity level ' + str(sensitivity_level) + ':\n'
+        output += 'Seqan alignments at sensitivity level ' + str(sensitivity_level) + ':\n'
 
     for ref in references:
         if VERBOSITY > 3:
@@ -884,6 +884,9 @@ def seqan_alignment_one_read_all_refs_one_level(read, references, scoring_scheme
                                                          kmer_positions_ptr, sensitivity_level)
         alignments += reverse_alignments
         output += reverse_alignment_output
+
+    if VERBOSITY > 2 and not alignments:
+        output += '  None\n'
 
     return alignments, output
 
@@ -1271,28 +1274,30 @@ class Read(object):
 
     def remove_conflicting_alignments(self):
         '''
-        This function removes alignments from the read which are likely to be spurious. It sorts
-        alignments by score and works through them from highest score to lowest score, throwing out
-        any alignments which only cover parts of the read which already have better alignments.
+        This function removes alignments from the read which are likely to be spurious or
+        redundant.
         '''
         self.alignments = sorted(self.alignments, reverse=True,
                                  key=lambda x: (x.scaled_score, random.random()))
         kept_alignments = []
-        for i, alignment in enumerate(self.alignments):
-            start, end = alignment.read_start_end_positive_strand()
+        kept_alignment_ranges = []
+        for alignment in self.alignments:
+            this_range = alignment.read_start_end_positive_strand()
 
+            # Don't keep alignments for which their part of the read is already aligned.
+            if range_is_contained(this_range, kept_alignment_ranges):
+                continue
+
+            # Don't keep alignments that seem to be very similar to an already kept alignment.
             keep_alignment = True
-            for j in range(i):
-                better_start, better_end = self.alignments[j].read_start_end_positive_strand()
-
-                # If the alignment is entirely contained with a better alignment (with a little bit
-                # of wiggle-room), then it is not kept.
-                if start + 5 > better_start and end - 5 < better_end: #TO DO: MAKE THIS A PARAMETER?
+            for kept_alignment in kept_alignments:
+                if kept_alignment.is_very_similar(alignment):
                     keep_alignment = False
                     break
 
             if keep_alignment:
                 kept_alignments.append(alignment)
+                kept_alignment_ranges = simplify_ranges(kept_alignment_ranges + [this_range])   
         kept_alignments = sorted(kept_alignments,
                                  key=lambda x: x.read_start_end_positive_strand()[0])
         self.alignments = kept_alignments
@@ -1770,6 +1775,24 @@ class Alignment(object):
         the read and the reference (preventing the alignment from being semi-global).
         '''
         return self.get_missing_bases_at_start() + self.get_missing_bases_at_end()
+
+    def is_very_similar(self, other):
+        '''
+        Returns true if this alignment and the other alignment seem to be redundant.
+        '''
+        if self.read.name != other.read.name:
+            return False
+        if self.ref.name != other.ref.name:
+            return False
+        if abs(self.read_start_pos - other.read_start_pos) > 10:
+            return False
+        if abs(self.read_end_pos - other.read_end_pos) > 10:
+            return False
+        if abs(self.ref_start_pos - other.ref_start_pos) > 10:
+            return False
+        if abs(self.ref_end_pos - other.ref_end_pos) > 10:
+            return False
+        return True
 
 
 

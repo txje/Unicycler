@@ -824,6 +824,8 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
         if VERBOSITY > 2:
             output += 'All Seqan alignments:\n'
             for alignment in read.alignments:
+                if alignment.alignment_type == 'Graphmap':
+                    continue
                 output += '  ' + str(alignment) + '\n'
                 if VERBOSITY > 3:
                     output += alignment.cigar + '\n'
@@ -1274,19 +1276,25 @@ class Read(object):
 
         self.alignments = sorted(self.alignments, reverse=True,
                                  key=lambda x: (x.scaled_score, random.random()))
-        read_ranges = []
         kept_alignments = []
         for i, alignment in enumerate(self.alignments):
             start, end = alignment.read_start_end_positive_strand()
-            this_read_range = (start, end)
-            if not range_is_contained(this_read_range, read_ranges):
-                read_ranges.append((start, end))
-                read_ranges = simplify_ranges(read_ranges)
-                kept_alignments.append(alignment)
-        self.alignments = kept_alignments
 
-        self.alignments = sorted(self.alignments,
+            keep_alignment = True
+            for j in range(i):
+                better_start, better_end = self.alignments[j].read_start_end_positive_strand()
+
+                # If the alignment is entirely contained with a better alignment (with a little bit
+                # of wiggle-room), then it is not kept.
+                if start + 5 > better_start and end - 5 < better_end: #TO DO: MAKE THIS A PARAMETER?
+                    keep_alignment = False
+                    break
+
+            if keep_alignment:
+                kept_alignments.append(alignment)
+        kept_alignments = sorted(kept_alignments,
                                  key=lambda x: x.read_start_end_positive_strand()[0])
+        self.alignments = kept_alignments
 
 #     def remove_low_id_alignments(self, id_threshold):
 #         '''
@@ -1652,7 +1660,7 @@ class Alignment(object):
             print()
 
     def __repr__(self):
-        read_start, read_end = self.read_start_end_positive_strand()
+        read_start, read_end = self.read_start_end_positive_strand_minus_overlap(69)
         return_str = self.read.name + ' (' + str(read_start) + '-' + str(read_end) + ', '
         if self.rev_comp:
             return_str += 'strand: -), '
@@ -1701,7 +1709,7 @@ class Alignment(object):
         regions that fall in the end of the reference sequence.
         '''
         # Don't actually remove all overlap, to account for a bit of wiggle room in alignments.
-        overlap_to_remove -= 1 # TO DO: MAKE THIS A PARAMETER?
+        overlap_to_remove -= 5 # TO DO: MAKE THIS A PARAMETER?
         if overlap_to_remove < 0:
             overlap_to_remove = 0
 

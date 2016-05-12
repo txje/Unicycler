@@ -29,6 +29,7 @@ KmerPositions::~KmerPositions() {
 void KmerPositions::addPositions(char * nameC, char * sequenceC) {
     std::string name(nameC);
     std::string sequence(sequenceC);
+    m_sequences[name] = sequence;
 
     KmerPosMap * posMap = new KmerPosMap();
     int kCount = sequence.size() - KMER_SIZE + 1;
@@ -62,10 +63,10 @@ KmerPosMap * KmerPositions::getKmerPositions(std::string & name) {
 
 
 
-// This function returns a list of the k-mers common to the two sequences.
-std::vector<CommonKmer> getCommonKmers(std::string & readName, std::string & refName,
-                                       float expectedSlope, KmerPositions * kmerPositions) {
-    std::vector<CommonKmer> commonKmers;
+CommonKmerSet::CommonKmerSet(std::string & readName, std::string & refName,
+                             int readLength, int refLength, int bandSize,
+                             float expectedSlope, KmerPositions * kmerPositions) :
+    m_maxScore(0) {
     float rotationAngle = CommonKmer::getRotationAngle(expectedSlope);
 
     KmerPosMap * readKmerPositions = kmerPositions->getKmerPositions(readName);
@@ -91,14 +92,149 @@ std::vector<CommonKmer> getCommonKmers(std::string & readName, std::string & ref
 
             for (size_t k = 0; k < readPositions->size(); ++k) {
                 for (size_t l = 0; l < refPositions->size(); ++l)
-                    commonKmers.push_back(CommonKmer((*readPositions)[k], (*refPositions)[l], rotationAngle));
+                    m_commonKmers.push_back(CommonKmer((*readPositions)[k], (*refPositions)[l], rotationAngle));
             }
         }
     }
 
-    return commonKmers;
+    // We scale the scores relative to the expected k-mer density.
+    float expectedDensity = 1.0 / pow(4.0f, KMER_SIZE);
+
+    // Sort by rotated vertical position so lines should be roughly horizontal.
+    std::sort(m_commonKmers.begin(), m_commonKmers.end(), [](const CommonKmer & a, const CommonKmer & b) {
+        return a.m_rotatedVPosition < b.m_rotatedVPosition;   
+    });
+
+    // Score each point based on the number of other points in its band.
+    int halfBandSize = bandSize / 2;
+
+    // There are four corners of the alignment rectangle which we also need to rotate.
+    CommonKmer c1(0, 0, rotationAngle);
+    CommonKmer c2(0, refLength, rotationAngle);
+    CommonKmer c3(readLength, refLength, rotationAngle);
+    CommonKmer c4(readLength, 0, rotationAngle);
+    float c1Y = c1.m_rotatedVPosition;
+    float c3Y = c3.m_rotatedVPosition;
+    float c1BandLength = getLineLength(c1.m_hPosition, c1.m_vPosition,
+                                       expectedSlope, readLength, refLength);
+    float c3BandLength = getLineLength(c3.m_hPosition, c3.m_vPosition,
+                                       expectedSlope, readLength, refLength);
+
+    // Now we loop through the CommonKmer points, calculating their k-mer density (score) along the way.
+    int commonKmerCount = m_commonKmers.size();
+    for (int i = 0; i < commonKmerCount; ++i) {
+        int bandStartIndex = std::max(i - halfBandSize, 0);
+        int bandEndIndex = std::min(i + halfBandSize, commonKmerCount - 1);
+        int thisBandSize = bandEndIndex - bandStartIndex;
+
+        // Get the Y coordinates for the start and end of the band.
+        float bandStartY, bandEndY;
+        if (bandStartIndex < 0)
+            bandStartY = c4.m_rotatedVPosition;
+        else
+            bandStartY = m_commonKmers[bandStartIndex].m_rotatedVPosition;
+        if (bandEndIndex >= commonKmerCount)
+            bandEndY = c2.m_rotatedVPosition;
+        else
+            bandEndY = m_commonKmers[bandEndIndex].m_rotatedVPosition;
+
+        // Now we need to calculate the area of the band.
+        float bandArea;
+
+        // We'll need the starting point band length for all area possibilities, so we calculate
+        // that now.
+        float bandStartLength;
+        if (bandStartIndex < 0)
+            bandStartLength = 0.0;
+        else
+            bandStartLength = getLineLength(m_commonKmers[bandStartIndex].m_hPosition,
+                                            m_commonKmers[bandStartIndex].m_vPosition,
+                                            expectedSlope, readLength, refLength);
+
+        // If both the start and end are in the middle of the rotated rectangle, then the area is a
+        // parallelogram and calculating its area is easy.
+        if (bandStartY >= c1Y && bandEndY <= c3Y)
+            bandArea = (bandEndY - bandStartY) * bandStartLength;
+
+        // Other cases are more complex, and we'll need the ending point band length too.
+        else {
+            float bandEndLength;
+            if (bandEndIndex >= commonKmerCount)
+                bandEndLength = 0.0;
+            else
+                bandEndLength = getLineLength(m_commonKmers[bandEndIndex].m_hPosition,
+                                              m_commonKmers[bandEndIndex].m_vPosition,
+                                              expectedSlope, readLength, refLength);
+
+            // If both the start and end are in the bottom or top of the rotated rectangle, then the
+            // area is a triangle/trapezoid.
+            if ( (bandStartY <= c1Y && bandEndY <= c1Y) || (bandStartY >= c3Y && bandEndY >= c3Y) )
+                bandArea = (bandEndY - bandStartY) * ((bandStartLength + bandEndLength) / 2.0);
+
+            // If the start and end span a rectangle's corner, then the area is more complex. We need
+            // to add both the parallelogram and trapezoid components.
+            else if (bandStartY <= c1Y && bandEndY >= c1Y && bandEndY <= c3Y) {
+                float trapezoidArea = (c1Y - bandStartY) * ((bandStartLength + c1BandLength) / 2.0);
+                float parallelogramArea = (bandEndY - c1Y) * bandEndLength;
+                bandArea = trapezoidArea + parallelogramArea;
+            }
+            else if (bandStartY >= c1Y && bandStartY <= c3Y && bandEndY >= c3Y) {
+                float trapezoidArea = (bandEndY - c3Y) * ((c3BandLength + bandEndLength) / 2.0);
+                float parallelogramArea = (c3Y - bandStartY) * bandStartLength;
+                bandArea = trapezoidArea + parallelogramArea;
+            }
+
+            // The final, most complex scenario is when the band start and end span both C1 and C3.
+            // This would be unusual, as it would require either a very large band or a very sparse
+            // set of CommonKmers.
+            else {
+                float trapezoidArea1 = (c1Y - bandStartY) * ((bandStartLength + c1BandLength) / 2.0);
+                float parallelogramArea = (c3Y - c1Y) * c1BandLength;
+                float trapezoidArea2 = (bandEndY - c3Y) * ((c3BandLength + bandEndLength) / 2.0);
+                bandArea = trapezoidArea1 + parallelogramArea + trapezoidArea2;
+            }
+        }
+
+        // Now that we have the band area, we can get the density of CommonKmers in the band. Also,
+        // we'll scale this to the expected level of CommonKmers (given a random sequence).
+        float kmerDensity = thisBandSize / bandArea;
+        float score = kmerDensity / expectedDensity;
+        m_commonKmers[i].m_score = score;
+        m_maxScore = std::max(m_maxScore, score);
+    }
 }
 
+
+
+// Given a point, a slope and rectangle bounds, this function returns the length of the line
+// segment which goes through that point with that slope and is in those bounds.
+float getLineLength(float x, float y, float slope, float xSize, float ySize) {
+    float xStart, yStart, xEnd, yEnd;
+
+    float yIntercept = y - (slope * x);
+    if (yIntercept >= 0.0) {
+        xStart = 0.0;
+        yStart = yIntercept;
+    }
+    else {
+        xStart = -yIntercept / slope;
+        yStart = 0.0;
+    }
+
+    float yAtXEnd = (slope * xSize) + yIntercept;
+    if (yAtXEnd <= ySize) {
+        xEnd = xSize;
+        yEnd = yAtXEnd;
+    }
+    else {
+        xEnd = (ySize - yIntercept) / slope;
+        yEnd = ySize;
+    }
+
+    float xLength = xEnd - xStart;
+    float yLength = yEnd - yStart;
+    return sqrt((xLength * xLength) + (yLength * yLength));
+}
 
 
 KmerPositions * newKmerPositions() {

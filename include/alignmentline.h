@@ -60,8 +60,6 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
                                         KmerPositions * kmerPositions, std::string & output,
                                         int sensitivityLevel);
 
-double getLineLength(double x, double y, double slope, double xSize, double ySize);
-
 void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdev);
 
 std::string getKmerTable(std::vector<CommonKmer> & commonKmers);

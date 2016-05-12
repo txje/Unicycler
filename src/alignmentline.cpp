@@ -206,128 +206,21 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
 
     long long startTime = getTime();
 
-    std::vector<CommonKmer> commonKmers = getCommonKmers(readName, refName, expectedSlope, kmerPositions);
+    // Create the CommonKmerSet object. This will collect all common k-mers between the two
+    // sequences, rotate them to the expected slope and score them.
+    CommonKmerSet commonKmerSet(readName, refName, readLength, refLength, bandSize, expectedSlope, kmerPositions);
+    int commonKmerCount = commonKmerSet.m_commonKmers.size();
 
-    if (commonKmers.size() < 2) {
+    if (commonKmerCount < 2) {
         if (verbosity > 3)
             output += "  No lines found, too few common k-mers (" + std::to_string(getTime() - startTime) + " ms)\n";
         return 0;
     }
 
-    // We scale the scores relative to the expected k-mer density.
-    double expectedDensity = 1.0 / pow(4.0, KMER_SIZE);
-    if (verbosity > 4)
-        output += "  Expected k-mer density: " + std::to_string(expectedDensity) + "\n";
-
-    // Sort by rotated vertical position so lines should be roughly horizontal.
-    std::sort(commonKmers.begin(), commonKmers.end(), [](const CommonKmer & a, const CommonKmer & b) {
-        return a.m_rotatedVPosition < b.m_rotatedVPosition;   
-    });
-
-    // Score each point based on the number of other points in its band.
-    int halfBandSize = bandSize / 2;
-    double maxScore = 0.0;
-
-    // There are four corners of the alignment rectangle which we also need to rotate.
-    double rotationAngle = CommonKmer::getRotationAngle(expectedSlope);
-    CommonKmer c1(0, 0, rotationAngle);
-    CommonKmer c2(0, refLength, rotationAngle);
-    CommonKmer c3(readLength, refLength, rotationAngle);
-    CommonKmer c4(readLength, 0, rotationAngle);
-    double c1Y = c1.m_rotatedVPosition;
-    double c3Y = c3.m_rotatedVPosition;
-    double c1BandLength = getLineLength(c1.m_hPosition, c1.m_vPosition,
-                                        expectedSlope, readLength, refLength);
-    double c3BandLength = getLineLength(c3.m_hPosition, c3.m_vPosition,
-                                        expectedSlope, readLength, refLength);
-
-    // Now we loop through the CommonKmer points, calculating their k-mer density (score) along the way.
-    int commonKmerCount = commonKmers.size();
-    for (int i = 0; i < commonKmerCount; ++i) {
-        int bandStartIndex = std::max(i - halfBandSize, 0);
-        int bandEndIndex = std::min(i + halfBandSize, commonKmerCount - 1);
-        int thisBandSize = bandEndIndex - bandStartIndex;
-
-        // Get the Y coordinates for the start and end of the band.
-        double bandStartY, bandEndY;
-        if (bandStartIndex < 0)
-            bandStartY = c4.m_rotatedVPosition;
-        else
-            bandStartY = commonKmers[bandStartIndex].m_rotatedVPosition;
-        if (bandEndIndex >= commonKmerCount)
-            bandEndY = c2.m_rotatedVPosition;
-        else
-            bandEndY = commonKmers[bandEndIndex].m_rotatedVPosition;
-
-        // Now we need to calculate the area of the band.
-        double bandArea;
-
-        // We'll need the starting point band length for all area possibilities, so we calculate
-        // that now.
-        double bandStartLength;
-        if (bandStartIndex < 0)
-            bandStartLength = 0.0;
-        else
-            bandStartLength = getLineLength(commonKmers[bandStartIndex].m_hPosition,
-                                            commonKmers[bandStartIndex].m_vPosition,
-                                            expectedSlope, readLength, refLength);
-
-        // If both the start and end are in the middle of the rotated rectangle, then the area is a
-        // parallelogram and calculating its area is easy.
-        if (bandStartY >= c1Y && bandEndY <= c3Y)
-            bandArea = (bandEndY - bandStartY) * bandStartLength;
-
-        // Other cases are more complex, and we'll need the ending point band length too.
-        else {
-            double bandEndLength;
-            if (bandEndIndex >= commonKmerCount)
-                bandEndLength = 0.0;
-            else
-                bandEndLength = getLineLength(commonKmers[bandEndIndex].m_hPosition,
-                                              commonKmers[bandEndIndex].m_vPosition,
-                                              expectedSlope, readLength, refLength);
-
-            // If both the start and end are in the bottom or top of the rotated rectangle, then the
-            // area is a triangle/trapezoid.
-            if ( (bandStartY <= c1Y && bandEndY <= c1Y) || (bandStartY >= c3Y && bandEndY >= c3Y) )
-                bandArea = (bandEndY - bandStartY) * ((bandStartLength + bandEndLength) / 2.0);
-
-            // If the start and end span a rectangle's corner, then the area is more complex. We need
-            // to add both the parallelogram and trapezoid components.
-            else if (bandStartY <= c1Y && bandEndY >= c1Y && bandEndY <= c3Y) {
-                double trapezoidArea = (c1Y - bandStartY) * ((bandStartLength + c1BandLength) / 2.0);
-                double parallelogramArea = (bandEndY - c1Y) * bandEndLength;
-                bandArea = trapezoidArea + parallelogramArea;
-            }
-            else if (bandStartY >= c1Y && bandStartY <= c3Y && bandEndY >= c3Y) {
-                double trapezoidArea = (bandEndY - c3Y) * ((c3BandLength + bandEndLength) / 2.0);
-                double parallelogramArea = (c3Y - bandStartY) * bandStartLength;
-                bandArea = trapezoidArea + parallelogramArea;
-            }
-
-            // The final, most complex scenario is when the band start and end span both C1 and C3.
-            // This would be unusual, as it would require either a very large band or a very sparse
-            // set of CommonKmers.
-            else {
-                double trapezoidArea1 = (c1Y - bandStartY) * ((bandStartLength + c1BandLength) / 2.0);
-                double parallelogramArea = (c3Y - c1Y) * c1BandLength;
-                double trapezoidArea2 = (bandEndY - c3Y) * ((c3BandLength + bandEndLength) / 2.0);
-                bandArea = trapezoidArea1 + parallelogramArea + trapezoidArea2;
-            }
-        }
-
-        // Now that we have the band area, we can get the density of CommonKmers in the band. Also,
-        // we'll scale this to the expected level of CommonKmers (given a random sequence).
-        double kmerDensity = thisBandSize / bandArea;
-        double score = kmerDensity / expectedDensity;
-        commonKmers[i].m_score = score;
-        maxScore = std::max(maxScore, score);
-    }
-
     if (verbosity > 4) {
         output += "  Common k-mer positions:\n";
-        output += getKmerTable(commonKmers);
-        output += "  Max score: " + std::to_string(maxScore) + "\n";
+        output += getKmerTable(commonKmerSet.m_commonKmers);
+        output += "  Max score: " + std::to_string(commonKmerSet.m_maxScore) + "\n";
     }
 
     // Now group all of the line points. For a line group to form, a point must score above the
@@ -337,12 +230,12 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
     bool lineInProgress = false;
     for (int i = 0; i < commonKmerCount; ++i) {
         if (lineInProgress) {
-            if (commonKmers[i].m_score >= lowScoreThreshold)
-                lineGroups.back().push_back(commonKmers[i]);
+            if (commonKmerSet.m_commonKmers[i].m_score >= lowScoreThreshold)
+                lineGroups.back().push_back(commonKmerSet.m_commonKmers[i]);
             else // This line group is done.
                 lineInProgress = false;
         }
-        else if (commonKmers[i].m_score >= highScoreThreshold) {
+        else if (commonKmerSet.m_commonKmers[i].m_score >= highScoreThreshold) {
             // It's time to start a new line group!
             lineGroups.push_back(std::vector<CommonKmer>());
             lineInProgress = true;
@@ -351,13 +244,13 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
             // threshold).
             int groupStartPoint = i;
             while (groupStartPoint >= 0 &&
-                   commonKmers[groupStartPoint].m_score >= lowScoreThreshold)
+                   commonKmerSet.m_commonKmers[groupStartPoint].m_score >= lowScoreThreshold)
                 --groupStartPoint;
             ++groupStartPoint;
 
             // Add the initial group points.
             for (int j = groupStartPoint; j <= i; ++j)
-                lineGroups.back().push_back(commonKmers[j]);
+                lineGroups.back().push_back(commonKmerSet.m_commonKmers[j]);
         }
     }
     if (verbosity > 4)
@@ -533,40 +426,6 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
     return results;
 }
 
-
-
-
-
-
-// Given a point, a slope and rectangle bounds, this function returns the length of the line
-// segment which goes through that point with that slope and is in those bounds.
-double getLineLength(double x, double y, double slope, double xSize, double ySize) {
-    double xStart, yStart, xEnd, yEnd;
-
-    double yIntercept = y - (slope * x);
-    if (yIntercept >= 0.0) {
-        xStart = 0.0;
-        yStart = yIntercept;
-    }
-    else {
-        xStart = -yIntercept / slope;
-        yStart = 0.0;
-    }
-
-    double yAtXEnd = (slope * xSize) + yIntercept;
-    if (yAtXEnd <= ySize) {
-        xEnd = xSize;
-        yEnd = yAtXEnd;
-    }
-    else {
-        xEnd = (ySize - yIntercept) / slope;
-        yEnd = ySize;
-    }
-
-    double xLength = xEnd - xStart;
-    double yLength = yEnd - yStart;
-    return sqrt((xLength * xLength) + (yLength * yLength));
-}
 
 
 void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdDev) {

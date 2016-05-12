@@ -26,7 +26,6 @@ public:
 };
 
 
-
 // KmerPositions is a class that holds maps of k-mer positions for named sequences. It exists so we
 // don't have to repeatedly find the same k-mer sets over and over when finding alignment lines.
 class KmerPositions {
@@ -39,11 +38,23 @@ public:
 
 private:
     std::unordered_map<std::string, KmerPosMap *> m_kmerPositions;
+    std::unordered_map<std::string, std::string> m_sequences;
 };
 
 
-std::vector<CommonKmer> getCommonKmers(std::string & readName, std::string & refName,
-                                       float expectedSlope, KmerPositions * kmerPositions);
+// This class holds a set of common k-mers for a particular read-ref combination.
+class CommonKmerSet {
+public:
+    CommonKmerSet(std::string & readName, std::string & refName,
+                  int readLength, int refLength, int bandSize,
+                  float expectedSlope, KmerPositions * kmerPositions);
+
+    std::vector<CommonKmer> m_commonKmers;
+    float m_maxScore;
+};
+
+
+float getLineLength(float x, float y, float slope, float xSize, float ySize);
 
 
 // Functions that are called by the Python script must have C linkage, not C++ linkage.

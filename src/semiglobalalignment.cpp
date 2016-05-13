@@ -3,9 +3,14 @@
 
 #include <iostream>
 
-SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignment, int refOffset, long long startTime,
-                     bool startImmediately, bool goToEnd, Score<int, Simple> & scoringScheme):
-    m_readStartPos(-1), m_refStartPos(-1), m_rawScore(0) {
+SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignment, 
+                                         std::string & readName, std::string & refName,
+                                         int readLength, int refLength,
+                                         int refOffset, long long startTime,
+                                         bool startImmediately, bool goToEnd, Score<int, Simple> & scoringScheme):
+    m_readName(readName), m_refName(refName), m_readLength(readLength), m_refLength(refLength),
+    m_readStartPos(-1), m_refStartPos(-1), m_rawScore(0)
+{
 
     // Extract the alignment sequences into C++ strings for constant time random access.
     std::ostringstream stream1;
@@ -184,11 +189,9 @@ int SemiGlobalAlignment::getCigarScore(CigarType type, int length, Score<int, Si
         return scoreGapOpen(scoringScheme) + ((length - 1) * scoreGapExtend(scoringScheme));
 
     // To score matches we must actually look at the bases.
-    else if (type == MATCH)
-    {
+    else if (type == MATCH) {
         int score = 0;
-        for (int i = 0; i < length; ++i)
-        {
+        for (int i = 0; i < length; ++i) {
             int pos = alignmentPos + i;
             bool match = (readAlignment[pos] == refAlignment[pos]);
             if (match)
@@ -199,6 +202,10 @@ int SemiGlobalAlignment::getCigarScore(CigarType type, int length, Score<int, Si
         return score;
     }
     return 0;
+}
+
+bool SemiGlobalAlignment::isRevComp() {
+    return m_readName.back() == '-';
 }
 
 

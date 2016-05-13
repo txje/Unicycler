@@ -14,11 +14,19 @@ enum CigarType {MATCH, INSERTION, DELETION, CLIP, NOTHING};
 
 class SemiGlobalAlignment {
 public:
-    SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignment, int refOffset, long long startTime,
-              bool startImmediately, bool goToEnd, Score<int, Simple> & scoringScheme);
+    SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignment, 
+                        std::string & readName, std::string & refName,
+                        int readLength, int refLength,
+                        int refOffset, long long startTime,
+                        bool startImmediately, bool goToEnd, Score<int, Simple> & scoringScheme);
     std::string getFullString();
     std::string getShortDisplayString();
+    bool isRevComp();
 
+    std::string m_readName;
+    std::string m_refName;
+    int m_readLength;
+    int m_refLength;
     int m_readStartPos;
     int m_readEndPos;
     int m_refStartPos;

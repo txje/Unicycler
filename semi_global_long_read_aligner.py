@@ -252,9 +252,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     # If single-threaded, just do the work in a simple loop.
     if threads == 1:
         for read in reads_to_realign:
-            output = seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
-                                                       expected_ref_to_read_ratio,
-                                                       kmer_positions_ptr, low_score_threshold)
+            output = seqan_alignment(read, references, scoring_scheme, expected_ref_to_read_ratio,
+                                     kmer_positions_ptr, low_score_threshold)
             completed_count += 1
             if VERBOSITY == 1:
                 print_progress_line(completed_count, num_realignments)
@@ -268,7 +267,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         for read in reads_to_realign:
             arg_list.append((read, references, scoring_scheme, expected_ref_to_read_ratio,
                              kmer_positions_ptr, low_score_threshold))
-        for output in pool.imap_unordered(seqan_alignment_one_read_all_refs_one_arg, arg_list, 1):
+        for output in pool.imap_unordered(seqan_alignment_one_arg, arg_list, 1):
             completed_count += 1
             if VERBOSITY == 1:
                 print_progress_line(completed_count, num_realignments)
@@ -759,20 +758,18 @@ def load_sam_alignments(sam_filename, read_dict, references, scoring_scheme):
                                             scoring_scheme=scoring_scheme))
     return sam_alignments
 
-def seqan_alignment_one_read_all_refs_one_arg(all_args):
+def seqan_alignment_one_arg(all_args):
     '''
-    This is just a one-argument version of seqan_alignment_one_read_all_refs to make it easier to
+    This is just a one-argument version of seqan_alignment to make it easier to
     use that function in a thread pool.
     '''
     read, references, scoring_scheme, expected_ref_to_read_ratio, \
                                 kmer_positions_ptr, low_score_threshold = all_args
-    return seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
-                                             expected_ref_to_read_ratio, kmer_positions_ptr,
-                                             low_score_threshold)
+    return seqan_alignment(read, references, scoring_scheme, expected_ref_to_read_ratio,
+                           kmer_positions_ptr, low_score_threshold)
 
-def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
-                                      expected_ref_to_read_ratio, kmer_positions_ptr,
-                                      low_score_threshold):
+def seqan_alignment(read, references, scoring_scheme, expected_ref_to_read_ratio,
+                    kmer_positions_ptr, low_score_threshold):
     '''
     Aligns a single read against all reference sequences using Seqan.
     '''
@@ -1786,17 +1783,17 @@ class Alignment(object):
 '''
 This is the big semi-global C++ Seqan alignment function.
 '''
-C_LIB.semiGlobalAlignmentAllRefs.argtypes = [c_char_p, # Read name
-                                             c_char_p, # Read sequence
-                                             c_int,    # Verbosity
-                                             c_double, # Expected slope
-                                             c_void_p, # KmerPositions pointer
-                                             c_int,    # Match score
-                                             c_int,    # Mismatch score
-                                             c_int,    # Gap open score
-                                             c_int,    # Gap extension score
-                                             c_double] # Low score threshold
-C_LIB.semiGlobalAlignmentAllRefs.restype = c_void_p    # String describing alignments
+C_LIB.semiGlobalAlignment.argtypes = [c_char_p, # Read name
+                                      c_char_p, # Read sequence
+                                      c_int,    # Verbosity
+                                      c_double, # Expected slope
+                                      c_void_p, # KmerPositions pointer
+                                      c_int,    # Match score
+                                      c_int,    # Mismatch score
+                                      c_int,    # Gap open score
+                                      c_int,    # Gap extension score
+                                      c_double] # Low score threshold
+C_LIB.semiGlobalAlignment.restype = c_void_p    # String describing alignments
 
 
 '''

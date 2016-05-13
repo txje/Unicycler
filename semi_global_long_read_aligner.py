@@ -774,8 +774,7 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
                                       expected_ref_to_read_ratio, kmer_positions_ptr,
                                       low_score_threshold):
     '''
-    Aligns a single read against all reference sequences using Seqan. Both forward and reverse
-    complement alignments are tried. Returns the console output.
+    Aligns a single read against all reference sequences using Seqan.
     '''
     start_time = time.time()
     output = ''
@@ -783,8 +782,6 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
         output += str(read) + '\n'
     if VERBOSITY > 2:
         output += '-' * len(str(read)) + '\n'
-
-    add_read_kmer_positions(kmer_positions_ptr, read)
 
     starting_graphmap_alignments = len(read.alignments)
     if VERBOSITY > 2:
@@ -795,37 +792,21 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
         else:
             output += '  None\n'
 
-    # Align the read to all references at the first sensitivity level
-    level_1_alignments, level_1_output = \
-            seqan_alignment_one_read_all_refs_one_level(read, references, scoring_scheme,
-                                                        expected_ref_to_read_ratio,
-                                                        kmer_positions_ptr, 1)
-    read.alignments += level_1_alignments
-    output += level_1_output
+    ptr = C_LIB.semiGlobalAlignmentAllRefs(read.name, read.seq, VERBOSITY,
+                                           expected_ref_to_read_ratio, kmer_positions_ptr,
+                                           scoring_scheme.match, scoring_scheme.mismatch,
+                                           scoring_scheme.gap_open, scoring_scheme.gap_extend,
+                                           low_score_threshold)
+    results = c_string_to_python_string(ptr).split(';')
+    alignment_strings = results[:-1]
+    output = results[-1]
 
-    # If the read still isn't covered by alignments which all meet the score threshold, then try
-    # the second sensitivity level.
-    if read.needs_more_sensitive_alignment(low_score_threshold):
-        level_2_alignments, level_2_output = \
-                seqan_alignment_one_read_all_refs_one_level(read, references, scoring_scheme,
-                                                            expected_ref_to_read_ratio,
-                                                            kmer_positions_ptr, 2)
-        read.alignments += level_2_alignments
-        output += level_2_output
+    for alignment_string in alignment_strings:
+        alignment = Alignment(seqan_output=alignment_string, read=read,
+                              scoring_scheme=scoring_scheme)
+        read.alignments.append(alignment)
 
-    # The third sensitivity level can take a long time, so we only try that if the read still
-    # has parts with no alignments (regardless of their score).
-    if read.get_fraction_aligned() < 1.0:
-        level_3_alignments, level_3_output = \
-                seqan_alignment_one_read_all_refs_one_level(read, references, scoring_scheme,
-                                                            expected_ref_to_read_ratio,
-                                                            kmer_positions_ptr, 3)
-        read.alignments += level_3_alignments
-        output += level_3_output
-
-    new_seqan_alignments = len(read.alignments) - starting_graphmap_alignments
-
-    if not new_seqan_alignments:
+    if len(read.alignments) == starting_graphmap_alignments:
         if VERBOSITY > 1:
             output += 'No Seqan alignments found for read ' + read.name + '\n'
     else:
@@ -852,86 +833,84 @@ def seqan_alignment_one_read_all_refs(read, references, scoring_scheme,
             output += '  ' + str(alignment) + '\n'
         output += '\n'
 
-    delete_read_kmer_positions(kmer_positions_ptr, read)
-
     return output
 
-def seqan_alignment_one_read_all_refs_one_level(read, references, scoring_scheme,
-                                                expected_ref_to_read_ratio, kmer_positions_ptr,
-                                                sensitivity_level):
-    '''
-    Aligns a single read against all reference sequences using Seqan at a single sensitivity level.
-    '''
-    assert sensitivity_level == 1 or sensitivity_level == 2 or sensitivity_level == 3
-    output = ''
-    alignments = []
+# def seqan_alignment_one_read_all_refs_one_level(read, references, scoring_scheme,
+#                                                 expected_ref_to_read_ratio, kmer_positions_ptr,
+#                                                 sensitivity_level):
+#     '''
+#     Aligns a single read against all reference sequences using Seqan at a single sensitivity level.
+#     '''
+#     assert sensitivity_level == 1 or sensitivity_level == 2 or sensitivity_level == 3
+#     output = ''
+#     alignments = []
 
-    if VERBOSITY > 2:
-        output += 'Seqan alignments at sensitivity level ' + str(sensitivity_level) + ':\n'
+#     if VERBOSITY > 2:
+#         output += 'Seqan alignments at sensitivity level ' + str(sensitivity_level) + ':\n'
 
-    for ref in references:
-        if VERBOSITY > 3:
-            output += 'Reference: ' + ref.name + '+\n'
-        forward_alignments, forward_alignment_output = \
-                        seqan_alignment_one_read_one_ref(read, ref, False, scoring_scheme,
-                                                         expected_ref_to_read_ratio,
-                                                         kmer_positions_ptr, sensitivity_level)
-        alignments += forward_alignments
-        output += forward_alignment_output
+#     for ref in references:
+#         if VERBOSITY > 3:
+#             output += 'Reference: ' + ref.name + '+\n'
+#         forward_alignments, forward_alignment_output = \
+#                         seqan_alignment_one_read_one_ref(read, ref, False, scoring_scheme,
+#                                                          expected_ref_to_read_ratio,
+#                                                          kmer_positions_ptr, sensitivity_level)
+#         alignments += forward_alignments
+#         output += forward_alignment_output
 
-        if VERBOSITY > 3:
-            output += 'Reference: ' + ref.name + '-\n'
-        reverse_alignments, reverse_alignment_output = \
-                        seqan_alignment_one_read_one_ref(read, ref, True, scoring_scheme,
-                                                         expected_ref_to_read_ratio,
-                                                         kmer_positions_ptr, sensitivity_level)
-        alignments += reverse_alignments
-        output += reverse_alignment_output
+#         if VERBOSITY > 3:
+#             output += 'Reference: ' + ref.name + '-\n'
+#         reverse_alignments, reverse_alignment_output = \
+#                         seqan_alignment_one_read_one_ref(read, ref, True, scoring_scheme,
+#                                                          expected_ref_to_read_ratio,
+#                                                          kmer_positions_ptr, sensitivity_level)
+#         alignments += reverse_alignments
+#         output += reverse_alignment_output
 
-    if VERBOSITY > 2 and not alignments:
-        output += '  None\n'
+#     if VERBOSITY > 2 and not alignments:
+#         output += '  None\n'
 
-    return alignments, output
+#     return alignments, output
 
-def seqan_alignment_one_read_one_ref(read, ref, rev_comp, scoring_scheme, expected_slope,
-                                     kmer_positions_ptr, sensitivity_level):
-    '''
-    Runs an alignment using Seqan between one read and one reference.
-    Returns a list of Alignment objects: empty list means it did not succeed, a list of one means
-    it got one alignment and a list of more than one means it got multiple alignments.
-    '''
-    if rev_comp:
-        strand_str = '-'
-        read_seq = reverse_complement(read.sequence)
-    else:
-        strand_str = '+'
-        read_seq = read.sequence
-    read_name = read.name + strand_str
+# def seqan_alignment_one_read_one_ref(read, ref, rev_comp, scoring_scheme, expected_slope,
+#                                      kmer_positions_ptr, sensitivity_level):
+#     '''
+#     Runs an alignment using Seqan between one read and one reference.
+#     Returns a list of Alignment objects: empty list means it did not succeed, a list of one means
+#     it got one alignment and a list of more than one means it got multiple alignments.
+#     '''
+#     if rev_comp:
+#         strand_str = '-'
+#         read_seq = reverse_complement(read.sequence)
+#     else:
+#         strand_str = '+'
+#         read_seq = read.sequence
+#     read_name = read.name + strand_str
 
-    # print('READ:', read_name, 'REF:', ref.name, 'LEVEL:', sensitivity_level) # TEST CODE - USEFUL FOR DEBUGGING
-    sys.stdout.flush() # TEST CODE - USEFUL FOR DEBUGGING
+#     # print('READ:', read_name, 'REF:', ref.name, 'LEVEL:', sensitivity_level) # TEST CODE - USEFUL FOR DEBUGGING
+#     sys.stdout.flush() # TEST CODE - USEFUL FOR DEBUGGING
 
-    ptr = C_LIB.semiGlobalAlignment(read_name, read_seq, ref.name, ref.sequence,
-                                    expected_slope, VERBOSITY, kmer_positions_ptr,
-                                    scoring_scheme.match, scoring_scheme.mismatch,
-                                    scoring_scheme.gap_open, scoring_scheme.gap_extend,
-                                    sensitivity_level)
-    results = c_string_to_python_string(ptr).split(';')
-    alignment_strings = results[:-1]
-    output = results[-1]
+#     ptr = C_LIB.semiGlobalAlignment(read_name, read_seq, ref.name, ref.sequence,
+#                                     expected_slope, VERBOSITY, kmer_positions_ptr,
+#                                     scoring_scheme.match, scoring_scheme.mismatch,
+#                                     scoring_scheme.gap_open, scoring_scheme.gap_extend,
+#                                     sensitivity_level)
+#     results = c_string_to_python_string(ptr).split(';')
+#     alignment_strings = results[:-1]
+#     output = results[-1]
 
-    output = output.replace('READ_NAME', read.name)
-    output = output.replace('REF_NAME', ref.name)
-    output = output.replace('STRAND', strand_str)
+#     output = output.replace('READ_NAME', read.name)
+#     output = output.replace('REF_NAME', ref.name)
+#     output = output.replace('STRAND', strand_str)
 
 
-    alignments = []
-    for alignment_string in alignment_strings:
-        alignment = Alignment(seqan_output=alignment_string, read=read, ref=ref, rev_comp=rev_comp,
-                              scoring_scheme=scoring_scheme)
-        alignments.append(alignment)
+#     alignments = []
+#     for alignment_string in alignment_strings:
+#         alignment = Alignment(seqan_output=alignment_string, read=read, ref=ref, rev_comp=rev_comp,
+#                               scoring_scheme=scoring_scheme)
+#         alignments.append(alignment)
 
-    return alignments, output
+#     return alignments, output
 
 def get_ref_shift_from_cigar_part(cigar_part):
     '''
@@ -1807,19 +1786,17 @@ class Alignment(object):
 '''
 This is the big semi-global C++ Seqan alignment function.
 '''
-C_LIB.semiGlobalAlignment.argtypes = [c_char_p, # Read name
-                                      c_char_p, # Read sequence
-                                      c_char_p, # Reference name
-                                      c_char_p, # Reference sequence
-                                      c_double, # Expected slope
-                                      c_int,    # Verbosity
-                                      c_void_p, # KmerPositions pointer
-                                      c_int,    # Match score
-                                      c_int,    # Mismatch score
-                                      c_int,    # Gap open score
-                                      c_int,    # Gap extension score
-                                      c_int]    # Sensitivity level
-C_LIB.semiGlobalAlignment.restype = c_void_p    # String describing alignments
+C_LIB.semiGlobalAlignmentAllRefs.argtypes = [c_char_p, # Read name
+                                             c_char_p, # Read sequence
+                                             c_int,    # Verbosity
+                                             c_double, # Expected slope
+                                             c_void_p, # KmerPositions pointer
+                                             c_int,    # Match score
+                                             c_int,    # Mismatch score
+                                             c_int,    # Gap open score
+                                             c_int,    # Gap extension score
+                                             c_double] # Low score threshold
+C_LIB.semiGlobalAlignmentAllRefs.restype = c_void_p    # String describing alignments
 
 
 '''
@@ -1888,25 +1865,25 @@ C_LIB.addKmerPositions.argtypes = [c_void_p, # KmerPositions pointer
                                    c_char_p, # Name
                                    c_char_p] # Sequence
 C_LIB.addKmerPositions.restype = None
-C_LIB.deleteKmerPositions.argtypes = [c_void_p, # KmerPositions pointer
-                                      c_char_p] # Name
-C_LIB.deleteKmerPositions.restype = None
+# C_LIB.deleteKmerPositions.argtypes = [c_void_p, # KmerPositions pointer
+#                                       c_char_p] # Name
+# C_LIB.deleteKmerPositions.restype = None
 C_LIB.deleteAllKmerPositions.argtypes = [c_void_p]
 C_LIB.deleteAllKmerPositions.restype = None
 
-def add_read_kmer_positions(kmer_positions_ptr, read):
-    '''
-    Adds both positive and negative sequences of a read to KmerPositions.
-    '''
-    C_LIB.addKmerPositions(kmer_positions_ptr, read.name + '+', read.sequence)
-    C_LIB.addKmerPositions(kmer_positions_ptr, read.name + '-', reverse_complement(read.sequence))
+# def add_read_kmer_positions(kmer_positions_ptr, read):
+#     '''
+#     Adds both positive and negative sequences of a read to KmerPositions.
+#     '''
+#     C_LIB.addKmerPositions(kmer_positions_ptr, read.name + '+', read.sequence)
+#     C_LIB.addKmerPositions(kmer_positions_ptr, read.name + '-', reverse_complement(read.sequence))
 
-def delete_read_kmer_positions(kmer_positions_ptr, read):
-    '''
-    Adds both positive and negative sequences of a read to KmerPositions.
-    '''
-    C_LIB.deleteKmerPositions(kmer_positions_ptr, read.name + '+')
-    C_LIB.deleteKmerPositions(kmer_positions_ptr, read.name + '-')
+# def delete_read_kmer_positions(kmer_positions_ptr, read):
+#     '''
+#     Adds both positive and negative sequences of a read to KmerPositions.
+#     '''
+#     C_LIB.deleteKmerPositions(kmer_positions_ptr, read.name + '+')
+#     C_LIB.deleteKmerPositions(kmer_positions_ptr, read.name + '-')
 
 
 

@@ -3,28 +3,130 @@
 #include "alignmentline.h"
 #include "semiglobalalignment.h"
 
-AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLength, int refLength,
-                             int verbosity, std::string & output) {
+
+
+AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLength, int refLength, float expectedSlope) :
+    m_linePoints(commonKmers), m_readLength(readLength), m_refLength(refLength), m_expectedSlope(expectedSlope),
+    m_slope(0.0), m_intercept(0.0), m_trimmedRefStart(0), m_trimmedRefEnd(0)
+    // m_maxScore(0.0), m_areaUnderCurve(0.0)
+{
+    // int pointCount = m_linePoints.size();
+    // for (int i = 0; i < pointCount; ++i)
+    // {
+    //     float score = m_linePoints[i].m_score;
+    //     m_maxScore = std::max(score, m_maxScore);
+    //     float rotatedVSize = 0.0;
+    //     if (i > 0)
+    //         rotatedVSize += (m_linePoints[i].m_rotatedVPosition - m_linePoints[i-1].m_rotatedVPosition) / 2.0;
+    //     if (i < pointCount - 1)
+    //         rotatedVSize += (m_linePoints[i+1].m_rotatedVPosition - m_linePoints[i].m_rotatedVPosition) / 2.0;
+    //     m_areaUnderCurve += score * rotatedVSize;
+    // }
+}
+
+
+// This function prepares the alignment line for use in an alignment. If it returns false, then the
+// line is no good. If it returns true, that means it successfully built the m_bridgedSeedChain
+// member.
+bool AlignmentLine::buildSeedChain(int minPointCount, float minAlignmentLength) {
+
+    // We are only interested in line groups which seem to span their full possible length (i.e.
+    // not line groups caused by short, local alignments) and for which the band is reasonably 
+    // long (to avoid things like 3 bp alignments).
+
+    // Determine the mean position for the points and use it to calculate the band length.
+    int pointCount = m_linePoints.size();
+    double vSum = 0.0, hSum = 0.0;
+    for (int i = 0; i < pointCount; ++i) {
+        hSum += m_linePoints[i].m_hPosition;
+        vSum += m_linePoints[i].m_vPosition;
+    }
+    double meanH = hSum / pointCount;
+    double meanV = vSum / pointCount;
+    double bandLength = getLineLength(meanH, meanV, m_expectedSlope, m_readLength, m_refLength);
+
+    // Exclude alignments which are too short.
+    if (bandLength < minAlignmentLength)
+        return false;
+
+    // Now we want to test whether the CommonKmers in the band seem to span the full band. To
+    // do so, we get the std dev of the rotated H position and compare it to the expected std
+    // dev of a uniform distribution.
+    std::vector<double> rotatedHPositions;
+    rotatedHPositions.reserve(pointCount);
+    for (int i = 0; i < pointCount; ++i)
+        rotatedHPositions.push_back(m_linePoints[i].m_rotatedHPosition);
+    double meanRotatedH, rotatedHStdDev;
+    getMeanAndStDev(rotatedHPositions, meanRotatedH, rotatedHStdDev);
+    double uniformStdDev = bandLength / 3.464101615137754; // sqrt(12)
+
+    // At least half of the uniform distribution's std dev is required.
+    if (rotatedHStdDev < 0.5 * uniformStdDev)
+        return false;
+
+    // Throw out any point which is too divergent from its neighbours. To do
+    // this, we determine the slope between each point and its nearest neighbours and how divergent
+    // it is from the expected slope. We discard the points with the most divergent slopes.
+
+    // Sort by rotated horizontal position so we proceed along the line from start to end. 
+    std::sort(m_linePoints.begin(), m_linePoints.end(), [](const CommonKmer & a, const CommonKmer & b) {
+        return a.m_rotatedHPosition < b.m_rotatedHPosition;   
+    });
+
+    // Store the max slope for each point in the line group.
+    std::vector<double> maxSlopes;
+    maxSlopes.reserve(pointCount);
+    for (int i = 0; i < pointCount; ++i) {
+        CommonKmer * thisPoint = &(m_linePoints[i]);
+        double maxSlope = 0.0;
+        for (int j = -WORST_SLOPE_STEPS; j <= WORST_SLOPE_STEPS; ++j) {
+            int neighbourIndex = i + j;
+            if (neighbourIndex >= 0 && neighbourIndex < pointCount) {
+                CommonKmer * neighbour = &(m_linePoints[neighbourIndex]);
+                double slope = (thisPoint->m_rotatedVPosition - neighbour->m_rotatedVPosition) /
+                               (thisPoint->m_rotatedHPosition - neighbour->m_rotatedHPosition);
+                maxSlope = std::max(maxSlope, fabs(slope));
+            }
+        }
+        maxSlopes.push_back(maxSlope);
+    }
+
+    // Determine a slope cutoff that will exclude the correct fraction of points.
+    std::vector<double> sortedMaxSlopes = maxSlopes;
+    std::sort(sortedMaxSlopes.begin(), sortedMaxSlopes.end());
+    double slopeCutoff = sortedMaxSlopes[int(pointCount * (1.0 - WORST_SLOPE_FRACTION_TO_DISCARD))];
+
+    // Create a new vector of line points, excluding those with excessively high slopes.
+    std::vector<CommonKmer> fixedLinePoints;
+    for (int i = 0; i < pointCount; ++i) {
+        double maxSlope = maxSlopes[i];
+        if (maxSlope <= slopeCutoff)
+            fixedLinePoints.push_back(m_linePoints[i]);
+    }
+    m_linePoints = fixedLinePoints;
+
+    // Remove any line groups with too few points.
+    if (int(m_linePoints.size()) < minPointCount)
+        return false;
 
     // Perform a simple least-squares linear regression. If the slope is too far from 1.0, we 
     // don't bother continuing to the seed chaining step as we'll throw the line out.
-    linearRegression(commonKmers, &m_slope, &m_intercept);
+    linearRegression(m_linePoints, &m_slope, &m_intercept);
     if (m_slope < MIN_ALLOWED_SLOPE || m_slope > MAX_ALLOWED_SLOPE)
-        return;
+        return false;
 
     // When we do a Seqan banded alignment, we won't use the full reference sequence but just the
     // relevant part. Determine here what that relevant part is.
     int approxRefStart = int(round(m_intercept));
-    int approxRefEnd = int(round(m_slope * readLength + m_intercept));
+    int approxRefEnd = int(round(m_slope * m_readLength + m_intercept));
     m_trimmedRefStart = std::max(0, approxRefStart - PAD_SIZE);
-    m_trimmedRefEnd = std::min(refLength, approxRefEnd + PAD_SIZE);
+    m_trimmedRefEnd = std::min(m_refLength, approxRefEnd + PAD_SIZE);
     int trimmedRefLength = m_trimmedRefEnd - m_trimmedRefStart;
-
 
     // Build a Seqan seed set using our common k-mers, offsetting by the trimmed reference start position.
     TSeedSet seedSet;
-    for (size_t i = 0; i < commonKmers.size(); ++i) {
-        TSeed seed(commonKmers[i].m_hPosition, commonKmers[i].m_vPosition - m_trimmedRefStart, KMER_SIZE);
+    for (size_t i = 0; i < m_linePoints.size(); ++i) {
+        TSeed seed(m_linePoints[i].m_hPosition, m_linePoints[i].m_vPosition - m_trimmedRefStart, KMER_SIZE);
         addSeedMerge(seedSet, seed);
     }
 
@@ -33,15 +135,15 @@ AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLeng
     chainSeedsGlobally(seedChain, seedSet, SparseChaining());
     int seedsInChain = length(seedChain);
     if (seedsInChain == 0) {
-        if (verbosity > 4) 
-            output += "Global chaining failed";
-        return;
+        // if (verbosity > 4) 
+        //     output += "Global chaining failed";
+        return false;
     }
 
-    if (verbosity > 4) {
-        output += "  Globally chained seeds before bridging\n";
-        output += getSeedChainTable(seedChain);
-    }
+    // if (verbosity > 4) {
+    //     output += "  Globally chained seeds before bridging\n";
+    //     output += getSeedChainTable(seedChain);
+    // }
 
     // Now we create a new seed chain with all of the gaps bridged. This will help keep alignment
     // in a narrow band, even when the seeds are spaced apart.
@@ -78,11 +180,11 @@ AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLeng
     TSeed lastSeed = seedChain[seedsInChain - 1];
     int lastSeedReadEnd = endPositionH(lastSeed);
     int lastSeedRefEnd = endPositionV(lastSeed);
-    if (lastSeedReadEnd < readLength && lastSeedRefEnd < trimmedRefLength) {
+    if (lastSeedReadEnd < m_readLength && lastSeedRefEnd < trimmedRefLength) {
         double refPosAtStartOfRead = lastSeedRefEnd - (m_slope * lastSeedReadEnd);
-        double refPosAtEndOfRead = (m_slope * readLength) + refPosAtStartOfRead;
+        double refPosAtEndOfRead = (m_slope * m_readLength) + refPosAtStartOfRead;
         if (refPosAtEndOfRead <= trimmedRefLength)
-            addBridgingSeed(bridgedSeedSet, lastSeedReadEnd, lastSeedRefEnd, readLength,
+            addBridgingSeed(bridgedSeedSet, lastSeedReadEnd, lastSeedRefEnd, m_readLength,
                             std::round(refPosAtEndOfRead));
         else
             addBridgingSeed(bridgedSeedSet, lastSeedReadEnd, lastSeedRefEnd,
@@ -90,6 +192,7 @@ AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLeng
     }
 
     chainSeedsGlobally(m_bridgedSeedChain, bridgedSeedSet, SparseChaining());
+    return true;
 }
 
 std::string AlignmentLine::getDescriptiveString() {
@@ -101,7 +204,7 @@ std::string AlignmentLine::getDescriptiveString() {
 
 // Adapted from:
 // http://stackoverflow.com/questions/11449617/how-to-fit-the-2d-scatter-data-with-a-line-with-c
-void AlignmentLine::linearRegression(std::vector<CommonKmer> & pts, double * slope, double * intercept) {
+void AlignmentLine::linearRegression(std::vector<CommonKmer> & pts, float * slope, float * intercept) {
     int n = pts.size();
     double sumH = 0.0, sumV = 0.0, sumHV = 0.0, sumHH = 0.0;
     for (int i = 0; i < n; ++i) {
@@ -115,8 +218,8 @@ void AlignmentLine::linearRegression(std::vector<CommonKmer> & pts, double * slo
     double hMean = sumH / n;
     double vMean = sumV / n;
     double denominator = sumHH - (sumH * hMean);
-    *slope = (sumHV - sumH * vMean) / denominator;
-    *intercept = vMean - (*slope * hMean);
+    *slope = float((sumHV - sumH * vMean) / denominator);
+    *intercept = float(vMean - (*slope * hMean));
 }
 
 
@@ -167,60 +270,25 @@ std::string getSeedChainTable(String<TSeed> & seedChain) {
 
 // This function searches for lines in the 2D read-ref space that represent likely semi-global
 // alignments.
-LineFindingResults * findAlignmentLines(std::string & readName, std::string & refName,
-                                        int readLength, int refLength,
-                                        double expectedSlope, int verbosity,
-                                        KmerPositions * kmerPositions, std::string & output,
-                                        int sensitivityLevel) {
+std::vector<AlignmentLine *> findAlignmentLines(CommonKmerSet * commonKmerSet,
+                                                int readLength, int refLength,
+                                                int verbosity, std::string & output,
+                                                float lowScoreThreshold, float highScoreThreshold,
+                                                float mergeDistance) {
+    std::vector<AlignmentLine *> returnedLines;
 
-    // Set the algorithm settings using the sentitivity level.
-    double lowScoreThreshold, highScoreThreshold, mergeDistance, minAlignmentLength;
-    int bandSize, minPointCount;
-    if (sensitivityLevel == 1)
-    {
-        bandSize = BAND_SIZE_LEVEL_1;
-        lowScoreThreshold = LOW_SCORE_THRESHOLD_LEVEL_1;
-        highScoreThreshold = HIGH_SCORE_THRESHOLD_LEVEL_1;
-        mergeDistance = MERGE_DISTANCE_LEVEL_1;
-        minAlignmentLength = MIN_ALIGNMENT_LENGTH_LEVEL_1;
-        minPointCount = MIN_POINT_COUNT_LEVEL_1;
-    }
-    else if (sensitivityLevel == 2)
-    {
-        bandSize = BAND_SIZE_LEVEL_2;
-        lowScoreThreshold = LOW_SCORE_THRESHOLD_LEVEL_2;
-        highScoreThreshold = HIGH_SCORE_THRESHOLD_LEVEL_2;
-        mergeDistance = MERGE_DISTANCE_LEVEL_2;
-        minAlignmentLength = MIN_ALIGNMENT_LENGTH_LEVEL_2;
-        minPointCount = MIN_POINT_COUNT_LEVEL_2;
-    }
-    else // sensitivityLevel == 3
-    {
-        bandSize = BAND_SIZE_LEVEL_3;
-        lowScoreThreshold = LOW_SCORE_THRESHOLD_LEVEL_3;
-        highScoreThreshold = HIGH_SCORE_THRESHOLD_LEVEL_3;
-        mergeDistance = MERGE_DISTANCE_LEVEL_3;
-        minAlignmentLength = MIN_ALIGNMENT_LENGTH_LEVEL_3;
-        minPointCount = MIN_POINT_COUNT_LEVEL_3;
-    }
-
-    long long startTime = getTime();
-
-    // Create the CommonKmerSet object. This will collect all common k-mers between the two
-    // sequences, rotate them to the expected slope and score them.
-    CommonKmerSet commonKmerSet(readName, refName, readLength, refLength, bandSize, expectedSlope, kmerPositions);
-    int commonKmerCount = commonKmerSet.m_commonKmers.size();
+    int commonKmerCount = commonKmerSet->m_commonKmers.size();
 
     if (commonKmerCount < 2) {
-        if (verbosity > 3)
-            output += "  No lines found, too few common k-mers (" + std::to_string(getTime() - startTime) + " ms)\n";
-        return 0;
+        // if (verbosity > 3)
+        //     output += "  No lines found, too few common k-mers (" + std::to_string(getTime() - startTime) + " ms)\n";
+        return returnedLines;
     }
 
     if (verbosity > 4) {
         output += "  Common k-mer positions:\n";
-        output += getKmerTable(commonKmerSet.m_commonKmers);
-        output += "  Max score: " + std::to_string(commonKmerSet.m_maxScore) + "\n";
+        output += getKmerTable(commonKmerSet->m_commonKmers);
+        output += "  Max score: " + std::to_string(commonKmerSet->m_maxScore) + "\n";
     }
 
     // Now group all of the line points. For a line group to form, a point must score above the
@@ -230,12 +298,12 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
     bool lineInProgress = false;
     for (int i = 0; i < commonKmerCount; ++i) {
         if (lineInProgress) {
-            if (commonKmerSet.m_commonKmers[i].m_score >= lowScoreThreshold)
-                lineGroups.back().push_back(commonKmerSet.m_commonKmers[i]);
+            if (commonKmerSet->m_commonKmers[i].m_score >= lowScoreThreshold)
+                lineGroups.back().push_back(commonKmerSet->m_commonKmers[i]);
             else // This line group is done.
                 lineInProgress = false;
         }
-        else if (commonKmerSet.m_commonKmers[i].m_score >= highScoreThreshold) {
+        else if (commonKmerSet->m_commonKmers[i].m_score >= highScoreThreshold) {
             // It's time to start a new line group!
             lineGroups.push_back(std::vector<CommonKmer>());
             lineInProgress = true;
@@ -244,13 +312,13 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
             // threshold).
             int groupStartPoint = i;
             while (groupStartPoint >= 0 &&
-                   commonKmerSet.m_commonKmers[groupStartPoint].m_score >= lowScoreThreshold)
+                   commonKmerSet->m_commonKmers[groupStartPoint].m_score >= lowScoreThreshold)
                 --groupStartPoint;
             ++groupStartPoint;
 
             // Add the initial group points.
             for (int j = groupStartPoint; j <= i; ++j)
-                lineGroups.back().push_back(commonKmerSet.m_commonKmers[j]);
+                lineGroups.back().push_back(commonKmerSet->m_commonKmers[j]);
         }
     }
     if (verbosity > 4)
@@ -275,155 +343,10 @@ LineFindingResults * findAlignmentLines(std::string & readName, std::string & re
     if (verbosity > 4)
         output += "  Number of potential lines after merging: " + std::to_string(lineGroups.size()) + "\n";
 
-    // We are only interested in line groups which seem to span their full possible length (i.e.
-    // not line groups caused by short, local alignments) and for which the band is reasonably 
-    // long (to avoid things like 3 bp alignments).
-    std::vector<std::vector<CommonKmer> > lengthFilteredLineGroups;
-    for (size_t i = 0; i < lineGroups.size(); ++i) {
-        // Determine the mean position for the line group and use it to calculate the band length.
-        int groupCount = lineGroups[i].size();
-        double vSum = 0.0, hSum = 0.0;
-        for (int j = 0; j < groupCount; ++j) {
-            hSum += lineGroups[i][j].m_hPosition;
-            vSum += lineGroups[i][j].m_vPosition;
-        }
-        double meanH = hSum / groupCount;
-        double meanV = vSum / groupCount;
-        double bandLength = getLineLength(meanH, meanV, expectedSlope, readLength, refLength);
-
-        // Exclude alignments which are too short.
-        if (bandLength < minAlignmentLength) {
-            if (verbosity > 4)
-                output += "    Band too short: " + std::to_string(bandLength) + "\n";
-            continue;
-        }
-
-        // Now we want to test whether the CommonKmers in the band seem to span the full band. To
-        // do so, we get the std dev of the rotated H position and compare it to the expected std
-        // dev of a uniform distribution.
-        std::vector<double> rotatedHPositions;
-        rotatedHPositions.reserve(groupCount);
-        for (int j = 0; j < groupCount; ++j)
-            rotatedHPositions.push_back(lineGroups[i][j].m_rotatedHPosition);
-        double meanRotatedH, rotatedHStdDev;
-        getMeanAndStDev(rotatedHPositions, meanRotatedH, rotatedHStdDev);
-        double uniformStdDev = bandLength / 3.464101615137754; // sqrt(12)
-
-        // At least half of the uniform distribution's std dev is required.
-        if (rotatedHStdDev < 0.5 * uniformStdDev) {
-            if (verbosity > 4)
-                output += "    Distribution too narrow: " + std::to_string(rotatedHStdDev) + ", uniform std dev = "  + std::to_string(uniformStdDev) + "\n";
-            continue;
-        }
-
-        lengthFilteredLineGroups.push_back(lineGroups[i]);
-    }
-    lineGroups = lengthFilteredLineGroups;
-    if (verbosity > 4)
-        output += "  Number of potential lines after length/span filtering: " + std::to_string(lineGroups.size()) + "\n";
-
-    // For each line group, throw out any point which is too divergent from its neighbours. To do
-    // this, we determine the slope between each point and its nearest neighbours and how divergent
-    // it is from the expected slope. We discard the points with the most divergent slopes.
-
-    // Parameters for this filtering step. TO DO: MAKE THESE ADJUSTABLE?
-    double fractionToDiscard = 0.05;
-    int steps = 3;
-
-    for (size_t i = 0; i < lineGroups.size(); ++i) {
-        std::vector<CommonKmer> * lineGroup = &(lineGroups[i]);
-
-        // Sort by rotated horizontal position so we proceed along the line from start to end. 
-        std::sort(lineGroup->begin(), lineGroup->end(), [](const CommonKmer & a, const CommonKmer & b) {
-            return a.m_rotatedHPosition < b.m_rotatedHPosition;   
-        });
-
-        // Store the max slope for each point in the line group.
-        std::vector<double> maxSlopes;
-        maxSlopes.reserve(lineGroup->size());
-        int groupSize = lineGroup->size();
-        for (int j = 0; j < groupSize; ++j) {
-            CommonKmer * thisPoint = &((*lineGroup)[j]);
-            double maxSlope = 0.0;
-            for (int k = -steps; k <= steps; ++k) {
-                int neighbourIndex = j + k;
-                if (neighbourIndex >= 0 && neighbourIndex < groupSize) {
-                    CommonKmer * neighbour = &((*lineGroup)[neighbourIndex]);
-                    double slope = (thisPoint->m_rotatedVPosition - neighbour->m_rotatedVPosition) /
-                                   (thisPoint->m_rotatedHPosition - neighbour->m_rotatedHPosition);
-                    maxSlope = std::max(maxSlope, fabs(slope));
-                }
-            }
-            maxSlopes.push_back(maxSlope);
-        }
-
-        // Determine a slope cutoff that will exclude the correct fraction of points.
-        std::vector<double> sortedMaxSlopes = maxSlopes;
-        std::sort(sortedMaxSlopes.begin(), sortedMaxSlopes.end());
-        double slopeCutoff = sortedMaxSlopes[int(groupSize * (1.0 - fractionToDiscard))];
-  
-        // Create a new line group, excluding with excessively high slopes.
-        std::vector<CommonKmer> fixedLineGroup;
-        for (int j = 0; j < groupSize; ++j) {
-            double maxSlope = maxSlopes[j];
-            if (maxSlope <= slopeCutoff)
-                fixedLineGroup.push_back((*lineGroup)[j]);
-        }
-        lineGroups[i] = fixedLineGroup;
-    }
-
-    // Remove any line groups with too few points.
-    lineGroups.erase(std::remove_if(lineGroups.begin(), lineGroups.end(), 
-                                    [&minPointCount](std::vector<CommonKmer> i) {return int(i.size()) < minPointCount;}),
-                     lineGroups.end());
-    if (verbosity > 4)
-        output += "  Number of lines after point count filtering: " + std::to_string(lineGroups.size()) + "\n";
-
-    if (lineGroups.size() == 0) {
-        if (verbosity > 3) 
-            output += "  No lines found (" + std::to_string(getTime() - startTime) + " ms)\n";
-        return 0;
-    }
-    
-    // Prepare the returned object.
-    LineFindingResults * results = new LineFindingResults();
-    results->m_milliseconds = getTime() - startTime;
-    for (size_t i = 0; i < lineGroups.size(); ++i) {
-        if (verbosity > 4) {
-            output += "  Line " + std::to_string(i+1) + "\n";
-            output += getKmerTable(lineGroups[i]);
-        }
-
-        AlignmentLine * line = new AlignmentLine(lineGroups[i], readLength, refLength, verbosity, output);
-        if (line->isBadLine())
-            delete line;
-        else {
-            results->m_lines.push_back(line);
-        }
-    }
-
-    if (verbosity > 4)
-        output += "  Number of lines after slope/chain filtering: " + std::to_string(lineGroups.size()) + "\n";
-    if (verbosity > 3) {
-        if (results->m_lines.size() == 0) {
-            output += "  No lines found (" + std::to_string(results->m_milliseconds) + " ms)\n";
-            delete results;
-            return 0;
-        }
-        else {
-            output += "  Lines found (" + std::to_string(results->m_milliseconds) + " ms):\n";
-            for (size_t i = 0; i < results->m_lines.size(); ++i) {
-                AlignmentLine * line = results->m_lines[i];
-                output += "    " + line->getDescriptiveString() + "\n";
-                if (verbosity > 4) {
-                    output += "  Seed chain after bridging\n";
-                    output += getSeedChainTable(line->m_bridgedSeedChain);
-                }
-            }
-        }
-    }
-    
-    return results;
+    // Prepare the returned vector.
+    for (size_t i = 0; i < lineGroups.size(); ++i)
+        returnedLines.push_back(new AlignmentLine(lineGroups[i], readLength, refLength, commonKmerSet->m_expectedSlope));
+    return returnedLines;
 }
 
 

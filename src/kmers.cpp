@@ -24,11 +24,26 @@ KmerPositions::~KmerPositions() {
         delete i->second;
 }
 
+
+// Returns a vector all of k-mer position names (should be exact the same as the the sequence names).
+std::vector<std::string> KmerPositions::getAllNames() {
+    std::vector<std::string> returnVector;
+    for (std::unordered_map<std::string, KmerPosMap *>::iterator i = m_kmerPositions.begin(); i != m_kmerPositions.end(); ++i)
+        returnVector.push_back(i->first);
+    return returnVector;
+}
+
+// Returns the length of the sequence with the given name.
+int KmerPositions::getLength(std::string & name) {
+    if (m_sequences.find(name) == m_sequences.end())
+        return 0;
+    else
+        return m_sequences[name].length();
+}
+
 // This function adds a sequence to the KmerPositions object. It creates a new KmerPosMap on the
 // heap (will be deleted in destructor), fills it up and adds it to m_kmerPositions.
-void KmerPositions::addPositions(char * nameC, char * sequenceC) {
-    std::string name(nameC);
-    std::string sequence(sequenceC);
+void KmerPositions::addPositions(std::string & name, std::string & sequence) {
     m_sequences[name] = sequence;
 
     KmerPosMap * posMap = new KmerPosMap();
@@ -43,8 +58,9 @@ void KmerPositions::addPositions(char * nameC, char * sequenceC) {
     m_kmerPositions[name] = posMap;
 }
 
-void KmerPositions::deletePositions(char * nameC) {
-    std::string name(nameC);
+void KmerPositions::deletePositions(std::string & name) {
+    if (m_sequences.find(name) != m_sequences.end())
+        m_sequences.erase(name);
     KmerPosMap * kmerPosMap = getKmerPositions(name);
     if (kmerPosMap != 0) {
         m_kmerPositions.erase(name);
@@ -62,11 +78,21 @@ KmerPosMap * KmerPositions::getKmerPositions(std::string & name) {
 }
 
 
+std::string * KmerPositions::getSequence(std::string & name) {
+    if (m_kmerPositions.find(name) == m_kmerPositions.end())
+        return 0;
+    else
+        return &(m_sequences[name]);
+
+}
+
+
 
 CommonKmerSet::CommonKmerSet(std::string & readName, std::string & refName,
                              int readLength, int refLength, int bandSize,
                              float expectedSlope, KmerPositions * kmerPositions) :
-    m_maxScore(0) {
+    m_readName(readName), m_refName(refName), m_expectedSlope(expectedSlope), m_maxScore(0)
+{
     float rotationAngle = CommonKmer::getRotationAngle(expectedSlope);
 
     KmerPosMap * readKmerPositions = kmerPositions->getKmerPositions(readName);
@@ -198,7 +224,7 @@ CommonKmerSet::CommonKmerSet(std::string & readName, std::string & refName,
         // Now that we have the band area, we can get the density of CommonKmers in the band. Also,
         // we'll scale this to the expected level of CommonKmers (given a random sequence).
         float kmerDensity = thisBandSize / bandArea;
-        float score = kmerDensity / expectedDensity;
+        float score = (kmerDensity / expectedDensity) - 1.0;
         m_commonKmers[i].m_score = score;
         m_maxScore = std::max(m_maxScore, score);
     }
@@ -241,13 +267,15 @@ KmerPositions * newKmerPositions() {
     return new KmerPositions();
 }
 
-void addKmerPositions(KmerPositions * kmerPositions, char * name, char * sequence) {
+void addKmerPositions(KmerPositions * kmerPositions, char * nameC, char * sequenceC) {
+    std::string name(nameC);
+    std::string sequence(sequenceC);
     kmerPositions->addPositions(name, sequence);
 }
 
-void deleteKmerPositions(KmerPositions * kmerPositions, char * name) {
-    kmerPositions->deletePositions(name);
-}
+// void deleteKmerPositions(KmerPositions * kmerPositions, char * name) {
+//     kmerPositions->deletePositions(name);
+// }
 
 void deleteAllKmerPositions(KmerPositions * kmerPositions) {
     delete kmerPositions;

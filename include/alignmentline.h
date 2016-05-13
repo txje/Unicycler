@@ -19,23 +19,30 @@ typedef SeedSet<TSeed> TSeedSet;
 // banded alignment.
 class AlignmentLine {
 public:
-    AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLength, int refLength,
-                  int verbosity, std::string & output);
+    AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLength, int refLength, float expectedSlope);
 
-    bool isBadLine() {return hasBadSlope() || hasNoSeedChain();}
+    bool buildSeedChain(int minPointCount, float minAlignmentLength);
+    // bool isBadLine() {return hasBadSlope() || hasNoSeedChain();}
     std::string getDescriptiveString();
-    double m_slope;
-    double m_intercept;
+
+    std::vector<CommonKmer> m_linePoints;
+    int m_readLength;
+    int m_refLength;
+    float m_expectedSlope;
+    // float m_maxScore;
+    // float m_areaUnderCurve;
+    float m_slope;
+    float m_intercept;
     String<TSeed> m_bridgedSeedChain;
     int m_trimmedRefStart;
     int m_trimmedRefEnd;
 
 private:
-    void linearRegression(std::vector<CommonKmer> & pts, double * slope, double * intercept);
+    void linearRegression(std::vector<CommonKmer> & pts, float * slope, float * intercept);
     void addBridgingSeed(TSeedSet & seedSet, int hStart, int vStart, int hEnd, int vEnd);
     void addSeedMerge(TSeedSet & seedSet, TSeed & seed);
-    bool hasBadSlope() {return m_slope < MIN_ALLOWED_SLOPE || m_slope > MAX_ALLOWED_SLOPE;}
-    bool hasNoSeedChain() {return length(m_bridgedSeedChain) == 0;}
+    // bool hasBadSlope() {return m_slope < MIN_ALLOWED_SLOPE || m_slope > MAX_ALLOWED_SLOPE;}
+    // bool hasNoSeedChain() {return length(m_bridgedSeedChain) == 0;}
 };
 
 
@@ -54,11 +61,11 @@ public:
 
 
 
-LineFindingResults * findAlignmentLines(std::string & readName, std::string & refName,
-                                        int readLength, int refLength,
-                                        double expectedSlope, int verbosity,
-                                        KmerPositions * kmerPositions, std::string & output,
-                                        int sensitivityLevel);
+std::vector<AlignmentLine *> findAlignmentLines(CommonKmerSet * commonKmerSet,
+                                                int readLength, int refLength,
+                                                int verbosity, std::string & output,
+                                                float lowScoreThreshold, float highScoreThreshold,
+                                                float mergeDistance);
 
 void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdev);
 

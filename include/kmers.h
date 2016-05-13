@@ -32,9 +32,12 @@ class KmerPositions {
 public:
     KmerPositions() {}
     ~KmerPositions();
-    void addPositions(char * nameC, char * sequenceC);
-    void deletePositions(char * nameC);
+    void addPositions(std::string & name, std::string & sequence);
+    void deletePositions(std::string & name);
     KmerPosMap * getKmerPositions(std::string & name);
+    std::string * getSequence(std::string & name);
+    std::vector<std::string> getAllNames();
+    int getLength(std::string & name);
 
 private:
     std::unordered_map<std::string, KmerPosMap *> m_kmerPositions;
@@ -49,6 +52,9 @@ public:
                   int readLength, int refLength, int bandSize,
                   float expectedSlope, KmerPositions * kmerPositions);
 
+    std::string m_readName;
+    std::string m_refName;
+    float m_expectedSlope;
     std::vector<CommonKmer> m_commonKmers;
     float m_maxScore;
 };
@@ -62,9 +68,9 @@ extern "C" {
 
     KmerPositions * newKmerPositions();
 
-    void addKmerPositions(KmerPositions * kmerPositions, char * name, char * sequence);
+    void addKmerPositions(KmerPositions * kmerPositions, char * nameC, char * sequenceC);
 
-    void deleteKmerPositions(KmerPositions * kmerPositions, char * name);
+    // void deleteKmerPositions(KmerPositions * kmerPositions, char * name);
 
     void deleteAllKmerPositions(KmerPositions * kmerPositions);
 

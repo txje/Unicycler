@@ -127,12 +127,20 @@ SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignmen
 
 
 std::string SemiGlobalAlignment::getFullString() {
-    return m_cigar + "," +
+    std::string revCompStr;
+    if (isRevComp())
+        revCompStr = '-';
+    else
+        revCompStr = '+';
+
+    return m_refName + "," + 
+           revCompStr + "," + 
            std::to_string(m_readStartPos) + "," + 
            std::to_string(m_readEndPos) + "," + 
            std::to_string(m_refStartPos) + "," + 
            std::to_string(m_refEndPos) + "," + 
-           std::to_string(m_milliseconds);
+           std::to_string(m_milliseconds) + "," +
+           m_cigar;
 }
 
 

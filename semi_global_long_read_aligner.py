@@ -82,6 +82,7 @@ def main():
     references = load_references(args.ref)
     read_dict, read_names = load_long_reads(args.reads)
 
+
     reads = semi_global_align_long_reads(references, args.ref, read_dict, read_names, args.reads,
                                          args.sam, args.temp_dir, args.path, args.threads,
                                          args.partial_ref, AlignmentScoringScheme(args.scores),
@@ -150,7 +151,9 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     # Run GraphMap and load in the resulting SAM file.
     graphmap_sam = os.path.join(temp_dir, 'graphmap_alignments.sam')
     run_graphmap(ref_fasta, reads_fastq, graphmap_sam, graphmap_path, threads, scoring_scheme)
-    graphmap_alignments = load_sam_alignments(graphmap_sam, read_dict, references, scoring_scheme)
+    reference_dict = {x.name: x for x in references}
+    graphmap_alignments = load_sam_alignments(graphmap_sam, read_dict, reference_dict,
+                                              scoring_scheme)
     if VERBOSITY > 2 and graphmap_alignments:
         print('All GraphMap alignments')
         print('-----------------------')
@@ -252,8 +255,9 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     # If single-threaded, just do the work in a simple loop.
     if threads == 1:
         for read in reads_to_realign:
-            output = seqan_alignment(read, references, scoring_scheme, expected_ref_to_read_ratio,
-                                     kmer_positions_ptr, low_score_threshold)
+            output = seqan_alignment(read, reference_dict, scoring_scheme,
+                                     expected_ref_to_read_ratio, kmer_positions_ptr,
+                                     low_score_threshold)
             completed_count += 1
             if VERBOSITY == 1:
                 print_progress_line(completed_count, num_realignments)
@@ -265,7 +269,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         pool = ThreadPool(threads)
         arg_list = []
         for read in reads_to_realign:
-            arg_list.append((read, references, scoring_scheme, expected_ref_to_read_ratio,
+            arg_list.append((read, reference_dict, scoring_scheme, expected_ref_to_read_ratio,
                              kmer_positions_ptr, low_score_threshold))
         for output in pool.imap_unordered(seqan_alignment_one_arg, arg_list, 1):
             completed_count += 1
@@ -743,11 +747,10 @@ def get_graphmap_version(graphmap_path):
     version = '.'.join(version.split('.')[0:2])
     return float(version)
 
-def load_sam_alignments(sam_filename, read_dict, references, scoring_scheme):
+def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme):
     '''
     This function returns a list of Alignment objects from the given SAM file.
     '''
-    reference_dict = {x.name: x for x in references}
     sam_alignments = []
     sam_file = open(sam_filename, 'r')
     for line in sam_file:
@@ -763,12 +766,12 @@ def seqan_alignment_one_arg(all_args):
     This is just a one-argument version of seqan_alignment to make it easier to
     use that function in a thread pool.
     '''
-    read, references, scoring_scheme, expected_ref_to_read_ratio, \
+    read, reference_dict, scoring_scheme, expected_ref_to_read_ratio, \
                                 kmer_positions_ptr, low_score_threshold = all_args
-    return seqan_alignment(read, references, scoring_scheme, expected_ref_to_read_ratio,
+    return seqan_alignment(read, reference_dict, scoring_scheme, expected_ref_to_read_ratio,
                            kmer_positions_ptr, low_score_threshold)
 
-def seqan_alignment(read, references, scoring_scheme, expected_ref_to_read_ratio,
+def seqan_alignment(read, reference_dict, scoring_scheme, expected_ref_to_read_ratio,
                     kmer_positions_ptr, low_score_threshold):
     '''
     Aligns a single read against all reference sequences using Seqan.
@@ -789,17 +792,18 @@ def seqan_alignment(read, references, scoring_scheme, expected_ref_to_read_ratio
         else:
             output += '  None\n'
 
-    ptr = C_LIB.semiGlobalAlignmentAllRefs(read.name, read.seq, VERBOSITY,
-                                           expected_ref_to_read_ratio, kmer_positions_ptr,
-                                           scoring_scheme.match, scoring_scheme.mismatch,
-                                           scoring_scheme.gap_open, scoring_scheme.gap_extend,
-                                           low_score_threshold)
+    ptr = C_LIB.semiGlobalAlignment(read.name, read.sequence, VERBOSITY,
+                                    expected_ref_to_read_ratio, kmer_positions_ptr,
+                                    scoring_scheme.match, scoring_scheme.mismatch,
+                                    scoring_scheme.gap_open, scoring_scheme.gap_extend,
+                                    low_score_threshold)
     results = c_string_to_python_string(ptr).split(';')
     alignment_strings = results[:-1]
     output = results[-1]
 
     for alignment_string in alignment_strings:
         alignment = Alignment(seqan_output=alignment_string, read=read,
+                              reference_dict=reference_dict,
                               scoring_scheme=scoring_scheme)
         read.alignments.append(alignment)
 
@@ -1344,17 +1348,16 @@ class Alignment(object):
     It can be constructed either from a SAM line made by GraphMap or from the C++ Seqan output.
     '''
     def __init__(self,
-                 sam_line=None, read_dict=None, reference_dict=None,
-                 seqan_output=None, read=None, ref=None, rev_comp=None,
-                 scoring_scheme=None):
+                 sam_line=None, read_dict=None,
+                 seqan_output=None, read=None,
+                 reference_dict=None, scoring_scheme=None):
 
         # Make sure we have the appropriate inputs for one of the two ways to construct an
         # alignment.
-        assert (sam_line and read_dict and reference_dict) or \
-               (seqan_output and read and ref)
+        assert (sam_line and read_dict) or (seqan_output and read)
 
-        # The scoring scheme is required for both types of construction.
-        assert scoring_scheme is not None
+        # Some inputs are required for both types of construction.
+        assert scoring_scheme and reference_dict
 
         # Read details
         self.read = None
@@ -1390,34 +1393,34 @@ class Alignment(object):
         # How some of the values are gotten depends on whether this alignment came from a GraphMap
         # SAM or a Seqan alignment.
         if seqan_output:
-            self.setup_using_seqan_output(seqan_output, read, ref, rev_comp)
+            self.setup_using_seqan_output(seqan_output, read, reference_dict)
         elif sam_line:
             self.setup_using_graphmap_sam(sam_line, read_dict, reference_dict)
 
         self.tally_up_score_and_errors(scoring_scheme)
 
-    def setup_using_seqan_output(self, seqan_output, read, ref, rev_comp):
+    def setup_using_seqan_output(self, seqan_output, read, reference_dict):
         '''
         This function sets up the Alignment using the Seqan results. This kind of alignment has
         complete details about the alignment.
         '''
         self.alignment_type = 'Seqan'
-        seqan_parts = seqan_output.split(',')
-        assert len(seqan_parts) >= 6
+        seqan_parts = seqan_output.split(',', 7)
+        assert len(seqan_parts) >= 8
 
-        self.rev_comp = rev_comp
-        self.cigar = seqan_parts[0]
+        self.rev_comp = (seqan_parts[1] == '-')
+        self.cigar = seqan_parts[7]
         self.cigar_parts = re.findall(r'\d+\w', self.cigar)
-        self.milliseconds = int(seqan_parts[5])
+        self.milliseconds = int(seqan_parts[6])
 
         self.read = read
-        self.read_start_pos = int(seqan_parts[1])
-        self.read_end_pos = int(seqan_parts[2])
+        self.read_start_pos = int(seqan_parts[2])
+        self.read_end_pos = int(seqan_parts[3])
         self.read_end_gap = self.read.get_length() - self.read_end_pos
 
-        self.ref = ref
-        self.ref_start_pos = int(seqan_parts[3])
-        self.ref_end_pos = int(seqan_parts[4])
+        self.ref = reference_dict[get_nice_header(seqan_parts[0])]
+        self.ref_start_pos = int(seqan_parts[4])
+        self.ref_end_pos = int(seqan_parts[5])
         self.ref_end_gap = len(self.ref.sequence) - self.ref_end_pos
 
     def setup_using_graphmap_sam(self, sam_line, read_dict, reference_dict):
@@ -1559,20 +1562,20 @@ class Alignment(object):
         alignment_result = start_extension_alignment(realigned_read_seq, realigned_ref_seq,
                                                      scoring_scheme)
 
-        seqan_parts = alignment_result.split(',')
-        assert len(seqan_parts) >= 6
+        seqan_parts = alignment_result.split(',', 7)
+        assert len(seqan_parts) >= 8
 
         # Set the new read start.
-        self.read_start_pos = int(seqan_parts[1])
+        self.read_start_pos = int(seqan_parts[2])
         assert self.read_start_pos == 0
 
         # Set the new reference start.
-        self.ref_start_pos = realigned_ref_start + int(seqan_parts[3])
+        self.ref_start_pos = realigned_ref_start + int(seqan_parts[4])
 
         # Replace the S part at the beginning the alignment's CIGAR with the CIGAR just made. If
         # the last part of the new CIGAR is of the same type as the first part of the existing
         # CIGAR, they will need to be merged.
-        new_cigar_parts = re.findall(r'\d+\w', seqan_parts[0])
+        new_cigar_parts = re.findall(r'\d+\w', seqan_parts[7])
         old_cigar_parts = self.cigar_parts[1:]
         if new_cigar_parts[-1][-1] == old_cigar_parts[0][-1]:
             part_sum = int(new_cigar_parts[-1][:-1]) + int(old_cigar_parts[0][:-1])
@@ -1617,23 +1620,23 @@ class Alignment(object):
         # Call the C++ function to do the actual alignment.
         alignment_result = end_extension_alignment(realigned_read_seq, realigned_ref_seq,
                                                    scoring_scheme)
-        seqan_parts = alignment_result.split(',')
-        assert len(seqan_parts) >= 6
+        seqan_parts = alignment_result.split(',', 7)
+        assert len(seqan_parts) >= 8
 
         # Set the new read end.
-        self.read_end_pos += int(seqan_parts[2])
+        self.read_end_pos += int(seqan_parts[3])
         assert self.read_end_pos == self.read.get_length()
         self.read_end_gap = self.read.get_length() - self.read_end_pos
 
         # Set the new reference end.
-        self.ref_end_pos += int(seqan_parts[4])
+        self.ref_end_pos += int(seqan_parts[5])
         self.ref_end_gap = len(self.ref.sequence) - self.ref_end_pos
 
         # Replace the S part at the end the alignment's CIGAR with the CIGAR just made. If
         # the first part of the new CIGAR is of the same type as the last part of the existing
         # CIGAR, they will need to be merged.
         old_cigar_parts = self.cigar_parts[:-1]
-        new_cigar_parts = re.findall(r'\d+\w', seqan_parts[0])
+        new_cigar_parts = re.findall(r'\d+\w', seqan_parts[7])
         if old_cigar_parts[-1][-1] == new_cigar_parts[0][-1]:
             part_sum = int(old_cigar_parts[-1][:-1]) + int(new_cigar_parts[0][:-1])
             merged_part = str(part_sum) + new_cigar_parts[0][-1]
@@ -1858,30 +1861,14 @@ These functions make/delete a C++ object that will be used during line-finding.
 '''
 C_LIB.newKmerPositions.argtypes = []
 C_LIB.newKmerPositions.restype = c_void_p
+
 C_LIB.addKmerPositions.argtypes = [c_void_p, # KmerPositions pointer
                                    c_char_p, # Name
                                    c_char_p] # Sequence
 C_LIB.addKmerPositions.restype = None
-# C_LIB.deleteKmerPositions.argtypes = [c_void_p, # KmerPositions pointer
-#                                       c_char_p] # Name
-# C_LIB.deleteKmerPositions.restype = None
+
 C_LIB.deleteAllKmerPositions.argtypes = [c_void_p]
 C_LIB.deleteAllKmerPositions.restype = None
-
-# def add_read_kmer_positions(kmer_positions_ptr, read):
-#     '''
-#     Adds both positive and negative sequences of a read to KmerPositions.
-#     '''
-#     C_LIB.addKmerPositions(kmer_positions_ptr, read.name + '+', read.sequence)
-#     C_LIB.addKmerPositions(kmer_positions_ptr, read.name + '-', reverse_complement(read.sequence))
-
-# def delete_read_kmer_positions(kmer_positions_ptr, read):
-#     '''
-#     Adds both positive and negative sequences of a read to KmerPositions.
-#     '''
-#     C_LIB.deleteKmerPositions(kmer_positions_ptr, read.name + '+')
-#     C_LIB.deleteKmerPositions(kmer_positions_ptr, read.name + '-')
-
 
 
 if __name__ == '__main__':

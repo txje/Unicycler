@@ -344,8 +344,10 @@ std::vector<AlignmentLine *> findAlignmentLines(CommonKmerSet * commonKmerSet,
         output += "  Number of potential lines after merging: " + std::to_string(lineGroups.size()) + "\n";
 
     // Prepare the returned vector.
-    for (size_t i = 0; i < lineGroups.size(); ++i)
-        returnedLines.push_back(new AlignmentLine(lineGroups[i], readLength, refLength, commonKmerSet->m_expectedSlope));
+    for (size_t i = 0; i < lineGroups.size(); ++i) {
+        AlignmentLine * line = new AlignmentLine(lineGroups[i], readLength, refLength, commonKmerSet->m_expectedSlope);
+        returnedLines.push_back(line);
+    }
     return returnedLines;
 }
 

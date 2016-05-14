@@ -28,6 +28,10 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
     std::string negReadSeq = getReverseComplement(posReadSeq);
     int readLength = posReadSeq.length();
 
+
+    std::cout << "READ: " << readName << std::endl << std::flush; // TEMP
+
+
     // At this point, the kmerPositions object should have only the reference sequences.
     std::vector<std::string> referenceNames = kmerPositions->getAllNames();
 
@@ -61,6 +65,8 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
             maxScoreAllSets = std::max(maxScoreAllSets, commonKmerSet->m_maxScore);
         }
     }
+
+    std::cout << "  MAX SCORE: " << maxScoreAllSets << std::endl << std::flush; // TEMP
 
     // Sort the common k-mer sets by their max score so high-scoring sets are used first.
     std::sort(commonKmerSets.begin(), commonKmerSets.end(), [](const CommonKmerSet * a, const CommonKmerSet * b) {
@@ -150,6 +156,10 @@ std::vector<SemiGlobalAlignment *> semiGlobalAlignmentOneLevel(std::vector<Commo
     lowScoreThreshold *= maxScoreAllSets;
     highScoreThreshold *= maxScoreAllSets;
 
+    std::cout << "  LEVEL: " << sensitivityLevel << std::endl << std::flush; // TEMP
+    std::cout << "  lowScoreThreshold: " << lowScoreThreshold << std::endl << std::flush; // TEMP
+    std::cout << "  highScoreThreshold: " << highScoreThreshold << std::endl << std::flush; // TEMP
+
     Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
 
     // Go through the common k-mer sets and perform line-finding and then aligning.
@@ -169,30 +179,35 @@ std::vector<SemiGlobalAlignment *> semiGlobalAlignmentOneLevel(std::vector<Commo
         int readLength = readSeq->length();
         int refLength = refSeq->length();
 
+        std::cout << "  REF: " << refName << std::endl << std::flush; // TEMP
+
         std::vector<AlignmentLine *> alignmentLines = findAlignmentLines(commonKmerSet, readLength, refLength,
                                                                          verbosity, output,
                                                                          lowScoreThreshold, highScoreThreshold,
                                                                          mergeDistance);
-
         if (alignmentLines.size() == 0)
             continue;
 
-
-
         for (size_t j = 0; j < alignmentLines.size(); ++j) {
-            bool seedChainSuccess = alignmentLines[i]->buildSeedChain(minPointCount, minAlignmentLength);
+            AlignmentLine * line = alignmentLines[j];
+
+            std::cout << "    LINE " << j << ": points = " << line->m_linePoints.size() << std::endl << std::flush; // TEMP
+
+            bool seedChainSuccess = line->buildSeedChain(minPointCount, minAlignmentLength);
             if (seedChainSuccess) {
+
+                std::cout << "      slope = " << line->m_slope << ", intercept = " << line->m_intercept << std::endl << std::flush; // TEMP
+
                 SemiGlobalAlignment * alignment = semiGlobalAlignmentOneLine(readName, refName, readSeq, refSeq,
-                                                                             alignmentLines[i],
-                                                                             verbosity, output, scoringScheme);
+                                                                             line, verbosity, output, scoringScheme);
                 if (alignment != 0)
                     alignments.push_back(alignment);
             }
         }
 
         // Clean up.
-        for (size_t i = 0; i < alignmentLines.size(); ++i)
-            delete alignmentLines[i];
+        for (size_t j = 0; j < alignmentLines.size(); ++j)
+            delete alignmentLines[j];
     }
 
     return alignments;

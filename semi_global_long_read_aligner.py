@@ -198,7 +198,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
                   float_to_str(low_score_threshold, 2) + '\n')
     else:
         if score_median and score_mad:
-            low_score_threshold = score_median - (3 * score_mad)
+            low_score_threshold = score_median - (4 * score_mad)
             if VERBOSITY > 0:
                 print('Using automatic low score threshold: ' + 
                       float_to_str(low_score_threshold, 2) + '\n')
@@ -799,7 +799,7 @@ def seqan_alignment(read, reference_dict, scoring_scheme, expected_ref_to_read_r
                                     low_score_threshold)
     results = c_string_to_python_string(ptr).split(';')
     alignment_strings = results[:-1]
-    output = results[-1]
+    output += results[-1]
 
     for alignment_string in alignment_strings:
         alignment = Alignment(seqan_output=alignment_string, read=read,
@@ -814,7 +814,7 @@ def seqan_alignment(read, reference_dict, scoring_scheme, expected_ref_to_read_r
         if VERBOSITY > 2:
             output += 'All Seqan alignments:\n'
             for alignment in read.alignments:
-                if alignment.alignment_type == 'Graphmap':
+                if alignment.alignment_type == 'GraphMap':
                     continue
                 output += '  ' + str(alignment) + '\n'
                 if VERBOSITY > 3:

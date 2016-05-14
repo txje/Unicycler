@@ -36,7 +36,7 @@ extern "C" {
 
 std::vector<SemiGlobalAlignment *> semiGlobalAlignmentOneLevel(std::vector<CommonKmerSet *> & commonKmerSets,
                                                                KmerPositions * kmerPositions,
-                                                               int verbosity, std::string & output,
+                                                               int verbosity, std::string & output, float expectedSlope,
                                                                int matchScore, int mismatchScore,
                                                                int gapOpenScore, int gapExtensionScore,
                                                                int sensitivityLevel, float maxScoreAllSets);

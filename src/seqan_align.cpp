@@ -29,7 +29,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
     int readLength = posReadSeq.length();
 
 
-    std::cout << "READ: " << readName << std::endl << std::flush; // TEMP
+    // std::cout << "READ: " << readName << std::endl << std::flush; // TEMP
 
 
     // At this point, the kmerPositions object should have only the reference sequences.
@@ -66,7 +66,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
         }
     }
 
-    std::cout << "  MAX SCORE: " << maxScoreAllSets << std::endl << std::flush; // TEMP
+    // std::cout << "  MAX SCORE: " << maxScoreAllSets << std::endl << std::flush; // TEMP
 
     // Sort the common k-mer sets by their max score so high-scoring sets are used first.
     std::sort(commonKmerSets.begin(), commonKmerSets.end(), [](const CommonKmerSet * a, const CommonKmerSet * b) {
@@ -75,7 +75,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
 
     // Now for the alignments! We first try at sensitivity level 1.
     std::vector<SemiGlobalAlignment *> alignments = semiGlobalAlignmentOneLevel(commonKmerSets, kmerPositions,
-                                                                                verbosity, output,
+                                                                                verbosity, output, expectedSlope,
                                                                                 matchScore, mismatchScore,
                                                                                 gapOpenScore, gapExtensionScore,
                                                                                 1, maxScoreAllSets);
@@ -84,7 +84,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
     // sensititivity level 2.
     if (needsMoreSensitiveAlignment(alignments, lowScoreThreshold)) {
         std::vector<SemiGlobalAlignment *> l2Alignments = semiGlobalAlignmentOneLevel(commonKmerSets, kmerPositions,
-                                                                                      verbosity, output,
+                                                                                      verbosity, output, expectedSlope,
                                                                                       matchScore, mismatchScore,
                                                                                       gapOpenScore, gapExtensionScore,
                                                                                       2, maxScoreAllSets);
@@ -93,7 +93,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
         // If there are still completely unaligned parts of the read, we try sensitivity level 3.
         if (readHasUnalignedParts(alignments)) {
             std::vector<SemiGlobalAlignment *> l3Alignments = semiGlobalAlignmentOneLevel(commonKmerSets, kmerPositions,
-                                                                                          verbosity, output,
+                                                                                          verbosity, output, expectedSlope,
                                                                                           matchScore, mismatchScore,
                                                                                           gapOpenScore, gapExtensionScore,
                                                                                           3, maxScoreAllSets);
@@ -102,7 +102,8 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
     }
 
     // Clean up.
-    kmerPositions->deletePositions(readName);
+    kmerPositions->deletePositions(posReadName);
+    kmerPositions->deletePositions(negReadName);
     for (size_t i = 0; i < commonKmerSets.size(); ++i)
         delete commonKmerSets[i];
 
@@ -122,31 +123,31 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
 
 std::vector<SemiGlobalAlignment *> semiGlobalAlignmentOneLevel(std::vector<CommonKmerSet *> & commonKmerSets,
                                                                KmerPositions * kmerPositions,
-                                                               int verbosity, std::string & output,
+                                                               int verbosity, std::string & output, float expectedSlope,
                                                                int matchScore, int mismatchScore,
                                                                int gapOpenScore, int gapExtensionScore,
                                                                int sensitivityLevel, float maxScoreAllSets) {
+    if (verbosity > 2)
+        output += "Seqan alignments at sensitivity level " + std::to_string(sensitivityLevel) + ":\n";
+
     // Set the algorithm settings using the sentitivity level.
-    double lowScoreThreshold, highScoreThreshold, mergeDistance, minAlignmentLength;
+    double lowScoreThreshold, highScoreThreshold, minAlignmentLength;
     int minPointCount;
     if (sensitivityLevel == 1) {
         lowScoreThreshold = LOW_SCORE_THRESHOLD_LEVEL_1;
         highScoreThreshold = HIGH_SCORE_THRESHOLD_LEVEL_1;
-        mergeDistance = MERGE_DISTANCE_LEVEL_1;
         minAlignmentLength = MIN_ALIGNMENT_LENGTH_LEVEL_1;
         minPointCount = MIN_POINT_COUNT_LEVEL_1;
     }
     else if (sensitivityLevel == 2) {
         lowScoreThreshold = LOW_SCORE_THRESHOLD_LEVEL_2;
         highScoreThreshold = HIGH_SCORE_THRESHOLD_LEVEL_2;
-        mergeDistance = MERGE_DISTANCE_LEVEL_2;
         minAlignmentLength = MIN_ALIGNMENT_LENGTH_LEVEL_2;
         minPointCount = MIN_POINT_COUNT_LEVEL_2;
     }
     else { // sensitivityLevel == 3
         lowScoreThreshold = LOW_SCORE_THRESHOLD_LEVEL_3;
         highScoreThreshold = HIGH_SCORE_THRESHOLD_LEVEL_3;
-        mergeDistance = MERGE_DISTANCE_LEVEL_3;
         minAlignmentLength = MIN_ALIGNMENT_LENGTH_LEVEL_3;
         minPointCount = MIN_POINT_COUNT_LEVEL_3;
     }
@@ -156,9 +157,9 @@ std::vector<SemiGlobalAlignment *> semiGlobalAlignmentOneLevel(std::vector<Commo
     lowScoreThreshold *= maxScoreAllSets;
     highScoreThreshold *= maxScoreAllSets;
 
-    std::cout << "  LEVEL: " << sensitivityLevel << std::endl << std::flush; // TEMP
-    std::cout << "  lowScoreThreshold: " << lowScoreThreshold << std::endl << std::flush; // TEMP
-    std::cout << "  highScoreThreshold: " << highScoreThreshold << std::endl << std::flush; // TEMP
+    // std::cout << "  LEVEL: " << sensitivityLevel << std::endl << std::flush; // TEMP
+    // std::cout << "  lowScoreThreshold: " << lowScoreThreshold << std::endl << std::flush; // TEMP
+    // std::cout << "  highScoreThreshold: " << highScoreThreshold << std::endl << std::flush; // TEMP
 
     Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
 
@@ -179,27 +180,29 @@ std::vector<SemiGlobalAlignment *> semiGlobalAlignmentOneLevel(std::vector<Commo
         int readLength = readSeq->length();
         int refLength = refSeq->length();
 
-        std::cout << "  REF: " << refName << std::endl << std::flush; // TEMP
+        // std::cout << "  REF: " << refName << std::endl << std::flush; // TEMP
 
-        std::vector<AlignmentLine *> alignmentLines = findAlignmentLines(commonKmerSet, readLength, refLength,
-                                                                         verbosity, output,
-                                                                         lowScoreThreshold, highScoreThreshold,
-                                                                         mergeDistance);
+        std::vector<AlignmentLine *> alignmentLines = findAlignmentLines(commonKmerSet, readLength, refLength, expectedSlope,
+                                                                         verbosity, output, 
+                                                                         lowScoreThreshold, highScoreThreshold);
         if (alignmentLines.size() == 0)
             continue;
 
         for (size_t j = 0; j < alignmentLines.size(); ++j) {
             AlignmentLine * line = alignmentLines[j];
 
-            std::cout << "    LINE " << j << ": points = " << line->m_linePoints.size() << std::endl << std::flush; // TEMP
+            // std::cout << "    LINE " << j << ": points = " << line->m_linePoints.size() << std::endl << std::flush; // TEMP
 
             bool seedChainSuccess = line->buildSeedChain(minPointCount, minAlignmentLength);
             if (seedChainSuccess) {
 
-                std::cout << "      slope = " << line->m_slope << ", intercept = " << line->m_intercept << std::endl << std::flush; // TEMP
+                // std::cout << "      slope = " << line->m_slope << ", intercept = " << line->m_intercept << std::endl << std::flush; // TEMP
 
                 SemiGlobalAlignment * alignment = semiGlobalAlignmentOneLine(readName, refName, readSeq, refSeq,
                                                                              line, verbosity, output, scoringScheme);
+
+                // std::cout << "      alignment: " << alignment->getShortDisplayString() << std::endl << std::flush; // TEMP
+
                 if (alignment != 0)
                     alignments.push_back(alignment);
             }

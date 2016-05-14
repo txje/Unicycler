@@ -62,10 +62,9 @@ public:
 
 
 std::vector<AlignmentLine *> findAlignmentLines(CommonKmerSet * commonKmerSet,
-                                                int readLength, int refLength,
+                                                int readLength, int refLength, float expectedSlope,
                                                 int verbosity, std::string & output,
-                                                float lowScoreThreshold, float highScoreThreshold,
-                                                float mergeDistance);
+                                                float lowScoreThreshold, float highScoreThreshold);
 
 void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdev);
 

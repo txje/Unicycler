@@ -2,7 +2,7 @@
 // This is the k-mer size used in the line-finding process. It is small, which leads to lots of
 // background noise in the alignment rectangle, but it means that alignments will still be found
 // for high-error reads.
-#define KMER_SIZE 5
+#define KMER_SIZE 7
 
 // Alignment lines that have an excessively small or large slope will be rejected.
 #define MIN_ALLOWED_SLOPE 0.5
@@ -28,21 +28,23 @@
 // Any CommonKmerSet where the max score falls below this value is ignored.
 #define MINIMUM_MAX_SCORE 5.0
 
+// Alignment lines which are sufficiently close to each other will be merged. This is expressed as
+// a fraction of the alignment line length. E.g. if two alignment lines are 1000 bp long and this
+// setting is 0.25, they will be merged if they are 250 bp apart or less.
+#define MERGE_DISTANCE_FRACTION 0.2
+
 // Line finding settings come in different sensitivity levels.
 #define LOW_SCORE_THRESHOLD_LEVEL_1 0.05
 #define HIGH_SCORE_THRESHOLD_LEVEL_1 0.5
-#define MERGE_DISTANCE_LEVEL_1 100.0
 #define MIN_ALIGNMENT_LENGTH_LEVEL_1 80.0
-#define MIN_POINT_COUNT_LEVEL_1 16
+#define MIN_POINT_COUNT_LEVEL_1 24
 
 #define LOW_SCORE_THRESHOLD_LEVEL_2 0.025
 #define HIGH_SCORE_THRESHOLD_LEVEL_2 0.25
-#define MERGE_DISTANCE_LEVEL_2 100.0
 #define MIN_ALIGNMENT_LENGTH_LEVEL_2 40.0
-#define MIN_POINT_COUNT_LEVEL_2 16
+#define MIN_POINT_COUNT_LEVEL_2 12
 
 #define LOW_SCORE_THRESHOLD_LEVEL_3 0.0125
 #define HIGH_SCORE_THRESHOLD_LEVEL_3 0.125
-#define MERGE_DISTANCE_LEVEL_3 100.0
 #define MIN_ALIGNMENT_LENGTH_LEVEL_3 20.0
-#define MIN_POINT_COUNT_LEVEL_3 8
+#define MIN_POINT_COUNT_LEVEL_3 6

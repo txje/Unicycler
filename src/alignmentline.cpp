@@ -271,10 +271,9 @@ std::string getSeedChainTable(String<TSeed> & seedChain) {
 // This function searches for lines in the 2D read-ref space that represent likely semi-global
 // alignments.
 std::vector<AlignmentLine *> findAlignmentLines(CommonKmerSet * commonKmerSet,
-                                                int readLength, int refLength,
+                                                int readLength, int refLength, float expectedSlope,
                                                 int verbosity, std::string & output,
-                                                float lowScoreThreshold, float highScoreThreshold,
-                                                float mergeDistance) {
+                                                float lowScoreThreshold, float highScoreThreshold) {
     std::vector<AlignmentLine *> returnedLines;
 
     int commonKmerCount = commonKmerSet->m_commonKmers.size();
@@ -333,19 +332,24 @@ std::vector<AlignmentLine *> findAlignmentLines(CommonKmerSet * commonKmerSet,
     for (size_t i = 1; i < lineGroups.size(); ++i) {
         std::vector<CommonKmer> * previousGroup = &(mergedLineGroups.back());
         std::vector<CommonKmer> * thisGroup = &(lineGroups[i]);
-
-        if (thisGroup->front().m_rotatedVPosition - previousGroup->back().m_rotatedVPosition <= mergeDistance)
+        float previousLineLength = getLineLength(previousGroup->back().m_hPosition, previousGroup->back().m_vPosition,
+                                                 expectedSlope, readLength, refLength);
+        float thisLineLength = getLineLength(thisGroup->front().m_hPosition, thisGroup->front().m_vPosition,
+                                             expectedSlope, readLength, refLength);
+        float meanLineLength = (previousLineLength + thisLineLength) / 2.0;
+        float mergeDistance = meanLineLength * MERGE_DISTANCE_FRACTION;
+        float distanceBetween = thisGroup->front().m_rotatedVPosition - previousGroup->back().m_rotatedVPosition;
+        if (distanceBetween <= mergeDistance)
             previousGroup->insert(previousGroup->end(), thisGroup->begin(), thisGroup->end());
         else
             mergedLineGroups.push_back(*thisGroup);
     }
-    lineGroups = mergedLineGroups;
     if (verbosity > 4)
-        output += "  Number of potential lines after merging: " + std::to_string(lineGroups.size()) + "\n";
+        output += "  Number of potential lines after merging: " + std::to_string(mergedLineGroups.size()) + "\n";
 
     // Prepare the returned vector.
-    for (size_t i = 0; i < lineGroups.size(); ++i) {
-        AlignmentLine * line = new AlignmentLine(lineGroups[i], readLength, refLength, commonKmerSet->m_expectedSlope);
+    for (size_t i = 0; i < mergedLineGroups.size(); ++i) {
+        AlignmentLine * line = new AlignmentLine(mergedLineGroups[i], readLength, refLength, commonKmerSet->m_expectedSlope);
         returnedLines.push_back(line);
     }
     return returnedLines;

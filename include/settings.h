@@ -15,10 +15,10 @@
 #define STARTING_BAND_SIZE 10
 #define MAX_BAND_SIZE 160
 
-
 // The band size for scoring common k-mers is fixed for all sensitivity levels, as it is used
 // before any line-finding.
-#define COMMON_KMER_BAND_SIZE 16
+#define COMMON_KMER_BAND_SIZE 25
+#define COMMON_KMER_BAND_THICKNESS 100
 
 // Points in an alignment line are cleaned up by throwing out the points with the most divergent
 // slopes.
@@ -33,18 +33,13 @@
 // setting is 0.25, they will be merged if they are 250 bp apart or less.
 #define MERGE_DISTANCE_FRACTION 0.2
 
-// Line finding settings come in different sensitivity levels.
-#define LOW_SCORE_THRESHOLD_LEVEL_1 0.05
-#define HIGH_SCORE_THRESHOLD_LEVEL_1 0.5
+// Line finding settings come in two different sensitivity levels.
+#define LOW_SCORE_THRESHOLD_LEVEL_1 0.04
+#define HIGH_SCORE_THRESHOLD_LEVEL_1 0.4
 #define MIN_ALIGNMENT_LENGTH_LEVEL_1 80.0
 #define MIN_POINT_COUNT_LEVEL_1 24
 
-#define LOW_SCORE_THRESHOLD_LEVEL_2 0.025
-#define HIGH_SCORE_THRESHOLD_LEVEL_2 0.25
+#define LOW_SCORE_THRESHOLD_LEVEL_2 0.02
+#define HIGH_SCORE_THRESHOLD_LEVEL_2 0.2
 #define MIN_ALIGNMENT_LENGTH_LEVEL_2 40.0
 #define MIN_POINT_COUNT_LEVEL_2 12
-
-#define LOW_SCORE_THRESHOLD_LEVEL_3 0.0125
-#define HIGH_SCORE_THRESHOLD_LEVEL_3 0.125
-#define MIN_ALIGNMENT_LENGTH_LEVEL_3 20.0
-#define MIN_POINT_COUNT_LEVEL_3 6

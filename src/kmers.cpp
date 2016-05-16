@@ -88,8 +88,7 @@ std::string * KmerPositions::getSequence(std::string & name) {
 
 
 
-CommonKmerSet::CommonKmerSet(std::string & readName, std::string & refName,
-                             int readLength, int refLength, int bandSize,
+CommonKmerSet::CommonKmerSet(std::string & readName, std::string & refName, int readLength, int refLength,
                              float expectedSlope, KmerPositions * kmerPositions) :
     m_readName(readName), m_refName(refName), m_expectedSlope(expectedSlope), m_maxScore(0)
 {
@@ -132,7 +131,8 @@ CommonKmerSet::CommonKmerSet(std::string & readName, std::string & refName,
     });
 
     // Score each point based on the number of other points in its band.
-    int halfBandSize = bandSize / 2;
+    int halfBandPoints = COMMON_KMER_BAND_SIZE / 2;
+    double halfBandThickness = COMMON_KMER_BAND_THICKNESS / 2.0;
 
     // There are four corners of the alignment rectangle which we also need to rotate.
     CommonKmer c1(0, 0, rotationAngle);
@@ -146,25 +146,28 @@ CommonKmerSet::CommonKmerSet(std::string & readName, std::string & refName,
     float c3BandLength = getLineLength(c3.m_hPosition, c3.m_vPosition,
                                        expectedSlope, readLength, refLength);
 
-    // Now we loop through the CommonKmer points, calculating their k-mer density (score) along the way.
+    // Now we loop through the CommonKmer points, calculating their k-mer density (score) along the
+    // way. The density is gotten from a window which spans either some number of steps away from
+    // the current point or some distance, whichever is larger.
+    int bandStartIndex = -1, bandEndIndex = -1;
     int commonKmerCount = m_commonKmers.size();
     for (int i = 0; i < commonKmerCount; ++i) {
-        int bandStartIndex = std::max(i - halfBandSize, 0);
-        int bandEndIndex = std::min(i + halfBandSize, commonKmerCount - 1);
-        int thisBandSize = bandEndIndex - bandStartIndex;
 
-        // Get the Y coordinates for the start and end of the band.
-        float bandStartY, bandEndY;
-        if (bandStartIndex < 0)
-            bandStartY = c4.m_rotatedVPosition;
-        else
-            bandStartY = m_commonKmers[bandStartIndex].m_rotatedVPosition;
-        if (bandEndIndex >= commonKmerCount)
-            bandEndY = c2.m_rotatedVPosition;
-        else
-            bandEndY = m_commonKmers[bandEndIndex].m_rotatedVPosition;
+        // Advance the window bounds, if appropriate.
+        double currentY = getY(m_commonKmers, i, commonKmerCount, c2, c4);
+        while (bandStartIndex < i - halfBandPoints &&
+               getY(m_commonKmers, bandStartIndex, commonKmerCount, c2, c4) < currentY - halfBandThickness)
+            ++bandStartIndex;
+        while (bandEndIndex < commonKmerCount &&
+               (bandEndIndex < i + halfBandPoints || getY(m_commonKmers, bandEndIndex, commonKmerCount, c2, c4) < currentY + halfBandThickness) )
+            ++bandEndIndex;
 
-        // Now we need to calculate the area of the band.
+        int thisBandCount = bandEndIndex - bandStartIndex;
+        float bandStartY = getY(m_commonKmers, bandStartIndex, commonKmerCount, c2, c4);
+        float bandEndY = getY(m_commonKmers, bandEndIndex, commonKmerCount, c2, c4);
+
+        // Now we need to calculate the area of the band, which is a little complex because it is a
+        // horizontal band through a rotated rectangle.
         float bandArea;
 
         // We'll need the starting point band length for all area possibilities, so we calculate
@@ -223,13 +226,26 @@ CommonKmerSet::CommonKmerSet(std::string & readName, std::string & refName,
 
         // Now that we have the band area, we can get the density of CommonKmers in the band. Also,
         // we'll scale this to the expected level of CommonKmers (given a random sequence).
-        float kmerDensity = thisBandSize / bandArea;
+        float kmerDensity = thisBandCount / bandArea;
         float score = (kmerDensity / expectedDensity) - 1.0;
         m_commonKmers[i].m_score = score;
         m_maxScore = std::max(m_maxScore, score);
     }
 }
 
+
+// This function is used in the CommonKmer scoring loop. It uses an index to return a Y value
+// (a.k.a. a rotated V) from the CommonKmer. But if the index is out of range, it gives the
+// appropriate Y value from the rectangle corner instead.
+float getY(std::vector<CommonKmer> & commonKmers, int i, int count, CommonKmer & c2, CommonKmer & c4)
+{
+    if (i < 0)
+       return c4.m_rotatedVPosition;
+    else if (i >= count)
+        return c2.m_rotatedVPosition;
+    else
+        return commonKmers[i].m_rotatedVPosition;
+}
 
 
 // Given a point, a slope and rectangle bounds, this function returns the length of the line

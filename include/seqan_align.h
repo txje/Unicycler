@@ -57,9 +57,9 @@ char * cppStringToCString(std::string cpp_string);
 
 std::string getReverseComplement(std::string sequence);
 
-bool needsMoreSensitiveAlignment(std::vector<SemiGlobalAlignment *> & alignments, double scoreThreshold);
+double fractionOfReadAlignedOverThreshold(std::vector<SemiGlobalAlignment *> & alignments, double scoreThreshold);
 
-bool readHasUnalignedParts(std::vector<SemiGlobalAlignment *> & alignments);
+double fractionOfReadAligned(std::vector<SemiGlobalAlignment *> & alignments);
 
 std::vector<std::pair<int, int> > simplifyRanges(std::vector<std::pair<int, int> > & ranges);
 

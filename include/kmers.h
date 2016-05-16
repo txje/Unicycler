@@ -48,8 +48,7 @@ private:
 // This class holds a set of common k-mers for a particular read-ref combination.
 class CommonKmerSet {
 public:
-    CommonKmerSet(std::string & readName, std::string & refName,
-                  int readLength, int refLength, int bandSize,
+    CommonKmerSet(std::string & readName, std::string & refName, int readLength, int refLength,
                   float expectedSlope, KmerPositions * kmerPositions);
 
     std::string m_readName;
@@ -59,6 +58,7 @@ public:
     float m_maxScore;
 };
 
+float getY(std::vector<CommonKmer> & commonKmers, int i, int count, CommonKmer & c2, CommonKmer & c4);
 
 float getLineLength(float x, float y, float slope, float xSize, float ySize);
 

@@ -807,31 +807,29 @@ def seqan_alignment(read, reference_dict, scoring_scheme, expected_ref_to_read_r
                               scoring_scheme=scoring_scheme)
         read.alignments.append(alignment)
 
-    if len(read.alignments) == starting_graphmap_alignments:
-        if VERBOSITY > 1:
-            output += 'No Seqan alignments found for read ' + read.name + '\n'
-    else:
-        if VERBOSITY > 2:
-            output += 'All Seqan alignments:\n'
+    if VERBOSITY > 2:
+        if not alignment_strings:
+            output += '  None\n'
+        else:
+            output += 'All Seqan alignments (time to align = ' + \
+                      float_to_str(time.time() - start_time, 3) + ' s):\n'
             for alignment in read.alignments:
-                if alignment.alignment_type == 'GraphMap':
-                    continue
-                output += '  ' + str(alignment) + '\n'
-                if VERBOSITY > 3:
-                    output += alignment.cigar + '\n'
-            output += '  Time to align: ' + float_to_str(time.time() - start_time, 3) + ' s\n'
+                if alignment.alignment_type != 'GraphMap':
+                    output += '  ' + str(alignment) + '\n'
+                    if VERBOSITY > 3:
+                        output += alignment.cigar + '\n'
 
     read.remove_conflicting_alignments()
-
-    # OPTIONAL TO DO: filter the alignments based on ID
-    #     for read in read_dict.itervalues():
-    #         read.remove_low_id_alignments(low_id_cutoff)
+    read.remove_low_score_alignments(low_score_threshold)
 
     if VERBOSITY > 2:
         output += 'Final alignments:\n'
     if VERBOSITY > 1:
-        for alignment in read.alignments:
-            output += '  ' + str(alignment) + '\n'
+        if read.alignments:
+            for alignment in read.alignments:
+                output += '  ' + str(alignment) + '\n'
+        else:
+            output += '  None\n'
         output += '\n'
 
     return output
@@ -1291,11 +1289,11 @@ class Read(object):
                                  key=lambda x: x.read_start_end_positive_strand()[0])
         self.alignments = kept_alignments
 
-#     def remove_low_id_alignments(self, id_threshold):
-#         '''
-#         This function removes alignments with identity below the cutoff.
-#         '''
-#         self.alignments = [x for x in self.alignments if x.percent_identity >= id_threshold]
+    def remove_low_score_alignments(self, low_score_threshold):
+        '''
+        This function removes alignments with identity below the cutoff.
+        '''
+        self.alignments = [x for x in self.alignments if x.scaled_score >= low_score_threshold]
 
     def get_fastq(self):
         '''

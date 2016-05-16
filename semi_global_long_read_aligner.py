@@ -197,16 +197,11 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
             print('Using user-supplied low score threshold: ' +
                   float_to_str(low_score_threshold, 2) + '\n')
     else:
-        if score_median and score_mad:
-            low_score_threshold = score_median - (4 * score_mad)
-            if VERBOSITY > 0:
-                print('Using automatic low score threshold: ' + 
-                      float_to_str(low_score_threshold, 2) + '\n')
-        else:
-            low_score_threshold = 80.0 # TO DO: reassess this default
-            if VERBOSITY > 0:
-                print('Too few alignments to set automatic score threshold, using: ' + 
-                      float_to_str(low_score_threshold, 2) + '\n')
+        low_score_threshold = get_automatic_low_score_threshold(score_median, score_mad,
+                                                                scoring_scheme)
+        if VERBOSITY > 0:
+            print('Using automatic low score threshold: ' + 
+                  float_to_str(low_score_threshold, 2) + '\n')
 
     # Give the alignments to their corresponding reads.
     for alignment in semi_global_graphmap_alignments:
@@ -1156,6 +1151,37 @@ def group_reads_by_fraction_aligned(read_dict):
             partially_aligned_reads.append(read)
     return fully_aligned_reads, partially_aligned_reads, unaligned_reads
 
+def get_automatic_low_score_threshold(score_median, score_mad, scoring_scheme):
+    '''
+    This function determines a good low score threshold for the alignments. To do this it examines
+    the distribution of scores acquired by aligning random sequences.
+    '''
+    rand_seq_score_mean, rand_seq_score_std_dev = \
+        get_random_sequence_alignment_mean_and_std_dev(100, 10000, scoring_scheme)
+
+    # If we don't have enough GraphMap alignments to get a score estimate, then we will just use
+    # the random score plus a generous margin.
+    if score_median is None:
+        threshold = rand_seq_score_mean + (5 * rand_seq_score_std_dev)
+
+    # If we only have one GraphMap alignment, then we'll go 25% of the way between the score and
+    # random score.
+    elif score_mad is None:
+        diff = score_median - rand_seq_score_mean
+        threshold = rand_seq_score_mean + (0.25 * diff)
+
+    # If we have a score distribution to work with (the usual case), we will set the threshold
+    # using both of their distribution sizes.
+    else:
+        std_devs_above_random = (score_median - rand_seq_score_mean) / \
+                                (score_mad + rand_seq_score_std_dev)
+        threshold = rand_seq_score_mean + (std_devs_above_random * rand_seq_score_std_dev)
+
+    # Keep the threshold bounded to sane levels.
+    threshold = min(threshold, 95.0)
+    threshold = max(threshold, 50.0)
+    return threshold
+
 
 
 
@@ -1177,11 +1203,6 @@ class AlignmentScoringScheme(object):
             self.mismatch = int(scheme_parts[1])
             self.gap_open = int(scheme_parts[2])
             self.gap_extend = int(scheme_parts[3])
-
-        assert self.match > 0
-        assert self.mismatch < 0
-        assert self.gap_open < 0
-        assert self.gap_extend < 0
 
     def get_graphmap_parameters(self):
         '''
@@ -1868,6 +1889,29 @@ C_LIB.addKmerPositions.restype = None
 C_LIB.deleteAllKmerPositions.argtypes = [c_void_p]
 C_LIB.deleteAllKmerPositions.restype = None
 
+
+'''
+This function gets the mean and standard deviation of alignments between random sequences.
+'''
+C_LIB.getRandomSequenceAlignmentScores.argtypes = [c_int, # Random sequence length
+                                                   c_int, # Count
+                                                   c_int, # Match score
+                                                   c_int, # Mismatch score
+                                                   c_int, # Gap open score
+                                                   c_int] # Gap extension score
+C_LIB.getRandomSequenceAlignmentScores.restype = c_void_p
+
+
+def get_random_sequence_alignment_mean_and_std_dev(seq_length, count, scoring_scheme):
+    '''
+    Python wrapper for getRandomSequenceAlignmentScores C++ function.
+    '''
+    ptr = C_LIB.getRandomSequenceAlignmentScores(seq_length, count,
+                                                 scoring_scheme.match, scoring_scheme.mismatch,
+                                                 scoring_scheme.gap_open, scoring_scheme.gap_extend)
+    return_str = c_string_to_python_string(ptr)
+    return_parts = return_str.split(',')
+    return float(return_parts[0]), float(return_parts[1])
 
 if __name__ == '__main__':
     main()

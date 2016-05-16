@@ -7,6 +7,8 @@
 #include <limits>
 #include <algorithm>
 #include <utility>
+#include <random>
+
 
 
 
@@ -476,5 +478,89 @@ std::vector<std::pair<int, int> > simplifyRanges(std::vector<std::pair<int, int>
     }
     simplifiedRanges.push_back(current);
     return simplifiedRanges;
+}
+
+
+
+
+// This function runs a bunch of alignments between random sequences to get a mean and std dev of
+// the scaled scores. It return them in a C string (for Python).
+char * getRandomSequenceAlignmentScores(int seqLength, int n,
+                                        int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore) {
+    std::vector<double> scores;
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<double> dist(0, 3);
+
+    for (int i = 0; i < n; ++i) {
+        std::string s1 = getRandomSequence(seqLength, gen, dist);
+        std::string s2 = getRandomSequence(seqLength, gen, dist);
+        SemiGlobalAlignment * alignment = fullyGlobalAlignment(s1, s2, matchScore, mismatchScore, gapOpenScore, gapExtensionScore);
+
+        if (alignment != 0) {
+            scores.push_back(alignment->m_scaledScore);
+            delete alignment;
+        }
+    }
+
+    double mean, stdev;
+    getMeanAndStDev(scores, mean, stdev);
+    return cppStringToCString(std::to_string(mean) + "," + std::to_string(stdev));
+}
+
+std::string getRandomSequence(int seqLength, std::mt19937 & gen, std::uniform_int_distribution<double> & dist) {
+    std::string seq;
+    seq.reserve(seqLength);
+    for (int i = 0 ; i < seqLength; ++i)
+        seq += getRandomBase(gen, dist);
+    return seq;
+}
+
+char getRandomBase(std::mt19937 & gen, std::uniform_int_distribution<double> & dist) {
+    int baseNum = dist(gen);
+    if (baseNum == 0)
+        return 'A';
+    else if (baseNum == 1)
+        return 'C';
+    else if (baseNum == 2)
+        return 'G';
+    else // baseNum == 3
+        return 'T';
+}
+
+int main() {
+    std::random_device rd;
+    std::mt19937 mt(rd());
+    std::uniform_real_distribution<double> dist(1.0, 10.0);
+
+    for (int i=0; i<16; ++i)
+        std::cout << dist(mt) << "\n";
+}
+
+
+
+// This function runs a global alignment (slow) between two sequences.
+SemiGlobalAlignment * fullyGlobalAlignment(std::string s1, std::string s2,
+                                           int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore) {
+    long long startTime = getTime();
+
+    Dna5String sequenceH(s1);
+    Dna5String sequenceV(s2);
+
+    Align<Dna5String, ArrayGaps> alignment;
+    resize(rows(alignment), 2);
+    assignSource(row(alignment, 0), sequenceH);
+    assignSource(row(alignment, 1), sequenceV);
+    Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
+
+    AlignConfig<false, false, false, false> alignConfig;
+    globalAlignment(alignment, scoringScheme, alignConfig);
+
+    std::string s1Name = "s1";
+    std::string s2Name = "s2";
+
+    return new SemiGlobalAlignment(alignment, s1Name, s2Name, s1.length(), s2.length(),
+                                   0, startTime, true, true, scoringScheme);
 }
 

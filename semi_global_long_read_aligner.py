@@ -179,12 +179,14 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     read_to_refs = [x.get_read_to_ref_ratio() for x in graphmap_alignments]
     percent_ids = [x.percent_identity for x in graphmap_alignments]
     scores = [x.scaled_score for x in graphmap_alignments]
-    read_to_ref_median, read_to_ref_mad = get_median_and_mad(read_to_refs)
-    percent_id_median, percent_id_mad = get_median_and_mad(percent_ids)
-    score_median, score_mad = get_median_and_mad(scores)
+    read_to_ref_mean, read_to_ref_std_dev = get_mean_and_st_dev(read_to_refs)
+    percent_id_mean, percent_id_std_dev = get_mean_and_st_dev(percent_ids)
+    score_mean, score_std_dev = get_mean_and_st_dev(scores)
     if VERBOSITY > 0:
-        print_alignment_summary_table(graphmap_alignments, read_to_ref_median, read_to_ref_mad,
-                                      percent_id_median, percent_id_mad, score_median, score_mad)
+        print_alignment_summary_table(graphmap_alignments,
+                                      read_to_ref_mean, read_to_ref_std_dev,
+                                      percent_id_mean, percent_id_std_dev,
+                                      score_mean, score_std_dev)
 
     if VERBOSITY > 0:
         print('Realigning reads with Seqan')
@@ -197,7 +199,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
             print('Using user-supplied low score threshold: ' +
                   float_to_str(low_score_threshold, 2) + '\n')
     else:
-        low_score_threshold = get_automatic_low_score_threshold(score_median, score_mad,
+        low_score_threshold = get_automatic_low_score_threshold(score_mean, score_std_dev,
                                                                 scoring_scheme)
         if VERBOSITY > 0:
             print('Using automatic low score threshold: ' + 
@@ -235,8 +237,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         print()
     if VERBOSITY == 1:
         print_progress_line(0, num_realignments)
-    if read_to_ref_median:
-        expected_ref_to_read_ratio = 1.0 / read_to_ref_median
+    if read_to_ref_mean:
+        expected_ref_to_read_ratio = 1.0 / read_to_ref_mean
     else:
         expected_ref_to_read_ratio = 0.95 # TO DO: SET THIS TO AN EMPIRICALLY-DERIVED VALUE
 
@@ -506,8 +508,8 @@ def summarise_errors(references, long_reads, table_prefix, percent_alignments_to
                 print('  Total alignments:   ', int_to_str(0, max_v))
             print()
 
-def print_alignment_summary_table(graphmap_alignments, read_to_ref_median, read_to_ref_mad,
-                                  percent_id_median, percent_id_mad, score_median, score_mad):
+def print_alignment_summary_table(graphmap_alignments, read_to_ref_mean, read_to_ref_std_dev,
+                                  percent_id_mean, percent_id_std_dev, score_mean, score_std_dev):
     '''
     Prints a small table showing some details about the GraphMap alignments.
     '''
@@ -524,22 +526,22 @@ def print_alignment_summary_table(graphmap_alignments, read_to_ref_median, read_
     pad_length = max([len(x) for x in table_lines]) + 2
     table_lines = [x.ljust(pad_length) for x in table_lines]
 
-    table_lines[0] += 'Median'
-    table_lines[1] += float_to_str(read_to_ref_median, 4)
-    table_lines[2] += float_to_str(percent_id_median, 2)
-    if percent_id_median:
+    table_lines[0] += 'Mean'
+    table_lines[1] += float_to_str(read_to_ref_mean, 4)
+    table_lines[2] += float_to_str(percent_id_mean, 2)
+    if percent_id_mean:
         table_lines[2] += '%'
-    table_lines[3] += float_to_str(score_median, 2)
+    table_lines[3] += float_to_str(score_mean, 2)
 
     pad_length = max([len(x) for x in table_lines]) + 2
     table_lines = [x.ljust(pad_length) for x in table_lines]
 
-    table_lines[0] += 'MAD'
-    table_lines[1] += float_to_str(read_to_ref_mad, 4)
-    table_lines[2] += float_to_str(percent_id_mad, 2)
-    if percent_id_mad:
+    table_lines[0] += 'Std dev'
+    table_lines[1] += float_to_str(read_to_ref_std_dev, 4)
+    table_lines[2] += float_to_str(percent_id_std_dev, 2)
+    if percent_id_std_dev:
         table_lines[2] += '%'
-    table_lines[3] += float_to_str(score_mad, 2)
+    table_lines[3] += float_to_str(score_std_dev, 2)
 
     for line in table_lines:
         print(line)
@@ -1151,7 +1153,7 @@ def group_reads_by_fraction_aligned(read_dict):
             partially_aligned_reads.append(read)
     return fully_aligned_reads, partially_aligned_reads, unaligned_reads
 
-def get_automatic_low_score_threshold(score_median, score_mad, scoring_scheme):
+def get_automatic_low_score_threshold(score_mean, score_std_dev, scoring_scheme):
     '''
     This function determines a good low score threshold for the alignments. To do this it examines
     the distribution of scores acquired by aligning random sequences.
@@ -1161,20 +1163,20 @@ def get_automatic_low_score_threshold(score_median, score_mad, scoring_scheme):
 
     # If we don't have enough GraphMap alignments to get a score estimate, then we will just use
     # the random score plus a generous margin.
-    if score_median is None:
+    if score_mean is None:
         threshold = rand_seq_score_mean + (5 * rand_seq_score_std_dev)
 
     # If we only have one GraphMap alignment, then we'll go 25% of the way between the score and
     # random score.
-    elif score_mad is None:
-        diff = score_median - rand_seq_score_mean
+    elif score_std_dev is None:
+        diff = score_mean - rand_seq_score_mean
         threshold = rand_seq_score_mean + (0.25 * diff)
 
     # If we have a score distribution to work with (the usual case), we will set the threshold
     # using both of their distribution sizes.
     else:
-        std_devs_above_random = (score_median - rand_seq_score_mean) / \
-                                (score_mad + rand_seq_score_std_dev)
+        std_devs_above_random = (score_mean - rand_seq_score_mean) / \
+                                (score_std_dev + rand_seq_score_std_dev)
         threshold = rand_seq_score_mean + (std_devs_above_random * rand_seq_score_std_dev)
 
     # Keep the threshold bounded to sane levels.

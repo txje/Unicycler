@@ -17,7 +17,7 @@ public:
     SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignment, 
                         std::string & readName, std::string & refName,
                         int readLength, int refLength,
-                        int refOffset, long long startTime,
+                        int refOffset, long long startTime, int bandSize,
                         bool startImmediately, bool goToEnd, Score<int, Simple> & scoringScheme);
     std::string getFullString();
     std::string getShortDisplayString();
@@ -35,6 +35,7 @@ public:
     int m_rawScore;
     double m_scaledScore;
     int m_milliseconds;
+    int m_bandSize;
 
 private:
     CigarType getCigarType(char b1, char b2, bool alignmentStarted);

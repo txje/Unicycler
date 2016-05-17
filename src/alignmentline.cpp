@@ -5,25 +5,113 @@
 
 
 
-AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLength, int refLength, float expectedSlope) :
-    m_linePoints(commonKmers), m_readLength(readLength), m_refLength(refLength), m_expectedSlope(expectedSlope),
-    m_slope(0.0), m_intercept(0.0), m_trimmedRefStart(0), m_trimmedRefEnd(0),
-    m_maxScore(0.0)
-    // m_areaUnderCurve(0.0)
+AlignmentLine::AlignmentLine(CommonKmer startPoint, int readLength, int refLength) :
+    m_slope(0.0), m_intercept(0.0), m_error(0.0), m_alignedReadLength(0.0), m_alignedRefLength(0.0),
+    m_trimmedRefStart(0), m_trimmedRefEnd(refLength),
+    m_readLength(readLength), m_refLength(refLength),
+    m_meanX(0.0), m_meanY(0.0), m_ssX(0.0), m_ssY(0.0), m_coMoment(0.0), m_varX(0.0), m_varY(0.0), m_covariance(0.0)
 {
-    int pointCount = m_linePoints.size();
-    for (int i = 0; i < pointCount; ++i)
-    {
-        float score = m_linePoints[i].m_score;
-        m_maxScore = std::max(score, m_maxScore);
-        // float rotatedVSize = 0.0;
-        // if (i > 0)
-        //     rotatedVSize += (m_linePoints[i].m_rotatedVPosition - m_linePoints[i-1].m_rotatedVPosition) / 2.0;
-        // if (i < pointCount - 1)
-        //     rotatedVSize += (m_linePoints[i+1].m_rotatedVPosition - m_linePoints[i].m_rotatedVPosition) / 2.0;
-        // m_areaUnderCurve += score * rotatedVSize;
+    addPoint(startPoint);
+}
+
+
+// This function adds a point to the alignment line and updates its linear regression estimates.
+// https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
+// http://onlinestatbook.com/2/regression/accuracy.html
+void AlignmentLine::addPoint(CommonKmer newPoint) {
+    m_linePoints.push_back(newPoint);
+    double previousMeanY = m_meanY;
+
+    double n = m_linePoints.size();
+    double x = newPoint.m_hPosition;
+    double y = newPoint.m_vPosition;
+
+    double dX = x - m_meanX;
+    double dY = y - m_meanY;
+
+    m_meanX += dX / n;
+    m_meanY += dY / n;
+
+    m_ssX += dX * (x - m_meanX);
+    m_ssY += dY * (y - m_meanY);
+    m_coMoment += (x - m_meanX) * (y - previousMeanY);
+
+    // Calculating the slope and intercept requires at least 2 points.
+    if (n > 1.0) {
+        m_varX = m_ssX / (n - 1.0);
+        m_varY = m_ssY / (n - 1.0);
+        m_covariance = m_coMoment / (n - 1.0);
+
+        m_slope = m_covariance / m_varX;
+        m_intercept = m_meanY - (m_slope * m_meanX);
+    }
+
+    // Calculating the error requires at least 3 points.
+    if (n > 2.0) {
+        double rSquared = (m_covariance * m_covariance) / (m_varX * m_varY);
+        double var = ((1.0 - rSquared) * m_ssY) / (n - 2.0);
+        m_error = sqrt(var);
+    }
+
+    // Calculate an estimate for the aligned lengths of read and reference.
+    if (n > 1.0) {
+        float xStart, yStart, xEnd, yEnd;
+
+        if (m_intercept >= 0.0) {
+            xStart = 0.0;
+            yStart = m_intercept;
+        }
+        else {
+            xStart = -m_intercept / m_slope;
+            yStart = 0.0;
+        }
+
+        float yAtXEnd = (m_slope * m_readLength) + m_intercept;
+        if (yAtXEnd <= m_refLength) {
+            xEnd = m_readLength;
+            yEnd = yAtXEnd;
+        }
+        else {
+            xEnd = (m_refLength - m_intercept) / m_slope;
+            yEnd = m_refLength;
+        }
+
+        m_alignedReadLength = xEnd - xStart;
+        m_alignedRefLength = yEnd - yStart;
     }
 }
+
+
+// Returns the line's error over the estimated reference length.
+double AlignmentLine::getRelativeLineError() {
+    if (m_alignedRefLength == 0.0)
+        return 0.0;
+    else
+        return m_error / m_alignedRefLength;
+}
+
+
+
+
+// AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLength, int refLength, float expectedSlope) :
+//     m_linePoints(commonKmers), m_readLength(readLength), m_refLength(refLength), m_expectedSlope(expectedSlope),
+//     m_slope(0.0), m_intercept(0.0), m_trimmedRefStart(0), m_trimmedRefEnd(0),
+//     m_maxScore(0.0)
+//     // m_areaUnderCurve(0.0)
+// {
+//     int pointCount = m_linePoints.size();
+//     for (int i = 0; i < pointCount; ++i)
+//     {
+//         float score = m_linePoints[i].m_score;
+//         m_maxScore = std::max(score, m_maxScore);
+//         // float rotatedVSize = 0.0;
+//         // if (i > 0)
+//         //     rotatedVSize += (m_linePoints[i].m_rotatedVPosition - m_linePoints[i-1].m_rotatedVPosition) / 2.0;
+//         // if (i < pointCount - 1)
+//         //     rotatedVSize += (m_linePoints[i+1].m_rotatedVPosition - m_linePoints[i].m_rotatedVPosition) / 2.0;
+//         // m_areaUnderCurve += score * rotatedVSize;
+//     }
+// }
 
 
 // This function prepares the alignment line for use in an alignment. If it returns false, then the
@@ -31,43 +119,25 @@ AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLeng
 // member.
 bool AlignmentLine::buildSeedChain(int minPointCount, float minAlignmentLength) {
 
-    // CHECK HERE WHETHER THE ROTATED V SPANS TOO MUCH!
-    // IF SO, TRIM OFF THE ENDS TO GET IT NICE AND NARROW (WITHIN 0.1 OF ROTATED H SPAN?).
-    // TRIM FROM BOTH ENDS (WITH WITH A DEQUE) KEEPING THE SCORES ABOUT MATCHING.
-
-    // We are only interested in line groups which seem to span their full possible length (i.e.
-    // not line groups caused by short, local alignments) and for which the band is reasonably 
-    // long (to avoid things like 3 bp alignments).
-
-    // Determine the mean position for the points and use it to calculate the band length.
-    int pointCount = m_linePoints.size();
-    double vSum = 0.0, hSum = 0.0;
-    for (int i = 0; i < pointCount; ++i) {
-        hSum += m_linePoints[i].m_hPosition;
-        vSum += m_linePoints[i].m_vPosition;
-    }
-    double meanH = hSum / pointCount;
-    double meanV = vSum / pointCount;
-    double bandLength = getLineLength(meanH, meanV, m_expectedSlope, m_readLength, m_refLength);
-
     // Exclude alignments which are too short.
+    double bandLength = sqrt((m_alignedReadLength * m_alignedReadLength) + (m_alignedRefLength * m_alignedRefLength));
     if (bandLength < minAlignmentLength)
         return false;
 
-    // Now we want to test whether the CommonKmers in the band seem to span the full band. To
-    // do so, we get the std dev of the rotated H position and compare it to the expected std
-    // dev of a uniform distribution.
-    std::vector<double> rotatedHPositions;
-    rotatedHPositions.reserve(pointCount);
-    for (int i = 0; i < pointCount; ++i)
-        rotatedHPositions.push_back(m_linePoints[i].m_rotatedHPosition);
-    double meanRotatedH, rotatedHStdDev;
-    getMeanAndStDev(rotatedHPositions, meanRotatedH, rotatedHStdDev);
-    double uniformStdDev = bandLength / 3.464101615137754; // sqrt(12)
+    // // Now we want to test whether the CommonKmers in the band seem to span the full band. To
+    // // do so, we get the std dev of the rotated H position and compare it to the expected std
+    // // dev of a uniform distribution.
+    // std::vector<double> rotatedHPositions;
+    // rotatedHPositions.reserve(pointCount);
+    // for (int i = 0; i < pointCount; ++i)
+    //     rotatedHPositions.push_back(m_linePoints[i].m_rotatedHPosition);
+    // double meanRotatedH, rotatedHStdDev;
+    // getMeanAndStDev(rotatedHPositions, meanRotatedH, rotatedHStdDev);
+    // double uniformStdDev = bandLength / 3.464101615137754; // sqrt(12)
 
-    // At least half of the uniform distribution's std dev is required.
-    if (rotatedHStdDev < 0.5 * uniformStdDev)
-        return false;
+    // // At least half of the uniform distribution's std dev is required.
+    // if (rotatedHStdDev < 0.5 * uniformStdDev)
+    //     return false;
 
     // Throw out any point which is too divergent from its neighbours. To do
     // this, we determine the slope between each point and its nearest neighbours and how divergent
@@ -80,6 +150,7 @@ bool AlignmentLine::buildSeedChain(int minPointCount, float minAlignmentLength) 
 
     // Store the max slope for each point in the line group.
     std::vector<double> maxSlopes;
+    int pointCount = m_linePoints.size();
     maxSlopes.reserve(pointCount);
     for (int i = 0; i < pointCount; ++i) {
         CommonKmer * thisPoint = &(m_linePoints[i]);
@@ -114,9 +185,7 @@ bool AlignmentLine::buildSeedChain(int minPointCount, float minAlignmentLength) 
     if (int(m_linePoints.size()) < minPointCount)
         return false;
 
-    // Perform a simple least-squares linear regression. If the slope is too far from 1.0, we 
-    // don't bother continuing to the seed chaining step as we'll throw the line out.
-    linearRegression(m_linePoints, &m_slope, &m_intercept);
+    // If the slope is too far from 1.0, we don't bother continuing to the seed chaining step.
     if (m_slope < MIN_ALLOWED_SLOPE || m_slope > MAX_ALLOWED_SLOPE)
         return false;
 
@@ -201,31 +270,31 @@ bool AlignmentLine::buildSeedChain(int minPointCount, float minAlignmentLength) 
 }
 
 std::string AlignmentLine::getDescriptiveString() {
-    return  "slope: " + std::to_string(m_slope) + ", intercept = " + std::to_string(m_intercept);
+    return  "slope = " + std::to_string(m_slope) + ", intercept = " + std::to_string(m_intercept);
 }
 
 
 
 
-// Adapted from:
-// http://stackoverflow.com/questions/11449617/how-to-fit-the-2d-scatter-data-with-a-line-with-c
-void AlignmentLine::linearRegression(std::vector<CommonKmer> & pts, float * slope, float * intercept) {
-    int n = pts.size();
-    double sumH = 0.0, sumV = 0.0, sumHV = 0.0, sumHH = 0.0;
-    for (int i = 0; i < n; ++i) {
-        double hPos = pts[i].m_hPosition;
-        double vPos = pts[i].m_vPosition;
-        sumH += hPos;
-        sumV += vPos;
-        sumHV += hPos * vPos;
-        sumHH += hPos * hPos;
-    }
-    double hMean = sumH / n;
-    double vMean = sumV / n;
-    double denominator = sumHH - (sumH * hMean);
-    *slope = float((sumHV - sumH * vMean) / denominator);
-    *intercept = float(vMean - (*slope * hMean));
-}
+// // Adapted from:
+// // http://stackoverflow.com/questions/11449617/how-to-fit-the-2d-scatter-data-with-a-line-with-c
+// void AlignmentLine::linearRegression(std::vector<CommonKmer> & pts, float * slope, float * intercept) {
+//     int n = pts.size();
+//     double sumH = 0.0, sumV = 0.0, sumHV = 0.0, sumHH = 0.0;
+//     for (int i = 0; i < n; ++i) {
+//         double hPos = pts[i].m_hPosition;
+//         double vPos = pts[i].m_vPosition;
+//         sumH += hPos;
+//         sumV += vPos;
+//         sumHV += hPos * vPos;
+//         sumHH += hPos * hPos;
+//     }
+//     double hMean = sumH / n;
+//     double vMean = sumV / n;
+//     double denominator = sumHH - (sumH * hMean);
+//     *slope = float((sumHV - sumH * vMean) / denominator);
+//     *intercept = float(vMean - (*slope * hMean));
+// }
 
 
 
@@ -273,92 +342,92 @@ std::string getSeedChainTable(String<TSeed> & seedChain) {
 
 
 
-// This function searches for lines in the 2D read-ref space that represent likely semi-global
-// alignments.
-std::vector<AlignmentLine *> findAlignmentLines(CommonKmerSet * commonKmerSet,
-                                                int readLength, int refLength, float expectedSlope,
-                                                int verbosity, std::string & output,
-                                                float lowScoreThreshold, float highScoreThreshold) {
-    std::vector<AlignmentLine *> returnedLines;
+// // This function searches for lines in the 2D read-ref space that represent likely semi-global
+// // alignments.
+// std::vector<AlignmentLine *> findAlignmentLines(CommonKmerSet * commonKmerSet,
+//                                                 int readLength, int refLength, float expectedSlope,
+//                                                 int verbosity, std::string & output,
+//                                                 float lowScoreThreshold, float highScoreThreshold) {
+//     std::vector<AlignmentLine *> returnedLines;
 
-    int commonKmerCount = commonKmerSet->m_commonKmers.size();
+//     int commonKmerCount = commonKmerSet->m_commonKmers.size();
 
-    if (commonKmerCount < 2) {
-        // if (verbosity > 3)
-        //     output += "  No lines found, too few common k-mers (" + std::to_string(getTime() - startTime) + " ms)\n";
-        return returnedLines;
-    }
+//     if (commonKmerCount < 2) {
+//         // if (verbosity > 3)
+//         //     output += "  No lines found, too few common k-mers (" + std::to_string(getTime() - startTime) + " ms)\n";
+//         return returnedLines;
+//     }
 
-    if (verbosity > 4) {
-        output += "  Common k-mer positions:\n";
-        output += getKmerTable(commonKmerSet->m_commonKmers);
-        output += "  Max score: " + std::to_string(commonKmerSet->m_maxScore) + "\n";
-    }
+//     if (verbosity > 4) {
+//         output += "  Common k-mer positions:\n";
+//         output += getKmerTable(commonKmerSet->m_commonKmers);
+//         output += "  Max score: " + std::to_string(commonKmerSet->m_maxScore) + "\n";
+//     }
 
-    // Now group all of the line points. For a line group to form, a point must score above the
-    // high threshold. The group will continue (in both directions) until the score drops below
-    // the low threshold.
-    std::vector<std::vector<CommonKmer> > lineGroups;
-    bool lineInProgress = false;
-    for (int i = 0; i < commonKmerCount; ++i) {
-        if (lineInProgress) {
-            if (commonKmerSet->m_commonKmers[i].m_score >= lowScoreThreshold)
-                lineGroups.back().push_back(commonKmerSet->m_commonKmers[i]);
-            else // This line group is done.
-                lineInProgress = false;
-        }
-        else if (commonKmerSet->m_commonKmers[i].m_score >= highScoreThreshold) {
-            // It's time to start a new line group!
-            lineGroups.push_back(std::vector<CommonKmer>());
-            lineInProgress = true;
+//     // Now group all of the line points. For a line group to form, a point must score above the
+//     // high threshold. The group will continue (in both directions) until the score drops below
+//     // the low threshold.
+//     std::vector<std::vector<CommonKmer> > lineGroups;
+//     bool lineInProgress = false;
+//     for (int i = 0; i < commonKmerCount; ++i) {
+//         if (lineInProgress) {
+//             if (commonKmerSet->m_commonKmers[i].m_score >= lowScoreThreshold)
+//                 lineGroups.back().push_back(commonKmerSet->m_commonKmers[i]);
+//             else // This line group is done.
+//                 lineInProgress = false;
+//         }
+//         else if (commonKmerSet->m_commonKmers[i].m_score >= highScoreThreshold) {
+//             // It's time to start a new line group!
+//             lineGroups.push_back(std::vector<CommonKmer>());
+//             lineInProgress = true;
 
-            // Step backwards to find where the group should start (the first point over the low
-            // threshold).
-            int groupStartPoint = i;
-            while (groupStartPoint >= 0 &&
-                   commonKmerSet->m_commonKmers[groupStartPoint].m_score >= lowScoreThreshold)
-                --groupStartPoint;
-            ++groupStartPoint;
+//             // Step backwards to find where the group should start (the first point over the low
+//             // threshold).
+//             int groupStartPoint = i;
+//             while (groupStartPoint >= 0 &&
+//                    commonKmerSet->m_commonKmers[groupStartPoint].m_score >= lowScoreThreshold)
+//                 --groupStartPoint;
+//             ++groupStartPoint;
 
-            // Add the initial group points.
-            for (int j = groupStartPoint; j <= i; ++j)
-                lineGroups.back().push_back(commonKmerSet->m_commonKmers[j]);
-        }
-    }
-    if (verbosity > 4)
-        output += "  Number of potential lines: " + std::to_string(lineGroups.size()) + "\n";
+//             // Add the initial group points.
+//             for (int j = groupStartPoint; j <= i; ++j)
+//                 lineGroups.back().push_back(commonKmerSet->m_commonKmers[j]);
+//         }
+//     }
+//     if (verbosity > 4)
+//         output += "  Number of potential lines: " + std::to_string(lineGroups.size()) + "\n";
 
-    // It's possible for one actual line group to be broken into multiple pieces because the scores
-    // dipped low in the middle. So now we go back through our line groups and merge together those
-    // that are sufficiently close to each other.
-    std::vector<std::vector<CommonKmer> > mergedLineGroups;
-    if (lineGroups.size() > 0)
-        mergedLineGroups.push_back(lineGroups[0]);
-    for (size_t i = 1; i < lineGroups.size(); ++i) {
-        std::vector<CommonKmer> * previousGroup = &(mergedLineGroups.back());
-        std::vector<CommonKmer> * thisGroup = &(lineGroups[i]);
-        float previousLineLength = getLineLength(previousGroup->back().m_hPosition, previousGroup->back().m_vPosition,
-                                                 expectedSlope, readLength, refLength);
-        float thisLineLength = getLineLength(thisGroup->front().m_hPosition, thisGroup->front().m_vPosition,
-                                             expectedSlope, readLength, refLength);
-        float meanLineLength = (previousLineLength + thisLineLength) / 2.0;
-        float mergeDistance = meanLineLength * MERGE_DISTANCE_FRACTION;
-        float distanceBetween = thisGroup->front().m_rotatedVPosition - previousGroup->back().m_rotatedVPosition;
-        if (distanceBetween <= mergeDistance)
-            previousGroup->insert(previousGroup->end(), thisGroup->begin(), thisGroup->end());
-        else
-            mergedLineGroups.push_back(*thisGroup);
-    }
-    if (verbosity > 4)
-        output += "  Number of potential lines after merging: " + std::to_string(mergedLineGroups.size()) + "\n";
+//     // It's possible for one actual line group to be broken into multiple pieces because the scores
+//     // dipped low in the middle. So now we go back through our line groups and merge together those
+//     // that are sufficiently close to each other.
+//     std::vector<std::vector<CommonKmer> > mergedLineGroups;
+//     if (lineGroups.size() > 0)
+//         mergedLineGroups.push_back(lineGroups[0]);
+//     for (size_t i = 1; i < lineGroups.size(); ++i) {
+//         std::vector<CommonKmer> * previousGroup = &(mergedLineGroups.back());
+//         std::vector<CommonKmer> * thisGroup = &(lineGroups[i]);
+//         float previousLineLength = getLineLength(previousGroup->back().m_hPosition, previousGroup->back().m_vPosition,
+//                                                  expectedSlope, readLength, refLength);
+//         float thisLineLength = getLineLength(thisGroup->front().m_hPosition, thisGroup->front().m_vPosition,
+//                                              expectedSlope, readLength, refLength);
+//         float meanLineLength = (previousLineLength + thisLineLength) / 2.0;
+//         float mergeDistance = meanLineLength * MERGE_DISTANCE_FRACTION;
+//         float distanceBetween = thisGroup->front().m_rotatedVPosition - previousGroup->back().m_rotatedVPosition;
+//         if (distanceBetween <= mergeDistance)
+//             previousGroup->insert(previousGroup->end(), thisGroup->begin(), thisGroup->end());
+//         else
+//             mergedLineGroups.push_back(*thisGroup);
+//     }
+//     if (verbosity > 4)
+//         output += "  Number of potential lines after merging: " + std::to_string(mergedLineGroups.size()) + "\n";
 
-    // Prepare the returned vector.
-    for (size_t i = 0; i < mergedLineGroups.size(); ++i) {
-        AlignmentLine * line = new AlignmentLine(mergedLineGroups[i], readLength, refLength, commonKmerSet->m_expectedSlope);
-        returnedLines.push_back(line);
-    }
-    return returnedLines;
-}
+//     // Prepare the returned vector.
+//     for (size_t i = 0; i < mergedLineGroups.size(); ++i) {
+//         AlignmentLine * line = new AlignmentLine(mergedLineGroups[i], readLength, refLength, commonKmerSet->m_expectedSlope);
+//         returnedLines.push_back(line);
+//     }
+//     return returnedLines;
+// }
 
 
 

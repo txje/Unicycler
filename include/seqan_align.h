@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "kmers.h"
+#include "commonkmerset.h"
 #include "alignmentline.h"
 #include "semiglobalalignment.h"
 
@@ -36,13 +37,6 @@ extern "C" {
                                             int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore);
 }
 
-std::vector<SemiGlobalAlignment *> semiGlobalAlignmentOneLevel(std::vector<CommonKmerSet *> & commonKmerSets,
-                                                               KmerPositions * kmerPositions,
-                                                               int verbosity, std::string & output, float expectedSlope,
-                                                               int matchScore, int mismatchScore,
-                                                               int gapOpenScore, int gapExtensionScore,
-                                                               int sensitivityLevel, float maxScoreAllSets);
-
 SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readName, std::string & refName,
                                                  std::string * readSeq, std::string * refSeq,
                                                  AlignmentLine * line, int verbosity, std::string & output,
@@ -72,5 +66,6 @@ std::string getRandomSequence(int seqLength, std::mt19937 & gen, std::uniform_in
 
 char getRandomBase(std::mt19937 & gen, std::uniform_int_distribution<double> & dist);
 
+CommonKmerSet * getHighestScoringSet(std::vector<CommonKmerSet *> & commonKmerSets);
 
 

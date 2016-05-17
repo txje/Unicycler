@@ -25,21 +25,16 @@
 #define WORST_SLOPE_FRACTION_TO_DISCARD 0.05
 #define WORST_SLOPE_STEPS 3
 
-// Any CommonKmerSet where the max score falls below this value is ignored.
-#define MINIMUM_MAX_SCORE 5.0
+// Line finding stops when the score drops below this value.
+#define MIN_LINE_SCORE 2.0
 
-// Alignment lines which are sufficiently close to each other will be merged. This is expressed as
-// a fraction of the alignment line length. E.g. if two alignment lines are 1000 bp long and this
-// setting is 0.25, they will be merged if they are 250 bp apart or less.
-#define MERGE_DISTANCE_FRACTION 0.2
+// Line finding stops when the relative line error (line error over the aligned ref length) exceeds
+// this value.
+#define MAX_ALLOWED_LINE_ERROR 0.05
 
-// Line finding settings come in two different sensitivity levels.
-#define LOW_SCORE_THRESHOLD_LEVEL_1 0.04
-#define HIGH_SCORE_THRESHOLD_LEVEL_1 0.4
-#define MIN_ALIGNMENT_LENGTH_LEVEL_1 80.0
-#define MIN_POINT_COUNT_LEVEL_1 24
+// We will try to find alignment lines until this number of bad lines has been found.
+#define BAD_LINE_COUNT 10
 
-#define LOW_SCORE_THRESHOLD_LEVEL_2 0.02
-#define HIGH_SCORE_THRESHOLD_LEVEL_2 0.2
-#define MIN_ALIGNMENT_LENGTH_LEVEL_2 40.0
-#define MIN_POINT_COUNT_LEVEL_2 12
+// Alignment lines must reach these levels to be used.
+#define MIN_ALIGNMENT_LENGTH 40.0
+#define MIN_POINT_COUNT 10

@@ -1786,22 +1786,27 @@ class Alignment(object):
     def is_very_similar(self, other):
         '''
         Returns true if this alignment and the other alignment seem to be redundant.
+        Specifically, the have to be from the same read, the same reference and overlap by 90% or
+        more.
         '''
         if self.read.name != other.read.name:
             return False
         if self.ref.name != other.ref.name:
             return False
-        if abs(self.read_start_pos - other.read_start_pos) > 10:
+        if self.rev_comp != other.rev_comp:
             return False
-        if abs(self.read_end_pos - other.read_end_pos) > 10:
-            return False
-        if abs(self.ref_start_pos - other.ref_start_pos) > 10:
-            return False
-        if abs(self.ref_end_pos - other.ref_end_pos) > 10:
-            return False
-        return True
 
+        this_start, this_end = self.read_start_end_positive_strand()
+        other_start, other_end = other.read_start_end_positive_strand()
+        if other_start > this_end or this_start > other_end:
+            return False
 
+        # If the code got here then the alignments are overlapping.
+        overlap_size = min(this_end, other_end) - max(this_start, other_start)
+        smaller_alignment_length = min(this_end - this_start, other_end - other_start)
+        if smaller_alignment_length == 0:
+            return False
+        return overlap_size / smaller_alignment_length >= 0.9
 
 
 '''

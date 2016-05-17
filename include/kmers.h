@@ -45,24 +45,6 @@ private:
 };
 
 
-// This class holds a set of common k-mers for a particular read-ref combination.
-class CommonKmerSet {
-public:
-    CommonKmerSet(std::string & readName, std::string & refName, int readLength, int refLength,
-                  float expectedSlope, KmerPositions * kmerPositions);
-
-    std::string m_readName;
-    std::string m_refName;
-    float m_expectedSlope;
-    std::vector<CommonKmer> m_commonKmers;
-    float m_maxScore;
-};
-
-float getY(std::vector<CommonKmer> & commonKmers, int i, int count, CommonKmer & c2, CommonKmer & c4);
-
-float getLineLength(float x, float y, float slope, float xSize, float ySize);
-
-
 // Functions that are called by the Python script must have C linkage, not C++ linkage.
 extern "C" {
 

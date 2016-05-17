@@ -6,10 +6,10 @@
 SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignment, 
                                          std::string & readName, std::string & refName,
                                          int readLength, int refLength,
-                                         int refOffset, long long startTime,
+                                         int refOffset, long long startTime, int bandSize,
                                          bool startImmediately, bool goToEnd, Score<int, Simple> & scoringScheme):
     m_readName(readName), m_refName(refName), m_readLength(readLength), m_refLength(refLength),
-    m_readStartPos(-1), m_refStartPos(-1), m_rawScore(0)
+    m_readStartPos(-1), m_refStartPos(-1), m_rawScore(0), m_bandSize(bandSize)
 {
 
     // Extract the alignment sequences into C++ strings for constant time random access.
@@ -150,7 +150,7 @@ std::string SemiGlobalAlignment::getShortDisplayString() {
 
     return m_readName + " (" + std::to_string(m_readStartPos) + "-" +  std::to_string(m_readEndPos) + ", " +
            "strand: STRAND), " + m_refName + " (" + std::to_string(m_refStartPos) + "-" +  std::to_string(m_refEndPos) + "), " + 
-           "raw score = " + std::to_string(m_rawScore) + ", scaled score = " + ss.str();
+           "raw score = " + std::to_string(m_rawScore) + ", scaled score = " + ss.str() + ", band size = " + std::to_string(m_bandSize);
 }
 
 

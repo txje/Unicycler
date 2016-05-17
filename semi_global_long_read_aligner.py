@@ -1113,10 +1113,10 @@ def get_mean_and_st_dev(num_list):
     '''
     num = len(num_list)
     if num == 0:
-        return 0.0, 0.0
+        return None, None
     mean = sum(num_list) / num
     if num == 1:
-        return mean, -1
+        return mean, None
     sum_squares = sum((x - mean) ** 2 for x in num_list)
     st_dev = (sum_squares / (num - 1)) ** 0.5
     return mean, st_dev

@@ -7,21 +7,22 @@
 
 AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLength, int refLength, float expectedSlope) :
     m_linePoints(commonKmers), m_readLength(readLength), m_refLength(refLength), m_expectedSlope(expectedSlope),
-    m_slope(0.0), m_intercept(0.0), m_trimmedRefStart(0), m_trimmedRefEnd(0)
-    // m_maxScore(0.0), m_areaUnderCurve(0.0)
+    m_slope(0.0), m_intercept(0.0), m_trimmedRefStart(0), m_trimmedRefEnd(0),
+    m_maxScore(0.0)
+    // m_areaUnderCurve(0.0)
 {
-    // int pointCount = m_linePoints.size();
-    // for (int i = 0; i < pointCount; ++i)
-    // {
-    //     float score = m_linePoints[i].m_score;
-    //     m_maxScore = std::max(score, m_maxScore);
-    //     float rotatedVSize = 0.0;
-    //     if (i > 0)
-    //         rotatedVSize += (m_linePoints[i].m_rotatedVPosition - m_linePoints[i-1].m_rotatedVPosition) / 2.0;
-    //     if (i < pointCount - 1)
-    //         rotatedVSize += (m_linePoints[i+1].m_rotatedVPosition - m_linePoints[i].m_rotatedVPosition) / 2.0;
-    //     m_areaUnderCurve += score * rotatedVSize;
-    // }
+    int pointCount = m_linePoints.size();
+    for (int i = 0; i < pointCount; ++i)
+    {
+        float score = m_linePoints[i].m_score;
+        m_maxScore = std::max(score, m_maxScore);
+        // float rotatedVSize = 0.0;
+        // if (i > 0)
+        //     rotatedVSize += (m_linePoints[i].m_rotatedVPosition - m_linePoints[i-1].m_rotatedVPosition) / 2.0;
+        // if (i < pointCount - 1)
+        //     rotatedVSize += (m_linePoints[i+1].m_rotatedVPosition - m_linePoints[i].m_rotatedVPosition) / 2.0;
+        // m_areaUnderCurve += score * rotatedVSize;
+    }
 }
 
 
@@ -29,6 +30,10 @@ AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLeng
 // line is no good. If it returns true, that means it successfully built the m_bridgedSeedChain
 // member.
 bool AlignmentLine::buildSeedChain(int minPointCount, float minAlignmentLength) {
+
+    // CHECK HERE WHETHER THE ROTATED V SPANS TOO MUCH!
+    // IF SO, TRIM OFF THE ENDS TO GET IT NICE AND NARROW (WITHIN 0.1 OF ROTATED H SPAN?).
+    // TRIM FROM BOTH ENDS (WITH WITH A DEQUE) KEEPING THE SCORES ABOUT MATCHING.
 
     // We are only interested in line groups which seem to span their full possible length (i.e.
     // not line groups caused by short, local alignments) and for which the band is reasonably 

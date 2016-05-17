@@ -181,9 +181,14 @@ std::vector<SemiGlobalAlignment *> semiGlobalAlignmentOneLevel(std::vector<Commo
         for (size_t j = 0; j < alignmentLines.size(); ++j) {
             AlignmentLine * line = alignmentLines[j];
 
-            // std::cout << "    LINE " << j << ": points = " << line->m_linePoints.size() << std::endl << std::flush; // TEMP
+            if (verbosity > 4)
+                output += "  line " + std::to_string(j) + ": points = " + std::to_string(line->m_linePoints.size()) + "\n";
 
             bool seedChainSuccess = line->buildSeedChain(minPointCount, minAlignmentLength);
+
+            if (verbosity > 4)
+                output += "    seed chain success: " + std::to_string(seedChainSuccess) + "\n";
+
             if (seedChainSuccess) {
 
                 // std::cout << "      slope = " << line->m_slope << ", intercept = " << line->m_intercept << std::endl << std::flush; // TEMP

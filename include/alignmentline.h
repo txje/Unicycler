@@ -29,7 +29,7 @@ public:
     int m_readLength;
     int m_refLength;
     float m_expectedSlope;
-    // float m_maxScore;
+    float m_maxScore;
     // float m_areaUnderCurve;
     float m_slope;
     float m_intercept;

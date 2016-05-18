@@ -22,6 +22,8 @@ public:
     std::string getFullString();
     std::string getShortDisplayString();
     bool isRevComp();
+    int getReadAlignmentLength() {return m_readEndPos - m_readStartPos;}
+    int getRefAlignmentLength() {return m_refEndPos - m_refStartPos;}
 
     std::string m_readName;
     std::string m_refName;

@@ -52,6 +52,11 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
         commonKmerSet = new CommonKmerSet(posReadName, refName, readLength, refLength, expectedSlope, kmerPositions);
         commonKmerSets.push_back(commonKmerSet);
 
+        // if (posReadName == "80/0_2981+" && refName == "NODE_319") {  // TEMP
+        //     std::cout << getKmerTable(commonKmerSet->m_commonKmers) << std::endl << std::flush;  // TEMP
+        //     std::cout << "\n\n\n\n" << std::flush;  // TEMP
+        // }  // TEMP
+
         // Reverse read sequence
         commonKmerSet = new CommonKmerSet(negReadName, refName, readLength, refLength, expectedSlope, kmerPositions);
         commonKmerSets.push_back(commonKmerSet);
@@ -216,7 +221,10 @@ SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readName, std::st
                                                                             output, scoringScheme);
         if (alignment != 0) {
             double alignmentScore = alignment->m_scaledScore;
-            if (alignmentScore <= bestAlignmentScore) {
+            bool badScore = (alignmentScore <= bestAlignmentScore);
+            bool tooShort = (alignment->getReadAlignmentLength() < MIN_ALIGNMENT_LENGTH) ||
+                            (alignment->getRefAlignmentLength() < MIN_ALIGNMENT_LENGTH);
+            if (badScore || tooShort) {
                 delete alignment;
                 break;
             }
@@ -232,13 +240,9 @@ SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readName, std::st
             break;
     }
 
-    if (bestAlignment != 0) {
-        // if (verbosity > 2)
-        //     output += "  " + bestAlignment->getShortDisplayString() + ", band size = " + std::to_string(bandSize) + "\n";
-        // if (verbosity > 3)
-        //     output += "    " + bestAlignment->m_cigar + "\n";
+    if (bestAlignment != 0)
         bestAlignment->m_milliseconds = getTime() - startTime;
-    }
+
     return bestAlignment;
 }
 

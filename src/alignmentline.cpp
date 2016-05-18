@@ -120,8 +120,7 @@ double AlignmentLine::getRelativeLineError() {
 bool AlignmentLine::buildSeedChain(int minPointCount, float minAlignmentLength) {
 
     // Exclude alignments which are too short.
-    double bandLength = sqrt((m_alignedReadLength * m_alignedReadLength) + (m_alignedRefLength * m_alignedRefLength));
-    if (bandLength < minAlignmentLength)
+    if (m_alignedReadLength < minAlignmentLength || m_alignedRefLength < minAlignmentLength)
         return false;
 
     // // Now we want to test whether the CommonKmers in the band seem to span the full band. To

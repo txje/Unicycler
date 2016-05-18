@@ -5,8 +5,8 @@
 #define KMER_SIZE 7
 
 // Alignment lines that have an excessively small or large slope will be rejected.
-#define MIN_ALLOWED_SLOPE 0.5
-#define MAX_ALLOWED_SLOPE 2.0
+#define MIN_ALLOWED_SLOPE 0.75
+#define MAX_ALLOWED_SLOPE 1.3333
 
 // Reference sequences are trimmed down before conducting an actual alignment.
 #define PAD_SIZE 1000
@@ -29,8 +29,10 @@
 #define MIN_LINE_SCORE 2.0
 
 // Line finding stops when the relative line error (line error over the aligned ref length) exceeds
-// this value.
-#define MAX_ALLOWED_LINE_ERROR 0.05
+// either a relative error (relative to the reference alignment length) or an absolute error (in
+// base pairs).
+#define MAX_ALLOWED_LINE_RELATIVE_ERROR 0.2
+#define MAX_ALLOWED_LINE_ABSOLUTE_ERROR 100
 
 // We will try to find alignment lines until this number of bad lines has been found.
 #define BAD_LINE_COUNT 10

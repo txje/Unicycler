@@ -245,8 +245,11 @@ AlignmentLine * CommonKmerSet::extractAlignmentLine() {
         // If the line error has gotten too large, we're done. But we only check this after the
         // line has gotten a few points, otherwise it could fail here too early.
         int pointCount = lineEndI - lineStartI + 1;
-        if (pointCount >= MIN_POINT_COUNT && line->getRelativeLineError() > MAX_ALLOWED_LINE_ERROR)
-            break;
+        if (pointCount >= MIN_POINT_COUNT) {
+            if (line->getRelativeLineError() > MAX_ALLOWED_LINE_RELATIVE_ERROR ||
+                line->m_error > MAX_ALLOWED_LINE_ABSOLUTE_ERROR)
+                break;
+        }
     }
 
     // We should now have an alignment line with at least one (hopefully more) points. We remove

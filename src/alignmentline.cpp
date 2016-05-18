@@ -123,6 +123,10 @@ bool AlignmentLine::buildSeedChain(int minPointCount, float minAlignmentLength) 
     if (m_alignedReadLength < minAlignmentLength || m_alignedRefLength < minAlignmentLength)
         return false;
 
+    // Exclude alignments with bad slopes.
+    if (m_slope < MIN_ALLOWED_SLOPE || m_slope > MAX_ALLOWED_SLOPE)
+        return false;
+
     // // Now we want to test whether the CommonKmers in the band seem to span the full band. To
     // // do so, we get the std dev of the rotated H position and compare it to the expected std
     // // dev of a uniform distribution.
@@ -182,10 +186,6 @@ bool AlignmentLine::buildSeedChain(int minPointCount, float minAlignmentLength) 
 
     // Remove any line groups with too few points.
     if (int(m_linePoints.size()) < minPointCount)
-        return false;
-
-    // If the slope is too far from 1.0, we don't bother continuing to the seed chaining step.
-    if (m_slope < MIN_ALLOWED_SLOPE || m_slope > MAX_ALLOWED_SLOPE)
         return false;
 
     // When we do a Seqan banded alignment, we won't use the full reference sequence but just the

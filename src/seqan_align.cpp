@@ -52,7 +52,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
         commonKmerSet = new CommonKmerSet(posReadName, refName, readLength, refLength, expectedSlope, kmerPositions);
         commonKmerSets.push_back(commonKmerSet);
 
-        // if (posReadName == "80/0_2981+" && refName == "NODE_319") {  // TEMP
+        // if (posReadName == "847/0_18868+" && refName == "NODE_89") {  // TEMP
         //     std::cout << getKmerTable(commonKmerSet->m_commonKmers) << std::endl << std::flush;  // TEMP
         //     std::cout << "\n\n\n\n" << std::flush;  // TEMP
         // }  // TEMP

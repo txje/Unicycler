@@ -67,7 +67,11 @@ void KmerPositions::deletePositions(std::string & name) {
     m_mutex.lock();
     if (m_sequences.find(name) != m_sequences.end())
         m_sequences.erase(name);
+    m_mutex.unlock();
+
     KmerPosMap * kmerPosMap = getKmerPositions(name);
+    
+    m_mutex.lock();
     if (kmerPosMap != 0) {
         m_kmerPositions.erase(name);
         delete kmerPosMap;

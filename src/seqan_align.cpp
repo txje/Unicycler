@@ -16,7 +16,7 @@
 // the given read against all references and returns the console output and all found alignments in a
 // string.
 char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
-                           double expectedSlope, KmerPositions * kmerPositions,
+                           double expectedSlope, KmerPositions * refKmerPositions,
                            int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore,
                            double lowScoreThreshold) {
     // This string will collect all of the console output for the alignment.
@@ -34,21 +34,21 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
     // std::cout << "READ: " << readName << std::endl << std::flush; // TEMP
 
 
-    // At this point, the kmerPositions object should have only the reference sequences.
-    std::vector<std::string> referenceNames = kmerPositions->getAllNames();
+    std::vector<std::string> referenceNames = refKmerPositions->getAllNames();
 
-    // Add both the forward and reverse read sequences to the KmerPositions object.
-    kmerPositions->addPositions(posReadName, posReadSeq);
-    kmerPositions->addPositions(negReadName, negReadSeq);
+    // Make a new KmerPositions object for the reads.
+    KmerPositions readKmerPositions;
+    readKmerPositions.addPositions(posReadName, posReadSeq);
+    readKmerPositions.addPositions(negReadName, negReadSeq);
 
     // Create a CommonKmerSet for the read (both forward and reverse complement) and every reference.
     std::vector<CommonKmerSet *> commonKmerSets;
     for (size_t i = 0; i < referenceNames.size(); ++i) {
         std::string refName = referenceNames[i];
-        int refLength = kmerPositions->getLength(refName);
-        CommonKmerSet * forwardCommonKmerSet = new CommonKmerSet(posReadName, refName, readLength, refLength, expectedSlope, kmerPositions);
+        int refLength = refKmerPositions->getLength(refName);
+        CommonKmerSet * forwardCommonKmerSet = new CommonKmerSet(posReadName, refName, readLength, refLength, expectedSlope, &readKmerPositions, refKmerPositions);
         commonKmerSets.push_back(forwardCommonKmerSet);
-        CommonKmerSet * reverseCommonKmerSet = new CommonKmerSet(negReadName, refName, readLength, refLength, expectedSlope, kmerPositions);
+        CommonKmerSet * reverseCommonKmerSet = new CommonKmerSet(negReadName, refName, readLength, refLength, expectedSlope, &readKmerPositions, refKmerPositions);
         commonKmerSets.push_back(reverseCommonKmerSet);
 
         // if (posReadName == "847/0_18868+" && refName == "NODE_89") {  // TEMP
@@ -95,8 +95,8 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
             // go, so let's perform the alignment!
             if (verbosity > 2)
                 output += "  line: " + line->getDescriptiveString() + ", GOOD\n";
-            std::string * readSeq = kmerPositions->getSequence(readName);
-            std::string * refSeq = kmerPositions->getSequence(refName);
+            std::string * readSeq = readKmerPositions.getSequence(readName);
+            std::string * refSeq = refKmerPositions->getSequence(refName);
             SemiGlobalAlignment * alignment = semiGlobalAlignmentOneLine(readName, refName, readSeq, refSeq,
                                                                          line, verbosity, output, scoringScheme);
             alignmentLines.push_back(line);
@@ -200,8 +200,6 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
     returnString += output;
 
     // Clean up.
-    kmerPositions->deletePositions(posReadName);
-    kmerPositions->deletePositions(negReadName);
     for (size_t i = 0; i < commonKmerSets.size(); ++i)
         delete commonKmerSets[i];
     for (size_t i = 0; i < allAlignments.size(); ++i) {

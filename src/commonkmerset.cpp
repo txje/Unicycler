@@ -4,7 +4,7 @@
 
 
 CommonKmerSet::CommonKmerSet(std::string & readName, std::string & refName, int readLength, int refLength,
-                             float expectedSlope, KmerPositions * kmerPositions) :
+                             float expectedSlope, KmerPositions * readKmerPositions, KmerPositions * refKmerPositions) :
     m_readName(readName), m_refName(refName),
     m_readLength(readLength), m_refLength(refLength),
     m_expectedSlope(expectedSlope), m_maxScore(0), m_maxScoreIndex(0)
@@ -12,11 +12,11 @@ CommonKmerSet::CommonKmerSet(std::string & readName, std::string & refName, int 
     // std::cout << "CommonKmerSet::CommonKmerSet start: " << readName << ", " << refName << std::endl << std::flush; // TEMP
     float rotationAngle = CommonKmer::getRotationAngle(m_expectedSlope);
 
-    KmerPosMap * readKmerPositions = kmerPositions->getKmerPositions(readName);
-    KmerPosMap * refKmerPositions = kmerPositions->getKmerPositions(refName);
+    KmerPosMap * readKmerKmerPosMap = readKmerPositions->getKmerPositions(readName);
+    KmerPosMap * refKmerKmerPosMap = refKmerPositions->getKmerPositions(refName);
 
-    KmerPosMap * smaller = readKmerPositions;
-    KmerPosMap * larger = refKmerPositions;
+    KmerPosMap * smaller = readKmerKmerPosMap;
+    KmerPosMap * larger = refKmerKmerPosMap;
     bool refKmersSmaller = false;
     if (smaller->size() > larger->size()) {
         std::swap(smaller, larger);

@@ -34,7 +34,6 @@ public:
     KmerPositions() {}
     ~KmerPositions();
     void addPositions(std::string & name, std::string & sequence);
-    void deletePositions(std::string & name);
     KmerPosMap * getKmerPositions(std::string & name);
     std::string * getSequence(std::string & name);
     std::vector<std::string> getAllNames();
@@ -53,8 +52,6 @@ extern "C" {
     KmerPositions * newKmerPositions();
 
     void addKmerPositions(KmerPositions * kmerPositions, char * nameC, char * sequenceC);
-
-    // void deleteKmerPositions(KmerPositions * kmerPositions, char * name);
 
     void deleteAllKmerPositions(KmerPositions * kmerPositions);
 

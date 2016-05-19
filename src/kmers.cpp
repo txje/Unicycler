@@ -2,8 +2,6 @@
 #include "kmers.h"
 
 
-
-
 // Creates the CommonKmer object using the position in the two sequences.
 // It then rotates the point relative to the origin by the given angle (in radians).
 CommonKmer::CommonKmer(int hPosition, int vPosition, float angle) :
@@ -16,14 +14,12 @@ CommonKmer::CommonKmer(int hPosition, int vPosition, float angle) :
     m_rotatedVPosition = (m_hPosition * s) + (m_vPosition * c);
 }
 
-
 // This is the destructor for KmerPositions. It cleans up all the KmerPosMaps which were allocated
 // on the heap.
 KmerPositions::~KmerPositions() {
     for (std::unordered_map<std::string, KmerPosMap *>::iterator i = m_kmerPositions.begin(); i != m_kmerPositions.end(); ++i)
         delete i->second;
 }
-
 
 // Returns a vector all of k-mer position names (should be exact the same as the the sequence names).
 std::vector<std::string> KmerPositions::getAllNames() {
@@ -63,22 +59,6 @@ void KmerPositions::addPositions(std::string & name, std::string & sequence) {
     m_mutex.unlock();
 }
 
-void KmerPositions::deletePositions(std::string & name) {
-    m_mutex.lock();
-    if (m_sequences.find(name) != m_sequences.end())
-        m_sequences.erase(name);
-    m_mutex.unlock();
-
-    KmerPosMap * kmerPosMap = getKmerPositions(name);
-    
-    m_mutex.lock();
-    if (kmerPosMap != 0) {
-        m_kmerPositions.erase(name);
-        delete kmerPosMap;
-    }
-    m_mutex.unlock();
-}
-
 // This function retrieves a KmerPosMap from the object using the name as a key. If the name isn't
 // in the map, it returns 0.
 KmerPosMap * KmerPositions::getKmerPositions(std::string & name) {
@@ -90,7 +70,6 @@ KmerPosMap * KmerPositions::getKmerPositions(std::string & name) {
     return returnedMap;
 }
 
-
 std::string * KmerPositions::getSequence(std::string & name) {
     std::string * returnedSequence = 0;
     m_mutex.lock();
@@ -99,7 +78,6 @@ std::string * KmerPositions::getSequence(std::string & name) {
     m_mutex.unlock();
     return returnedSequence;
 }
-
 
 KmerPositions * newKmerPositions() {
     return new KmerPositions();
@@ -111,12 +89,6 @@ void addKmerPositions(KmerPositions * kmerPositions, char * nameC, char * sequen
     kmerPositions->addPositions(name, sequence);
 }
 
-// void deleteKmerPositions(KmerPositions * kmerPositions, char * name) {
-//     kmerPositions->deletePositions(name);
-// }
-
 void deleteAllKmerPositions(KmerPositions * kmerPositions) {
     delete kmerPositions;
 }
-
-

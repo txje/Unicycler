@@ -10,7 +10,7 @@
 class CommonKmerSet {
 public:
     CommonKmerSet(std::string & readName, std::string & refName, int readLength, int refLength,
-                  float expectedSlope, KmerPositions * kmerPositions);
+                  float expectedSlope, KmerPositions * readKmerPositions, KmerPositions * refKmerPositions);
 
     std::string m_readName;
     std::string m_refName;

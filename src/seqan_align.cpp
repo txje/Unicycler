@@ -68,125 +68,154 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
     // We now form an alignment line starting at the highest scoring point and perform an
     // alignment. This is repeated until we achieve too many rubbish alignments.
     Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
-    std::vector<SemiGlobalAlignment *> alignments;
+    std::vector<AlignmentLine *> alignmentLines;
+    std::vector<SemiGlobalAlignment *> allAlignments;
+    std::vector<SemiGlobalAlignment *> goodAlignments;
     int badAlignmentCount = 0;
-    while (true) {
+    while (badAlignmentCount < BAD_LINE_COUNT) {
+
+        // Extract an alignment line from around the highest scoring point.
         CommonKmerSet * highestScoringSet = getHighestScoringSet(commonKmerSets);
         if (highestScoringSet == 0)
             break;
         std::string readName = highestScoringSet->m_readName;
         std::string refName = highestScoringSet->m_refName;
-
+        AlignmentLine * line = highestScoringSet->extractAlignmentLine();
 
         // std::cout << readName << ", " << refName << std::endl << std::flush;
         // std::cout << getKmerTable(highestScoringSet->m_commonKmers) << std::endl << std::flush;
         // std::cout << "\n\n\n\n" << std::flush;
 
-
-        AlignmentLine * line = highestScoringSet->extractAlignmentLine();
-        bool badLine = false;
+        // Check to see if the alignment line is good. It could fail at two possible points: the
+        // extractAlignmentLine function could return 0, or the buildSeedChain function could
+        // return false.
         if (line == 0) {
-            badLine = true;
+            ++badAlignmentCount;
             if (verbosity > 2)
                 output += "  line: " + refName + ", none, BAD\n";
         }
+        else if (!line->buildSeedChain(MIN_POINT_COUNT, MIN_ALIGNMENT_LENGTH)) {
+            ++badAlignmentCount;
+            delete line;
+            if (verbosity > 2)
+                output += "  line: " + refName + ", " + line->getDescriptiveString() + ", no seed chain, BAD\n";
+        }
         else {
-            bool seedChainSuccess = line->buildSeedChain(MIN_POINT_COUNT, MIN_ALIGNMENT_LENGTH);
-            if (!seedChainSuccess) {
-                badLine = true;
-                delete line;
-                    if (verbosity > 2)
-                        output += "  line: " + refName + ", " + line->getDescriptiveString() + ", no seed chain, BAD\n";
+            // If the code got here, then we should have an alignment line with a seed chain ready to
+            // go, so let's perform the alignment!
+            if (verbosity > 2)
+                output += "  line: " + refName + ", " + line->getDescriptiveString() + ", GOOD\n";
+            std::string * readSeq = kmerPositions->getSequence(readName);
+            std::string * refSeq = kmerPositions->getSequence(refName);
+            SemiGlobalAlignment * alignment = semiGlobalAlignmentOneLine(readName, refName, readSeq, refSeq,
+                                                                         line, verbosity, output, scoringScheme);
+            alignmentLines.push_back(line);
+            allAlignments.push_back(alignment);
+
+            // Check to see if the alignment failed or if it scored too low.
+            if (alignment == 0) {
+                ++badAlignmentCount;
+                if (verbosity > 2)
+                    output += "    alignment: failed, BAD\n";
+            }
+            else if (alignment->m_scaledScore < lowScoreThreshold) {
+                ++badAlignmentCount;
+                if (verbosity > 2)
+                    output += "    alignment: " + alignment->getShortDisplayString() + ", BAD\n";
+            }
+
+            // If the alignment is good, we add it to the results.
+            else {
+                goodAlignments.push_back(alignment);
+                if (verbosity > 2)
+                    output += "    alignment: " + alignment->getShortDisplayString() + ", GOOD\n";
+            }
+
+            // Finally, we want to check whether this alignment line is near any of the previous
+            // alignment lines.
+            // If the alignment line is near multiple other alignment lines, then we only try
+            // merging with the best one (as determined by alignment quality).
+            int bestIndex = -1;
+            for (size_t i = 0; i < alignmentLines.size() - 1; ++i) {
+                AlignmentLine * previousLine = alignmentLines[i];
+                if (previousLine.isNear(line)) {
+                    // If we haven't yet found a nearby line, then this line is our best.
+                    if (bestIndex == -1)
+                        bestIndex = i;
+
+                    // If we have already found a nearby line but it didn't align and this nearby
+                    // line did, then this one is our best.
+                    else if (allAlignments[bestIndex] == 0 && allAlignments[i] != 0)
+                        bestIndex = i;
+
+                    // If we have already found a nearby line and both the previously found one and
+                    // this one aligned, we choose the one with the best alignment score.
+                    else if (allAlignments[bestIndex] != 0 && allAlignments[i] != 0 &&
+                             allAlignments[i]->m_scaledScore > allAlignments[bestIndex]->m_scaledScore)
+                        bestIndex = i;
+                }
+            }
+
+            // If the alignment line was near another one, we try merging the two lines to make a
+            // new line and aligning to that. This is good for cases of long alignments that aren't
+            // well captured by a single line.
+            if (bestIndex != -1) {
+                AlignmentLine * lineToMerge = alignmentLines[bestIndex];
+                if (verbosity > 2) {
+                    output += "  merging lines: 1) " + line->getDescriptiveString() + "\n";
+                    output += "                 2) " + lineToMerge->getDescriptiveString() + "\n";
+                }
+                AlignmentLine * mergedLine = new AlignmentLine(line, lineToMerge);
+                if (!mergedLine->buildSeedChain(MIN_POINT_COUNT, MIN_ALIGNMENT_LENGTH)) {
+                    if (verbosity > 2) {
+                        output += "                 FAILED\n";
+                    delete mergedLine;
+                }
+                else {
+                    if (verbosity > 2) {
+                        output += "                 Result: " + mergedLine->getDescriptiveString() + "\n";
+                    SemiGlobalAlignment * mergedLineAlignment = semiGlobalAlignmentOneLine(readName, refName, readSeq, refSeq,
+                                                                                           mergedLine, verbosity, output, scoringScheme);
+                    alignmentLines.push_back(mergedLine);
+                    allAlignments.push_back(mergedLineAlignment);
+                    if (mergedLineAlignment != 0) {
+                        if (verbosity > 2)
+                            output += "    merged line alignment failed\n";
+                    }
+                    else if (alignment->m_scaledScore < lowScoreThreshold) {
+                        if (verbosity > 2)
+                            output += "    merged line alignment: " + mergedLineAlignment->getShortDisplayString() + ", BAD\n";
+                    }
+
+                    // If the merged alignment is good, we add it to the results.
+                    else {
+                        goodAlignments.push_back(alignment);
+                        if (verbosity > 2)
+                            output += "    merged line alignment: " + mergedLineAlignment->getShortDisplayString() + ", GOOD\n";
+                    }
+                }
             }
         }
-        if (badLine) {
-            ++badAlignmentCount;
-            if (badAlignmentCount >= BAD_LINE_COUNT)
-                break;
-            else
-                continue;
-        }
-
-        // If the code got here, then we should have an alignment line with a seed chain ready to
-        // go, so let's perform the alignment!
-        if (verbosity > 2)
-            output += "  line: " + refName + ", " + line->getDescriptiveString() + ", GOOD\n";
-        std::string * readSeq = kmerPositions->getSequence(readName);
-        std::string * refSeq = kmerPositions->getSequence(refName);
-        SemiGlobalAlignment * alignment = semiGlobalAlignmentOneLine(readName, refName, readSeq, refSeq,
-                                                                     line, verbosity, output, scoringScheme);
-        delete line;
-
-        bool badAlignment = false;
-        if (alignment == 0) {
-            badAlignment = true;
-            if (verbosity > 2)
-                output += "    alignment: failed, BAD\n";
-        }
-        else if (alignment->m_scaledScore < lowScoreThreshold) {
-            badAlignment = true;
-            delete alignment;
-            if (verbosity > 2)
-                output += "    alignment: " + alignment->getShortDisplayString() + ", BAD\n";
-        }
-        if (badAlignment) {
-            ++badAlignmentCount;
-            if (badAlignmentCount >= BAD_LINE_COUNT)
-                break;
-            else
-                continue;
-        }
-
-        // If the code got here, then our alignment is okay, so we add it to the results.
-        alignments.push_back(alignment);
-        if (verbosity > 2)
-            output += "    alignment: " + alignment->getShortDisplayString() + ", GOOD\n";
-        if (verbosity > 3)
-            output += "    " + alignment->m_cigar + "\n";
     }
 
-
-    // // Sort the common k-mer sets by their max score so high-scoring sets are used first.
-    // std::sort(commonKmerSets.begin(), commonKmerSets.end(), [](const CommonKmerSet * a, const CommonKmerSet * b) {
-    //     return a->m_maxScore > b->m_maxScore;   
-    // });
-
-    // // Now for the alignments! We first try at sensitivity level 1.
-    // std::vector<SemiGlobalAlignment *> alignments = semiGlobalAlignmentOneLevel(commonKmerSets, kmerPositions,
-    //                                                                             verbosity, output, expectedSlope,
-    //                                                                             matchScore, mismatchScore,
-    //                                                                             gapOpenScore, gapExtensionScore,
-    //                                                                             1, maxScoreAllSets);
-
-    // // If none of the read aligned well, then we give up (assume that the read is rubbish and
-    // // doesn't) align anywhere. If all of the read aligned well, then we've succeeded and are
-    // // finished. But if some intermediate fraction of the read aligned well, it seems like the read
-    // // isn't rubbish but we failed to find all of its alignments. In this case we try again using
-    // // more sensitive settings.
-    // double fractionAlignedWell = fractionOfReadAlignedOverThreshold(alignments, lowScoreThreshold);
-    // if (fractionAlignedWell > 0.0 && fractionAlignedWell < 1.0) {
-    //     std::vector<SemiGlobalAlignment *> l2Alignments = semiGlobalAlignmentOneLevel(commonKmerSets, kmerPositions,
-    //                                                                                   verbosity, output, expectedSlope,
-    //                                                                                   matchScore, mismatchScore,
-    //                                                                                   gapOpenScore, gapExtensionScore,
-    //                                                                                   2, maxScoreAllSets);
-    //     alignments.insert(alignments.end(), l2Alignments.begin(), l2Alignments.end());
-    // }
+    // The returned string is semicolon-delimited. The last part is the console output and the
+    // other parts are alignment description strings.
+    std::string returnString;
+    for (size_t i = 0; i < goodAlignments.size(); ++i)
+        returnString += goodAlignments[i]->getFullString() + ";";
+    returnString += output;
 
     // Clean up.
     kmerPositions->deletePositions(posReadName);
     kmerPositions->deletePositions(negReadName);
     for (size_t i = 0; i < commonKmerSets.size(); ++i)
         delete commonKmerSets[i];
-
-    // The returned string is semicolon-delimited. The last part is the console output and the
-    // other parts are alignment description strings.
-    std::string returnString;
-    for (size_t i = 0; i < alignments.size(); ++i) {
-        returnString += alignments[i]->getFullString() + ";";
-        delete alignments[i];
+    for (size_t i = 0; i < allAlignments.size(); ++i) {
+        if (allAlignments[i] != 0)
+            delete allAlignments[i];
+        delete alignmentLines[i];
     }
-    returnString += output;
+
     return cppStringToCString(returnString);
 }
 

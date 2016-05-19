@@ -189,7 +189,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
 
                     // If the merged alignment is good, we add it to the results.
                     else {
-                        goodAlignments.push_back(alignment);
+                        goodAlignments.push_back(mergedLineAlignment);
                         if (verbosity > 2)
                             output += "    merged line alignment: " + mergedLineAlignment->getShortDisplayString() + ", GOOD\n";
                     }

@@ -2,10 +2,12 @@
 
 #include "alignmentline.h"
 #include "semiglobalalignment.h"
+#include <cmath>
 
 
-
-AlignmentLine::AlignmentLine(CommonKmer startPoint, int readLength, int refLength) :
+AlignmentLine::AlignmentLine(CommonKmer startPoint, std::string readName, std::string refName,
+                             int readLength, int refLength) :
+    m_readName(readName), m_refName(refName),
     m_slope(0.0), m_intercept(0.0), m_error(0.0), m_alignedReadLength(0.0), m_alignedRefLength(0.0),
     m_trimmedRefStart(0), m_trimmedRefEnd(refLength),
     m_readLength(readLength), m_refLength(refLength),
@@ -15,10 +17,28 @@ AlignmentLine::AlignmentLine(CommonKmer startPoint, int readLength, int refLengt
 }
 
 
+AlignmentLine::AlignmentLine(AlignmentLine * mergeLine1, AlignmentLine * mergeLine2) :
+    m_slope(0.0), m_intercept(0.0), m_error(0.0), m_alignedReadLength(0.0), m_alignedRefLength(0.0),
+    m_meanX(0.0), m_meanY(0.0), m_ssX(0.0), m_ssY(0.0), m_coMoment(0.0), m_varX(0.0), m_varY(0.0), m_covariance(0.0)
+{
+    m_readName = mergeLine1->m_readName;
+    m_refName = mergeLine1->m_refName;
+    m_readLength = mergeLine1->m_readLength;
+    m_refLength = mergeLine1->m_refLength;
+    m_trimmedRefStart = 0;
+    m_trimmedRefEnd = m_refLength;
+
+    for (size_t i = 0; i < mergeLine1->m_linePoints.size(); ++i)
+        addPoint(mergeLine1->m_linePoints[i]);
+    for (size_t i = 0; i < mergeLine2->m_linePoints.size(); ++i)
+        addPoint(mergeLine2->m_linePoints[i]);
+}
+
+
 // This function adds a point to the alignment line and updates its linear regression estimates.
 // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
 // http://onlinestatbook.com/2/regression/accuracy.html
-void AlignmentLine::addPoint(CommonKmer newPoint) {
+void AlignmentLine::addPoint(CommonKmer & newPoint) {
     m_linePoints.push_back(newPoint);
     double previousMeanY = m_meanY;
 
@@ -56,26 +76,7 @@ void AlignmentLine::addPoint(CommonKmer newPoint) {
     // Calculate an estimate for the aligned lengths of read and reference.
     if (n > 1.0) {
         float xStart, yStart, xEnd, yEnd;
-
-        if (m_intercept >= 0.0) {
-            xStart = 0.0;
-            yStart = m_intercept;
-        }
-        else {
-            xStart = -m_intercept / m_slope;
-            yStart = 0.0;
-        }
-
-        float yAtXEnd = (m_slope * m_readLength) + m_intercept;
-        if (yAtXEnd <= m_refLength) {
-            xEnd = m_readLength;
-            yEnd = yAtXEnd;
-        }
-        else {
-            xEnd = (m_refLength - m_intercept) / m_slope;
-            yEnd = m_refLength;
-        }
-
+        getStartEndPoints(&xStart, &yStart, &xEnd, &yEnd);
         m_alignedReadLength = xEnd - xStart;
         m_alignedRefLength = yEnd - yStart;
     }
@@ -91,29 +92,6 @@ double AlignmentLine::getRelativeLineError() {
 }
 
 
-
-
-// AlignmentLine::AlignmentLine(std::vector<CommonKmer> & commonKmers, int readLength, int refLength, float expectedSlope) :
-//     m_linePoints(commonKmers), m_readLength(readLength), m_refLength(refLength), m_expectedSlope(expectedSlope),
-//     m_slope(0.0), m_intercept(0.0), m_trimmedRefStart(0), m_trimmedRefEnd(0),
-//     m_maxScore(0.0)
-//     // m_areaUnderCurve(0.0)
-// {
-//     int pointCount = m_linePoints.size();
-//     for (int i = 0; i < pointCount; ++i)
-//     {
-//         float score = m_linePoints[i].m_score;
-//         m_maxScore = std::max(score, m_maxScore);
-//         // float rotatedVSize = 0.0;
-//         // if (i > 0)
-//         //     rotatedVSize += (m_linePoints[i].m_rotatedVPosition - m_linePoints[i-1].m_rotatedVPosition) / 2.0;
-//         // if (i < pointCount - 1)
-//         //     rotatedVSize += (m_linePoints[i+1].m_rotatedVPosition - m_linePoints[i].m_rotatedVPosition) / 2.0;
-//         // m_areaUnderCurve += score * rotatedVSize;
-//     }
-// }
-
-
 // This function prepares the alignment line for use in an alignment. If it returns false, then the
 // line is no good. If it returns true, that means it successfully built the m_bridgedSeedChain
 // member.
@@ -126,21 +104,6 @@ bool AlignmentLine::buildSeedChain(int minPointCount, float minAlignmentLength) 
     // Exclude alignments with bad slopes.
     if (m_slope < MIN_ALLOWED_SLOPE || m_slope > MAX_ALLOWED_SLOPE)
         return false;
-
-    // // Now we want to test whether the CommonKmers in the band seem to span the full band. To
-    // // do so, we get the std dev of the rotated H position and compare it to the expected std
-    // // dev of a uniform distribution.
-    // std::vector<double> rotatedHPositions;
-    // rotatedHPositions.reserve(pointCount);
-    // for (int i = 0; i < pointCount; ++i)
-    //     rotatedHPositions.push_back(m_linePoints[i].m_rotatedHPosition);
-    // double meanRotatedH, rotatedHStdDev;
-    // getMeanAndStDev(rotatedHPositions, meanRotatedH, rotatedHStdDev);
-    // double uniformStdDev = bandLength / 3.464101615137754; // sqrt(12)
-
-    // // At least half of the uniform distribution's std dev is required.
-    // if (rotatedHStdDev < 0.5 * uniformStdDev)
-    //     return false;
 
     // Throw out any point which is too divergent from its neighbours. To do
     // this, we determine the slope between each point and its nearest neighbours and how divergent
@@ -269,32 +232,33 @@ bool AlignmentLine::buildSeedChain(int minPointCount, float minAlignmentLength) 
 }
 
 std::string AlignmentLine::getDescriptiveString() {
-    return  "slope = " + std::to_string(m_slope) + ", intercept = " + std::to_string(m_intercept);
+    return m_refName + ", slope = " + std::to_string(m_slope) + ", intercept = " + std::to_string(m_intercept);
 }
 
 
 
+// This function uses the slope, intercept and read/ref lengths to determine (x, y) coordinates for
+// the start and end of the alignment line.
+void AlignmentLine::getStartEndPoints(float * xStart, float * yStart, float * xEnd, float * yEnd) {
+    if (m_intercept >= 0.0) {
+        *xStart = 0.0;
+        *yStart = m_intercept;
+    }
+    else {
+        *xStart = -m_intercept / m_slope;
+        *yStart = 0.0;
+    }
 
-// // Adapted from:
-// // http://stackoverflow.com/questions/11449617/how-to-fit-the-2d-scatter-data-with-a-line-with-c
-// void AlignmentLine::linearRegression(std::vector<CommonKmer> & pts, float * slope, float * intercept) {
-//     int n = pts.size();
-//     double sumH = 0.0, sumV = 0.0, sumHV = 0.0, sumHH = 0.0;
-//     for (int i = 0; i < n; ++i) {
-//         double hPos = pts[i].m_hPosition;
-//         double vPos = pts[i].m_vPosition;
-//         sumH += hPos;
-//         sumV += vPos;
-//         sumHV += hPos * vPos;
-//         sumHH += hPos * hPos;
-//     }
-//     double hMean = sumH / n;
-//     double vMean = sumV / n;
-//     double denominator = sumHH - (sumH * hMean);
-//     *slope = float((sumHV - sumH * vMean) / denominator);
-//     *intercept = float(vMean - (*slope * hMean));
-// }
-
+    float yAtXEnd = (m_slope * m_readLength) + m_intercept;
+    if (yAtXEnd <= m_refLength) {
+        *xEnd = m_readLength;
+        *yEnd = yAtXEnd;
+    }
+    else {
+        *xEnd = (m_refLength - m_intercept) / m_slope;
+        *yEnd = m_refLength;
+    }
+}
 
 
 // This function takes the seed chain which should end at the point hStart, vStart. New seeds will be
@@ -338,116 +302,6 @@ std::string getSeedChainTable(String<TSeed> & seedChain) {
 
 
 
-
-
-
-// // This function searches for lines in the 2D read-ref space that represent likely semi-global
-// // alignments.
-// std::vector<AlignmentLine *> findAlignmentLines(CommonKmerSet * commonKmerSet,
-//                                                 int readLength, int refLength, float expectedSlope,
-//                                                 int verbosity, std::string & output,
-//                                                 float lowScoreThreshold, float highScoreThreshold) {
-//     std::vector<AlignmentLine *> returnedLines;
-
-//     int commonKmerCount = commonKmerSet->m_commonKmers.size();
-
-//     if (commonKmerCount < 2) {
-//         // if (verbosity > 3)
-//         //     output += "  No lines found, too few common k-mers (" + std::to_string(getTime() - startTime) + " ms)\n";
-//         return returnedLines;
-//     }
-
-//     if (verbosity > 4) {
-//         output += "  Common k-mer positions:\n";
-//         output += getKmerTable(commonKmerSet->m_commonKmers);
-//         output += "  Max score: " + std::to_string(commonKmerSet->m_maxScore) + "\n";
-//     }
-
-//     // Now group all of the line points. For a line group to form, a point must score above the
-//     // high threshold. The group will continue (in both directions) until the score drops below
-//     // the low threshold.
-//     std::vector<std::vector<CommonKmer> > lineGroups;
-//     bool lineInProgress = false;
-//     for (int i = 0; i < commonKmerCount; ++i) {
-//         if (lineInProgress) {
-//             if (commonKmerSet->m_commonKmers[i].m_score >= lowScoreThreshold)
-//                 lineGroups.back().push_back(commonKmerSet->m_commonKmers[i]);
-//             else // This line group is done.
-//                 lineInProgress = false;
-//         }
-//         else if (commonKmerSet->m_commonKmers[i].m_score >= highScoreThreshold) {
-//             // It's time to start a new line group!
-//             lineGroups.push_back(std::vector<CommonKmer>());
-//             lineInProgress = true;
-
-//             // Step backwards to find where the group should start (the first point over the low
-//             // threshold).
-//             int groupStartPoint = i;
-//             while (groupStartPoint >= 0 &&
-//                    commonKmerSet->m_commonKmers[groupStartPoint].m_score >= lowScoreThreshold)
-//                 --groupStartPoint;
-//             ++groupStartPoint;
-
-//             // Add the initial group points.
-//             for (int j = groupStartPoint; j <= i; ++j)
-//                 lineGroups.back().push_back(commonKmerSet->m_commonKmers[j]);
-//         }
-//     }
-//     if (verbosity > 4)
-//         output += "  Number of potential lines: " + std::to_string(lineGroups.size()) + "\n";
-
-//     // It's possible for one actual line group to be broken into multiple pieces because the scores
-//     // dipped low in the middle. So now we go back through our line groups and merge together those
-//     // that are sufficiently close to each other.
-//     std::vector<std::vector<CommonKmer> > mergedLineGroups;
-//     if (lineGroups.size() > 0)
-//         mergedLineGroups.push_back(lineGroups[0]);
-//     for (size_t i = 1; i < lineGroups.size(); ++i) {
-//         std::vector<CommonKmer> * previousGroup = &(mergedLineGroups.back());
-//         std::vector<CommonKmer> * thisGroup = &(lineGroups[i]);
-//         float previousLineLength = getLineLength(previousGroup->back().m_hPosition, previousGroup->back().m_vPosition,
-//                                                  expectedSlope, readLength, refLength);
-//         float thisLineLength = getLineLength(thisGroup->front().m_hPosition, thisGroup->front().m_vPosition,
-//                                              expectedSlope, readLength, refLength);
-//         float meanLineLength = (previousLineLength + thisLineLength) / 2.0;
-//         float mergeDistance = meanLineLength * MERGE_DISTANCE_FRACTION;
-//         float distanceBetween = thisGroup->front().m_rotatedVPosition - previousGroup->back().m_rotatedVPosition;
-//         if (distanceBetween <= mergeDistance)
-//             previousGroup->insert(previousGroup->end(), thisGroup->begin(), thisGroup->end());
-//         else
-//             mergedLineGroups.push_back(*thisGroup);
-//     }
-//     if (verbosity > 4)
-//         output += "  Number of potential lines after merging: " + std::to_string(mergedLineGroups.size()) + "\n";
-
-//     // Prepare the returned vector.
-//     for (size_t i = 0; i < mergedLineGroups.size(); ++i) {
-//         AlignmentLine * line = new AlignmentLine(mergedLineGroups[i], readLength, refLength, commonKmerSet->m_expectedSlope);
-//         returnedLines.push_back(line);
-//     }
-//     return returnedLines;
-// }
-
-
-
-void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdDev) {
-    mean = 0.0;
-    stdDev = 0.0;
-    int count = v.size();
-    if (count < 1)
-        return;
-    double devSum = 0.0;
-    for (int i = 0; i < count; ++i)
-        mean += v[i];
-    mean /= count;
-    for (int i = 0; i < count; ++i) {
-        double dev = v[i] - mean;
-        devSum += dev * dev;
-    }
-    stdDev = sqrt(devSum / v.size());
-}
-
-
 std::string getKmerTable(std::vector<CommonKmer> & commonKmers) {
     std::string table = "\tSeq 1 pos\tSeq 2 pos\tRotated seq 1 pos\tRotated seq 2 pos\tScore\n";
     for (size_t i = 0; i < commonKmers.size(); ++i) {
@@ -458,6 +312,76 @@ std::string getKmerTable(std::vector<CommonKmer> & commonKmers) {
                  "\t" + std::to_string(commonKmers[i].m_score) + "\n";
     }
     return table;
+}
+
+
+
+// Returns true if this alignment line is close to the other one.
+bool AlignmentLine::isNear(AlignmentLine * other) {
+    if (m_readName != other->m_readName || m_refName != other->m_refName)
+        return false;
+    float x11, y11, x12, y12;
+    getStartEndPoints(&x11, &y11, &x12, &y12);
+    float x21, y21, x22, y22;
+    other->getStartEndPoints(&x21, &y21, &x22, &y22);
+    return segmentsDistance(x11, y11, x12, y12, x21, y21, x22, y22) <= ALIGNMENT_LINE_MERGE_DISTANCE;
+}
+
+// Functions for determining distance between two line segments.
+//   one segment is (x11, y11) to (x12, y12)
+//   the other is   (x21, y21) to (x22, y22)
+// http://stackoverflow.com/questions/2824478/shortest-distance-between-two-line-segments
+float AlignmentLine::segmentsDistance(float x11, float y11, float x12, float y12,
+                                      float x21, float y21, float x22, float y22) {
+    if (segmentsIntersect(x11, y11, x12, y12, x21, y21, y22, y22))
+        return 0.0;
+    float distance = pointSegmentDistance(x11, y11, x21, y21, x22, y22);
+    distance = std::min(distance, pointSegmentDistance(x12, y12, x21, y21, x22, y22));
+    distance = std::min(distance, pointSegmentDistance(x21, y21, x11, y11, x12, y12));
+    distance = std::min(distance, pointSegmentDistance(x22, y22, x11, y11, x12, y12));
+    return distance;
+}
+
+bool AlignmentLine::segmentsIntersect(float x11, float y11, float x12, float y12,
+                                      float x21, float y21, float x22, float y22) {
+    float dx1 = x12 - x11;
+    float dy1 = y12 - y11;
+    float dx2 = x22 - x21;
+    float dy2 = y22 - y21;
+    float delta = (dx2 * dy1) - (dy2 * dx1);
+    if (delta == 0.0)
+        return false; // parallel segments
+    float s = (dx1 * (y21 - y11) + dy1 * (x11 - x21)) / delta;
+    float t = (dx2 * (y11 - y21) + dy2 * (x21 - x11)) / (-delta);
+    return (0.0 <= s <= 1.0) && (0.0 <= t <= 1.0);
+}
+
+float AlignmentLine::pointSegmentDistance(float px, float py,
+                                          float x1, float y1, float x2, float y2) {
+    float dx = x2 - x1;
+    float dy = y2 - y1;
+    if (dx == 0.0 && dy == 0.0)
+        return hypot(px - x1, py - y1);
+    float t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
+    if (t < 0.0) {
+        dx = px - x1;
+        dy = py - y1;
+    }
+    else if (t > 1.0) {
+        dx = px - x2;
+        dy = py - y2;
+    }
+    else {
+        float nearX = x1 + t * dx;
+        float nearY = y1 + t * dy;
+        dx = px - nearX;
+        dy = py - nearY;
+    }
+    return hypot(dx, dy);
+}
+
+float AlignmentLine::hypot(float dx, float dy) {
+    return sqrt( (dx * dx) + (dy * dy) );
 }
 
 

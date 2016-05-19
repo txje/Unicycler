@@ -191,7 +191,8 @@ AlignmentLine * CommonKmerSet::extractAlignmentLine() {
     // Start the line with the max scoring point.
     int lineStartI = m_maxScoreIndex;
     int lineEndI = m_maxScoreIndex;
-    AlignmentLine * line = new AlignmentLine(m_commonKmers[lineStartI], m_readLength, m_refLength);
+    AlignmentLine * line = new AlignmentLine(m_commonKmers[lineStartI],
+                                             m_readName, m_refName, m_readLength, m_refLength);
 
     // Extend the line in both directions (always choosing the higher scoring side) until either
     // the score drops below a threshold or the line error gets too high.

@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 #include "settings.h"
+#include <mutex>
 
 typedef std::unordered_map<std::string, std::vector<int> > KmerPosMap;
 
@@ -42,6 +43,7 @@ public:
 private:
     std::unordered_map<std::string, KmerPosMap *> m_kmerPositions;
     std::unordered_map<std::string, std::string> m_sequences;
+    std::mutex m_mutex;
 };
 
 

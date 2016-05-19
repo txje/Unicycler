@@ -63,4 +63,5 @@ char getRandomBase(std::mt19937 & gen, std::uniform_int_distribution<double> & d
 
 CommonKmerSet * getHighestScoringSet(std::vector<CommonKmerSet *> & commonKmerSets);
 
+void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdev);
 

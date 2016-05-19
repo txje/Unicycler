@@ -40,3 +40,6 @@
 // Alignment lines must reach these levels to be used.
 #define MIN_ALIGNMENT_LENGTH 40.0
 #define MIN_POINT_COUNT 10
+
+// A merged line will be tried for alignment lines that are closer than this.
+#define ALIGNMENT_LINE_MERGE_DISTANCE 100.0

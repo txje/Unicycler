@@ -66,7 +66,9 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
     std::vector<SemiGlobalAlignment *> allAlignments;
     std::vector<SemiGlobalAlignment *> goodAlignments;
     int badAlignmentCount = 0;
-    while (badAlignmentCount < BAD_LINE_COUNT) {
+    bool entireReadAligned = false;
+    bool needMoreAlignments = true;
+    while (needMoreAlignments) {
 
         // Extract an alignment line from around the highest scoring point.
         CommonKmerSet * highestScoringSet = getHighestScoringSet(commonKmerSets);
@@ -182,6 +184,12 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
                 }
             }
         }
+
+        entireReadAligned = (fractionOfReadAligned(goodAlignments) == 1.0);
+        if (entireReadAligned)
+            needMoreAlignments = (badAlignmentCount < BAD_LINE_COUNT_ENTIRE_READ);
+        else
+            needMoreAlignments = (badAlignmentCount < BAD_LINE_COUNT_PARTIAL_READ);
     }
 
     // The returned string is semicolon-delimited. The last part is the console output and the
@@ -411,28 +419,6 @@ std::string getReverseComplement(std::string sequence) {
     return reverseComplement;
 }
 
-
-    // def get_fraction_aligned(self):
-    //     '''
-    //     This function returns the fraction of the read which is covered by any of the read's
-    //     alignments.
-    //     '''
-    //     read_ranges = [x.read_start_end_positive_strand() \
-    //                    for x in self.alignments]
-    //     read_ranges = simplify_ranges(read_ranges)
-    //     aligned_length = sum([x[1] - x[0] for x in read_ranges])
-    //     return aligned_length / len(self.sequence)
-
-
-// Returns true if some parts of the read fail to meet the score threshold
-double fractionOfReadAlignedOverThreshold(std::vector<SemiGlobalAlignment *> & alignments, double scoreThreshold) {
-    std::vector<SemiGlobalAlignment *> goodScoreAlignments;
-    for (size_t i = 0; i < alignments.size(); ++i) {
-        if (alignments[i]->m_scaledScore >= scoreThreshold)
-            goodScoreAlignments.push_back(alignments[i]);
-    }
-    return fractionOfReadAligned(goodScoreAlignments);
-}
 
 double fractionOfReadAligned(std::vector<SemiGlobalAlignment *> & alignments) {
     if (alignments.size() == 0)

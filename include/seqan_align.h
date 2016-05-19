@@ -51,8 +51,6 @@ char * cppStringToCString(std::string cpp_string);
 
 std::string getReverseComplement(std::string sequence);
 
-double fractionOfReadAlignedOverThreshold(std::vector<SemiGlobalAlignment *> & alignments, double scoreThreshold);
-
 double fractionOfReadAligned(std::vector<SemiGlobalAlignment *> & alignments);
 
 std::vector<std::pair<int, int> > simplifyRanges(std::vector<std::pair<int, int> > & ranges);

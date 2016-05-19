@@ -9,6 +9,7 @@ CommonKmerSet::CommonKmerSet(std::string & readName, std::string & refName, int 
     m_readLength(readLength), m_refLength(refLength),
     m_expectedSlope(expectedSlope), m_maxScore(0), m_maxScoreIndex(0)
 {
+    // std::cout << "CommonKmerSet::CommonKmerSet start: " << readName << ", " << refName << std::endl << std::flush; // TEMP
     float rotationAngle = CommonKmer::getRotationAngle(m_expectedSlope);
 
     KmerPosMap * readKmerPositions = kmerPositions->getKmerPositions(readName);
@@ -45,6 +46,7 @@ CommonKmerSet::CommonKmerSet(std::string & readName, std::string & refName, int 
     });
 
     scorePoints();
+    // std::cout << "CommonKmerSet::CommonKmerSet end: " << readName << ", " << refName << std::endl << std::flush; // TEMP
 }
 
 

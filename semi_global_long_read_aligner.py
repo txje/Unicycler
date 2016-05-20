@@ -92,7 +92,7 @@ def main():
                                          args.sam, args.temp_dir, args.graphmap_path, args.threads,
                                          args.partial_ref, AlignmentScoringScheme(args.scores),
                                          args.low_score, not args.no_graphmap, full_command,
-                                         args.keep_bad)
+                                         args.keep_bad, args.kmer, args.min_len)
     summarise_errors(references, reads, args.table)
 
     sys.exit(0)
@@ -127,11 +127,16 @@ def get_arguments():
     parser.add_argument('--low_score', type=float, required=False, default=argparse.SUPPRESS,
                         help='Score threshold - alignments below this are considered poor '
                              '(default: set threshold automatically)')
+    parser.add_argument('--min_len', type=float, required=False, default=100,
+                        help='Minimum alignment length (bp) - exclude alignments shorter than '
+                             'this length')
     parser.add_argument('--keep_bad', action='store_true', default=argparse.SUPPRESS,
                         help='Include alignments in the results even if they are below the low '
                              'score threshold (default: low-scoring alignments are discarded)')
     parser.add_argument('--partial_ref', action='store_true',
                         help='Set if some reads are not expected to align to the reference.')
+    parser.add_argument('--kmer', type=int, required=False, default=7,
+                        help='K-mer size used for seeding alignments')
     parser.add_argument('--threads', type=int, required=False, default=argparse.SUPPRESS,
                         help='Number of CPU threads used to align (default: the number of '
                              'available CPUs)')
@@ -178,7 +183,7 @@ def get_arguments():
 def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, reads_fastq,
                                  output_sam, temp_dir, graphmap_path, threads, partial_ref,
                                  scoring_scheme, low_score_threshold, use_graphmap, full_command,
-                                 keep_bad):
+                                 keep_bad, kmer_size, min_align_length):
     '''
     This function does the primary work of this module: aligning long reads to references in an
     end-gap-free, semi-global manner. It returns a list of Read objects which contain their
@@ -308,13 +313,13 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     # Create a C++ KmerPositions object and add each reference sequence.
     kmer_positions_ptr = C_LIB.newKmerPositions()
     for ref in references:
-        C_LIB.addKmerPositions(kmer_positions_ptr, ref.name, ref.sequence)
+        C_LIB.addKmerPositions(kmer_positions_ptr, ref.name, ref.sequence, kmer_size)
 
     # If single-threaded, just do the work in a simple loop.
     if threads == 1:
         for read in reads_to_align:
             output = seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
-                                     low_score_threshold, keep_bad)
+                                     low_score_threshold, keep_bad, kmer_size, min_align_length)
             completed_count += 1
             if VERBOSITY == 1:
                 print_progress_line(completed_count, num_realignments)
@@ -327,7 +332,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         arg_list = []
         for read in reads_to_align:
             arg_list.append((read, reference_dict, scoring_scheme, kmer_positions_ptr,
-                             low_score_threshold, keep_bad))
+                             low_score_threshold, keep_bad, kmer_size, min_align_length))
         for output in pool.imap_unordered(seqan_alignment_one_arg, arg_list, 1):
             completed_count += 1
             if VERBOSITY == 1:
@@ -517,7 +522,7 @@ def summarise_errors(references, long_reads, table_prefix):
                 else:
                     overlapping_alignment_count += 1
             print(reference.name)
-            print('  Total length:       ', int_to_str(seq_len, max_v) + ' bp')
+            print('  Length:       ', int_to_str(seq_len, max_v) + ' bp')
             if alignments:
                 mean_depth = sum(depths) / seq_len
                 mean_mismatch_rate = 100.0 * sum(mismatch_rates) / aligned_len
@@ -794,13 +799,13 @@ def seqan_alignment_one_arg(all_args):
     This is just a one-argument version of seqan_alignment to make it easier to
     use that function in a thread pool.
     '''
-    read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold, keep_bad = \
-                                                                                           all_args
+    read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold, keep_bad, \
+        kmer_size, min_align_length = all_args
     return seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
-                           low_score_threshold, keep_bad)
+                           low_score_threshold, keep_bad, kmer_size, min_align_length)
 
 def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold,
-                    keep_bad):
+                    keep_bad, kmer_size, min_align_length):
     '''
     Aligns a single read against all reference sequences using Seqan.
     '''
@@ -824,7 +829,7 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
                                     EXPECTED_SLOPE, kmer_positions_ptr,
                                     scoring_scheme.match, scoring_scheme.mismatch,
                                     scoring_scheme.gap_open, scoring_scheme.gap_extend,
-                                    low_score_threshold, keep_bad)
+                                    low_score_threshold, keep_bad, kmer_size)
     results = c_string_to_python_string(ptr).split(';')
     alignment_strings = results[:-1]
     output += results[-1]
@@ -850,6 +855,7 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
     read.remove_conflicting_alignments()
     if not keep_bad:
         read.remove_low_score_alignments(low_score_threshold)
+    read.remove_short_alignments(min_align_length)
 
     if VERBOSITY > 2:
         output += 'Final alignments:\n'
@@ -1276,6 +1282,13 @@ class Read(object):
         This function removes alignments with identity below the cutoff.
         '''
         self.alignments = [x for x in self.alignments if x.scaled_score >= low_score_threshold]
+
+    def remove_short_alignments(self, min_align_length):
+        '''
+        This function removes alignments with identity below the cutoff.
+        '''
+        self.alignments = [x for x in self.alignments if x.get_aligned_ref_length() >= min_align_length]
+
 
     def get_fastq(self):
         '''
@@ -1837,7 +1850,8 @@ C_LIB.semiGlobalAlignment.argtypes = [c_char_p, # Read name
                                       c_int,    # Gap open score
                                       c_int,    # Gap extension score
                                       c_double, # Low score threshold
-                                      c_bool]   # Return bad alignments
+                                      c_bool,   # Return bad alignments
+                                      c_int]    # K-mer size
 C_LIB.semiGlobalAlignment.restype = c_void_p    # String describing alignments
 
 
@@ -1906,7 +1920,8 @@ C_LIB.newKmerPositions.restype = c_void_p
 
 C_LIB.addKmerPositions.argtypes = [c_void_p, # KmerPositions pointer
                                    c_char_p, # Name
-                                   c_char_p] # Sequence
+                                   c_char_p, # Sequence
+                                   c_int]    # K-mer size
 C_LIB.addKmerPositions.restype = None
 
 C_LIB.deleteAllKmerPositions.argtypes = [c_void_p]

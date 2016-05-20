@@ -18,7 +18,7 @@
 char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
                            double expectedSlope, KmerPositions * refKmerPositions,
                            int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore,
-                           double lowScoreThreshold, bool returnBad) {
+                           double lowScoreThreshold, bool returnBad, int kSize) {
     // This string will collect all of the console output for the alignment.
     std::string output;
 
@@ -38,17 +38,17 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
 
     // Make a new KmerPositions object for the reads.
     KmerPositions readKmerPositions;
-    readKmerPositions.addPositions(posReadName, posReadSeq);
-    readKmerPositions.addPositions(negReadName, negReadSeq);
+    readKmerPositions.addPositions(posReadName, posReadSeq, kSize);
+    readKmerPositions.addPositions(negReadName, negReadSeq, kSize);
 
     // Create a CommonKmerSet for the read (both forward and reverse complement) and every reference.
     std::vector<CommonKmerSet *> commonKmerSets;
     for (size_t i = 0; i < referenceNames.size(); ++i) {
         std::string refName = referenceNames[i];
         int refLength = refKmerPositions->getLength(refName);
-        CommonKmerSet * forwardCommonKmerSet = new CommonKmerSet(posReadName, refName, readLength, refLength, expectedSlope, &readKmerPositions, refKmerPositions);
+        CommonKmerSet * forwardCommonKmerSet = new CommonKmerSet(posReadName, refName, readLength, refLength, expectedSlope, &readKmerPositions, refKmerPositions, kSize);
         commonKmerSets.push_back(forwardCommonKmerSet);
-        CommonKmerSet * reverseCommonKmerSet = new CommonKmerSet(negReadName, refName, readLength, refLength, expectedSlope, &readKmerPositions, refKmerPositions);
+        CommonKmerSet * reverseCommonKmerSet = new CommonKmerSet(negReadName, refName, readLength, refLength, expectedSlope, &readKmerPositions, refKmerPositions, kSize);
         commonKmerSets.push_back(reverseCommonKmerSet);
 
         // if (posReadName == "847/0_18868+" && refName == "NODE_89") {  // TEMP
@@ -84,7 +84,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
             if (verbosity > 2)
                 output += "  line: " + refName + ", none, BAD\n";
         }
-        else if (!line->buildSeedChain(MIN_POINT_COUNT, MIN_ALIGNMENT_LENGTH)) {
+        else if (!line->buildSeedChain(MIN_POINT_COUNT, MIN_ALIGNMENT_LENGTH, kSize)) {
             ++badAlignmentCount;
             delete line;
             if (verbosity > 2)
@@ -156,7 +156,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
                     output += "                 2) " + bestNearbyLine->getDescriptiveString() + "\n";
                 }
                 AlignmentLine * mergedLine = new AlignmentLine(line, bestNearbyLine);
-                if (!mergedLine->buildSeedChain(MIN_POINT_COUNT, MIN_ALIGNMENT_LENGTH)) {
+                if (!mergedLine->buildSeedChain(MIN_POINT_COUNT, MIN_ALIGNMENT_LENGTH, kSize)) {
                     if (verbosity > 2)
                         output += "                 failed\n";
                     delete mergedLine;

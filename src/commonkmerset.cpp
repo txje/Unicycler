@@ -4,10 +4,11 @@
 
 
 CommonKmerSet::CommonKmerSet(std::string & readName, std::string & refName, int readLength, int refLength,
-                             float expectedSlope, KmerPositions * readKmerPositions, KmerPositions * refKmerPositions) :
+                             float expectedSlope, KmerPositions * readKmerPositions, KmerPositions * refKmerPositions,
+                             int kSize) :
     m_readName(readName), m_refName(refName),
     m_readLength(readLength), m_refLength(refLength),
-    m_expectedSlope(expectedSlope), m_maxScore(0), m_maxScoreIndex(0)
+    m_expectedSlope(expectedSlope), m_kSize(kSize), m_maxScore(0), m_maxScoreIndex(0)
 {
     // std::cout << "CommonKmerSet::CommonKmerSet start: " << readName << ", " << refName << std::endl << std::flush; // TEMP
     float rotationAngle = CommonKmer::getRotationAngle(m_expectedSlope);
@@ -75,7 +76,7 @@ void CommonKmerSet::scorePoints() {
         std::swap(lowerCornerY, higherCornerY);
 
     // We will scale the scores relative to the expected k-mer density.
-    float expectedDensity = 1.0 / pow(4.0f, KMER_SIZE);
+    float expectedDensity = 1.0 / pow(4.0f, m_kSize);
 
     // Now we loop through the CommonKmer points, calculating their k-mer density (score) along the
     // way. The density is gotten from a window which spans either some number of steps away from

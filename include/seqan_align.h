@@ -16,7 +16,7 @@ extern "C" {
     char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
                                double expectedSlope, KmerPositions * refKmerPositions,
                                int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore,
-                               double lowScoreThreshold, bool returnBad);
+                               double lowScoreThreshold, bool returnBad, int kSize);
 
     char * startExtensionAlignment(char * read, char * ref,
                                    int matchScore, int mismatchScore, int gapOpenScore,

@@ -33,7 +33,7 @@ class KmerPositions {
 public:
     KmerPositions() {}
     ~KmerPositions();
-    void addPositions(std::string & name, std::string & sequence);
+    void addPositions(std::string & name, std::string & sequence, int kSize);
     KmerPosMap * getKmerPositions(std::string & name);
     std::string * getSequence(std::string & name);
     std::vector<std::string> getAllNames();
@@ -51,7 +51,7 @@ extern "C" {
 
     KmerPositions * newKmerPositions();
 
-    void addKmerPositions(KmerPositions * kmerPositions, char * nameC, char * sequenceC);
+    void addKmerPositions(KmerPositions * kmerPositions, char * nameC, char * sequenceC, int kSize);
 
     void deleteAllKmerPositions(KmerPositions * kmerPositions);
 

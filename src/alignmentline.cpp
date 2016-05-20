@@ -95,7 +95,7 @@ double AlignmentLine::getRelativeLineError() {
 // This function prepares the alignment line for use in an alignment. If it returns false, then the
 // line is no good. If it returns true, that means it successfully built the m_bridgedSeedChain
 // member.
-bool AlignmentLine::buildSeedChain(int minPointCount, float minAlignmentLength) {
+bool AlignmentLine::buildSeedChain(int minPointCount, float minAlignmentLength, int kSize) {
 
     // Exclude alignments which are too short.
     if (m_alignedReadLength < minAlignmentLength || m_alignedRefLength < minAlignmentLength)
@@ -162,7 +162,7 @@ bool AlignmentLine::buildSeedChain(int minPointCount, float minAlignmentLength) 
     // Build a Seqan seed set using our common k-mers, offsetting by the trimmed reference start position.
     TSeedSet seedSet;
     for (size_t i = 0; i < m_linePoints.size(); ++i) {
-        TSeed seed(m_linePoints[i].m_hPosition, m_linePoints[i].m_vPosition - m_trimmedRefStart, KMER_SIZE);
+        TSeed seed(m_linePoints[i].m_hPosition, m_linePoints[i].m_vPosition - m_trimmedRefStart, kSize);
         addSeedMerge(seedSet, seed);
     }
 

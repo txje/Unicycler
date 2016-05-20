@@ -43,11 +43,11 @@ int KmerPositions::getLength(std::string & name) {
 
 // This function adds a sequence to the KmerPositions object. It creates a new KmerPosMap on the
 // heap (will be deleted in destructor), fills it up and adds it to m_kmerPositions.
-void KmerPositions::addPositions(std::string & name, std::string & sequence) {
+void KmerPositions::addPositions(std::string & name, std::string & sequence, int kSize) {
     KmerPosMap * posMap = new KmerPosMap();
-    int kCount = sequence.size() - KMER_SIZE + 1;
+    int kCount = sequence.size() - kSize + 1;
     for (int i = 0; i < kCount; ++i) {
-        std::string kmer = sequence.substr(i, KMER_SIZE);
+        std::string kmer = sequence.substr(i, kSize);
         if (posMap->find(kmer) == posMap->end())
             (*posMap)[kmer] = std::vector<int>();
         (*posMap)[kmer].push_back(i);
@@ -83,10 +83,10 @@ KmerPositions * newKmerPositions() {
     return new KmerPositions();
 }
 
-void addKmerPositions(KmerPositions * kmerPositions, char * nameC, char * sequenceC) {
+void addKmerPositions(KmerPositions * kmerPositions, char * nameC, char * sequenceC, int kSize) {
     std::string name(nameC);
     std::string sequence(sequenceC);
-    kmerPositions->addPositions(name, sequence);
+    kmerPositions->addPositions(name, sequence, kSize);
 }
 
 void deleteAllKmerPositions(KmerPositions * kmerPositions) {

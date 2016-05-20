@@ -26,7 +26,7 @@ public:
 
     void addPoint(CommonKmer & newPoint);
     double getRelativeLineError();
-    bool buildSeedChain(int minPointCount, float minAlignmentLength);
+    bool buildSeedChain(int minPointCount, float minAlignmentLength, int kSize);
     std::string getDescriptiveString();
     bool isNear(AlignmentLine * other);
 

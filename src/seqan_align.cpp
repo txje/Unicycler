@@ -58,7 +58,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
     }
 
     if (verbosity > 2)
-        output += "Seqan alignment attempts:\n";
+        output += "Seqan alignment attempts (using expected slope of " + std::to_string(expectedSlope) + ")\n";
 
     // We now extract alignment lines and perform alignments until we have had too many failures.
     Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);

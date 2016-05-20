@@ -59,6 +59,19 @@ VERBOSITY controls how much the script prints to the screen.
 VERBOSITY = 0
 
 '''
+EXPECTED_SLOPE is the anticipated reference to read ratio. It is used by the C++ Seqan code to
+rotate the common k-mer rectangles when looking for alignment lines. It is a global because it will
+be constantly updated as reads are aligned.
+TOTAL_REF_LENGTH and TOTAL_READ_LENGTH are the totals used to calculate EXPECTED_SLOPE. They start
+at 10000 (not the more literal value of 0) so EXPECTED_SLOPE isn't too prone to fluctuation at the
+start.
+'''
+EXPECTED_SLOPE = 1.0
+TOTAL_REF_LENGTH = 10000
+TOTAL_READ_LENGTH = 10000
+
+
+'''
 This script makes use of several C++ functions which are in seqan_align.so. They are wrapped in
 similarly named Python functions.
 '''
@@ -148,6 +161,30 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     If seqan_all is False, then only the overlap alignments and a small set of long contained
     alignments will be run through Seqan.
     '''
+    # If the user supplied a low score threshold, we use that. Otherwise, we'll use the median
+    # score minus three times the MAD.
+    if VERBOSITY > 0:
+        print('Determining low-score threshold')
+        print('-------------------------------')
+    if low_score_threshold:
+        if VERBOSITY > 0:
+            print('Using user-supplied low score threshold: ' +
+                  float_to_str(low_score_threshold, 2) + '\n')
+    else:
+        if VERBOSITY > 0:
+            print('Automatically choosing a low score threshold using random alignments...\n')
+        std_devs_over_mean = 3
+        low_score_threshold, rand_mean, rand_std_dev = get_auto_score_threshold(scoring_scheme,
+                                                                                std_devs_over_mean)
+        if VERBOSITY > 0:
+
+            print('Random alignment mean score: ' + float_to_str(rand_mean, 3))
+            print('         standard deviation: ' + float_to_str(rand_std_dev, 3, rand_mean))
+            print()
+            print('Low score threshold = ' + float_to_str(rand_mean, 3) + ' + 3 x ' + \
+                  float_to_str(rand_std_dev, 3) + ' = ' + float_to_str(low_score_threshold, 3))
+            print()
+
     # Run GraphMap and load in the resulting SAM file.
     graphmap_sam = os.path.join(temp_dir, 'graphmap_alignments.sam')
     run_graphmap(ref_fasta, reads_fastq, graphmap_sam, graphmap_path, threads, scoring_scheme)
@@ -176,34 +213,10 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         print()
 
     # Gather some statistics about the alignments.
-    read_to_refs = [x.get_read_to_ref_ratio() for x in graphmap_alignments]
     percent_ids = [x.percent_identity for x in graphmap_alignments]
     scores = [x.scaled_score for x in graphmap_alignments]
-    read_to_ref_mean, read_to_ref_std_dev = get_mean_and_st_dev(read_to_refs)
     percent_id_mean, percent_id_std_dev = get_mean_and_st_dev(percent_ids)
     score_mean, score_std_dev = get_mean_and_st_dev(scores)
-    if VERBOSITY > 0:
-        print_alignment_summary_table(graphmap_alignments,
-                                      read_to_ref_mean, read_to_ref_std_dev,
-                                      percent_id_mean, percent_id_std_dev,
-                                      score_mean, score_std_dev)
-
-    if VERBOSITY > 0:
-        print('Realigning reads with Seqan')
-        print('---------------------------')
-
-    # If the user supplied a low score threshold, we use that. Otherwise, we'll use the median
-    # score minus three times the MAD.
-    if low_score_threshold:
-        if VERBOSITY > 0:
-            print('Using user-supplied low score threshold: ' +
-                  float_to_str(low_score_threshold, 2) + '\n')
-    else:
-        low_score_threshold = get_automatic_low_score_threshold(score_mean, score_std_dev,
-                                                                scoring_scheme)
-        if VERBOSITY > 0:
-            print('Using automatic low score threshold: ' + 
-                  float_to_str(low_score_threshold, 2) + '\n')
 
     # Give the alignments to their corresponding reads.
     for alignment in semi_global_graphmap_alignments:
@@ -215,33 +228,33 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     #   2) Reads that are incompletely (or not at all) aligned, have overlapping alignments or
     #      low quality alignments. These reads will be aligned again using Seqan.
     completed_reads = []
-    reads_to_realign = []
+    reads_to_align = []
     for read_name in read_names:
         read = read_dict[read_name]
+        update_expected_slope(read, low_score_threshold)
         if read.needs_seqan_realignment(partial_ref, low_score_threshold):
-            reads_to_realign.append(read)
+            reads_to_align.append(read)
         else:
             completed_reads.append(read)
 
+    if VERBOSITY > 0:
+        print_graphmap_summary_table(graphmap_alignments,
+                                     percent_id_mean, percent_id_std_dev,
+                                     score_mean, score_std_dev)
 
-    # OPTIONAL TO DO: for reads which are completed, I could still try to refine them using my Seqan code.
+    # OPTIONAL TO DO: for reads which are completed, I could still try to refine GraphMap alignments using my Seqan code.
     #                 I'm not sure if it's worth it, so I should give it a try to see what kind of difference it makes.
 
-
-    # Realign unfinished reads using Seqan.
     if VERBOSITY > 0:
-        num_realignments = len(reads_to_realign)
+        print('Aligning reads')
+        print('--------------')
+        num_realignments = len(reads_to_align)
         max_v = len(read_dict)
-        print('Already finished reads:', int_to_str(len(completed_reads), max_v))
-        print('Reads to be realigned: ', int_to_str(num_realignments, max_v))
+        print('Reads completed by GraphMap:', int_to_str(len(completed_reads), max_v))
+        print('Reads to be realigned:      ', int_to_str(num_realignments, max_v))
         print()
     if VERBOSITY == 1:
         print_progress_line(0, num_realignments)
-    if read_to_ref_mean:
-        expected_ref_to_read_ratio = 1.0 / read_to_ref_mean
-    else:
-        expected_ref_to_read_ratio = 1.0 # TO DO: MAYBE SET THIS TO AN EMPIRICALLY-DERIVED VALUE?
-
     completed_count = 0
 
     # Create a C++ KmerPositions object and add each reference sequence.
@@ -251,9 +264,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
 
     # If single-threaded, just do the work in a simple loop.
     if threads == 1:
-        for read in reads_to_realign:
-            output = seqan_alignment(read, reference_dict, scoring_scheme,
-                                     expected_ref_to_read_ratio, kmer_positions_ptr,
+        for read in reads_to_align:
+            output = seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
                                      low_score_threshold)
             completed_count += 1
             if VERBOSITY == 1:
@@ -265,9 +277,9 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     else:
         pool = ThreadPool(threads)
         arg_list = []
-        for read in reads_to_realign:
-            arg_list.append((read, reference_dict, scoring_scheme, expected_ref_to_read_ratio,
-                             kmer_positions_ptr, low_score_threshold))
+        for read in reads_to_align:
+            arg_list.append((read, reference_dict, scoring_scheme, kmer_positions_ptr,
+                             low_score_threshold))
         for output in pool.imap_unordered(seqan_alignment_one_arg, arg_list, 1):
             completed_count += 1
             if VERBOSITY == 1:
@@ -301,26 +313,6 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     write_sam_file(final_alignments, graphmap_sam, output_sam)
     
     os.remove(graphmap_sam)
-
-
-
-    # # TEMP - print out information about reads with multiple alignments and save them to file.
-    # overlapping_reads_fasta = open('/Users/Ryan/Desktop/synthetic_aligning/overlapping_reads.fasta', 'w')
-    # overlapping_reads_fastq = open('/Users/Ryan/Desktop/synthetic_aligning/overlapping_reads.fastq', 'w')
-    # print('Multi-alignment reads')
-    # print('---------------------')
-    # for read in read_dict.itervalues():
-    #     if len(read.alignments) > 1:
-    #         print(read.get_descriptive_string())
-    #         overlapping_reads_fasta.write(read.get_fasta())
-    #         overlapping_reads_fastq.write(read.get_fastq())
-    # print('Incompletely aligned reads')
-    # print('--------------------------')
-    # for read in partially_aligned:
-    #     print(read.get_descriptive_string())
-    # quit()
-
-
 
     return read_dict
 
@@ -508,8 +500,8 @@ def summarise_errors(references, long_reads, table_prefix, percent_alignments_to
                 print('  Total alignments:   ', int_to_str(0, max_v))
             print()
 
-def print_alignment_summary_table(graphmap_alignments, read_to_ref_mean, read_to_ref_std_dev,
-                                  percent_id_mean, percent_id_std_dev, score_mean, score_std_dev):
+def print_graphmap_summary_table(graphmap_alignments, percent_id_mean, percent_id_std_dev,
+                                 score_mean, score_std_dev):
     '''
     Prints a small table showing some details about the GraphMap alignments.
     '''
@@ -519,32 +511,31 @@ def print_alignment_summary_table(graphmap_alignments, read_to_ref_mean, read_to
     print()
 
     table_lines = ['',
-                   'Read / reference length:',
-                   'Percent identity:',
+                   'Identity:',
                    'Score:']
 
     pad_length = max([len(x) for x in table_lines]) + 2
     table_lines = [x.ljust(pad_length) for x in table_lines]
 
     table_lines[0] += 'Mean'
-    table_lines[1] += float_to_str(read_to_ref_mean, 4)
-    table_lines[2] += float_to_str(percent_id_mean, 2)
+    table_lines[1] += float_to_str(percent_id_mean, 2)
     if percent_id_mean:
-        table_lines[2] += '%'
-    table_lines[3] += float_to_str(score_mean, 2)
+        table_lines[1] += '%'
+    table_lines[2] += float_to_str(score_mean, 2)
 
     pad_length = max([len(x) for x in table_lines]) + 2
     table_lines = [x.ljust(pad_length) for x in table_lines]
 
     table_lines[0] += 'Std dev'
-    table_lines[1] += float_to_str(read_to_ref_std_dev, 4)
-    table_lines[2] += float_to_str(percent_id_std_dev, 2)
+    table_lines[1] += float_to_str(percent_id_std_dev, 2)
     if percent_id_std_dev:
-        table_lines[2] += '%'
-    table_lines[3] += float_to_str(score_std_dev, 2)
+        table_lines[1] += '%'
+    table_lines[2] += float_to_str(score_std_dev, 2)
 
     for line in table_lines:
         print(line)
+    print()
+    print('Current reference length / read length mean:', float_to_str(EXPECTED_SLOPE, 5))
     print()
 
 def extend_to_semi_global(alignments, scoring_scheme):
@@ -682,11 +673,9 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
     command += scoring_scheme.get_graphmap_parameters()
 
     if VERBOSITY > 0:
-        print('Running GraphMap')
-        print('----------------')
+        print('Aligning with GraphMap')
+        print('----------------------')
         print(' '.join(command))
-        if VERBOSITY > 1:
-            print()
 
     # Print the GraphMap output as it comes. I gather up and display lines so I can display fewer
     # progress lines. This helps when piping the output to file (otherwise the output can be
@@ -763,13 +752,11 @@ def seqan_alignment_one_arg(all_args):
     This is just a one-argument version of seqan_alignment to make it easier to
     use that function in a thread pool.
     '''
-    read, reference_dict, scoring_scheme, expected_ref_to_read_ratio, \
-                                kmer_positions_ptr, low_score_threshold = all_args
-    return seqan_alignment(read, reference_dict, scoring_scheme, expected_ref_to_read_ratio,
-                           kmer_positions_ptr, low_score_threshold)
+    read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold = all_args
+    return seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
+                           low_score_threshold)
 
-def seqan_alignment(read, reference_dict, scoring_scheme, expected_ref_to_read_ratio,
-                    kmer_positions_ptr, low_score_threshold):
+def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold):
     '''
     Aligns a single read against all reference sequences using Seqan.
     '''
@@ -790,7 +777,7 @@ def seqan_alignment(read, reference_dict, scoring_scheme, expected_ref_to_read_r
             output += '  None\n'
 
     ptr = C_LIB.semiGlobalAlignment(read.name, read.sequence, VERBOSITY,
-                                    expected_ref_to_read_ratio, kmer_positions_ptr,
+                                    EXPECTED_SLOPE, kmer_positions_ptr,
                                     scoring_scheme.match, scoring_scheme.mismatch,
                                     scoring_scheme.gap_open, scoring_scheme.gap_extend,
                                     low_score_threshold)
@@ -829,6 +816,7 @@ def seqan_alignment(read, reference_dict, scoring_scheme, expected_ref_to_read_r
             output += '  None\n'
         output += '\n'
 
+    update_expected_slope(read, low_score_threshold)
     return output
 
 # def seqan_alignment_one_read_all_refs_one_level(read, references, scoring_scheme,
@@ -1153,37 +1141,34 @@ def group_reads_by_fraction_aligned(read_dict):
             partially_aligned_reads.append(read)
     return fully_aligned_reads, partially_aligned_reads, unaligned_reads
 
-def get_automatic_low_score_threshold(score_mean, score_std_dev, scoring_scheme):
+def get_auto_score_threshold(scoring_scheme, std_devs_over_mean):
     '''
     This function determines a good low score threshold for the alignments. To do this it examines
     the distribution of scores acquired by aligning random sequences.
     '''
-    rand_seq_score_mean, rand_seq_score_std_dev = \
-        get_random_sequence_alignment_mean_and_std_dev(100, 10000, scoring_scheme)
-
-    # If we don't have enough GraphMap alignments to get a score estimate, then we will just use
-    # the random score plus a generous margin.
-    if score_mean is None:
-        threshold = rand_seq_score_mean + (5 * rand_seq_score_std_dev)
-
-    # If we only have one GraphMap alignment, then we'll go 25% of the way between the score and
-    # random score.
-    elif score_std_dev is None:
-        diff = score_mean - rand_seq_score_mean
-        threshold = rand_seq_score_mean + (0.25 * diff)
-
-    # If we have a score distribution to work with (the usual case), we will set the threshold
-    # using both of their distribution sizes.
-    else:
-        std_devs_above_random = (score_mean - rand_seq_score_mean) / \
-                                (score_std_dev + rand_seq_score_std_dev)
-        threshold = rand_seq_score_mean + (std_devs_above_random * rand_seq_score_std_dev)
+    mean, std_dev = get_random_sequence_alignment_mean_and_std_dev(100, 10000, scoring_scheme)
+    threshold = mean + (std_devs_over_mean * std_dev)
 
     # Keep the threshold bounded to sane levels.
     threshold = min(threshold, 95.0)
     threshold = max(threshold, 50.0)
-    return threshold
+    return threshold, mean, std_dev
 
+
+def update_expected_slope(read, low_score_threshold):
+    '''
+    This function updates the EXPECTED_SLOPE and ALIGNMENTS_CONTRIBUTING_TO_EXPECTED_SLOPE global
+    variables using a read, but only if the read's alignment looks good.
+    '''
+    if len(read.alignments) == 1 and \
+       read.alignments[0].read_start_pos == 0 and read.alignments[0].read_end_gap == 0 and \
+       read.alignments[0].scaled_score > low_score_threshold:
+        global EXPECTED_SLOPE
+        global TOTAL_REF_LENGTH
+        global TOTAL_READ_LENGTH
+        TOTAL_REF_LENGTH += read.alignments[0].get_aligned_ref_length()
+        TOTAL_READ_LENGTH += read.alignments[0].get_aligned_read_length()
+        EXPECTED_SLOPE = TOTAL_REF_LENGTH / TOTAL_READ_LENGTH
 
 
 
@@ -1721,11 +1706,17 @@ class Alignment(object):
         return_str += ', longest indel: ' + str(self.get_longest_indel_run())
         return return_str
 
+    def get_aligned_ref_length(self):
+        return self.ref_end_pos - self.ref_start_pos
+
+    def get_aligned_read_length(self):
+        return self.read_end_pos - self.read_start_pos
+
     def get_ref_to_read_ratio(self):
         '''
         Returns the length ratio between the aligned parts of the reference and read.
         '''
-        return (self.ref_end_pos - self.ref_start_pos) / (self.read_end_pos - self.read_start_pos)
+        return self.get_aligned_ref_length() / self.get_aligned_read_length()
 
     def get_read_to_ref_ratio(self):
         '''

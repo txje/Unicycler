@@ -82,28 +82,19 @@ def main():
     '''
     If this script is run on its own, execution starts here.
     '''
+    full_command = ' '.join(sys.argv)
     args = get_arguments()
     check_file_exists(args.ref)
     check_file_exists(args.reads)
-    temp_dir_exist_at_start = os.path.exists(args.temp_dir)
-    if not temp_dir_exist_at_start:
-        os.makedirs(args.temp_dir)
-
-    if VERBOSITY > 0:
-        print()
-
     references = load_references(args.ref)
     read_dict, read_names = load_long_reads(args.reads)
 
-
     reads = semi_global_align_long_reads(references, args.ref, read_dict, read_names, args.reads,
-                                         args.sam, args.temp_dir, args.path, args.threads,
+                                         args.sam, args.temp_dir, args.graphmap_path, args.threads,
                                          args.partial_ref, AlignmentScoringScheme(args.scores),
-                                         args.low_score)
+                                         args.low_score, not args.no_graphmap, full_command)
     summarise_errors(references, reads, args.table, args.keep)
 
-    if not temp_dir_exist_at_start:
-        os.rmdir(args.temp_dir)
     sys.exit(0)
 
 def get_arguments():
@@ -125,7 +116,9 @@ def get_arguments():
                         help='Path and/or prefix for table files summarising reference errors')
     parser.add_argument('--temp_dir', type=str, required=False, default='align_temp_PID',
                         help='Temp directory for working files')
-    parser.add_argument('--path', type=str, required=False, default='graphmap',
+    parser.add_argument('--no_graphmap', action='store_true',
+                        help='Do not use GraphMap as a first-pass aligner')
+    parser.add_argument('--graphmap_path', type=str, required=False, default='graphmap',
                         help='Path to the GraphMap executable')
     parser.add_argument('--scores', type=str, required=False, default='3,-6,-5,-2',
                         help='Alignment scores: match, mismatch, gap open, gap extend')
@@ -152,7 +145,7 @@ def get_arguments():
 
 def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, reads_fastq,
                                  output_sam, temp_dir, graphmap_path, threads, partial_ref,
-                                 scoring_scheme, low_score_threshold):
+                                 scoring_scheme, low_score_threshold, use_graphmap, full_command):
     '''
     This function does the primary work of this module: aligning long reads to references in an
     end-gap-free, semi-global manner. It returns a list of Read objects which contain their
@@ -185,74 +178,97 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
                   float_to_str(rand_std_dev, 3) + ' = ' + float_to_str(low_score_threshold, 3))
             print()
 
-    # Run GraphMap and load in the resulting SAM file.
-    graphmap_sam = os.path.join(temp_dir, 'graphmap_alignments.sam')
-    run_graphmap(ref_fasta, reads_fastq, graphmap_sam, graphmap_path, threads, scoring_scheme)
     reference_dict = {x.name: x for x in references}
-    graphmap_alignments = load_sam_alignments(graphmap_sam, read_dict, reference_dict,
-                                              scoring_scheme)
-    if VERBOSITY > 2 and graphmap_alignments:
-        print('All GraphMap alignments')
-        print('-----------------------')
-        for alignment in graphmap_alignments:
-            print(alignment)
-            if VERBOSITY > 3:
-                print(alignment.cigar)
-        print()
 
-    # Use Seqan to extend the GraphMap alignments so they are fully semi-global. In this process,
-    # some alignments will be discarded (those too far from being semi-global).
-    semi_global_graphmap_alignments = extend_to_semi_global(graphmap_alignments, scoring_scheme)
-    if VERBOSITY > 2 and semi_global_graphmap_alignments:
-        print('GraphMap alignments after extension')
-        print('-----------------------------------')
+    # GraphMap can be used as a first-pass aligner. This has the advantage of saving time (GraphMap
+    # is probably faster than the Seqan alignment) and it gives a good initial expected slope.
+    if use_graphmap:
+
+        # Make the temp directory, if necessary.
+        temp_dir_exist_at_start = os.path.exists(temp_dir)
+        if not temp_dir_exist_at_start:
+            os.makedirs(temp_dir)
+
+        # Run GraphMap and load in the resulting SAM.
+        graphmap_sam = os.path.join(temp_dir, 'graphmap_alignments.sam')
+        run_graphmap(ref_fasta, reads_fastq, graphmap_sam, graphmap_path, threads, scoring_scheme)
+        graphmap_alignments = load_sam_alignments(graphmap_sam, read_dict, reference_dict,
+                                                  scoring_scheme)
+        # Clean up files and directories.
+        if use_graphmap:
+            os.remove(graphmap_sam)
+            if not temp_dir_exist_at_start:
+                os.rmdir(temp_dir)
+
+        if VERBOSITY > 3 and graphmap_alignments:
+            print('GraphMap alignments before extension')
+            print('------------------------------------')
+            for alignment in graphmap_alignments:
+                print(alignment)
+                if VERBOSITY > 4:
+                    print(alignment.cigar)
+            print()
+
+        # Use Seqan to extend the GraphMap alignments so they are fully semi-global. In this
+        # process, some alignments will be discarded (those too far from being semi-global).
+        semi_global_graphmap_alignments = extend_to_semi_global(graphmap_alignments, scoring_scheme)
+        if VERBOSITY > 3 and semi_global_graphmap_alignments:
+            print('GraphMap alignments after extension')
+            print('-----------------------------------')
+            for alignment in semi_global_graphmap_alignments:
+                print(alignment)
+                if VERBOSITY > 4:
+                    print(alignment.cigar)
+            print()
+
+        # Gather some statistics about the alignments.
+        percent_ids = [x.percent_identity for x in graphmap_alignments]
+        scores = [x.scaled_score for x in graphmap_alignments]
+        percent_id_mean, percent_id_std_dev = get_mean_and_st_dev(percent_ids)
+        score_mean, score_std_dev = get_mean_and_st_dev(scores)
+
+        # Give the alignments to their corresponding reads.
         for alignment in semi_global_graphmap_alignments:
-            print(alignment)
-            if VERBOSITY > 3:
-                print(alignment.cigar)
-        print()
+            read_dict[alignment.read.name].alignments.append(alignment)
 
-    # Gather some statistics about the alignments.
-    percent_ids = [x.percent_identity for x in graphmap_alignments]
-    scores = [x.scaled_score for x in graphmap_alignments]
-    percent_id_mean, percent_id_std_dev = get_mean_and_st_dev(percent_ids)
-    score_mean, score_std_dev = get_mean_and_st_dev(scores)
+        # We can now sort our reads into two different categories for further action:
+        #   1) Reads with a single, high quality alignment in the middle of a reference. These reads
+        #      are done!
+        #   2) Reads that are incompletely (or not at all) aligned, have overlapping alignments or
+        #      low quality alignments. These reads will be aligned again using Seqan.
+        completed_reads = []
+        reads_to_align = []
+        for read_name in read_names:
+            read = read_dict[read_name]
+            update_expected_slope(read, low_score_threshold)
+            if read.needs_seqan_realignment(partial_ref, low_score_threshold):
+                reads_to_align.append(read)
+            else:
+                completed_reads.append(read)
 
-    # Give the alignments to their corresponding reads.
-    for alignment in semi_global_graphmap_alignments:
-        read_dict[alignment.read.name].alignments.append(alignment)
+        if VERBOSITY > 0:
+            print_graphmap_summary_table(graphmap_alignments,
+                                         percent_id_mean, percent_id_std_dev,
+                                         score_mean, score_std_dev)
 
-    # We can now sort our reads into two different categories for further action:
-    #   1) Reads with a single, high quality alignment in the middle of a reference. These reads
-    #      are done!
-    #   2) Reads that are incompletely (or not at all) aligned, have overlapping alignments or
-    #      low quality alignments. These reads will be aligned again using Seqan.
-    completed_reads = []
-    reads_to_align = []
-    for read_name in read_names:
-        read = read_dict[read_name]
-        update_expected_slope(read, low_score_threshold)
-        if read.needs_seqan_realignment(partial_ref, low_score_threshold):
-            reads_to_align.append(read)
-        else:
-            completed_reads.append(read)
+        # OPTIONAL TO DO: for reads which are completed, I could still try to refine GraphMap
+        #                 alignments using my Seqan code. I'm not sure if it's worth it, so I
+        #                 should give it a try to see what kind of difference it makes.
 
-    if VERBOSITY > 0:
-        print_graphmap_summary_table(graphmap_alignments,
-                                     percent_id_mean, percent_id_std_dev,
-                                     score_mean, score_std_dev)
-
-    # OPTIONAL TO DO: for reads which are completed, I could still try to refine GraphMap alignments using my Seqan code.
-    #                 I'm not sure if it's worth it, so I should give it a try to see what kind of difference it makes.
+    # If we aren't using GraphMap as a first pass, then we align every read using Seqan.
+    else:
+        reads_to_align = [read_dict[x] for x in read_names]
 
     if VERBOSITY > 0:
-        print('Aligning reads')
-        print('--------------')
+        if VERBOSITY < 3:
+            print('Aligning reads')
+            print('--------------')
         num_realignments = len(reads_to_align)
         max_v = len(read_dict)
-        print('Reads completed by GraphMap:', int_to_str(len(completed_reads), max_v))
-        print('Reads to be realigned:      ', int_to_str(num_realignments, max_v))
-        print()
+        if use_graphmap:
+            print('Reads completed by GraphMap:', int_to_str(len(completed_reads), max_v))
+            print('Reads to be realigned:      ', int_to_str(num_realignments, max_v))
+            print()
     if VERBOSITY == 1:
         print_progress_line(0, num_realignments)
     completed_count = 0
@@ -310,9 +326,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     for read_name in read_names:
         read = read_dict[read_name]
         final_alignments += read.alignments
-    write_sam_file(final_alignments, graphmap_sam, output_sam)
-    
-    os.remove(graphmap_sam)
+    write_sam_file(final_alignments, references, output_sam, full_command)
 
     return read_dict
 
@@ -535,7 +549,7 @@ def print_graphmap_summary_table(graphmap_alignments, percent_id_mean, percent_i
     for line in table_lines:
         print(line)
     print()
-    print('Current reference length / read length mean:', float_to_str(EXPECTED_SLOPE, 5))
+    print('Current mean reference length / read length:', float_to_str(EXPECTED_SLOPE, 5))
     print()
 
 def extend_to_semi_global(alignments, scoring_scheme):
@@ -580,7 +594,7 @@ def load_references(fasta_filename):
     references = []
     total_bases = 0
     if VERBOSITY > 0:
-        print('Loading references')
+        print('\nLoading references')
         print('------------------')
         num_refs = sum(1 for line in open(fasta_filename) if line.startswith('>'))
         if not num_refs:
@@ -954,20 +968,35 @@ def range_is_contained(test_range, other_ranges):
             return True
     return False
 
-def write_sam_file(alignments, graphmap_sam, sam_filename):
+def write_sam_file(alignments, references, sam_filename, full_command):
     '''
     Writes the given alignments to a SAM file.
     '''
     sam_file = open(sam_filename, 'w')
 
-    # Copy the header from the GraphMap SAM file.
-    graphmap_sam_file = open(graphmap_sam, 'r')
-    for line in graphmap_sam_file:
-        if line.startswith('@'):
-            sam_file.write(line)
-        else:
-            break
+    # Header line.
+    sam_file.write('@HD' + '\t')
+    sam_file.write('VN:1.5' + '\t')
+    sam_file.write('SO:unknown' + '\n')
 
+    # Reference lines - only for references with at least one alignment.
+    used_references = set()
+    for alignment in alignments:
+        used_references.add(alignment.ref.name)
+    for ref in references:
+        if ref.name in used_references:
+            sam_file.write('@SQ' + '\t')
+            sam_file.write('SN:' + ref.name + '\t')
+            sam_file.write('LN:' + str(ref.get_length()) + '\n')
+
+    # Program line.
+    sam_file.write('@PG' + '\t')
+    sam_file.write('ID:' + 'ALIGNER_NAME')
+    if full_command:
+        sam_file.write('\tCL:' + full_command)
+    sam_file.write('\n')
+
+    # Alignments.
     for alignment in alignments:
         sam_file.write(alignment.get_sam_line())
         sam_file.write('\n')
@@ -1759,12 +1788,33 @@ class Alignment(object):
         '''
         Returns a SAM alignment line.
         '''
+        sam_parts = []
+        sam_parts.append(self.read.name) # Query template name
+        if self.rev_comp:
+            sam_parts.append('16') # Bitwise flag
+        else:
+            sam_parts.append('0') # Bitwise flag
+        sam_parts.append(self.ref.name) # Reference sequence name
+        sam_parts.append(str(self.ref_start_pos + 1)) # 1-based leftmost mapping position
+        sam_parts.append('255') # Mapping quality (255 means unavailable)
+        sam_parts.append(self.cigar) # CIGAR string
+        sam_parts.append('*') # Ref. name of the mate/next read (* means unavailable)
+        sam_parts.append('0') # Position of the mate/next read (0 means unavailable)
+        sam_parts.append('0') # Observed template length (0 means unavailable)
+
+        if self.rev_comp:
+            sam_parts.append(reverse_complement(self.read.sequence)) # Segment sequence
+            sam_parts.append(self.read.qualities[::-1]) # ASCII of Phred-scaled base quality+33
+        else:
+            sam_parts.append(self.read.sequence) # Segment sequence
+            sam_parts.append(self.read.qualities) # ASCII of Phred-scaled base quality+33
+
+        sam_parts.append('AS:i:' + str(self.raw_score)) # Alignment score generated by aligner
+
         edit_distance = self.mismatch_count + self.insertion_count + self.deletion_count
-        sam_flag = 0 #TO DO: SET THIS PROPERLY
-        return '\t'.join([self.read.name, str(sam_flag), self.ref.name,
-                          str(self.ref_start_pos + 1), '255', self.cigar,
-                          '*', '0', '0', self.read.sequence, self.read.qualities,
-                          'NM:i:' + str(edit_distance), 'AS:i:' + str(self.raw_score)])
+        sam_parts.append('NM:i:' + str(edit_distance)) # Edit distance to the reference, including
+                                                       # ambiguous bases but excluding clipping
+        return '\t'.join(sam_parts)
 
     def is_whole_read(self):
         '''

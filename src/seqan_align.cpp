@@ -18,7 +18,7 @@
 char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
                            double expectedSlope, KmerPositions * refKmerPositions,
                            int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore,
-                           double lowScoreThreshold) {
+                           double lowScoreThreshold, bool returnBad) {
     // This string will collect all of the console output for the alignment.
     std::string output;
 
@@ -192,11 +192,21 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
             needMoreAlignments = (badAlignmentCount < BAD_LINE_COUNT_PARTIAL_READ);
     }
 
+    // Either all alignments or only good alignments are returned, depending on a parameter.
+    std::vector<SemiGlobalAlignment *> * returnedAlignments;
+    if (returnBad)
+        returnedAlignments = &allAlignments;
+    else
+        returnedAlignments = &goodAlignments;
+
     // The returned string is semicolon-delimited. The last part is the console output and the
     // other parts are alignment description strings.
     std::string returnString;
-    for (size_t i = 0; i < goodAlignments.size(); ++i)
-        returnString += goodAlignments[i]->getFullString() + ";";
+    for (size_t i = 0; i < returnedAlignments->size(); ++i) {
+        SemiGlobalAlignment * alignment = (*returnedAlignments)[i];
+        if (alignment != 0)
+            returnString += alignment->getFullString() + ";";
+    }
     returnString += output;
 
     // Clean up.

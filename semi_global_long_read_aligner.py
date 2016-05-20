@@ -27,8 +27,7 @@ Required outputs:
   1) SAM file of alignments
 
 Optional outputs:
-  1) SAM file of raw (unfiltered) GraphMap alignments
-  2) Table files of depth and errors per base of each reference
+  1) Table files of depth and errors per base of each reference
 
 Author: Ryan Wick
 email: rrwick@gmail.com
@@ -43,10 +42,10 @@ import re
 import random
 import argparse
 import string
-import math
 import time
-from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p
+from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p, c_bool
 from multiprocessing.dummy import Pool as ThreadPool
+from multiprocessing import cpu_count
 
 '''
 VERBOSITY controls how much the script prints to the screen.
@@ -92,8 +91,9 @@ def main():
     reads = semi_global_align_long_reads(references, args.ref, read_dict, read_names, args.reads,
                                          args.sam, args.temp_dir, args.graphmap_path, args.threads,
                                          args.partial_ref, AlignmentScoringScheme(args.scores),
-                                         args.low_score, not args.no_graphmap, full_command)
-    summarise_errors(references, reads, args.table, args.keep)
+                                         args.low_score, not args.no_graphmap, full_command,
+                                         args.keep_bad)
+    summarise_errors(references, reads, args.table)
 
     sys.exit(0)
 
@@ -106,38 +106,70 @@ def get_arguments():
 
     parser.add_argument('--ref', type=str, required=True, default=argparse.SUPPRESS,
                         help='FASTA file containing one or more reference sequences')
-    parser.add_argument('--partial_ref', action='store_true',
-                        help='Set if some reads are not expected to align to the reference.')
     parser.add_argument('--reads', type=str, required=True, default=argparse.SUPPRESS,
                         help='FASTQ file of long reads')
     parser.add_argument('--sam', type=str, required=True, default=argparse.SUPPRESS,
                         help='SAM file of resulting alignments')
-    parser.add_argument('--table', type=str, required=False,
-                        help='Path and/or prefix for table files summarising reference errors')
+    parser.add_argument('--table', type=str, required=False, default=argparse.SUPPRESS,
+                        help='Path and/or prefix for table files summarising reference errors '
+                             '(default: do not save error tables)')
     parser.add_argument('--temp_dir', type=str, required=False, default='align_temp_PID',
                         help='Temp directory for working files')
-    parser.add_argument('--no_graphmap', action='store_true',
-                        help='Do not use GraphMap as a first-pass aligner')
+    parser.add_argument('--no_graphmap', action='store_true', default=argparse.SUPPRESS,
+                        help='Do not use GraphMap as a first-pass aligner (default: GraphMap is '
+                             'used)')
     parser.add_argument('--graphmap_path', type=str, required=False, default='graphmap',
                         help='Path to the GraphMap executable')
     parser.add_argument('--scores', type=str, required=False, default='3,-6,-5,-2',
                         help='Alignment scores: match, mismatch, gap open, gap extend')
-    parser.add_argument('--threads', type=int, required=False, default=8,
-                        help='Number of threads used by GraphMap')
+    # parser.add_argument('--keep', type=float, required=False, default=75.0,
+    #                     help='Percentage of alignments to keep')
+    parser.add_argument('--low_score', type=float, required=False, default=argparse.SUPPRESS,
+                        help='Score threshold - alignments below this are considered poor '
+                             '(default: set threshold automatically)')
+    parser.add_argument('--keep_bad', action='store_true', default=argparse.SUPPRESS,
+                        help='Include alignments in the results even if they are below the low '
+                             'score threshold (default: low-scoring alignments are discarded)')
+    parser.add_argument('--partial_ref', action='store_true',
+                        help='Set if some reads are not expected to align to the reference.')
+    parser.add_argument('--threads', type=int, required=False, default=argparse.SUPPRESS,
+                        help='Number of CPU threads used to align (default: the number of '
+                             'available CPUs)')
     parser.add_argument('--verbosity', type=int, required=False, default=1,
                         help='Level of stdout information (0 to 4)')
-    parser.add_argument('--keep', type=float, required=False, default=75.0,
-                        help='Percentage of alignments to keep')
-    parser.add_argument('--low_score', type=float, required=False, default=None,
-                        help='Score threshold - alignments below this are considered poor')
 
     args = parser.parse_args()
 
     global VERBOSITY
     VERBOSITY = args.verbosity
 
-    # Add the process ID to the temp directory so multiple instances can run at once in the same
-    # directory.
+    # If some arguments weren't set, set them to None/False. We don't use None/False as a default
+    # in add_argument because it makes the help text look weird.
+    try:
+        args.low_score
+    except AttributeError:
+        args.low_score = None
+    try:
+        args.table
+    except AttributeError:
+        args.table = None
+    try:
+        args.no_graphmap
+    except AttributeError:
+        args.no_graphmap = False
+    try:
+        args.keep_bad
+    except AttributeError:
+        args.keep_bad = False
+    try:
+        args.threads
+    except AttributeError:
+        args.threads = cpu_count()
+        if VERBOSITY > 2:
+            print('\nThread count set to', args.threads)
+
+    # Add the process ID to the default temp directory so multiple instances can run at once in the
+    # same directory.
     if args.temp_dir == 'align_temp_PID':
         args.temp_dir = 'align_temp_' + str(os.getpid())
 
@@ -145,7 +177,8 @@ def get_arguments():
 
 def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, reads_fastq,
                                  output_sam, temp_dir, graphmap_path, threads, partial_ref,
-                                 scoring_scheme, low_score_threshold, use_graphmap, full_command):
+                                 scoring_scheme, low_score_threshold, use_graphmap, full_command,
+                                 keep_bad):
     '''
     This function does the primary work of this module: aligning long reads to references in an
     end-gap-free, semi-global manner. It returns a list of Read objects which contain their
@@ -170,12 +203,11 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         low_score_threshold, rand_mean, rand_std_dev = get_auto_score_threshold(scoring_scheme,
                                                                                 std_devs_over_mean)
         if VERBOSITY > 0:
-
-            print('Random alignment mean score: ' + float_to_str(rand_mean, 3))
-            print('         standard deviation: ' + float_to_str(rand_std_dev, 3, rand_mean))
+            print('Random alignment mean score: ' + float_to_str(rand_mean, 2))
+            print('         standard deviation: ' + float_to_str(rand_std_dev, 2, rand_mean))
             print()
-            print('Low score threshold = ' + float_to_str(rand_mean, 3) + ' + 3 x ' + \
-                  float_to_str(rand_std_dev, 3) + ' = ' + float_to_str(low_score_threshold, 3))
+            print('Low score threshold = ' + float_to_str(rand_mean, 2) + ' + 3 x ' + \
+                  float_to_str(rand_std_dev, 2) + ' = ' + float_to_str(low_score_threshold, 2))
             print()
 
     reference_dict = {x.name: x for x in references}
@@ -282,7 +314,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     if threads == 1:
         for read in reads_to_align:
             output = seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
-                                     low_score_threshold)
+                                     low_score_threshold, keep_bad)
             completed_count += 1
             if VERBOSITY == 1:
                 print_progress_line(completed_count, num_realignments)
@@ -295,7 +327,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         arg_list = []
         for read in reads_to_align:
             arg_list.append((read, reference_dict, scoring_scheme, kmer_positions_ptr,
-                             low_score_threshold))
+                             low_score_threshold, keep_bad))
         for output in pool.imap_unordered(seqan_alignment_one_arg, arg_list, 1):
             completed_count += 1
             if VERBOSITY == 1:
@@ -330,7 +362,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
 
     return read_dict
 
-def summarise_errors(references, long_reads, table_prefix, percent_alignments_to_keep):
+def summarise_errors(references, long_reads, table_prefix):
     '''
     Writes a table file summarising the alignment errors in terms of reference sequence position.
     Works in a brute force manner - could be made more efficient later if necessary.
@@ -340,10 +372,10 @@ def summarise_errors(references, long_reads, table_prefix, percent_alignments_to
     if not table_prefix and VERBOSITY == 0:
         return
 
-    # We are be willing to throw out the worst alignments for any particular location. This value
-    # specifies how many of our alignments we'll keep.
-    # E.g. if 0.75, we'll throw out up to 25% of the alignments for each reference location.
-    frac_alignments_to_keep = percent_alignments_to_keep / 100.0
+    # # We are be willing to throw out the worst alignments for any particular location. This value
+    # # specifies how many of our alignments we'll keep.
+    # # E.g. if 0.75, we'll throw out up to 25% of the alignments for each reference location.
+    # frac_alignments_to_keep = percent_alignments_to_keep / 100.0
 
     # Ensure the table prefix is nicely formatted and any necessary directories are made.
     if table_prefix:
@@ -374,8 +406,7 @@ def summarise_errors(references, long_reads, table_prefix, percent_alignments_to
                 table_filename = table_prefix + '_' + header_for_filename + '.txt'
             table = open(table_filename, 'w')
             table.write('\t'.join(['base',
-                                   'total read depth',
-                                   'filtered depth',
+                                   'read depth',
                                    'mismatches',
                                    'deletions',
                                    'insertions',
@@ -387,35 +418,35 @@ def summarise_errors(references, long_reads, table_prefix, percent_alignments_to
         # Gather up the alignments for this reference and count up the depth for each reference
         # position.
         seq_len = len(reference.sequence)
-        total_depths = [0] * seq_len
+        depths = [0] * seq_len
         alignments = []
         for read in long_reads.itervalues():
             for alignment in read.alignments:
                 if alignment.ref.name == reference.name:
                     alignments.append(alignment)
                     for pos in xrange(alignment.ref_start_pos, alignment.ref_end_pos):
-                        total_depths[pos] += 1
+                        depths[pos] += 1
 
-        # Discard as many of the worst alignments as we can while keeping a sufficient read depth
-        # at each position.
-        sufficient_depths = [math.ceil(frac_alignments_to_keep * x) for x in total_depths]
-        filtered_depths = total_depths[:]
-        filtered_alignments = []
-        alignments = sorted(alignments, key=lambda x: x.scaled_score)
-        for alignment in alignments:
-            removal_okay = True
-            for pos in xrange(alignment.ref_start_pos, alignment.ref_end_pos):
-                if filtered_depths[pos] - 1 < sufficient_depths[pos]:
-                    removal_okay = False
-                    break
-            if removal_okay:
-                for pos in xrange(alignment.ref_start_pos, alignment.ref_end_pos):
-                    filtered_depths[pos] -= 1
-            else:
-                filtered_alignments.append(alignment)
+        # # Discard as many of the worst alignments as we can while keeping a sufficient read depth
+        # # at each position.
+        # sufficient_depths = [math.ceil(frac_alignments_to_keep * x) for x in total_depths]
+        # filtered_depths = total_depths[:]
+        # filtered_alignments = []
+        # alignments = sorted(alignments, key=lambda x: x.scaled_score)
+        # for alignment in alignments:
+        #     removal_okay = True
+        #     for pos in xrange(alignment.ref_start_pos, alignment.ref_end_pos):
+        #         if filtered_depths[pos] - 1 < sufficient_depths[pos]:
+        #             removal_okay = False
+        #             break
+        #     if removal_okay:
+        #         for pos in xrange(alignment.ref_start_pos, alignment.ref_end_pos):
+        #             filtered_depths[pos] -= 1
+        #     else:
+        #         filtered_alignments.append(alignment)
 
         # Determine how much of the reference sequence has at least one aligned read.
-        aligned_len = sum([1 for x in filtered_depths if x > 0])
+        aligned_len = sum([1 for x in depths if x > 0])
         aligned_percent = 100.0 * aligned_len / seq_len
 
         # Using the filtered alignments, add up mismatches, deletions and insertions and also get
@@ -430,7 +461,7 @@ def summarise_errors(references, long_reads, table_prefix, percent_alignments_to
         insertions = [0] * seq_len
         insertion_sizes = {}
 
-        for alignment in filtered_alignments:
+        for alignment in alignments:
             for pos in alignment.ref_mismatch_positions:
                 mismatches[pos] += 1
             for pos in alignment.ref_deletion_positions:
@@ -449,12 +480,12 @@ def summarise_errors(references, long_reads, table_prefix, percent_alignments_to
             deletion_rate = 0.0
             insertion_rate = 0.0
             insertion_rate_multi_base = 0.0
-            if filtered_depths[i] > 0:
-                mismatch_rate = mismatches[i] / filtered_depths[i]
-                deletion_rate = deletions[i] / filtered_depths[i]
-                insertion_rate = insertions[i] / filtered_depths[i]
+            if depths[i] > 0:
+                mismatch_rate = mismatches[i] / depths[i]
+                deletion_rate = deletions[i] / depths[i]
+                insertion_rate = insertions[i] / depths[i]
                 if i in insertion_sizes:
-                    insertion_rate_multi_base = sum(insertion_sizes[i]) / filtered_depths[i]
+                    insertion_rate_multi_base = sum(insertion_sizes[i]) / depths[i]
             mismatch_rates.append(mismatch_rate)
             deletion_rates.append(deletion_rate)
             insertion_rates.append(insertion_rate)
@@ -466,8 +497,7 @@ def summarise_errors(references, long_reads, table_prefix, percent_alignments_to
                 if i in insertion_sizes:
                     insertion_sizes_str = ', '.join([str(x) for x in insertion_sizes[i]])
                 table.write('\t'.join([str(i+1),
-                                       str(total_depths[i]),
-                                       str(filtered_depths[i]),
+                                       str(depths[i]),
                                        str(mismatches[i]),
                                        str(deletions[i]),
                                        str(insertions[i]),
@@ -481,7 +511,7 @@ def summarise_errors(references, long_reads, table_prefix, percent_alignments_to
         if VERBOSITY > 0:
             contained_alignment_count = 0
             overlapping_alignment_count = 0
-            for alignment in filtered_alignments:
+            for alignment in alignments:
                 if alignment.is_whole_read():
                     contained_alignment_count += 1
                 else:
@@ -489,15 +519,13 @@ def summarise_errors(references, long_reads, table_prefix, percent_alignments_to
             print(reference.name)
             print('  Total length:       ', int_to_str(seq_len, max_v) + ' bp')
             if alignments:
-                mean_depth = sum(filtered_depths) / seq_len
+                mean_depth = sum(depths) / seq_len
                 mean_mismatch_rate = 100.0 * sum(mismatch_rates) / aligned_len
                 mean_insertion_rate = 100.0 * sum(insertion_rates_multi_base) / aligned_len
                 mean_deletion_rate = 100.0 * sum(deletion_rates) / aligned_len
-                if VERBOSITY == 1:
-                    print('  Alignments:         ', int_to_str(len(filtered_alignments), max_v))
+                if VERBOSITY > 0:
+                    print('  Alignments:         ', int_to_str(len(alignments), max_v))
                 if VERBOSITY > 1:
-                    print('  Total alignments:   ', int_to_str(len(alignments), max_v))
-                    print('  Filtered alignments:', int_to_str(len(filtered_alignments), max_v))
                     print('    Contained:        ', int_to_str(contained_alignment_count, max_v))
                     print('    Overlapping:      ', int_to_str(overlapping_alignment_count, max_v))
                 print('  Covered length:     ', int_to_str(aligned_len, max_v) + ' bp')
@@ -511,7 +539,7 @@ def summarise_errors(references, long_reads, table_prefix, percent_alignments_to
                     print('  Deletion rate:      ',
                           float_to_str(mean_deletion_rate, 2, max_v) + '%')
             else:
-                print('  Total alignments:   ', int_to_str(0, max_v))
+                print('  Alignments:         ', int_to_str(0, max_v))
             print()
 
 def print_graphmap_summary_table(graphmap_alignments, percent_id_mean, percent_id_std_dev,
@@ -766,11 +794,13 @@ def seqan_alignment_one_arg(all_args):
     This is just a one-argument version of seqan_alignment to make it easier to
     use that function in a thread pool.
     '''
-    read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold = all_args
+    read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold, keep_bad = \
+                                                                                           all_args
     return seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
-                           low_score_threshold)
+                           low_score_threshold, keep_bad)
 
-def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold):
+def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold,
+                    keep_bad):
     '''
     Aligns a single read against all reference sequences using Seqan.
     '''
@@ -794,7 +824,7 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
                                     EXPECTED_SLOPE, kmer_positions_ptr,
                                     scoring_scheme.match, scoring_scheme.mismatch,
                                     scoring_scheme.gap_open, scoring_scheme.gap_extend,
-                                    low_score_threshold)
+                                    low_score_threshold, keep_bad)
     results = c_string_to_python_string(ptr).split(';')
     alignment_strings = results[:-1]
     output += results[-1]
@@ -818,7 +848,8 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
                         output += alignment.cigar + '\n'
 
     read.remove_conflicting_alignments()
-    read.remove_low_score_alignments(low_score_threshold)
+    if not keep_bad:
+        read.remove_low_score_alignments(low_score_threshold)
 
     if VERBOSITY > 2:
         output += 'Final alignments:\n'
@@ -832,83 +863,6 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
 
     update_expected_slope(read, low_score_threshold)
     return output
-
-# def seqan_alignment_one_read_all_refs_one_level(read, references, scoring_scheme,
-#                                                 expected_ref_to_read_ratio, kmer_positions_ptr,
-#                                                 sensitivity_level):
-#     '''
-#     Aligns a single read against all reference sequences using Seqan at a single sensitivity level.
-#     '''
-#     assert sensitivity_level == 1 or sensitivity_level == 2 or sensitivity_level == 3
-#     output = ''
-#     alignments = []
-
-#     if VERBOSITY > 2:
-#         output += 'Seqan alignments at sensitivity level ' + str(sensitivity_level) + ':\n'
-
-#     for ref in references:
-#         if VERBOSITY > 3:
-#             output += 'Reference: ' + ref.name + '+\n'
-#         forward_alignments, forward_alignment_output = \
-#                         seqan_alignment_one_read_one_ref(read, ref, False, scoring_scheme,
-#                                                          expected_ref_to_read_ratio,
-#                                                          kmer_positions_ptr, sensitivity_level)
-#         alignments += forward_alignments
-#         output += forward_alignment_output
-
-#         if VERBOSITY > 3:
-#             output += 'Reference: ' + ref.name + '-\n'
-#         reverse_alignments, reverse_alignment_output = \
-#                         seqan_alignment_one_read_one_ref(read, ref, True, scoring_scheme,
-#                                                          expected_ref_to_read_ratio,
-#                                                          kmer_positions_ptr, sensitivity_level)
-#         alignments += reverse_alignments
-#         output += reverse_alignment_output
-
-#     if VERBOSITY > 2 and not alignments:
-#         output += '  None\n'
-
-#     return alignments, output
-
-# def seqan_alignment_one_read_one_ref(read, ref, rev_comp, scoring_scheme, expected_slope,
-#                                      kmer_positions_ptr, sensitivity_level):
-#     '''
-#     Runs an alignment using Seqan between one read and one reference.
-#     Returns a list of Alignment objects: empty list means it did not succeed, a list of one means
-#     it got one alignment and a list of more than one means it got multiple alignments.
-#     '''
-#     if rev_comp:
-#         strand_str = '-'
-#         read_seq = reverse_complement(read.sequence)
-#     else:
-#         strand_str = '+'
-#         read_seq = read.sequence
-#     read_name = read.name + strand_str
-
-#     # print('READ:', read_name, 'REF:', ref.name, 'LEVEL:', sensitivity_level) # TEST CODE - USEFUL FOR DEBUGGING
-#     sys.stdout.flush() # TEST CODE - USEFUL FOR DEBUGGING
-
-#     ptr = C_LIB.semiGlobalAlignment(read_name, read_seq, ref.name, ref.sequence,
-#                                     expected_slope, VERBOSITY, kmer_positions_ptr,
-#                                     scoring_scheme.match, scoring_scheme.mismatch,
-#                                     scoring_scheme.gap_open, scoring_scheme.gap_extend,
-#                                     sensitivity_level)
-#     results = c_string_to_python_string(ptr).split(';')
-#     alignment_strings = results[:-1]
-#     output = results[-1]
-
-#     output = output.replace('READ_NAME', read.name)
-#     output = output.replace('REF_NAME', ref.name)
-#     output = output.replace('STRAND', strand_str)
-
-
-#     alignments = []
-#     for alignment_string in alignment_strings:
-#         alignment = Alignment(seqan_output=alignment_string, read=read, ref=ref, rev_comp=rev_comp,
-#                               scoring_scheme=scoring_scheme)
-#         alignments.append(alignment)
-
-#     return alignments, output
 
 def get_ref_shift_from_cigar_part(cigar_part):
     '''
@@ -1063,16 +1017,6 @@ def int_to_str(num, max_num=0):
     max_str = '{:,}'.format(int(max_num))
     return num_str.rjust(len(max_str))
 
-# def line_count(filename):
-#     '''
-#     Counts the lines in the given file.
-#     '''
-#     i = 0
-#     with open(filename) as file_to_count:
-#         for i, _ in enumerate(file_to_count):
-#             pass
-#     return i + 1
-
 def clean_str_for_filename(filename):
     '''
     This function removes characters from a string which would not be suitable in a filename.
@@ -1175,6 +1119,7 @@ def get_auto_score_threshold(scoring_scheme, std_devs_over_mean):
     This function determines a good low score threshold for the alignments. To do this it examines
     the distribution of scores acquired by aligning random sequences.
     '''
+    # TO DO: make the random alignments run in separate threads to be a bit faster
     mean, std_dev = get_random_sequence_alignment_mean_and_std_dev(100, 10000, scoring_scheme)
     threshold = mean + (std_devs_over_mean * std_dev)
 
@@ -1732,7 +1677,6 @@ class Alignment(object):
             return_str += ', scaled score = ' + '%.2f' % self.scaled_score
         if self.percent_identity is not None:
             return_str += ', ' + '%.2f' % self.percent_identity + '% ID'
-        return_str += ', longest indel: ' + str(self.get_longest_indel_run())
         return return_str
 
     def get_aligned_ref_length(self):
@@ -1892,7 +1836,8 @@ C_LIB.semiGlobalAlignment.argtypes = [c_char_p, # Read name
                                       c_int,    # Mismatch score
                                       c_int,    # Gap open score
                                       c_int,    # Gap extension score
-                                      c_double] # Low score threshold
+                                      c_double, # Low score threshold
+                                      c_bool]   # Return bad alignments
 C_LIB.semiGlobalAlignment.restype = c_void_p    # String describing alignments
 
 

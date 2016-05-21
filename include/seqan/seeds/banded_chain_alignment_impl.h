@@ -854,6 +854,10 @@ _initializeBandedChain(TTraceSet & globalTraceSet,
             score = _computeAlignment(localTraceSet, scoutState, infixH, infixV, scoreSchemeGap, band, dpProfile);
     }
 
+    // THROW AN EXCEPTION IF THE SCORE LOOKS BAD!
+    if (score < -1000000)
+        throw std::runtime_error("Bad Seqan alignment score\n");
+
     if (gridBegin.i1 != 0u || gridBegin.i2 != 0u)
     {
         _adaptLocalTracesToGlobalGrid(localTraceSet, gridBegin);

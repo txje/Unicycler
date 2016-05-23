@@ -90,7 +90,7 @@ def main():
 
     reads = semi_global_align_long_reads(references, args.ref, read_dict, read_names, args.reads,
                                          args.sam, args.temp_dir, args.graphmap_path, args.threads,
-                                         args.partial_ref, AlignmentScoringScheme(args.scores),
+                                         AlignmentScoringScheme(args.scores),
                                          args.low_score, not args.no_graphmap, full_command,
                                          args.keep_bad, args.kmer, args.min_len)
     summarise_errors(references, reads, args.table)
@@ -131,8 +131,6 @@ def get_arguments():
     parser.add_argument('--keep_bad', action='store_true', default=argparse.SUPPRESS,
                         help='Include alignments in the results even if they are below the low '
                              'score threshold (default: low-scoring alignments are discarded)')
-    parser.add_argument('--partial_ref', action='store_true',
-                        help='Set if some reads are not expected to align to the reference.')
     parser.add_argument('--kmer', type=int, required=False, default=7,
                         help='K-mer size used for seeding alignments')
     parser.add_argument('--threads', type=int, required=False, default=argparse.SUPPRESS,
@@ -179,7 +177,7 @@ def get_arguments():
     return args
 
 def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, reads_fastq,
-                                 output_sam, temp_dir, graphmap_path, threads, partial_ref,
+                                 output_sam, temp_dir, graphmap_path, threads,
                                  scoring_scheme, low_score_threshold, use_graphmap, full_command,
                                  keep_bad, kmer_size, min_align_length):
     '''
@@ -276,7 +274,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         for read_name in read_names:
             read = read_dict[read_name]
             update_expected_slope(read, low_score_threshold)
-            if read.needs_seqan_realignment(partial_ref, low_score_threshold):
+            if read.needs_seqan_realignment(low_score_threshold):
                 reads_to_align.append(read)
             else:
                 completed_reads.append(read)
@@ -1215,16 +1213,11 @@ class Read(object):
         '''
         return len(self.sequence)
 
-    def needs_seqan_realignment(self, partial_ref, low_score_threshold):
+    def needs_seqan_realignment(self, low_score_threshold):
         '''
         This function returns True or False based on whether a read was nicely aligned by GraphMap
         or needs to be realigned with Seqan.
         '''
-        # If we know the reference to be partial, then unaligned reads are expected. So in the case
-        # of a partial reference, we will not realign an unaligned read.
-        if partial_ref and not self.alignments:
-            return False
-
         # Either zero or more than one alignments result in realignment.
         if len(self.alignments) != 1:
             return True

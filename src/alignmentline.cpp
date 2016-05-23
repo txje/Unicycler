@@ -140,29 +140,33 @@ bool AlignmentLine::buildSeedChain(int minPointCount, float minAlignmentLength, 
 
     // Create a new vector of line points, excluding those with excessively high slopes.
     std::vector<CommonKmer> fixedLinePoints;
+    int smallestVPos = std::numeric_limits<int>::max();
+    int largestVPos = std::numeric_limits<int>::min();
     for (int i = 0; i < pointCount; ++i) {
         double maxSlope = maxSlopes[i];
-        if (maxSlope <= slopeCutoff)
+        if (maxSlope <= slopeCutoff) {
             fixedLinePoints.push_back(m_linePoints[i]);
+            smallestVPos = std::min(smallestVPos, m_linePoints[i].m_vPosition);
+            largestVPos = std::max(largestVPos, m_linePoints[i].m_vPosition);
+        }
     }
-    m_linePoints = fixedLinePoints;
 
-    // Remove any line groups with too few points.
-    if (int(m_linePoints.size()) < minPointCount)
+    // Fail if too few points remain.
+    if (int(fixedLinePoints.size()) < minPointCount)
         return false;
 
     // When we do a Seqan banded alignment, we won't use the full reference sequence but just the
     // relevant part. Determine here what that relevant part is.
-    int approxRefStart = int(round(m_intercept));
-    int approxRefEnd = int(round(m_slope * m_readLength + m_intercept));
+    int approxRefStart = std::min(int(round(m_intercept)), smallestVPos);
+    int approxRefEnd = std::max(int(round(m_slope * m_readLength + m_intercept)), largestVPos);
     m_trimmedRefStart = std::max(0, approxRefStart - PAD_SIZE);
     m_trimmedRefEnd = std::min(m_refLength, approxRefEnd + PAD_SIZE);
     int trimmedRefLength = m_trimmedRefEnd - m_trimmedRefStart;
 
     // Build a Seqan seed set using our common k-mers, offsetting by the trimmed reference start position.
     TSeedSet seedSet;
-    for (size_t i = 0; i < m_linePoints.size(); ++i) {
-        TSeed seed(m_linePoints[i].m_hPosition, m_linePoints[i].m_vPosition - m_trimmedRefStart, kSize);
+    for (size_t i = 0; i < fixedLinePoints.size(); ++i) {
+        TSeed seed(fixedLinePoints[i].m_hPosition, fixedLinePoints[i].m_vPosition - m_trimmedRefStart, kSize);
         addSeedMerge(seedSet, seed);
     }
 

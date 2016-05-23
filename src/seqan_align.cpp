@@ -45,11 +45,6 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
         commonKmerSets.push_back(forwardCommonKmerSet);
         CommonKmerSet * reverseCommonKmerSet = new CommonKmerSet(negReadName, refName, readLength, refLength, expectedSlope, &readKmerPositions, refKmerPositions, kSize);
         commonKmerSets.push_back(reverseCommonKmerSet);
-
-        // if (posReadName == "847/0_18868+" && refName == "NODE_89") {  // TEMP
-        //     std::cout << getKmerTable(commonKmerSet->m_commonKmers) << std::endl << std::flush;  // TEMP
-        //     std::cout << "\n\n\n\n" << std::flush;  // TEMP
-        // }  // TEMP
     }
 
     if (verbosity > 2)

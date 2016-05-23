@@ -122,8 +122,6 @@ def get_arguments():
                         help='Path to the GraphMap executable')
     parser.add_argument('--scores', type=str, required=False, default='3,-6,-5,-2',
                         help='Alignment scores: match, mismatch, gap open, gap extend')
-    # parser.add_argument('--keep', type=float, required=False, default=75.0,
-    #                     help='Percentage of alignments to keep')
     parser.add_argument('--low_score', type=float, required=False, default=argparse.SUPPRESS,
                         help='Score threshold - alignments below this are considered poor '
                              '(default: set threshold automatically)')

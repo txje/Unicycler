@@ -85,6 +85,8 @@ def main():
     args = get_arguments()
     check_file_exists(args.ref)
     check_file_exists(args.reads)
+    if not args.no_graphmap:
+        check_graphmap(args.graphmap_path)
     references = load_references(args.ref)
     read_dict, read_names = load_long_reads(args.reads)
 
@@ -985,6 +987,18 @@ def check_file_exists(filename): # type: (str) -> bool
     '''
     if not os.path.isfile(filename):
         quit_with_error('could not find ' + filename)
+
+def check_graphmap(graphmap_path):
+    '''
+    Makes sure the GraphMap executable is available.
+    '''
+    process = subprocess.Popen(['which', graphmap_path], stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE)
+    out, err = process.communicate()
+    found_graphmap = bool(out) and not bool(err)
+    if not found_graphmap:
+        quit_with_error('could not find GraphMap at ' + graphmap_path + 
+                        ', either fix path or run with --no_graphmap')
 
 def quit_with_error(message): # type: (str) -> None
     '''

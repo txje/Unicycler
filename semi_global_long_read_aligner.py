@@ -354,7 +354,11 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         print('Total read count:       ', int_to_str(len(read_dict), max_v))
         print('Fully aligned reads:    ', int_to_str(len(fully_aligned), max_v))
         print('Partially aligned reads:', int_to_str(len(partially_aligned), max_v))
+        if VERBOSITY > 2 and partially_aligned:
+            print('    ' + ', '.join([x.name for x in partially_aligned]))
         print('Unaligned reads:        ', int_to_str(len(unaligned), max_v))
+        if VERBOSITY > 2 and unaligned:
+            print('    ' + ', '.join([x.name for x in unaligned]))
         print()
 
     return read_dict

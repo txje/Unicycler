@@ -203,15 +203,16 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     else:
         if VERBOSITY > 0:
             print('Automatically choosing a low score threshold using random alignments...\n')
-        std_devs_over_mean = 3
+        std_devs_over_mean = 5
         low_score_threshold, rand_mean, rand_std_dev = get_auto_score_threshold(scoring_scheme,
                                                                                 std_devs_over_mean)
         if VERBOSITY > 0:
             print('Random alignment mean score: ' + float_to_str(rand_mean, 2))
             print('         standard deviation: ' + float_to_str(rand_std_dev, 2, rand_mean))
             print()
-            print('Low score threshold = ' + float_to_str(rand_mean, 2) + ' + 3 x ' + \
-                  float_to_str(rand_std_dev, 2) + ' = ' + float_to_str(low_score_threshold, 2))
+            print('Low score threshold = ' + float_to_str(rand_mean, 2) + ' + ' + \
+                  str(std_devs_over_mean) + ' x ' +  float_to_str(rand_std_dev, 2) + ' = ' + \
+                  float_to_str(low_score_threshold, 2))
             print()
 
     reference_dict = {x.name: x for x in references}

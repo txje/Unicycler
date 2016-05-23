@@ -12,7 +12,7 @@ import sys
 import shutil
 import gzip
 import math
-from assembly_graph import AssemblyGraph
+from assembly_graph import AssemblyGraph, load_sam_alignments
 
 
 spades_path = '/Users/Ryan/Applications/SPAdes-3.7.1-Darwin/bin/spades.py'

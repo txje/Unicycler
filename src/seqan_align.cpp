@@ -490,6 +490,87 @@ char * getRandomSequenceAlignmentScores(int seqLength, int n,
     return cppStringToCString(std::to_string(mean) + "," + std::to_string(stdev));
 }
 
+// This function does something similar to getRandomSequenceAlignmentScores, but instead of
+// returning the scaled score of the alignment, it returns the rate of errors (total sum of
+// mismatchs, insertions and deletions over the sequence length). 
+char * getRandomSequenceAlignmentErrorRates(int seqLength, int n,
+                                           int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore) {
+    std::vector<double> matchesOverSeqLength;
+    std::vector<double> errorsOverSeqLength;
+    std::vector<double> matchesOverAlignmentLength;
+    std::vector<double> errorsOverAlignmentLength;
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<double> dist(0, 3);
+
+    for (int i = 0; i < n; ++i) {
+        int totalMatches = 0;
+        int totalErrors = 0;
+
+        std::string s1 = getRandomSequence(seqLength, gen, dist);
+        std::string s2 = getRandomSequence(seqLength, gen, dist);
+
+        Dna5String sequenceH(s1);
+        Dna5String sequenceV(s2);
+
+        Align<Dna5String, ArrayGaps> alignment;
+        resize(rows(alignment), 2);
+        assignSource(row(alignment, 0), sequenceH);
+        assignSource(row(alignment, 1), sequenceV);
+
+        Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
+
+        AlignConfig<false, false, false, false> alignConfig;
+        globalAlignment(alignment, scoringScheme, alignConfig);
+
+        // Extract the alignment sequences into C++ strings for constant time random access.
+        std::ostringstream stream1;
+        stream1 << row(alignment, 0);
+        std::string s1Alignment =  stream1.str();
+        std::ostringstream stream2;
+        stream2 << row(alignment, 1);
+        std::string s2Alignment =  stream2.str();
+
+        for (size_t i = 0; i < s1Alignment.size(); ++i)
+        {
+            if (s1Alignment[i] == '-' || s2Alignment[i] == '-' || s1Alignment[i] != s2Alignment[i])
+                ++totalErrors;
+            else // match
+                ++totalMatches;
+        }
+        matchesOverSeqLength.push_back(double(totalMatches) / double(seqLength));
+        errorsOverSeqLength.push_back(double(totalErrors) / double(seqLength));
+        matchesOverAlignmentLength.push_back(double(totalMatches) / double(s1Alignment.size()));
+        errorsOverAlignmentLength.push_back(double(totalErrors) / double(s1Alignment.size()));
+    }
+
+    std::string returnString;
+    double mean, stdev;
+
+    getMeanAndStDev(matchesOverSeqLength, mean, stdev);
+    returnString += "identity (using sequence length):\n";
+    returnString += "       mean = " + std::to_string(mean) + "\n";
+    returnString += "    std dev = " + std::to_string(stdev) + "\n\n";
+
+    getMeanAndStDev(errorsOverSeqLength, mean, stdev);
+    returnString += "errors (using sequence length):\n";
+    returnString += "       mean = " + std::to_string(mean) + "\n";
+    returnString += "    std dev = " + std::to_string(stdev) + "\n\n";
+
+    getMeanAndStDev(matchesOverAlignmentLength, mean, stdev);
+    returnString += "identity (using alignment length):\n";
+    returnString += "       mean = " + std::to_string(mean) + "\n";
+    returnString += "    std dev = " + std::to_string(stdev) + "\n\n";
+
+    getMeanAndStDev(errorsOverAlignmentLength, mean, stdev);
+    returnString += "errors (using alignment length):\n";
+    returnString += "       mean = " + std::to_string(mean) + "\n";
+    returnString += "    std dev = " + std::to_string(stdev) + "\n";
+
+    return cppStringToCString(returnString);
+}
+
 std::string getRandomSequence(int seqLength, std::mt19937 & gen, std::uniform_int_distribution<double> & dist) {
     std::string seq;
     seq.reserve(seqLength);

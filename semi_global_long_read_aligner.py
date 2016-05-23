@@ -664,7 +664,7 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
             output += 'All Seqan alignments (time to align = ' + \
                       float_to_str(time.time() - start_time, 3) + ' s):\n'
             for alignment in read.alignments:
-                if alignment.alignment_type != 'GraphMap':
+                if alignment.alignment_type != 'SAM':
                     output += '  ' + str(alignment) + '\n'
                     if VERBOSITY > 3:
                         output += alignment.cigar + '\n'
@@ -1216,7 +1216,7 @@ class Alignment(object):
         if seqan_output:
             self.setup_using_seqan_output(seqan_output, read, reference_dict)
         elif sam_line:
-            self.setup_using_graphmap_sam(sam_line, read_dict, reference_dict)
+            self.setup_using_sam(sam_line, read_dict, reference_dict)
 
         self.tally_up_score_and_errors(scoring_scheme)
 
@@ -1244,11 +1244,11 @@ class Alignment(object):
         self.ref_end_pos = int(seqan_parts[5])
         self.ref_end_gap = len(self.ref.sequence) - self.ref_end_pos
 
-    def setup_using_graphmap_sam(self, sam_line, read_dict, reference_dict):
+    def setup_using_sam(self, sam_line, read_dict, reference_dict):
         '''
         This function sets up the Alignment using a SAM line.
         '''
-        self.alignment_type = 'GraphMap'
+        self.alignment_type = 'SAM'
         sam_parts = sam_line.split('\t')
         self.rev_comp = bool(int(sam_parts[1]) & 0x10)
         self.cigar = sam_parts[5]
@@ -1778,6 +1778,29 @@ def get_random_sequence_alignment_mean_and_std_dev(seq_length, count, scoring_sc
     return_str = c_string_to_python_string(ptr)
     return_parts = return_str.split(',')
     return float(return_parts[0]), float(return_parts[1])
+
+
+'''
+This function gets the mean and standard deviation of alignments between random sequences.
+'''
+C_LIB.getRandomSequenceAlignmentErrorRates.argtypes = [c_int, # Random sequence length
+                                                       c_int, # Count
+                                                       c_int, # Match score
+                                                       c_int, # Mismatch score
+                                                       c_int, # Gap open score
+                                                       c_int] # Gap extension score
+C_LIB.getRandomSequenceAlignmentErrorRates.restype = c_void_p
+
+
+def get_random_sequence_alignment_error_rates(seq_length, count, scoring_scheme):
+    '''
+    Python wrapper for getRandomSequenceAlignmentErrorRate C++ function.
+    '''
+    ptr = C_LIB.getRandomSequenceAlignmentErrorRates(seq_length, count,
+                                                    scoring_scheme.match, scoring_scheme.mismatch,
+                                                    scoring_scheme.gap_open,
+                                                    scoring_scheme.gap_extend)
+    return c_string_to_python_string(ptr)
 
 if __name__ == '__main__':
     main()

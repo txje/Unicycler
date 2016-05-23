@@ -8,15 +8,10 @@ email: rrwick@gmail.com
 from __future__ import print_function
 from __future__ import division
 
-import subprocess
 import sys
 import os
-import re
 import random
 import argparse
-import string
-import time
-from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p, c_bool
 from multiprocessing.dummy import Pool as ThreadPool
 from multiprocessing import cpu_count
 
@@ -26,16 +21,6 @@ VERBOSITY controls how much the script prints to the screen.
 VERBOSITY = 0
 
 
-TOTAL_READ_LENGTH = 10000
-
-
-'''
-This script makes use of several C++ functions which are in seqan_align.so. They are wrapped in
-similarly named Python functions.
-'''
-C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_align.so'))
-
-
 def main():
     '''
     If this script is run on its own, execution starts here.
@@ -43,11 +28,12 @@ def main():
     full_command = ' '.join(sys.argv)
     args = get_arguments()
 
-    reads = semi_global_align_long_reads(references, args.ref, read_dict, read_names, args.reads,
-                                         args.sam, args.temp_dir, args.graphmap_path, args.threads,
-                                         args.partial_ref, AlignmentScoringScheme(args.scores),
-                                         args.low_score, not args.no_graphmap, full_command,
-                                         args.keep_bad, args.kmer, args.min_len)
+    # LOAD IN THE REFERENCES FROM THE SAM HEADER. JUST NEED NAME AND LENGTH.
+
+    # FOR EACH REFERENCE, CREATE TWO LISTS: DEPTH AND ERROR COUNT
+
+    # LOAD IN THE ALIGNMENTS FROM THE SAM, ADDING ERRORS
+
     summarise_errors(references, reads, args.table)
 
     sys.exit(0)
@@ -99,11 +85,6 @@ def get_arguments():
         args.threads = cpu_count()
         if VERBOSITY > 2:
             print('\nThread count set to', args.threads)
-
-    # Add the process ID to the default temp directory so multiple instances can run at once in the
-    # same directory.
-    if args.temp_dir == 'align_temp_PID':
-        args.temp_dir = 'align_temp_' + str(os.getpid())
 
     return args
 

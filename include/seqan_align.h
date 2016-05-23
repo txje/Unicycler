@@ -30,6 +30,8 @@ extern "C" {
 
     char * getRandomSequenceAlignmentScores(int seqLength, int n,
                                             int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore);
+    char * getRandomSequenceAlignmentErrorRates(int seqLength, int n,
+                                               int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore);
 }
 
 SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readName, std::string & refName,

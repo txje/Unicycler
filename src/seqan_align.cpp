@@ -490,15 +490,15 @@ char * getRandomSequenceAlignmentScores(int seqLength, int n,
     return cppStringToCString(std::to_string(mean) + "," + std::to_string(stdev));
 }
 
-// This function does something similar to getRandomSequenceAlignmentScores, but instead of
-// returning the scaled score of the alignment, it returns the rate of errors (total sum of
-// mismatchs, insertions and deletions over the sequence length). 
+// This function returns lots of information about random global alignments.
 char * getRandomSequenceAlignmentErrorRates(int seqLength, int n,
-                                           int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore) {
-    std::vector<double> matchesOverSeqLength;
-    std::vector<double> errorsOverSeqLength;
+                                            int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore) {
     std::vector<double> matchesOverAlignmentLength;
     std::vector<double> errorsOverAlignmentLength;
+    std::vector<double> matchesOverSeqLength;
+    std::vector<double> errorsOverSeqLength;
+    std::vector<double> scores;
+    std::vector<double> alignmentLengths;
 
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -522,7 +522,7 @@ char * getRandomSequenceAlignmentErrorRates(int seqLength, int n,
         Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
 
         AlignConfig<false, false, false, false> alignConfig;
-        globalAlignment(alignment, scoringScheme, alignConfig);
+        int score = globalAlignment(alignment, scoringScheme, alignConfig);
 
         // Extract the alignment sequences into C++ strings for constant time random access.
         std::ostringstream stream1;
@@ -539,34 +539,48 @@ char * getRandomSequenceAlignmentErrorRates(int seqLength, int n,
             else // match
                 ++totalMatches;
         }
-        matchesOverSeqLength.push_back(double(totalMatches) / double(seqLength));
-        errorsOverSeqLength.push_back(double(totalErrors) / double(seqLength));
         matchesOverAlignmentLength.push_back(double(totalMatches) / double(s1Alignment.size()));
         errorsOverAlignmentLength.push_back(double(totalErrors) / double(s1Alignment.size()));
+        matchesOverSeqLength.push_back(double(totalMatches) / double(seqLength));
+        errorsOverSeqLength.push_back(double(totalErrors) / double(seqLength));
+        scores.push_back(double(score));
+        alignmentLengths.push_back(double(s1Alignment.size()));
     }
 
     std::string returnString;
     double mean, stdev;
 
-    getMeanAndStDev(matchesOverSeqLength, mean, stdev);
-    returnString += "identity (using sequence length):\n";
-    returnString += "       mean = " + std::to_string(mean) + "\n";
-    returnString += "    std dev = " + std::to_string(stdev) + "\n\n";
-
-    getMeanAndStDev(errorsOverSeqLength, mean, stdev);
-    returnString += "errors (using sequence length):\n";
-    returnString += "       mean = " + std::to_string(mean) + "\n";
-    returnString += "    std dev = " + std::to_string(stdev) + "\n\n";
+    returnString += "identity (using alignment length) mean\t";
+    returnString += "identity (using alignment length) std dev\t";
+    returnString += "errors (using alignment length) mean\t";
+    returnString += "errors (using alignment length) std dev\t";
+    returnString += "identity (using sequence length) mean\t";
+    returnString += "identity (using sequence length) std dev\t";
+    returnString += "errors (using sequence length) mean\t";
+    returnString += "errors (using sequence length) std dev\t";
+    returnString += "score mean\t";
+    returnString += "score std dev\t";
+    returnString += "alignment length mean\t";
+    returnString += "alignment length std dev\n";
 
     getMeanAndStDev(matchesOverAlignmentLength, mean, stdev);
-    returnString += "identity (using alignment length):\n";
-    returnString += "       mean = " + std::to_string(mean) + "\n";
-    returnString += "    std dev = " + std::to_string(stdev) + "\n\n";
-
+    returnString += std::to_string(mean) + "\t";
+    returnString += std::to_string(stdev) + "\t";
     getMeanAndStDev(errorsOverAlignmentLength, mean, stdev);
-    returnString += "errors (using alignment length):\n";
-    returnString += "       mean = " + std::to_string(mean) + "\n";
-    returnString += "    std dev = " + std::to_string(stdev) + "\n";
+    returnString += std::to_string(mean) + "\t";
+    returnString += std::to_string(stdev) + "\t";
+    getMeanAndStDev(matchesOverSeqLength, mean, stdev);
+    returnString += std::to_string(mean) + "\t";
+    returnString += std::to_string(stdev) + "\t";
+    getMeanAndStDev(errorsOverSeqLength, mean, stdev);
+    returnString += std::to_string(mean) + "\t";
+    returnString += std::to_string(stdev) + "\t";
+    getMeanAndStDev(scores, mean, stdev);
+    returnString += std::to_string(mean) + "\t";
+    returnString += std::to_string(stdev) + "\t";
+    getMeanAndStDev(alignmentLengths, mean, stdev);
+    returnString += std::to_string(mean) + "\t";
+    returnString += std::to_string(stdev) + "\n";
 
     return cppStringToCString(returnString);
 }

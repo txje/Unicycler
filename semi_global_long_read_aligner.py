@@ -88,8 +88,8 @@ def main():
     if not args.no_graphmap:
         check_graphmap(args.graphmap_path)
 
-    references = load_references(args.ref)
-    read_dict, read_names = load_long_reads(args.reads)
+    references = load_references(args.ref, VERBOSITY)
+    read_dict, read_names = load_long_reads(args.reads, VERBOSITY)
     scoring_scheme = AlignmentScoringScheme(args.scores)
 
     read_dict = semi_global_align_long_reads(references, args.ref, read_dict, read_names,
@@ -438,13 +438,13 @@ def extend_to_semi_global(alignments, scoring_scheme):
 
     return semi_global_alignments
 
-def load_references(fasta_filename):
+def load_references(fasta_filename, verbosity):
     '''
     This function loads in sequences from a FASTA file and returns a list of Reference objects.
     '''
     references = []
     total_bases = 0
-    if VERBOSITY > 0:
+    if verbosity > 0:
         print('\nLoading references')
         print('------------------')
         num_refs = sum(1 for line in open(fasta_filename) if line.startswith('>'))
@@ -463,12 +463,12 @@ def load_references(fasta_filename):
             if name:
                 references.append(Reference(name, sequence))
                 total_bases += len(sequence)
-                if VERBOSITY > 0:
+                if verbosity > 0:
                     progress = 100.0 * len(references) / num_refs
                     progress_rounded_down = float(int(progress))
                     if progress_rounded_down > last_progress:
                         print_progress_line(len(references), num_refs, total_bases)
-                        last_progress = progress_rounded_down    
+                        last_progress = progress_rounded_down
                 name = ''
                 sequence = ''
             name = get_nice_header(line[1:])
@@ -478,13 +478,13 @@ def load_references(fasta_filename):
     if name:
         references.append(Reference(name, sequence))
         total_bases += len(sequence)
-        if VERBOSITY > 0:
+        if verbosity > 0:
             print_progress_line(len(references), num_refs, total_bases)
             print('\n')
     return references
 
 
-def load_long_reads(fastq_filename):
+def load_long_reads(fastq_filename, verbosity):
     '''
     This function loads in long reads from a FASTQ file and returns a dictionary where key = read
     name and value = Read object. It also returns a list of read names, in the order they are in
@@ -494,7 +494,7 @@ def load_long_reads(fastq_filename):
     read_names = []
     total_bases = 0
     last_progress = 0.0
-    if VERBOSITY > 0:
+    if verbosity > 0:
         print('Loading reads')
         print('-------------')
         num_reads = sum(1 for line in open(fastq_filename)) // 4
@@ -508,14 +508,14 @@ def load_long_reads(fastq_filename):
         read_dict[name] = Read(name, sequence, qualities)
         read_names.append(name)
         total_bases += len(sequence)
-        if VERBOSITY > 0:
+        if verbosity > 0:
             progress = 100.0 * len(read_dict) / num_reads
             progress_rounded_down = float(int(progress))
             if progress_rounded_down > last_progress:
                 print_progress_line(len(read_dict), num_reads, total_bases)
                 last_progress = progress_rounded_down    
     fastq.close()
-    if VERBOSITY > 0:
+    if verbosity > 0:
         print('\n')
     return read_dict, read_names
 

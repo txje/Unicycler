@@ -90,13 +90,14 @@ def main():
 
     references = load_references(args.ref)
     read_dict, read_names = load_long_reads(args.reads)
+    scoring_scheme = AlignmentScoringScheme(args.scores)
 
     read_dict = semi_global_align_long_reads(references, args.ref, read_dict, read_names,
                                              args.reads, args.temp_dir, args.graphmap_path,
-                                             args.threads, AlignmentScoringScheme(args.scores),
+                                             args.threads, scoring_scheme,
                                              args.low_score, not args.no_graphmap, args.keep_bad,
                                              args.kmer, args.min_len)
-    write_sam_file(read_dict, references, args.sam, full_command)
+    write_sam_file(read_dict, references, args.sam, full_command, scoring_scheme)
 
     sys.exit(0)
 
@@ -642,6 +643,9 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
         else:
             output += '  None\n'
 
+    # print(read, EXPECTED_SLOPE) # TEMP
+    # sys.stdout.flush() # TEMP
+
     ptr = C_LIB.semiGlobalAlignment(read.name, read.sequence, VERBOSITY,
                                     EXPECTED_SLOPE, kmer_positions_ptr,
                                     scoring_scheme.match, scoring_scheme.mismatch,
@@ -745,7 +749,7 @@ def range_is_contained(test_range, other_ranges):
             return True
     return False
 
-def write_sam_file(read_dict, references, sam_filename, full_command):
+def write_sam_file(read_dict, references, sam_filename, full_command, scoring_scheme):
     '''
     Writes the given alignments to a SAM file.
     '''
@@ -774,8 +778,8 @@ def write_sam_file(read_dict, references, sam_filename, full_command):
     sam_file.write('@PG' + '\t')
     sam_file.write('ID:' + 'ALIGNER_NAME')
     if full_command:
-        sam_file.write('\tCL:' + full_command)
-    sam_file.write('\n')
+        sam_file.write('\tCL:' + full_command + '\t')
+    sam_file.write('SC:' + str(scoring_scheme) + '\n')
 
     # Alignments.
     for alignment in alignments:
@@ -1004,6 +1008,10 @@ class AlignmentScoringScheme(object):
             self.gap_open = int(scheme_parts[2])
             self.gap_extend = int(scheme_parts[3])
 
+    def __repr__(self):
+        return str(self.match) + ',' + str(self.mismatch) + ',' + str(self.gap_open) + ',' + \
+               str(self.gap_extend)
+
     def get_graphmap_parameters(self):
         '''
         Returns the scoring scheme in the form of GraphMap parameters for subprocess.
@@ -1115,7 +1123,8 @@ class Read(object):
         '''
         This function removes alignments with identity below the cutoff.
         '''
-        self.alignments = [x for x in self.alignments if x.get_aligned_ref_length() >= min_align_length]
+        self.alignments = [x for x in self.alignments \
+                           if x.get_aligned_ref_length() >= min_align_length]
 
 
     def get_fastq(self):

@@ -681,12 +681,14 @@ class Alignment(object):
         self.ref_deletion_positions = []
         self.ref_insertion_positions = []
 
-        # Remove the soft clipping parts of the CIGAR string for tallying.
-        if cigar_parts[0][-1] == 'S':
-            cigar_parts.pop(0)
-        if cigar_parts and cigar_parts[-1][-1] == 'S':
-            cigar_parts.pop()
-        if not cigar_parts:
+        # Remove the soft clipping parts of the CIGAR for tallying.
+        if cigar_types[0] == 'S':
+            cigar_types.pop(0)
+            cigar_counts.pop(0)
+        if cigar_types and cigar_types[-1] == 'S':
+            cigar_types.pop()
+            cigar_counts.pop()
+        if not cigar_types:
             return
 
         if self.rev_comp:

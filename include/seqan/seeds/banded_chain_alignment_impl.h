@@ -854,7 +854,7 @@ _initializeBandedChain(TTraceSet & globalTraceSet,
             score = _computeAlignment(localTraceSet, scoutState, infixH, infixV, scoreSchemeGap, band, dpProfile);
     }
 
-    // THROW AN EXCEPTION IF THE SCORE LOOKS BAD!
+    // RRW: THROW AN EXCEPTION IF THE SCORE LOOKS BAD!
     if (score < -1000000)
         throw std::runtime_error("Bad Seqan alignment score\n");
 
@@ -925,7 +925,7 @@ _computeGapArea(TTraceSet & globalTraceSet,
     TTraceSet localTraceSet;
     TScoreValue score = _computeAlignment(localTraceSet, scoutState, infixH, infixV, scoreScheme, TBand(), dpProfile);
 
-    // THROW AN EXCEPTION IF THE SCORE LOOKS BAD!
+    // RRW: THROW AN EXCEPTION IF THE SCORE LOOKS BAD!
     if (score < -1000000)
         throw std::runtime_error("Bad Seqan alignment score\n");
 
@@ -1149,6 +1149,10 @@ _finishBandedChain(TTraceSet & globalTraceSet,
     score = _computeAlignment(localTraceSet, dpScoutState, suffix(seqH, gridBegin.i1), suffix(seqV,gridBegin.i2),
                               scoreSchemeGap, DPBandConfig<BandOff>(), DPProfile_<BandedChainAlignment_<TFreeEndGaps,
                               BandedChainFinalDPMatrix>, TGaps, TracebackOn<TTracebackConfig> >());
+
+    // RRW: THROW AN EXCEPTION IF THE SCORE LOOKS BAD!
+    if (score < -1000000)
+        throw std::runtime_error("Bad Seqan alignment score\n");
 
     _adaptLocalTracesToGlobalGrid(localTraceSet, gridBegin);
     if (!empty(localTraceSet))

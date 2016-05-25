@@ -1452,6 +1452,10 @@ _computeAlignment(DPContext<TScoreValue, TGapScheme> & dpContext,
         _computeBandedAlignment(dpScout, dpScoreMatrixNavigator, dpTraceMatrixNavigator, seqH, seqV, scoreScheme,
                                 band, dpProfile);
 
+    // RRW: THROW AN EXCEPTION IF THE SCORE LOOKS BAD!
+    if (maxScore(dpScout) < -1000000)
+        throw std::runtime_error("Bad Seqan alignment score\n");
+
     if (IsSameType<TTraceFlag, TracebackOff>::VALUE)
         return maxScore(dpScout);
 

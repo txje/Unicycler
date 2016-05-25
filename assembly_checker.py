@@ -441,7 +441,7 @@ def determine_thresholds(scoring_scheme, references):
     else:
         difference = random_seq_error_rate - mean_error_rate
         high_error_rate = mean_error_rate + (0.2 * difference)
-        very_high_error_rate = mean_error_rate + (0.3 * difference)
+        very_high_error_rate = mean_error_rate + (0.4 * difference)
 
     if VERBOSITY > 0:
         print('Error rate threshold 1:     ', float_to_str(high_error_rate, 2, 100.0) + '%')
@@ -619,7 +619,7 @@ def produce_html_files(references, html_prefix, high_error_rate, very_high_error
             if ref.window_error_rates[i] is None:
                 error_rate_y.append(None)
             else:
-                error_rate_y.append(round(ref.window_error_rates[i], 2))
+                error_rate_y.append(round(100.0 * ref.window_error_rates[i], 2))
             depth_y.append(ref.window_depths[i])
         if all(y is None for y in error_rate_y):
             continue
@@ -630,21 +630,38 @@ def produce_html_files(references, html_prefix, high_error_rate, very_high_error
         error_trace = go.Scatter(x=x,
                                  y=error_rate_y,
                                  mode='lines',
-                                 line=dict(color='rgb(120, 0, 0)'))
+                                 line=dict(color='rgb(50, 50, 50)',
+                                           width=2))
         data = [error_trace]
 
+        max_x = ref.get_length()
+        max_y = max_error_rate * 1.05
         layout = dict(title='Error rate: ' + ref.name,
                       autosize=False,
                       width=1400,
                       height=500,
                       xaxis=dict(title='Reference position',
-                                 range=[0, ref.get_length()],
+                                 range=[0, max_x],
                                  rangeslider=dict(),
                                  type='linear'),
                       yaxis=dict(title='Error rate',
-                                 titlefont=dict(color='rgb(120, 0, 0)'),
                                  ticksuffix='%',
-                                 range=[0.0, max_error_rate * 1.05]))
+                                 range=[0.0, max_y]),
+                      shapes=[dict(type='rect',
+                                   x0=0, y0=0,
+                                   x1=max_x, y1=high_error_rate,
+                                   line=dict(width=0),
+                                   fillcolor='rgba(50, 200, 50, 0.08'),
+                              dict(type='rect',
+                                   x0=0, y0=high_error_rate,
+                                   x1=max_x, y1=very_high_error_rate,
+                                   line=dict(width=0),
+                                   fillcolor='rgba(255, 200, 0, 0.1'),
+                              dict(type='rect',
+                                   x0=0, y0=very_high_error_rate,
+                                   x1=max_x, y1=max_y,
+                                   line=dict(width=0),
+                                   fillcolor='rgba(255, 0, 0, 0.1')])
 
         fig = dict(data=data, layout=layout)
         py.plot(fig, filename=error_rate_html_filename, auto_open=False)
@@ -654,12 +671,14 @@ def produce_html_files(references, html_prefix, high_error_rate, very_high_error
         depth_trace = go.Scatter(x=x,
                                  y=depth_y,
                                  mode='lines',
-                                 line=dict(color='rgb(0, 120, 0)'))
+                                 line=dict(color='rgb(50, 50, 50)',
+                                           width=2))
         data = [depth_trace]
+
+        max_y = max_depth * 1.05
         layout.update(title='Depth: ' + ref.name,
                       yaxis=dict(title='Depth',
-                                 titlefont=dict(color='rgb(0, 120, 0)'),
-                                 range=[0.0, max_depth * 1.05]))
+                                 range=[0.0, max_y]))
 
         fig = dict(data=data, layout=layout)
         py.plot(fig, filename=depth_html_filename, auto_open=False)

@@ -529,12 +529,12 @@ def clean_str_for_filename(filename):
     filename_valid_chars = ''.join(c for c in filename if c in valid_chars)
     return filename_valid_chars.replace(' ', '_')
 
-def add_ref_name_to_output_prefix(ref, output_prefix, extension):
+def add_ref_name_to_output_prefix(ref, output_prefix, ending):
     clean_ref_name = clean_str_for_filename(ref.name)
     if output_prefix.endswith('/'):
-        return output_prefix + clean_ref_name + '.' + extension
+        return output_prefix + clean_ref_name + ending
     else:
-        return output_prefix + '_' + clean_ref_name + '.' + extension
+        return output_prefix + '_' + clean_ref_name + ending
 
 def produce_window_tables(references, window_tables_prefix):
     '''
@@ -545,7 +545,7 @@ def produce_window_tables(references, window_tables_prefix):
         print('--------------------')
 
     for ref in references:
-        window_table_filename = add_ref_name_to_output_prefix(ref, window_tables_prefix, 'txt')
+        window_table_filename = add_ref_name_to_output_prefix(ref, window_tables_prefix, '.txt')
         table = open(window_table_filename, 'w')
         table.write('\t'.join(['Window start',
                                'Window end',
@@ -575,7 +575,7 @@ def produce_base_tables(references, base_tables_prefix):
         print('------------------')
 
     for ref in references:
-        base_table_filename = add_ref_name_to_output_prefix(ref, base_tables_prefix, 'txt')
+        base_table_filename = add_ref_name_to_output_prefix(ref, base_tables_prefix, '.txt')
         table = open(base_table_filename, 'w')
         table.write('\t'.join(['Base',
                                'Read depth',
@@ -606,8 +606,9 @@ def produce_html_files(references, html_prefix, high_error_rate, very_high_error
     import plotly.graph_objs as go
 
     for ref in references:
-        html_filename = add_ref_name_to_output_prefix(ref, html_prefix, 'html')
-        plot_title = 'Error rate and depth: ' + ref.name
+        error_rate_html_filename = add_ref_name_to_output_prefix(ref, html_prefix,
+                                                                 '_error_rate.html')
+        depth_html_filename = add_ref_name_to_output_prefix(ref, html_prefix, '_depth.html')
 
         half_window_size = ref.window_size / 2
         x = []
@@ -624,15 +625,15 @@ def produce_html_files(references, html_prefix, high_error_rate, very_high_error
             continue
 
         max_error_rate = max(error_rate_y)
+        max_depth = max(depth_y)
 
-        trace = go.Scatter(x=x,
-                           y=error_rate_y,
-                           mode='lines',
-                           line=dict(color='rgb(120, 0, 0)')
-                          )
-        data = [trace]
+        error_trace = go.Scatter(x=x,
+                                 y=error_rate_y,
+                                 mode='lines',
+                                 line=dict(color='rgb(120, 0, 0)'))
+        data = [error_trace]
 
-        layout = dict(title=plot_title,
+        layout = dict(title='Error rate: ' + ref.name,
                       autosize=False,
                       width=1400,
                       height=500,
@@ -641,14 +642,30 @@ def produce_html_files(references, html_prefix, high_error_rate, very_high_error
                                  rangeslider=dict(),
                                  type='linear'),
                       yaxis=dict(title='Error rate',
+                                 titlefont=dict(color='rgb(120, 0, 0)'),
                                  ticksuffix='%',
-                                 range=[0.0, max_error_rate * 1.05])
-                     )
+                                 range=[0.0, max_error_rate * 1.05]))
 
         fig = dict(data=data, layout=layout)
-        py.plot(fig, filename=html_filename, auto_open=False)
+        py.plot(fig, filename=error_rate_html_filename, auto_open=False)
         if VERBOSITY > 0:
-            print(html_filename)
+            print(error_rate_html_filename)
+
+        depth_trace = go.Scatter(x=x,
+                                 y=depth_y,
+                                 mode='lines',
+                                 line=dict(color='rgb(0, 120, 0)'))
+        data = [depth_trace]
+        layout.update(title='Depth: ' + ref.name,
+                      yaxis=dict(title='Depth',
+                                 titlefont=dict(color='rgb(0, 120, 0)'),
+                                 range=[0.0, max_depth * 1.05]))
+
+        fig = dict(data=data, layout=layout)
+        py.plot(fig, filename=depth_html_filename, auto_open=False)
+        if VERBOSITY > 0:
+            print(depth_html_filename)
+
     if VERBOSITY > 0:
         print()
 

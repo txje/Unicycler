@@ -9,18 +9,20 @@ from __future__ import print_function
 from __future__ import division
 
 import sys
-import os
 import re
 import random
+import string
 import argparse
-import math
+# import time
 from multiprocessing import cpu_count
+# from multiprocessing import Process, Manager
+
 
 from semi_global_long_read_aligner import AlignmentScoringScheme, Read, Reference, load_references, \
                                           load_long_reads, quit_with_error, get_nice_header, \
                                           get_random_sequence_alignment_error_rates, \
                                           reverse_complement, int_to_str, float_to_str, \
-                                          get_ref_shift_from_cigar_part, print_progress_line
+                                          print_progress_line, check_file_exists
 
 '''
 VERBOSITY controls how much the script prints to the screen.
@@ -32,12 +34,20 @@ def main():
     Script execution starts here.
     '''
     args = get_arguments()
+    
+    check_file_exists(args.sam)
+    check_file_exists(args.ref)
+    check_file_exists(args.reads)
+    if args.html:
+        check_plotly_exists()
+
     references = load_references(args.ref, VERBOSITY)
     reference_dict = {x.name: x for x in references}
     read_dict, _ = load_long_reads(args.reads, VERBOSITY)
     scoring_scheme = get_scoring_scheme_from_sam(args.sam)
     random_seq_error_rate = get_random_sequence_error_rate(scoring_scheme)
-    alignments = load_sam_alignments(args.sam, read_dict, reference_dict, scoring_scheme)
+    alignments = load_sam_alignments(args.sam, read_dict, reference_dict, scoring_scheme,
+                                     args.threads)
 
     count_depth_and_errors_per_base(references, reference_dict, alignments)
     count_depth_and_errors_per_window(references, args.window)
@@ -111,6 +121,17 @@ def get_arguments():
 
     return args
 
+def check_plotly_exists():
+    '''
+    Checks to see if the plotly library is available. If so, it's imported. If not, quit with an
+    error.
+    '''
+    try:
+        import plotly.offline as py
+        import plotly.graph_objs as go
+    except ImportError:
+        quit_with_error('plotly not found - please install plotly package to produce html plots')
+
 def get_scoring_scheme_from_sam(sam_filename):
     '''
     Looks for the 'SC' tag in the SAM file to get the alignment scoring scheme.
@@ -175,60 +196,133 @@ def get_random_sequence_error_rate(scoring_scheme):
         error_rate_str = get_random_sequence_alignment_error_rates(1000, 100, scoring_scheme)
         return float(error_rate_str.split('\n')[1].split('\t')[6])
 
-def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme):
+def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme, threads):
     '''
     This function returns a list of Alignment objects from the given SAM file.
     '''
     if VERBOSITY > 0:
         print('Loading alignments')
         print('------------------')
-        num_alignments = sum(1 for line in open(sam_filename) if not line.startswith('@'))
-        print_progress_line(0, num_alignments)
 
-    sam_alignments = []
+    # Load the SAM lines into a list.
+    sam_lines = []
     sam_file = open(sam_filename, 'r')
     for line in sam_file:
         line = line.strip()
         if line and not line.startswith('@') and line.split('\t', 3)[2] != '*':
+            sam_lines.append(line)
+    num_alignments = sum(1 for line in open(sam_filename) if not line.startswith('@'))
+    print_progress_line(0, num_alignments)
+
+    # If single-threaded, just do the work in a simple loop.
+    threads = 1 # TEMP
+    sam_alignments = []
+    if threads == 1:
+        for line in sam_lines:
             sam_alignments.append(Alignment(line, read_dict, reference_dict, scoring_scheme))
             if VERBOSITY > 0:
                 print_progress_line(len(sam_alignments), num_alignments)
 
+    # # If multi-threaded, use processes.
+    # else:
+    #     sam_line_groups = chunkify(sam_lines, threads)
+    #     manager = Manager()
+    #     workers = []
+    #     sam_alignments = manager.list([])
+    #     for sam_line_group in sam_line_groups:
+    #         child = Process(target=make_alignments, args=(sam_line_group, read_dict,
+    #                                                       reference_dict, scoring_scheme,
+    #                                                       sam_alignments))
+    #         child.start()
+    #         workers.append(child)
+    #     while any(i.is_alive() for i in workers):
+    #         time.sleep(0.1)
+    #         if VERBOSITY > 0:
+    #             print_progress_line(len(sam_alignments), num_alignments)
+    #     for worker in workers:
+    #         worker.join()
+    #     sam_alignments = sam_alignments._getvalue()
+
+    # At this point, we should have loaded num_alignments alignments. But check to make sure and
+    # fix up the progress line if any didn't load.
     if VERBOSITY > 0:
         if len(sam_alignments) < num_alignments:
             print_progress_line(len(sam_alignments), len(sam_alignments))
         print('\n')
+
     return sam_alignments
+
+# def chunkify(full_list, pieces):
+#     '''
+#     http://stackoverflow.com/questions/2130016/
+#     splitting-a-list-of-arbitrary-size-into-only-roughly-n-equal-parts
+#     '''
+#     return [full_list[i::pieces] for i in xrange(pieces)]
+
+# def make_alignments(sam_lines, read_dict, reference_dict, scoring_scheme, alignments):
+#     '''
+#     Produces alignments from SAM lines and deposits them in a managed list.
+#     '''
+#     for line in sam_lines:
+#         alignments.append(Alignment(line, read_dict, reference_dict, scoring_scheme))
 
 def count_depth_and_errors_per_base(references, reference_dict, alignments):
     '''
     Counts up the depth and errors for each base of each reference and stores the counts in the
     Reference objects.
     '''
+    if VERBOSITY > 0:
+        print('Counting depth and errors')
+        print('-------------------------')
+        print_progress_line(0, len(alignments))
+
     for ref in references:
         ref_length = ref.get_length()
         ref.depths = [0] * ref_length
-        ref.error_counts = [0] * ref_length
+        ref.mismatch_counts = [0] * ref_length
+        ref.insertion_counts = [0] * ref_length
+        ref.deletion_counts = [0] * ref_length
         ref.error_rates = [0.0] * ref_length
         ref.alignment_count = 0
 
-    for alignment in alignments:
+    for i, alignment in enumerate(alignments):
         ref = reference_dict[alignment.ref.name]
         ref.alignment_count += 1
-        for i in range(alignment.ref_start_pos, alignment.ref_end_pos):
-            ref.depths[i] += 1
-        for i in alignment.ref_mismatch_positions:
-            ref.error_counts[i] += 1
-        for i in alignment.ref_insertion_positions:
-            ref.error_counts[i] += 1
-        for i in alignment.ref_deletion_positions:
-            ref.error_counts[i] += 1
+        for j in range(alignment.ref_start_pos, alignment.ref_end_pos):
+            ref.depths[j] += 1
+        for j in alignment.ref_mismatch_positions:
+            ref.mismatch_counts[j] += 1
+        for j in alignment.ref_insertion_positions:
+            ref.insertion_counts[j] += 1
+        for j in alignment.ref_deletion_positions:
+            ref.deletion_counts[j] += 1
+        if VERBOSITY > 0:
+            print_progress_line(i+1, len(alignments))
+
+    if VERBOSITY > 0:
+        print('\n')
+        base_sum = sum([x.get_length() for x in references])
+        finished_bases = 0
+        print('Totalling depth and errors')
+        print('--------------------------')
+        print_progress_line(finished_bases, base_sum)
 
     for ref in references:
         ref_length = ref.get_length()
         for i in range(ref_length):
             if ref.depths[i] > 0:
-                ref.error_rates[i] = ref.error_counts[i] / ref.depths[i]
+                error_count = ref.mismatch_counts[i] + ref.insertion_counts[i] + \
+                              ref.deletion_counts[i]
+                ref.error_rates[i] = error_count / ref.depths[i]
+            if VERBOSITY > 0:
+                finished_bases += 1
+                if finished_bases % 10 == 0:
+                    print_progress_line(finished_bases, base_sum)
+
+    if VERBOSITY > 0:
+        print_progress_line(base_sum, base_sum)
+        print('\n')
+
 
 def count_depth_and_errors_per_window(references, window_size):
     '''
@@ -248,7 +342,7 @@ def count_depth_and_errors_per_window(references, window_size):
         ref.max_window_depth = 0.0
         ref.max_window_error_rate = 0.0
 
-        for i in range(window_count):
+        for i in xrange(window_count):
             window_start = int(round(ref.window_size * i))
             window_end = int(round(ref.window_size * (i + 1)))
             ref.window_starts.append(window_start)
@@ -256,7 +350,7 @@ def count_depth_and_errors_per_window(references, window_size):
 
             total_window_depth = 0
             total_window_error_rate = 0
-            for j in range(window_start, window_end):
+            for j in xrange(window_start, window_end):
                 total_window_depth += ref.depths[j]
                 total_window_error_rate += ref.error_rates[j]
 
@@ -284,8 +378,8 @@ def produce_console_output(references):
     Write a summary of the results to std out.
     '''
     for ref in references:
-        print(ref.name)
-        print('-' * len(ref.name))
+        print('Results: ' + ref.name)
+        print('-' * (len(ref.name) + 9))
         ref_length = ref.get_length()
         max_v = max(100, ref_length)
 
@@ -298,25 +392,70 @@ def produce_console_output(references):
 
         print()
 
+def clean_str_for_filename(filename):
+    '''
+    This function removes characters from a string which would not be suitable in a filename.
+    It also turns spaces into underscores, because filenames with spaces can occasionally cause
+    issues.
+    http://stackoverflow.com/questions/295135/turn-a-string-into-a-valid-filename-in-python
+    '''
+    valid_chars = "-_.() %s%s" % (string.ascii_letters, string.digits)
+    filename_valid_chars = ''.join(c for c in filename if c in valid_chars)
+    return filename_valid_chars.replace(' ', '_')
 
-
-
-def produce_window_tables(references, window_tables_filename):
+def produce_window_tables(references, window_tables_prefix):
     '''
     Write tables of depth and error rates per reference window.
     '''
+    for ref in references:
+        header_for_filename = clean_str_for_filename(ref.name)
+        if window_tables_prefix.endswith('/'):
+            window_table_filename = window_tables_prefix + header_for_filename + '.txt'
+        else:
+            window_table_filename = window_tables_prefix + '_' + header_for_filename + '.txt'
+        table = open(window_table_filename, 'w')
+        table.write('\t'.join(['Window start',
+                               'Window end',
+                               'Mean depth',
+                               'Mean error rate']) + '\n')
+        window_count = len(ref.window_starts)
+        for i, in xrange(window_count):
+
+            if i + 1 == window_count:
+                window_end = ref.get_length()
+            else:
+                window_end = ref.window_starts[i+1]
+            table.write('\t'.join([str(ref.window_starts[i]),
+                                   str(window_end),
+                                   str(ref.window_depths[i]),
+                                   str(ref.window_error_rates[i])]) + '\n')
 
 
 
 
 
-def produce_base_tables(references, base_tables_filename):
+def produce_base_tables(references, base_tables_prefix):
     '''
     Write tables of depth and error counts per reference base.
     '''
-
-
-
+    for ref in references:
+        header_for_filename = clean_str_for_filename(ref.name)
+        if base_tables_prefix.endswith('/'):
+            base_table_filename = base_tables_prefix + header_for_filename + '.txt'
+        else:
+            base_table_filename = base_tables_prefix + '_' + header_for_filename + '.txt'
+        table = open(base_table_filename, 'w')
+        table.write('\t'.join(['Base',
+                               'Read depth',
+                               'Mismatches',
+                               'Deletions',
+                               'Insertions']) + '\n')
+        for i in xrange(ref.get_length()):
+            table.write('\t'.join([str(i+1),
+                                   str(ref.depths[i]),
+                                   str(ref.mismatch_counts[i]),
+                                   str(ref.deletion_counts[i]),
+                                   str(ref.insertion_counts[i])]) + '\n')
 
 
 def produce_html_files(references, html_filename):
@@ -518,29 +657,31 @@ class Alignment(object):
         # Grab the important parts of the alignment from the SAM line.
         sam_parts = sam_line.split('\t')
         self.rev_comp = bool(int(sam_parts[1]) & 0x10)
-        self.cigar = sam_parts[5]
-        self.cigar_parts = re.findall(r'\d+\w', self.cigar)
+        cigar_parts = re.findall(r'\d+\w', sam_parts[5])
+        cigar_types = [x[-1] for x in cigar_parts]
+        cigar_counts = [int(x[:-1]) for x in cigar_parts]
 
         self.read = read_dict[sam_parts[0]]
-        self.read_start_pos = self.get_start_soft_clips()
-        self.read_end_pos = self.read.get_length() - self.get_end_soft_clips()
-        self.read_end_gap = self.get_end_soft_clips()
+        read_len = self.read.get_length()
+        self.read_start_pos = self.get_start_soft_clips(cigar_parts)
+        self.read_end_pos = self.read.get_length() - self.get_end_soft_clips(cigar_parts)
+        self.read_end_gap = self.get_end_soft_clips(cigar_parts)
 
         self.ref = reference_dict[get_nice_header(sam_parts[2])]
+        ref_len = self.ref.get_length()
         self.ref_start_pos = int(sam_parts[3]) - 1
         self.ref_end_pos = self.ref_start_pos
-        for cigar_part in self.cigar_parts:
-            self.ref_end_pos += get_ref_shift_from_cigar_part(cigar_part)
-        if self.ref_end_pos > len(self.ref.sequence):
-            self.ref_end_pos = len(self.ref.sequence)
-        self.ref_end_gap = len(self.ref.sequence) - self.ref_end_pos
+        for i in xrange(len(cigar_types)):
+            self.ref_end_pos += get_ref_shift_from_cigar_part(cigar_types[i], cigar_counts[i])
+        if self.ref_end_pos > ref_len:
+            self.ref_end_pos = ref_len
+        self.ref_end_gap = ref_len - self.ref_end_pos
 
         self.ref_mismatch_positions = []
         self.ref_deletion_positions = []
         self.ref_insertion_positions = []
 
         # Remove the soft clipping parts of the CIGAR string for tallying.
-        cigar_parts = self.cigar_parts[:]
         if cigar_parts[0][-1] == 'S':
             cigar_parts.pop(0)
         if cigar_parts and cigar_parts[-1][-1] == 'S':
@@ -556,12 +697,11 @@ class Alignment(object):
         read_i = self.read_start_pos
         ref_i = self.ref_start_pos
 
-        for cigar_part in cigar_parts:
-            cigar_count = int(cigar_part[:-1])
-            cigar_type = cigar_part[-1]
+        for i in xrange(len(cigar_types)):
+            cigar_count = cigar_counts[i]
+            cigar_type = cigar_types[i]
             if cigar_type == 'I':
-                for _ in xrange(cigar_count):
-                    self.ref_insertion_positions.append(ref_i)
+                self.ref_insertion_positions += [ref_i]*cigar_count
                 read_i += cigar_count
             elif cigar_type == 'D':
                 for i in xrange(cigar_count):
@@ -572,7 +712,7 @@ class Alignment(object):
                     # If all is good with the CIGAR, then we should never end up with a sequence
                     # index out of the sequence range. But a CIGAR error (which has occurred in
                     # GraphMap) can cause this, so check here.
-                    if read_i >= self.read.get_length() or ref_i >= self.ref.get_length():
+                    if read_i >= read_len or ref_i >= ref_len:
                         break
                     if read_seq[read_i] != self.ref.sequence[ref_i]:
                         self.ref_mismatch_positions.append(ref_i)
@@ -593,21 +733,21 @@ class Alignment(object):
         return_str += ', errors = ' + int_to_str(error_count)
         return return_str
 
-    def get_start_soft_clips(self):
+    def get_start_soft_clips(self, cigar_parts):
         '''
         Returns the number of soft-clipped bases at the start of the alignment.
         '''
-        if self.cigar_parts[0][-1] == 'S':
-            return int(self.cigar_parts[0][:-1])
+        if cigar_parts[0][-1] == 'S':
+            return int(cigar_parts[0][:-1])
         else:
             return 0
 
-    def get_end_soft_clips(self):
+    def get_end_soft_clips(self, cigar_parts):
         '''
         Returns the number of soft-clipped bases at the start of the alignment.
         '''
-        if self.cigar_parts[-1][-1] == 'S':
-            return int(self.cigar_parts[-1][:-1])
+        if cigar_parts[-1][-1] == 'S':
+            return int(cigar_parts[-1][:-1])
         else:
             return 0
 
@@ -623,6 +763,21 @@ class Alignment(object):
             start = self.read.get_length() - self.read_end_pos
             end = self.read.get_length() - self.read_start_pos
             return start, end
+
+
+def get_ref_shift_from_cigar_part(cigar_type, cigar_count):
+    '''
+    This function returns how much a given cigar moves on a reference.
+    Examples:
+      * '5M' returns 5
+      * '5S' returns 0
+      * '5D' returns 5
+      * '5I' returns 0
+    '''
+    if cigar_type == 'M' or cigar_type == 'D':
+        return cigar_count
+    else:
+        return 0
 
 if __name__ == '__main__':
     main()

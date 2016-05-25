@@ -6,7 +6,7 @@ class CopyDepthGraph(AssemblyGraph):
     '''
     This class add copy depth tracking to the basic assembly graph.
     '''
-    def __init__(self, filename, overlap):
+    def __init__(self, filename, overlap, minimum_auto_single):
         '''
         The only argument in addition to those used in AssemblyGraph is error_margin.  This
         specifies the allowed relative depth used when making copy depth assignments.  For example,
@@ -14,7 +14,7 @@ class CopyDepthGraph(AssemblyGraph):
         '''
         AssemblyGraph.__init__(self, filename, overlap)
         self.copy_depths = {} # Dictionary of segment number -> list of copy depths
-        self.minimum_auto_single = 2 * overlap
+        self.minimum_auto_single = minimum_auto_single
         self.error_margin = 1.0
 
 

@@ -41,7 +41,6 @@ import os
 import re
 import random
 import argparse
-import string
 import time
 from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p, c_bool
 from multiprocessing.dummy import Pool as ThreadPool
@@ -614,8 +613,8 @@ def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme)
 
 def seqan_alignment_one_arg(all_args):
     '''
-    This is just a one-argument version of seqan_alignment to make it easier to
-    use that function in a thread pool.
+    This is just a one-argument version of seqan_alignment to make it easier to use that function
+    in a thread pool.
     '''
     read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold, keep_bad, \
         kmer_size, min_align_length = all_args
@@ -702,11 +701,11 @@ def get_ref_shift_from_cigar_part(cigar_part):
     '''
     if cigar_part[-1] == 'M':
         return int(cigar_part[:-1])
+    if cigar_part[-1] == 'I':
+        return 0
     if cigar_part[-1] == 'D':
         return int(cigar_part[:-1])
     if cigar_part[-1] == 'S':
-        return 0
-    if cigar_part[-1] == 'I':
         return 0
 
 def simplify_ranges(ranges):
@@ -860,28 +859,30 @@ def int_to_str(num, max_num=0):
     max_str = '{:,}'.format(int(max_num))
     return num_str.rjust(len(max_str))
 
-def clean_str_for_filename(filename):
-    '''
-    This function removes characters from a string which would not be suitable in a filename.
-    It also turns spaces into underscores, because filenames with spaces can occasionally cause
-    issues.
-    http://stackoverflow.com/questions/295135/turn-a-string-into-a-valid-filename-in-python
-    '''
-    valid_chars = "-_.() %s%s" % (string.ascii_letters, string.digits)
-    filename_valid_chars = ''.join(c for c in filename if c in valid_chars)
-    return filename_valid_chars.replace(' ', '_')
-
 def reverse_complement(seq):
     '''Given a DNA sequences, this function returns the reverse complement sequence.'''
-    rev_comp = ''
-    for i in reversed(range(len(seq))):
-        rev_comp += complement_base(seq[i])
-    return rev_comp
+    return ''.join([complement_base(seq[i]) for i in xrange(len(seq) - 1, -1, -1)])
 
 def complement_base(base):
     '''Given a DNA base, this returns the complement.'''
-    forward = 'ATGCatgcRYSWKMryswkmBDHVbdhvNn.-?'
-    reverse = 'TACGtacgYRSWMKyrswmkVHDBvhdbNn.-?N'
+    if base == 'A':
+        return 'T'
+    if base == 'T':
+        return 'A'
+    if base == 'G':
+        return 'C'
+    if base == 'C':
+        return 'G'
+    if base == 'a':
+        return 't'
+    if base == 't':
+        return 'a'
+    if base == 'g':
+        return 'c'
+    if base == 'c':
+        return 'g'
+    forward = 'RYSWKMryswkmBDHVbdhvNn.-?'
+    reverse = 'YRSWMKyrswmkVHDBvhdbNn.-?N'
     return reverse[forward.find(base)]
 
 def get_median(num_list):

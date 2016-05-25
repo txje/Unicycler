@@ -11,6 +11,8 @@ from __future__ import division
 import sys
 import re
 import random
+import imp
+import os
 import string
 import argparse
 # import time
@@ -38,6 +40,7 @@ def main():
     check_file_exists(args.sam)
     check_file_exists(args.ref)
     check_file_exists(args.reads)
+    
     if args.html:
         check_plotly_exists()
 
@@ -50,16 +53,22 @@ def main():
                                      args.threads)
 
     count_depth_and_errors_per_base(references, reference_dict, alignments)
-    count_depth_and_errors_per_window(references, args.window)
+    count_depth_and_errors_per_window(references, args.window_size)
 
     if VERBOSITY > 0:
         produce_console_output(references)
+
     if args.window_tables:
-        produce_window_tables(references, args.window_tables)
+        window_tables_prefix = prepare_output_dirs(args.window_tables)
+        produce_window_tables(references, window_tables_prefix)
+
     if args.base_tables:
-        produce_base_tables(references, args.base_tables)
+        base_tables_prefix = prepare_output_dirs(args.base_tables)
+        produce_base_tables(references, base_tables_prefix)
+
     if args.html:
-        produce_html_files(references, args.html)
+        html_prefix = prepare_output_dirs(args.html)
+        produce_html_files(references, html_prefix, random_seq_error_rate)
 
     sys.exit(0)
 
@@ -76,7 +85,7 @@ def get_arguments():
                         help='FASTA file containing one or more reference sequences')
     parser.add_argument('--reads', type=str, required=True, default=argparse.SUPPRESS,
                         help='FASTQ file of long reads')
-    parser.add_argument('--window', type=int, required=False, default=1000,
+    parser.add_argument('--window_size', type=int, required=False, default=100,
                         help='Window size for error summaries')
     parser.add_argument('--window_tables', type=str, required=False, default=argparse.SUPPRESS,
                         help='Path and/or prefix for table files summarising reference errors for '
@@ -121,14 +130,29 @@ def get_arguments():
 
     return args
 
+def prepare_output_dirs(output_prefix):
+    '''
+    Ensures the output prefix is nicely formatted and any necessary directories are made.
+    '''
+    if output_prefix is None:
+        return None
+    if os.path.isdir(output_prefix) and not output_prefix.endswith('/'):
+        output_prefix += '/'
+    if output_prefix.endswith('/') and not os.path.isdir(output_prefix):
+        os.makedirs(output_prefix)
+    if not output_prefix.endswith('/'):
+        directory = os.path.dirname(output_prefix)
+        if directory and not os.path.isdir(directory):
+            os.makedirs(directory)
+    return output_prefix
+
 def check_plotly_exists():
     '''
     Checks to see if the plotly library is available. If so, it's imported. If not, quit with an
     error.
     '''
     try:
-        import plotly.offline as py
-        import plotly.graph_objs as go
+        imp.find_module('plotly')
     except ImportError:
         quit_with_error('plotly not found - please install plotly package to produce html plots')
 
@@ -403,24 +427,30 @@ def clean_str_for_filename(filename):
     filename_valid_chars = ''.join(c for c in filename if c in valid_chars)
     return filename_valid_chars.replace(' ', '_')
 
+def add_ref_name_to_output_prefix(ref, output_prefix, extension):
+    clean_ref_name = clean_str_for_filename(ref.name)
+    if output_prefix.endswith('/'):
+        return output_prefix + clean_ref_name + '.' + extension
+    else:
+        return output_prefix + '_' + clean_ref_name + '.' + extension
+
 def produce_window_tables(references, window_tables_prefix):
     '''
     Write tables of depth and error rates per reference window.
     '''
+    if VERBOSITY > 0:
+        print('Saving window tables')
+        print('--------------------')
+
     for ref in references:
-        header_for_filename = clean_str_for_filename(ref.name)
-        if window_tables_prefix.endswith('/'):
-            window_table_filename = window_tables_prefix + header_for_filename + '.txt'
-        else:
-            window_table_filename = window_tables_prefix + '_' + header_for_filename + '.txt'
+        window_table_filename = add_ref_name_to_output_prefix(ref, window_tables_prefix, 'txt')
         table = open(window_table_filename, 'w')
         table.write('\t'.join(['Window start',
                                'Window end',
                                'Mean depth',
                                'Mean error rate']) + '\n')
         window_count = len(ref.window_starts)
-        for i, in xrange(window_count):
-
+        for i in xrange(window_count):
             if i + 1 == window_count:
                 window_end = ref.get_length()
             else:
@@ -429,21 +459,21 @@ def produce_window_tables(references, window_tables_prefix):
                                    str(window_end),
                                    str(ref.window_depths[i]),
                                    str(ref.window_error_rates[i])]) + '\n')
-
-
-
-
+        if VERBOSITY > 0:
+            print(window_table_filename)
+    if VERBOSITY > 0:
+        print()
 
 def produce_base_tables(references, base_tables_prefix):
     '''
     Write tables of depth and error counts per reference base.
     '''
+    if VERBOSITY > 0:
+        print('Saving base tables')
+        print('------------------')
+
     for ref in references:
-        header_for_filename = clean_str_for_filename(ref.name)
-        if base_tables_prefix.endswith('/'):
-            base_table_filename = base_tables_prefix + header_for_filename + '.txt'
-        else:
-            base_table_filename = base_tables_prefix + '_' + header_for_filename + '.txt'
+        base_table_filename = add_ref_name_to_output_prefix(ref, base_tables_prefix, 'txt')
         table = open(base_table_filename, 'w')
         table.write('\t'.join(['Base',
                                'Read depth',
@@ -456,12 +486,79 @@ def produce_base_tables(references, base_tables_prefix):
                                    str(ref.mismatch_counts[i]),
                                    str(ref.deletion_counts[i]),
                                    str(ref.insertion_counts[i])]) + '\n')
+        if VERBOSITY > 0:
+            print(base_table_filename)
+    if VERBOSITY > 0:
+        print()
 
 
-def produce_html_files(references, html_filename):
+def produce_html_files(references, html_prefix, random_seq_error_rate):
     '''
     Write html files containing plots of results.
     '''
+    if VERBOSITY > 0:
+        print('Saving html plots')
+        print('-----------------')
+
+    import plotly.offline as py
+    import plotly.graph_objs as go
+
+    for ref in references:
+        html_filename = add_ref_name_to_output_prefix(ref, html_prefix, 'html')
+        plot_title = 'Error rate: ' + ref.name
+
+        half_window_size = ref.window_size / 2
+        window_centres = [ref.window_starts[0]] + \
+                         [x + half_window_size for x in ref.window_starts] + \
+                         [ref.window_starts[-1] + ref.window_size]
+
+        percent_error_rates = [round(100.0 * x, 2) for x in ref.window_error_rates]
+        percent_error_rates = [percent_error_rates[0]] + \
+                              percent_error_rates + \
+                              [percent_error_rates[-1]]
+        min_error_rate = min(percent_error_rates)
+        max_error_rate = max(percent_error_rates)
+        top_error_rate = max(max_error_rate, 100.0 * random_seq_error_rate)
+
+        trace = go.Scatter(x=window_centres,
+                           y=percent_error_rates,
+                           mode='lines',
+                           line=dict(color='rgb(120, 0, 0)'),
+                           fill='tozeroy',
+                           fillcolor='rgba(120, 0, 0, 0.1)'
+                          )
+        # trace = go.Scatter(x=window_centres,
+        #                    y=percent_error_rates,
+        #                    mode='markers',
+        #                    marker=go.Marker(size=4,
+        #                                     cmax=top_error_rate,
+        #                                     cmin=min_error_rate,
+        #                                     color=percent_error_rates,
+        #                                     colorbar=go.ColorBar(title='Colorbar'),
+        #                                     colorscale='Jet'),
+        #                    fillcolor='rgba(150, 150, 150, 0.2)'
+        #                   )
+        data = [trace]
+
+        layout = dict(title=plot_title,
+                      autosize=False,
+                      width=1600,
+                      height=800,
+                      xaxis=dict(title='Reference position',
+                                 range=[0, ref.get_length()],
+                                 rangeslider=dict(),
+                                 type='linear'),
+                      yaxis=dict(title='Error rate',
+                                 ticksuffix='%',
+                                 range=[0.0, top_error_rate])
+                     )
+
+        fig = dict(data=data, layout=layout)
+        py.plot(fig, filename=html_filename, auto_open=False)
+        if VERBOSITY > 0:
+            print(html_filename)
+    if VERBOSITY > 0:
+        print()
 
 
 
@@ -483,16 +580,7 @@ def produce_html_files(references, html_filename):
 #     # # E.g. if 0.75, we'll throw out up to 25% of the alignments for each reference location.
 #     # frac_alignments_to_keep = percent_alignments_to_keep / 100.0
 
-#     # Ensure the table prefix is nicely formatted and any necessary directories are made.
-#     if table_prefix:
-#         if os.path.isdir(table_prefix) and not table_prefix.endswith('/'):
-#             table_prefix += '/'
-#         if table_prefix.endswith('/') and not os.path.isdir(table_prefix):
-#             os.makedirs(table_prefix)
-#         if not table_prefix.endswith('/'):
-#             directory = os.path.dirname(table_prefix)
-#             if directory and not os.path.isdir(directory):
-#                 os.makedirs(directory)
+
 
 #     if VERBOSITY > 0:
 #         # So the numbers align nicely, we look for and remember the largest number to be displayed.

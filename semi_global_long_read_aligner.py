@@ -1214,9 +1214,6 @@ class Alignment(object):
         self.alignment_length = None
         self.edit_distance = None
         self.percent_identity = None
-        self.ref_mismatch_positions = None
-        self.ref_deletion_positions = None
-        self.ref_insertion_positions_and_sizes = None
         self.raw_score = None
         self.scaled_score = None
         self.milliseconds = None
@@ -1294,9 +1291,6 @@ class Alignment(object):
         self.insertion_count = 0
         self.deletion_count = 0
         self.percent_identity = 0.0
-        self.ref_mismatch_positions = []
-        self.ref_deletion_positions = []
-        self.ref_insertion_positions_and_sizes = []
         self.raw_score = 0
 
         # Remove the soft clipping parts of the CIGAR string for tallying.
@@ -1328,12 +1322,9 @@ class Alignment(object):
                               ((cigar_count - 1) * scoring_scheme.gap_extend)
             if cigar_type == 'I':
                 self.insertion_count += cigar_count
-                self.ref_insertion_positions_and_sizes.append((ref_i, cigar_count))
                 read_i += cigar_count
             elif cigar_type == 'D':
                 self.deletion_count += cigar_count
-                for i in xrange(cigar_count):
-                    self.ref_deletion_positions.append(ref_i + i)
                 ref_i += cigar_count
             else: # match/mismatch
                 cigar_score = 0
@@ -1350,7 +1341,6 @@ class Alignment(object):
                         cigar_score += scoring_scheme.match
                     else:
                         self.mismatch_count += 1
-                        self.ref_mismatch_positions.append(ref_i)
                         cigar_score += scoring_scheme.mismatch
                     read_i += 1
                     ref_i += 1

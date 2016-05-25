@@ -48,12 +48,13 @@ def main():
     reference_dict = {x.name: x for x in references}
     read_dict, _ = load_long_reads(args.reads, VERBOSITY)
     scoring_scheme = get_scoring_scheme_from_sam(args.sam)
-    random_seq_error_rate = get_random_sequence_error_rate(scoring_scheme)
     alignments = load_sam_alignments(args.sam, read_dict, reference_dict, scoring_scheme,
                                      args.threads)
 
     count_depth_and_errors_per_base(references, reference_dict, alignments)
     count_depth_and_errors_per_window(references, args.window_size)
+
+    high_error_rate, very_high_error_rate = determine_thresholds(scoring_scheme, references)
 
     if VERBOSITY > 0:
         produce_console_output(references)
@@ -68,7 +69,7 @@ def main():
 
     if args.html:
         html_prefix = prepare_output_dirs(args.html)
-        produce_html_files(references, html_prefix, random_seq_error_rate)
+        produce_html_files(references, html_prefix, high_error_rate, very_high_error_rate)
 
     sys.exit(0)
 
@@ -306,7 +307,7 @@ def count_depth_and_errors_per_base(references, reference_dict, alignments):
         ref.mismatch_counts = [0] * ref_length
         ref.insertion_counts = [0] * ref_length
         ref.deletion_counts = [0] * ref_length
-        ref.error_rates = [0.0] * ref_length
+        ref.error_rates = [None] * ref_length
         ref.alignment_count = 0
 
     for i, alignment in enumerate(alignments):
@@ -314,6 +315,8 @@ def count_depth_and_errors_per_base(references, reference_dict, alignments):
         ref.alignment_count += 1
         for j in range(alignment.ref_start_pos, alignment.ref_end_pos):
             ref.depths[j] += 1
+            if ref.error_rates[j] is None:
+                ref.error_rates[j] = 0.0
         for j in alignment.ref_mismatch_positions:
             ref.mismatch_counts[j] += 1
         for j in alignment.ref_insertion_positions:
@@ -371,15 +374,23 @@ def count_depth_and_errors_per_window(references, window_size):
             window_end = int(round(ref.window_size * (i + 1)))
             ref.window_starts.append(window_start)
             this_window_size = window_end - window_start
+            this_window_pos_with_error_rate = 0
 
             total_window_depth = 0
-            total_window_error_rate = 0
+            total_window_error_rate = None
             for j in xrange(window_start, window_end):
                 total_window_depth += ref.depths[j]
-                total_window_error_rate += ref.error_rates[j]
+                if ref.error_rates[j] is not None:
+                    this_window_pos_with_error_rate += 1
+                    if total_window_error_rate is None:
+                        total_window_error_rate = 0.0
+                    total_window_error_rate += ref.error_rates[j]
 
             window_depth = total_window_depth / this_window_size
-            window_error_rate = total_window_error_rate / this_window_size
+            if total_window_error_rate is None:
+                window_error_rate = None
+            else:
+                window_error_rate = total_window_error_rate / this_window_pos_with_error_rate
 
             ref.window_depths.append(window_depth)
             ref.window_error_rates.append(window_error_rate)
@@ -396,6 +407,97 @@ def count_depth_and_errors_per_window(references, window_size):
 
             ref.max_window_depth = max(window_depth, ref.max_window_depth)
             ref.max_window_error_rate = max(window_error_rate, ref.max_window_error_rate)
+
+def determine_thresholds(scoring_scheme, references):
+    '''
+    This function sets thresholds for error rate and depth. Error rate thresholds are set once for
+    all references, while depth thresholds are per-reference.
+    '''
+    if VERBOSITY > 0:
+        print('Setting error and depth thresholds')
+        print('----------------------------------')
+
+    # Find the median of all error rates.
+    all_error_rates = []
+    for ref in references:
+        all_error_rates += [x for x in ref.error_rates if x is not None]
+
+    mean_error_rate = get_mean(all_error_rates)
+    if VERBOSITY > 0:
+        print('Mean error rate:            ', float_to_str(mean_error_rate, 2, 100.0) + '%')
+    random_seq_error_rate = get_random_sequence_error_rate(scoring_scheme)
+    if VERBOSITY > 0:
+        print('Random alignment error rate:', float_to_str(random_seq_error_rate, 2, 100.0) + '%')
+        print()
+
+    # The median error rate should not be as big as the random alignment error rate. If it is, then
+    # we set the 
+    if mean_error_rate >= random_seq_error_rate:
+        high_error_rate = random_seq_error_rate * 0.9
+        very_high_error_rate = random_seq_error_rate
+    
+    # In the expected case where the median error rate is below the random alignment error rate, we
+    # set the thresholds between these values.
+    else:
+        difference = random_seq_error_rate - mean_error_rate
+        high_error_rate = mean_error_rate + (0.2 * difference)
+        very_high_error_rate = mean_error_rate + (0.3 * difference)
+
+    if VERBOSITY > 0:
+        print('Error rate threshold 1:     ', float_to_str(high_error_rate, 2, 100.0) + '%')
+        print('Error rate threshold 2:     ', float_to_str(very_high_error_rate, 2, 100.0) + '%')
+        print()
+
+
+
+
+
+
+
+
+    if VERBOSITY > 0:
+        print()
+
+    return high_error_rate, very_high_error_rate
+
+
+
+def get_mean(num_list):
+    '''
+    This function returns the mean of the given list of numbers.
+    '''
+    if not num_list:
+        return None
+    return sum(num_list) / len(num_list)
+
+
+
+# def get_median(num_list):
+#     '''
+#     Returns the median of the given list of numbers.
+#     '''
+#     count = len(num_list)
+#     if count == 0:
+#         return 0.0
+#     sorted_list = sorted(num_list)
+#     if count % 2 == 0:
+#         return (sorted_list[count // 2 - 1] + sorted_list[count // 2]) / 2.0
+#     else:
+#         return sorted_list[count // 2]
+
+# def get_median_and_mad(num_list):
+#     '''
+#     Returns the median and MAD of the given list of numbers.
+#     '''
+#     if not num_list:
+#         return None, None
+#     if len(num_list) == 1:
+#         return num_list[0], None
+
+#     median = get_median(num_list)
+#     absolute_deviations = [abs(x - median) for x in num_list]
+#     mad = 1.4826 * get_median(absolute_deviations)
+#     return median, mad
 
 def produce_console_output(references):
     '''
@@ -492,7 +594,7 @@ def produce_base_tables(references, base_tables_prefix):
         print()
 
 
-def produce_html_files(references, html_prefix, random_seq_error_rate):
+def produce_html_files(references, html_prefix, high_error_rate, very_high_error_rate):
     '''
     Write html files containing plots of results.
     '''
@@ -505,52 +607,42 @@ def produce_html_files(references, html_prefix, random_seq_error_rate):
 
     for ref in references:
         html_filename = add_ref_name_to_output_prefix(ref, html_prefix, 'html')
-        plot_title = 'Error rate: ' + ref.name
+        plot_title = 'Error rate and depth: ' + ref.name
 
         half_window_size = ref.window_size / 2
-        window_centres = [ref.window_starts[0]] + \
-                         [x + half_window_size for x in ref.window_starts] + \
-                         [ref.window_starts[-1] + ref.window_size]
+        x = []
+        error_rate_y = []
+        depth_y = []
+        for i, window_start in enumerate(ref.window_starts):
+            x.append(window_start + half_window_size)
+            if ref.window_error_rates[i] is None:
+                error_rate_y.append(None)
+            else:
+                error_rate_y.append(round(ref.window_error_rates[i], 2))
+            depth_y.append(ref.window_depths[i])
+        if all(y is None for y in error_rate_y):
+            continue
 
-        percent_error_rates = [round(100.0 * x, 2) for x in ref.window_error_rates]
-        percent_error_rates = [percent_error_rates[0]] + \
-                              percent_error_rates + \
-                              [percent_error_rates[-1]]
-        min_error_rate = min(percent_error_rates)
-        max_error_rate = max(percent_error_rates)
-        top_error_rate = max(max_error_rate, 100.0 * random_seq_error_rate)
+        max_error_rate = max(error_rate_y)
 
-        trace = go.Scatter(x=window_centres,
-                           y=percent_error_rates,
+        trace = go.Scatter(x=x,
+                           y=error_rate_y,
                            mode='lines',
-                           line=dict(color='rgb(120, 0, 0)'),
-                           fill='tozeroy',
-                           fillcolor='rgba(120, 0, 0, 0.1)'
+                           line=dict(color='rgb(120, 0, 0)')
                           )
-        # trace = go.Scatter(x=window_centres,
-        #                    y=percent_error_rates,
-        #                    mode='markers',
-        #                    marker=go.Marker(size=4,
-        #                                     cmax=top_error_rate,
-        #                                     cmin=min_error_rate,
-        #                                     color=percent_error_rates,
-        #                                     colorbar=go.ColorBar(title='Colorbar'),
-        #                                     colorscale='Jet'),
-        #                    fillcolor='rgba(150, 150, 150, 0.2)'
-        #                   )
         data = [trace]
 
         layout = dict(title=plot_title,
                       autosize=False,
-                      width=1600,
-                      height=800,
+                      width=1400,
+                      height=500,
                       xaxis=dict(title='Reference position',
                                  range=[0, ref.get_length()],
                                  rangeslider=dict(),
                                  type='linear'),
                       yaxis=dict(title='Error rate',
                                  ticksuffix='%',
-                                 range=[0.0, top_error_rate])
+                                 range=[0.0, max_error_rate * 1.05])
                      )
 
         fig = dict(data=data, layout=layout)
@@ -561,180 +653,6 @@ def produce_html_files(references, html_prefix, random_seq_error_rate):
         print()
 
 
-
-
-
-
-# def summarise_errors(references, long_reads, table_prefix):
-#     '''
-#     Writes a table file summarising the alignment errors in terms of reference sequence position.
-#     Works in a brute force manner - could be made more efficient later if necessary.
-#     '''
-#     # If we are not making table files or printing a summary, then quit now because there's nothing
-#     # else to do.
-#     if not table_prefix and VERBOSITY == 0:
-#         return
-
-#     # # We are be willing to throw out the worst alignments for any particular location. This value
-#     # # specifies how many of our alignments we'll keep.
-#     # # E.g. if 0.75, we'll throw out up to 25% of the alignments for each reference location.
-#     # frac_alignments_to_keep = percent_alignments_to_keep / 100.0
-
-
-
-#     if VERBOSITY > 0:
-#         # So the numbers align nicely, we look for and remember the largest number to be displayed.
-#         max_v = max(100,
-#                     sum([len(x.alignments) for x in long_reads.itervalues()]),
-#                     max([len(x.sequence) for x in references]))
-#         print('Alignment summaries per reference')
-#         print('---------------------------------')
-
-#     for reference in references:
-#         # Create a table file for the reference.
-#         if table_prefix:
-#             header_for_filename = clean_str_for_filename(reference.name)
-#             if table_prefix.endswith('/'):
-#                 table_filename = table_prefix + header_for_filename + '.txt'
-#             else:
-#                 table_filename = table_prefix + '_' + header_for_filename + '.txt'
-#             table = open(table_filename, 'w')
-#             table.write('\t'.join(['base',
-#                                    'read depth',
-#                                    'mismatches',
-#                                    'deletions',
-#                                    'insertions',
-#                                    'mismatch rate',
-#                                    'deletion rate',
-#                                    'insertion rate',
-#                                    'insertion sizes']) + '\n')
-
-#         # Gather up the alignments for this reference and count up the depth for each reference
-#         # position.
-#         seq_len = len(reference.sequence)
-#         depths = [0] * seq_len
-#         alignments = []
-#         for read in long_reads.itervalues():
-#             for alignment in read.alignments:
-#                 if alignment.ref.name == reference.name:
-#                     alignments.append(alignment)
-#                     for pos in xrange(alignment.ref_start_pos, alignment.ref_end_pos):
-#                         depths[pos] += 1
-
-#         # # Discard as many of the worst alignments as we can while keeping a sufficient read depth
-#         # # at each position.
-#         # sufficient_depths = [math.ceil(frac_alignments_to_keep * x) for x in total_depths]
-#         # filtered_depths = total_depths[:]
-#         # filtered_alignments = []
-#         # alignments = sorted(alignments, key=lambda x: x.scaled_score)
-#         # for alignment in alignments:
-#         #     removal_okay = True
-#         #     for pos in xrange(alignment.ref_start_pos, alignment.ref_end_pos):
-#         #         if filtered_depths[pos] - 1 < sufficient_depths[pos]:
-#         #             removal_okay = False
-#         #             break
-#         #     if removal_okay:
-#         #         for pos in xrange(alignment.ref_start_pos, alignment.ref_end_pos):
-#         #             filtered_depths[pos] -= 1
-#         #     else:
-#         #         filtered_alignments.append(alignment)
-
-#         # Determine how much of the reference sequence has at least one aligned read.
-#         aligned_len = sum([1 for x in depths if x > 0])
-#         aligned_percent = 100.0 * aligned_len / seq_len
-
-#         # Using the filtered alignments, add up mismatches, deletions and insertions and also get
-#         # their rates (divided by the depth).
-#         # Insertions are counted in two ways:
-#         #   1) With multi-base insertions totalled up. E.g. 3I results in 3 counts all in the same
-#         #      reference location.
-#         #   2) With multi-base insertions counted only once. E.g. 3I results in 1 count at the
-#         #      reference location.
-#         mismatches = [0] * seq_len
-#         deletions = [0] * seq_len
-#         insertions = [0] * seq_len
-#         insertion_sizes = {}
-
-#         for alignment in alignments:
-#             for pos in alignment.ref_mismatch_positions:
-#                 mismatches[pos] += 1
-#             for pos in alignment.ref_deletion_positions:
-#                 deletions[pos] += 1
-#             for pos, size in alignment.ref_insertion_positions_and_sizes:
-#                 insertions[pos] += 1
-#                 if pos not in insertion_sizes:
-#                     insertion_sizes[pos] = []
-#                 insertion_sizes[pos].append(size)
-#         mismatch_rates = []
-#         deletion_rates = []
-#         insertion_rates = []
-#         insertion_rates_multi_base = []
-#         for i in xrange(seq_len):
-#             mismatch_rate = 0.0
-#             deletion_rate = 0.0
-#             insertion_rate = 0.0
-#             insertion_rate_multi_base = 0.0
-#             if depths[i] > 0:
-#                 mismatch_rate = mismatches[i] / depths[i]
-#                 deletion_rate = deletions[i] / depths[i]
-#                 insertion_rate = insertions[i] / depths[i]
-#                 if i in insertion_sizes:
-#                     insertion_rate_multi_base = sum(insertion_sizes[i]) / depths[i]
-#             mismatch_rates.append(mismatch_rate)
-#             deletion_rates.append(deletion_rate)
-#             insertion_rates.append(insertion_rate)
-#             insertion_rates_multi_base.append(insertion_rate_multi_base)
-
-#         if table_prefix:
-#             for i in xrange(seq_len):
-#                 insertion_sizes_str = ''
-#                 if i in insertion_sizes:
-#                     insertion_sizes_str = ', '.join([str(x) for x in insertion_sizes[i]])
-#                 table.write('\t'.join([str(i+1),
-#                                        str(depths[i]),
-#                                        str(mismatches[i]),
-#                                        str(deletions[i]),
-#                                        str(insertions[i]),
-#                                        str(mismatch_rates[i]),
-#                                        str(deletion_rates[i]),
-#                                        str(insertion_rates[i]),
-#                                        insertion_sizes_str]))
-#                 table.write('\n')
-#             table.close()
-
-#         if VERBOSITY > 0:
-#             contained_alignment_count = 0
-#             overlapping_alignment_count = 0
-#             for alignment in alignments:
-#                 if alignment.is_whole_read():
-#                     contained_alignment_count += 1
-#                 else:
-#                     overlapping_alignment_count += 1
-#             print(reference.name)
-#             print('  Length:       ', int_to_str(seq_len, max_v) + ' bp')
-#             if alignments:
-#                 mean_depth = sum(depths) / seq_len
-#                 mean_mismatch_rate = 100.0 * sum(mismatch_rates) / aligned_len
-#                 mean_insertion_rate = 100.0 * sum(insertion_rates_multi_base) / aligned_len
-#                 mean_deletion_rate = 100.0 * sum(deletion_rates) / aligned_len
-#                 if VERBOSITY > 0:
-#                     print('  Alignments:         ', int_to_str(len(alignments), max_v))
-#                 if VERBOSITY > 1:
-#                     print('    Contained:        ', int_to_str(contained_alignment_count, max_v))
-#                     print('    Overlapping:      ', int_to_str(overlapping_alignment_count, max_v))
-#                 print('  Covered length:     ', int_to_str(aligned_len, max_v) + ' bp')
-#                 print('  Covered fraction:   ', float_to_str(aligned_percent, 2, max_v) + '%')
-#                 if VERBOSITY > 1:
-#                     print('  Mean read depth:    ', float_to_str(mean_depth, 2, max_v))
-#                     print('  Mismatch rate:      ',
-#                           float_to_str(mean_mismatch_rate, 2, max_v) +'%')
-#                     print('  Insertion rate:     ',
-#                           float_to_str(mean_insertion_rate, 2, max_v) + '%')
-#                     print('  Deletion rate:      ',
-#                           float_to_str(mean_deletion_rate, 2, max_v) + '%')
-#             else:
-#                 print('  Alignments:         ', int_to_str(0, max_v))
-#             print()
 
 class Alignment(object):
     '''

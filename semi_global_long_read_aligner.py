@@ -885,33 +885,6 @@ def complement_base(base):
     reverse = 'YRSWMKyrswmkVHDBvhdbNn.-?N'
     return reverse[forward.find(base)]
 
-def get_median(num_list):
-    '''
-    Returns the median of the given list of numbers.
-    '''
-    count = len(num_list)
-    if count == 0:
-        return 0.0
-    sorted_list = sorted(num_list)
-    if count % 2 == 0:
-        return (sorted_list[count // 2 - 1] + sorted_list[count // 2]) / 2.0
-    else:
-        return sorted_list[count // 2]
-
-def get_median_and_mad(num_list):
-    '''
-    Returns the median and MAD of the given list of numbers.
-    '''
-    if not num_list:
-        return None, None
-    if len(num_list) == 1:
-        return num_list[0], None
-
-    median = get_median(num_list)
-    absolute_deviations = [abs(x - median) for x in num_list]
-    mad = 1.4826 * get_median(absolute_deviations)
-    return median, mad
-
 def get_mean_and_st_dev(num_list):
     '''
     This function returns the mean and standard deviation of the given list of numbers.

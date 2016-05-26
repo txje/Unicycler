@@ -52,12 +52,10 @@ def main():
                                      args.threads)
 
     count_depth_and_errors_per_base(references, reference_dict, alignments)
-    count_depth_and_errors_per_window(references, args.window_size)
-
-    high_error_rate, very_high_error_rate = determine_thresholds(scoring_scheme, references)
-
-    if VERBOSITY > 0:
-        produce_console_output(references)
+    high_error_rate, very_high_error_rate, random_seq_error_rate = \
+                                       determine_thresholds(scoring_scheme, references, alignments)
+    count_depth_and_errors_per_window(references, args.window_size, high_error_rate,
+                                      very_high_error_rate)
 
     if args.window_tables:
         window_tables_prefix = prepare_output_dirs(args.window_tables)
@@ -69,7 +67,11 @@ def main():
 
     if args.html:
         html_prefix = prepare_output_dirs(args.html)
-        produce_html_files(references, html_prefix, high_error_rate, very_high_error_rate)
+        produce_html_files(references, html_prefix, high_error_rate, very_high_error_rate,
+                           random_seq_error_rate)
+
+    if VERBOSITY > 0:
+        produce_console_output(references, very_high_error_rate)
 
     sys.exit(0)
 
@@ -351,7 +353,8 @@ def count_depth_and_errors_per_base(references, reference_dict, alignments):
         print('\n')
 
 
-def count_depth_and_errors_per_window(references, window_size):
+def count_depth_and_errors_per_window(references, window_size, high_error_rate,
+                                      very_high_error_rate):
     '''
     Counts up the depth and errors for each window of each reference and stores the counts in the
     Reference objects.
@@ -368,6 +371,14 @@ def count_depth_and_errors_per_window(references, window_size):
         ref.min_window_error_rate = None
         ref.max_window_depth = 0.0
         ref.max_window_error_rate = 0.0
+
+        ref.problem_regions = []
+        ref.low_depth_regions = []
+        ref.high_depth_regions = []
+
+        current_problem_region = None
+        current_low_depth_region = None
+        current_high_depth_region = None
 
         for i in xrange(window_count):
             window_start = int(round(ref.window_size * i))
@@ -391,6 +402,15 @@ def count_depth_and_errors_per_window(references, window_size):
                 window_error_rate = None
             else:
                 window_error_rate = total_window_error_rate / this_window_pos_with_error_rate
+                if window_error_rate >= very_high_error_rate:
+                    if current_problem_region is None:
+                        current_problem_region = (window_start, window_end)
+                    else:
+                        current_problem_region = (current_problem_region[0], window_end)
+                elif window_error_rate < high_error_rate: # error rate is not very high
+                    if current_problem_region is not None:
+                        ref.problem_regions.append(current_problem_region)
+                        current_problem_region = None
 
             ref.window_depths.append(window_depth)
             ref.window_error_rates.append(window_error_rate)
@@ -408,7 +428,10 @@ def count_depth_and_errors_per_window(references, window_size):
             ref.max_window_depth = max(window_depth, ref.max_window_depth)
             ref.max_window_error_rate = max(window_error_rate, ref.max_window_error_rate)
 
-def determine_thresholds(scoring_scheme, references):
+        if current_problem_region is not None:
+            ref.problem_regions.append(current_problem_region)
+
+def determine_thresholds(scoring_scheme, references, alignments):
     '''
     This function sets thresholds for error rate and depth. Error rate thresholds are set once for
     all references, while depth thresholds are per-reference.
@@ -417,17 +440,18 @@ def determine_thresholds(scoring_scheme, references):
         print('Setting error and depth thresholds')
         print('----------------------------------')
 
-    # Find the median of all error rates.
+    # Find the mean of all error rates.
     all_error_rates = []
     for ref in references:
         all_error_rates += [x for x in ref.error_rates if x is not None]
-
     mean_error_rate = get_mean(all_error_rates)
     if VERBOSITY > 0:
-        print('Mean error rate:            ', float_to_str(mean_error_rate, 2, 100.0) + '%')
+        print('Mean error rate:            ',
+              float_to_str(mean_error_rate * 100.0, 2, 100.0) + '%')
     random_seq_error_rate = get_random_sequence_error_rate(scoring_scheme)
     if VERBOSITY > 0:
-        print('Random alignment error rate:', float_to_str(random_seq_error_rate, 2, 100.0) + '%')
+        print('Random alignment error rate:',
+              float_to_str(random_seq_error_rate * 100.0, 2, 100.0) + '%')
         print()
 
     # The median error rate should not be as big as the random alignment error rate. If it is, then
@@ -444,10 +468,61 @@ def determine_thresholds(scoring_scheme, references):
         very_high_error_rate = mean_error_rate + (0.4 * difference)
 
     if VERBOSITY > 0:
-        print('Error rate threshold 1:     ', float_to_str(high_error_rate, 2, 100.0) + '%')
-        print('Error rate threshold 2:     ', float_to_str(very_high_error_rate, 2, 100.0) + '%')
+        print('Error rate threshold 1:     ',
+              float_to_str(high_error_rate * 100.0, 2, 100.0) + '%')
+        print('Error rate threshold 2:     ',
+              float_to_str(very_high_error_rate * 100.0, 2, 100.0) + '%')
         print()
 
+    for ref in references:
+        determine_depth_thresholds(ref, alignments)
+
+    return high_error_rate, very_high_error_rate, random_seq_error_rate
+
+
+def determine_depth_thresholds(ref, alignments):
+    '''
+    This function determines read depth thresholds by simulating a random distribution of reads.
+    '''
+    ref_length = ref.get_length()
+    alignment_lengths = [x.ref_end_pos - x.ref_start_pos for x in alignments \
+                         if x.ref.name == ref.name]
+    depth_counts = {}
+
+    for i in range(10):
+        alignment_positions = []
+        for alignment_length in alignment_lengths:
+            start = random.randint(0, ref_length-1)
+            end = start + alignment_length
+            if end <= ref_length:
+                alignment_positions.append((start, 1))
+                alignment_positions.append((end, -1))
+            else:
+                alignment_positions.append((start, 1))
+                alignment_positions.append((ref_length, -1))
+                alignment_positions.append((0, 1))
+                alignment_positions.append((end - ref_length, -1))
+        alignment_positions.sort()
+
+        current_depth = 0
+        last_pos = 0
+        for pos, change in alignment_positions:
+            bases_at_current_depth = pos - last_pos
+            if bases_at_current_depth > 0:
+                if current_depth not in depth_counts:
+                    depth_counts[current_depth] = 0
+                depth_counts[current_depth] += bases_at_current_depth
+            current_depth += change
+            last_pos = pos
+        if last_pos != ref_length:
+            bases_at_current_depth = ref_length - last_pos
+            if current_depth not in depth_counts:
+                depth_counts[current_depth] = 0
+            depth_counts[current_depth] += bases_at_current_depth
+
+    print('REFERENCE:', ref.name) # TEMP
+    print(depth_counts) # TEMP
+    print()
 
 
 
@@ -455,10 +530,47 @@ def determine_thresholds(scoring_scheme, references):
 
 
 
-    if VERBOSITY > 0:
-        print()
 
-    return high_error_rate, very_high_error_rate
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -499,24 +611,44 @@ def get_mean(num_list):
 #     mad = 1.4826 * get_median(absolute_deviations)
 #     return median, mad
 
-def produce_console_output(references):
+def produce_console_output(references, very_high_error_rate):
     '''
     Write a summary of the results to std out.
     '''
     for ref in references:
+        print()
         print('Results: ' + ref.name)
         print('-' * (len(ref.name) + 9))
         ref_length = ref.get_length()
         max_v = max(100, ref_length)
 
-        print('Length:         ', int_to_str(ref_length, max_v) + ' bp')
-        print('Alignments:     ', int_to_str(ref.alignment_count, max_v))
-        print('Min depth:      ', float_to_str(ref.min_window_depth, 2, max_v))
-        print('Max depth:      ', float_to_str(ref.max_window_depth, 2, max_v))
-        print('Min error rate: ', float_to_str(ref.min_window_error_rate * 100.0, 2, max_v) + '%')
-        print('Max error rate: ', float_to_str(ref.max_window_error_rate * 100.0, 2, max_v) + '%')
+        print('Length:        ', int_to_str(ref_length, max_v) + ' bp')
+        print('Alignments:    ', int_to_str(ref.alignment_count, max_v))
+        print('Min depth:     ', float_to_str(ref.min_window_depth, 1, max_v))
+        print('Max depth:     ', float_to_str(ref.max_window_depth, 1, max_v))
+        print('Min error rate:', float_to_str(ref.min_window_error_rate * 100.0, 1, max_v) + '%')
+        print('Max error rate:', float_to_str(ref.max_window_error_rate * 100.0, 1, max_v) + '%')
+        print()
+        print('High error regions:', int_to_str(len(ref.problem_regions)))
+        if ref.problem_regions:
+            for i, problem_region in enumerate(ref.problem_regions):
+                print('   ' + str(i+1) + ') ' + int_to_str(problem_region[0]) + ' bp to ' + 
+                      int_to_str(problem_region[1]) + ' bp')
+            print()
+        print('Low depth regions: ', int_to_str(len(ref.low_depth_regions)))
+        if ref.low_depth_regions:
+            for i, low_depth_region in enumerate(ref.low_depth_regions):
+                print('   ' + str(i+1) + ') ' + int_to_str(low_depth_region[0]) + ' bp to ' + 
+                      int_to_str(low_depth_region[1]) + ' bp')
+            print()
+        print('High depth regions:', int_to_str(len(ref.high_depth_regions)))
+        if ref.high_depth_regions:
+            for i, high_depth_region in enumerate(ref.high_depth_regions):
+                print('   ' + str(i+1) + ') ' + int_to_str(high_depth_region[0]) + ' bp to ' + 
+                      int_to_str(high_depth_region[1]) + ' bp')
 
         print()
+
 
 def clean_str_for_filename(filename):
     '''
@@ -594,7 +726,8 @@ def produce_base_tables(references, base_tables_prefix):
         print()
 
 
-def produce_html_files(references, html_prefix, high_error_rate, very_high_error_rate):
+def produce_html_files(references, html_prefix, high_error_rate, very_high_error_rate,
+                       random_seq_error_rate):
     '''
     Write html files containing plots of results.
     '''
@@ -635,11 +768,12 @@ def produce_html_files(references, html_prefix, high_error_rate, very_high_error
         data = [error_trace]
 
         max_x = ref.get_length()
-        max_y = max_error_rate * 1.05
+        max_y = max(max_error_rate * 1.05, 100.0 * random_seq_error_rate)
         layout = dict(title='Error rate: ' + ref.name,
                       autosize=False,
                       width=1400,
                       height=500,
+                      hovermode='closest',
                       xaxis=dict(title='Reference position',
                                  range=[0, max_x],
                                  rangeslider=dict(),
@@ -649,16 +783,16 @@ def produce_html_files(references, html_prefix, high_error_rate, very_high_error
                                  range=[0.0, max_y]),
                       shapes=[dict(type='rect',
                                    x0=0, y0=0,
-                                   x1=max_x, y1=high_error_rate,
+                                   x1=max_x, y1=high_error_rate * 100.0,
                                    line=dict(width=0),
-                                   fillcolor='rgba(50, 200, 50, 0.08'),
+                                   fillcolor='rgba(50, 200, 50, 0.1'),
                               dict(type='rect',
-                                   x0=0, y0=high_error_rate,
-                                   x1=max_x, y1=very_high_error_rate,
+                                   x0=0, y0=high_error_rate * 100.0,
+                                   x1=max_x, y1=very_high_error_rate * 100.0,
                                    line=dict(width=0),
                                    fillcolor='rgba(255, 200, 0, 0.1'),
                               dict(type='rect',
-                                   x0=0, y0=very_high_error_rate,
+                                   x0=0, y0=very_high_error_rate * 100.0,
                                    x1=max_x, y1=max_y,
                                    line=dict(width=0),
                                    fillcolor='rgba(255, 0, 0, 0.1')])

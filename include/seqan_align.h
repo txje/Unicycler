@@ -57,9 +57,9 @@ double fractionOfReadAligned(std::vector<SemiGlobalAlignment *> & alignments);
 
 std::vector<std::pair<int, int> > simplifyRanges(std::vector<std::pair<int, int> > & ranges);
 
-std::string getRandomSequence(int seqLength, std::mt19937 & gen, std::uniform_int_distribution<double> & dist);
+std::string getRandomSequence(int seqLength, std::mt19937 & gen, std::uniform_int_distribution<int> & dist);
 
-char getRandomBase(std::mt19937 & gen, std::uniform_int_distribution<double> & dist);
+char getRandomBase(std::mt19937 & gen, std::uniform_int_distribution<int> & dist);
 
 CommonKmerSet * getHighestScoringSet(std::vector<CommonKmerSet *> & commonKmerSets);
 

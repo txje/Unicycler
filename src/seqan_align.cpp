@@ -479,7 +479,7 @@ char * getRandomSequenceAlignmentScores(int seqLength, int n,
 
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_int_distribution<double> dist(0, 3);
+    std::uniform_int_distribution<int> dist(0, 3);
 
     for (int i = 0; i < n; ++i) {
         std::string s1 = getRandomSequence(seqLength, gen, dist);
@@ -509,7 +509,7 @@ char * getRandomSequenceAlignmentErrorRates(int seqLength, int n,
 
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_int_distribution<double> dist(0, 3);
+    std::uniform_int_distribution<int> dist(0, 3);
 
     for (int i = 0; i < n; ++i) {
         int totalMatches = 0;
@@ -592,7 +592,7 @@ char * getRandomSequenceAlignmentErrorRates(int seqLength, int n,
     return cppStringToCString(returnString);
 }
 
-std::string getRandomSequence(int seqLength, std::mt19937 & gen, std::uniform_int_distribution<double> & dist) {
+std::string getRandomSequence(int seqLength, std::mt19937 & gen, std::uniform_int_distribution<int> & dist) {
     std::string seq;
     seq.reserve(seqLength);
     for (int i = 0 ; i < seqLength; ++i)
@@ -600,7 +600,7 @@ std::string getRandomSequence(int seqLength, std::mt19937 & gen, std::uniform_in
     return seq;
 }
 
-char getRandomBase(std::mt19937 & gen, std::uniform_int_distribution<double> & dist) {
+char getRandomBase(std::mt19937 & gen, std::uniform_int_distribution<int> & dist) {
     int baseNum = dist(gen);
     if (baseNum == 0)
         return 'A';

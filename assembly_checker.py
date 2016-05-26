@@ -484,12 +484,25 @@ def determine_depth_thresholds(ref, alignments):
     '''
     This function determines read depth thresholds by simulating a random distribution of reads.
     '''
+
+    ref.ideal_read_depth_distribution = {}
+    ref.actual_read_depth_distribution = {}
+
+    # Build the reference's actual read depth distribution.
     ref_length = ref.get_length()
+    for i in range(ref_length):
+        depth = ref.depths[i]
+        if depth not in ref.actual_read_depth_distribution:
+            ref.actual_read_depth_distribution[depth] = 0
+        ref.actual_read_depth_distribution[depth] += 1
+    ref.actual_read_depth_distribution = {depth: (count / ref_length) for depth, count \
+                                          in ref.actual_read_depth_distribution.iteritems()}
+
+    # Build the reference's ideal read depth distribution (randomly-placed reads).
     alignment_lengths = [x.ref_end_pos - x.ref_start_pos for x in alignments \
                          if x.ref.name == ref.name]
-    depth_counts = {}
-
-    for i in range(10):
+    total_bases = 0
+    while total_bases < 100000000:
         alignment_positions = []
         for alignment_length in alignment_lengths:
             start = random.randint(0, ref_length-1)
@@ -503,76 +516,73 @@ def determine_depth_thresholds(ref, alignments):
                 alignment_positions.append((0, 1))
                 alignment_positions.append((end - ref_length, -1))
         alignment_positions.sort()
-
         current_depth = 0
         last_pos = 0
         for pos, change in alignment_positions:
             bases_at_current_depth = pos - last_pos
             if bases_at_current_depth > 0:
-                if current_depth not in depth_counts:
-                    depth_counts[current_depth] = 0
-                depth_counts[current_depth] += bases_at_current_depth
+                if current_depth not in ref.ideal_read_depth_distribution:
+                    ref.ideal_read_depth_distribution[current_depth] = 0
+                ref.ideal_read_depth_distribution[current_depth] += bases_at_current_depth
+                total_bases += bases_at_current_depth
             current_depth += change
             last_pos = pos
         if last_pos != ref_length:
             bases_at_current_depth = ref_length - last_pos
-            if current_depth not in depth_counts:
-                depth_counts[current_depth] = 0
-            depth_counts[current_depth] += bases_at_current_depth
+            if current_depth not in ref.ideal_read_depth_distribution:
+                ref.ideal_read_depth_distribution[current_depth] = 0
+            ref.ideal_read_depth_distribution[current_depth] += bases_at_current_depth
+            total_bases += bases_at_current_depth
+    ref.ideal_read_depth_distribution = {depth: (count / total_bases) for depth, count \
+                                         in ref.ideal_read_depth_distribution.iteritems()}
 
-    print('REFERENCE:', ref.name) # TEMP
-    print(depth_counts) # TEMP
-    print()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    ref.low_depth_cutoff, ref.high_depth_cutoff = \
+                            depths_to_capture_fraction(ref.ideal_read_depth_distribution, 0.999)
+    ref.very_low_depth_cutoff, ref.very_high_depth_cutoff = \
+                            depths_to_capture_fraction(ref.ideal_read_depth_distribution, 0.999999)
+    if VERBOSITY > 0:
+        print(ref.name + ':')
+        max_v = ref.very_high_depth_cutoff
+        print('   very low depth threshold: ', int_to_str(ref.very_low_depth_cutoff, max_v))
+        print('   low depth threshold:      ', int_to_str(ref.low_depth_cutoff, max_v))
+        print('   high depth threshold:     ', int_to_str(ref.high_depth_cutoff, max_v))
+        print('   very high depth threshold:', int_to_str(ref.very_high_depth_cutoff, max_v))
+        print()
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+def depths_to_capture_fraction(depth_distribution, fraction):
+    '''
+    Returns a min and max depth which capture at least the given fraction of the distribution.
+    '''
+    depths = list(depth_distribution.keys())
+    proportions = list(depth_distribution.values())
+    mode_depth = depths[proportions.index(max(proportions))]
+    low_cutoff = mode_depth
+    high_cutoff = mode_depth
+    fraction_captured = depth_distribution[mode_depth]
+    while fraction_captured < fraction:
+        next_possible_low = low_cutoff - 1
+        next_possible_high = high_cutoff + 1
+        fraction_from_next_low = 0.0
+        fraction_from_next_high = 0.0
+        if next_possible_low in depth_distribution:
+            fraction_from_next_low = depth_distribution[next_possible_low]
+        if next_possible_high in depth_distribution:
+            fraction_from_next_high = depth_distribution[next_possible_high]
+        if fraction_from_next_low > fraction_from_next_high:
+            low_cutoff = next_possible_low
+            fraction_captured += fraction_from_next_low
+        elif fraction_from_next_high > fraction_from_next_low:
+            high_cutoff = next_possible_high
+            fraction_captured += fraction_from_next_high
+        elif fraction_from_next_high > 0.0: # they are equal but non-zero.
+            high_cutoff = next_possible_high
+            fraction_captured += fraction_from_next_high
+        else: # they are both zero.
+            if next_possible_low >= 0:
+                low_cutoff = next_possible_low
+            high_cutoff = next_possible_high
+    return low_cutoff, high_cutoff
 
 def get_mean(num_list):
     '''
@@ -581,8 +591,6 @@ def get_mean(num_list):
     if not num_list:
         return None
     return sum(num_list) / len(num_list)
-
-
 
 # def get_median(num_list):
 #     '''
@@ -760,60 +768,73 @@ def produce_html_files(references, html_prefix, high_error_rate, very_high_error
         max_error_rate = max(error_rate_y)
         max_depth = max(depth_y)
 
-        error_trace = go.Scatter(x=x,
-                                 y=error_rate_y,
-                                 mode='lines',
-                                 line=dict(color='rgb(50, 50, 50)',
-                                           width=2))
+        # Prepare the points for error rate plot.
+        error_trace = go.Scatter(x=x, y=error_rate_y, mode='lines',
+                                 line=dict(color='rgb(50, 50, 50)', width=2))
         data = [error_trace]
 
+
+        # Produce the coloured background rectangles for the error rate plot.
+        green = 'rgba(50, 200, 50, 0.1)'
+        yellow = 'rgba(255, 200, 0, 0.1)'
+        red = 'rgba(255, 0, 0, 0.1)'
         max_x = ref.get_length()
         max_y = max(max_error_rate * 1.05, 100.0 * random_seq_error_rate)
-        layout = dict(title='Error rate: ' + ref.name,
-                      autosize=False,
-                      width=1400,
-                      height=500,
-                      hovermode='closest',
-                      xaxis=dict(title='Reference position',
-                                 range=[0, max_x],
-                                 rangeslider=dict(),
-                                 type='linear'),
-                      yaxis=dict(title='Error rate',
-                                 ticksuffix='%',
-                                 range=[0.0, max_y]),
-                      shapes=[dict(type='rect',
-                                   x0=0, y0=0,
-                                   x1=max_x, y1=high_error_rate * 100.0,
-                                   line=dict(width=0),
-                                   fillcolor='rgba(50, 200, 50, 0.1'),
-                              dict(type='rect',
-                                   x0=0, y0=high_error_rate * 100.0,
-                                   x1=max_x, y1=very_high_error_rate * 100.0,
-                                   line=dict(width=0),
-                                   fillcolor='rgba(255, 200, 0, 0.1'),
-                              dict(type='rect',
-                                   x0=0, y0=very_high_error_rate * 100.0,
-                                   x1=max_x, y1=max_y,
-                                   line=dict(width=0),
-                                   fillcolor='rgba(255, 0, 0, 0.1')])
+        error_rate_background = [dict(type='rect', x0=0, y0=0,
+                                      x1=max_x, y1=high_error_rate * 100.0,
+                                      line=dict(width=0), fillcolor=green),
+                                 dict(type='rect', x0=0, y0=high_error_rate * 100.0,
+                                      x1=max_x, y1=very_high_error_rate * 100.0,
+                                      line=dict(width=0), fillcolor=yellow),
+                                 dict(type='rect', x0=0, y0=very_high_error_rate * 100.0,
+                                      x1=max_x, y1=max_y,
+                                      line=dict(width=0), fillcolor=red)]
+
+        layout = dict(title='Error rate: ' + ref.name, autosize=False,
+                      width=1400, height=500, hovermode='closest',
+                      xaxis=dict(title='Reference position', range=[0, max_x],
+                                 rangeslider=dict(), type='linear'),
+                      yaxis=dict(title='Error rate', ticksuffix='%', range=[0.0, max_y]),
+                      shapes=error_rate_background)
 
         fig = dict(data=data, layout=layout)
         py.plot(fig, filename=error_rate_html_filename, auto_open=False)
         if VERBOSITY > 0:
             print(error_rate_html_filename)
 
-        depth_trace = go.Scatter(x=x,
-                                 y=depth_y,
+        # Prepare the points for depth plot.
+        depth_trace = go.Scatter(x=x, y=depth_y,
                                  mode='lines',
-                                 line=dict(color='rgb(50, 50, 50)',
-                                           width=2))
+                                 line=dict(color='rgb(50, 50, 50)', width=2))
         data = [depth_trace]
 
-        max_y = max_depth * 1.05
-        layout.update(title='Depth: ' + ref.name,
-                      yaxis=dict(title='Depth',
-                                 range=[0.0, max_y]))
+        # Produce the coloured background rectangles for the depth plot.
+        max_y = max(max_depth * 1.05, ref.very_high_depth_cutoff * 1.2)
+        depth_background = []
+        current_y = 0
+        if ref.very_low_depth_cutoff > 0:
+            depth_background.append(dict(type='rect', x0=0, y0=current_y,
+                                         x1=max_x, y1=ref.very_low_depth_cutoff,
+                                         line=dict(width=0), fillcolor=red))
+            current_y = ref.very_low_depth_cutoff
+        if ref.low_depth_cutoff > 0:
+            depth_background.append(dict(type='rect', x0=0, y0=current_y,
+                                         x1=max_x, y1=ref.low_depth_cutoff,
+                                         line=dict(width=0), fillcolor=yellow))
+            current_y = ref.low_depth_cutoff
+        depth_background.append(dict(type='rect', x0=0, y0=current_y,
+                                     x1=max_x, y1=ref.high_depth_cutoff,
+                                     line=dict(width=0), fillcolor=green))
+        depth_background.append(dict(type='rect', x0=0, y0=ref.high_depth_cutoff,
+                                     x1=max_x, y1=ref.very_high_depth_cutoff,
+                                     line=dict(width=0), fillcolor=yellow))
+        depth_background.append(dict(type='rect', x0=0, y0=ref.very_high_depth_cutoff,
+                                     x1=max_x, y1=max_y, line=dict(width=0), fillcolor=red))
 
+        # Create the depth plot.
+        layout.update(title='Depth: ' + ref.name,
+                      yaxis=dict(title='Depth', range=[0.0, max_y]),
+                      shapes=depth_background)
         fig = dict(data=data, layout=layout)
         py.plot(fig, filename=depth_html_filename, auto_open=False)
         if VERBOSITY > 0:

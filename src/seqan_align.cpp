@@ -56,6 +56,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
     std::vector<SemiGlobalAlignment *> allAlignments;
     std::vector<SemiGlobalAlignment *> goodAlignments;
     int badAlignmentCount = 0;
+    bool oneAlignmentWholeRead = false;
     bool entireReadAligned = false;
     bool needMoreAlignments = true;
 
@@ -109,6 +110,8 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
                 goodAlignments.push_back(alignment);
                 if (verbosity > 2)
                     output += "    alignment: " + alignment->getShortDisplayString() + ", GOOD\n";
+                if (alignment->getReadAlignmentLength() == readLength)
+                    oneAlignmentWholeRead = true;
             }
 
             // Finally, we want to check whether this alignment line is near any of the previous
@@ -175,11 +178,15 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
             }
         }
 
-        entireReadAligned = (fractionOfReadAligned(goodAlignments) == 1.0);
-        if (entireReadAligned)
-            needMoreAlignments = (badAlignmentCount < BAD_LINE_COUNT_ENTIRE_READ);
-        else
-            needMoreAlignments = (badAlignmentCount < BAD_LINE_COUNT_PARTIAL_READ);
+        if (oneAlignmentWholeRead)
+            needMoreAlignments = (badAlignmentCount < BAD_LINE_COUNT_SINGLE_ALIGNMENT);
+        else {
+            entireReadAligned = (fractionOfReadAligned(goodAlignments) == 1.0);
+            if (entireReadAligned)
+                needMoreAlignments = (badAlignmentCount < BAD_LINE_COUNT_ENTIRE_READ);
+            else
+                needMoreAlignments = (badAlignmentCount < BAD_LINE_COUNT_PARTIAL_READ);
+        }
     }
 
     // Either all alignments or only good alignments are returned, depending on a parameter.

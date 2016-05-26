@@ -37,6 +37,7 @@
 // We will try to find alignment lines until too many bad lines have been found. If we have aligned
 // the entire read, then the threshold is lower (because we're probably done). If we haven't, then
 // we try harder.
+#define BAD_LINE_COUNT_SINGLE_ALIGNMENT 2
 #define BAD_LINE_COUNT_ENTIRE_READ 5
 #define BAD_LINE_COUNT_PARTIAL_READ 20
 

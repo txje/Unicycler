@@ -357,7 +357,7 @@ bool AlignmentLine::segmentsIntersect(float x11, float y11, float x12, float y12
         return false; // parallel segments
     float s = (dx1 * (y21 - y11) + dy1 * (x11 - x21)) / delta;
     float t = (dx2 * (y11 - y21) + dy2 * (x21 - x11)) / (-delta);
-    return (0.0 <= s <= 1.0) && (0.0 <= t <= 1.0);
+    return (0.0 <= s) && (s <= 1.0) && (0.0 <= t) && (t <= 1.0);
 }
 
 float AlignmentLine::pointSegmentDistance(float px, float py,

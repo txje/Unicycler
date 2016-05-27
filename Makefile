@@ -27,6 +27,14 @@ SOURCES      = $(shell echo src/*.cpp)
 HEADERS      = $(shell echo include/*.h)
 OBJECTS      = $(SOURCES:.cpp=.o)
 
+# Linux needs '-soname' while Mac needs '-install_name'
+PLATFORM     = $(shell uname)
+ifeq ($(PLATFORM), Darwin)
+SONAME       = -install_name
+else
+SONAME       = -soname
+endif
+
 .PHONY: release
 release: FLAGS+=$(RELEASEFLAGS)
 release: $(TARGET)
@@ -36,7 +44,7 @@ debug: FLAGS+=$(DEBUGFLAGS)
 debug: $(TARGET)
 
 $(TARGET): $(OBJECTS)
-	$(CXX) $(FLAGS) $(CXXFLAGS) $(LDFLAGS) -Wl,-install_name,$(TARGET) -o $(TARGET) $(OBJECTS)
+	$(CXX) $(FLAGS) $(CXXFLAGS) $(LDFLAGS) -Wl,$(SONAME),$(TARGET) -o $(TARGET) $(OBJECTS)
 
 clean:
 	$(RM) $(OBJECTS)

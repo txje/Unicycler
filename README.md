@@ -12,6 +12,12 @@ BBBBBBBBB        BBBBBBB       BBBBBBBBB           BBBBBBBBB
 
 This tool is intended for cases where the reads and reference are expected to match perfectly (or at least as perfectly as error-prone long reads can match). An example of an appropriate case would be if the reference sequences are assembled contigs of a bacterial strain and the long reads are from the same strain.
 
+Required inputs:
+  1) FASTA file of one or more reference sequences
+  2) FASTQ file of long reads
+
+Output: SAM file of alignments
+
 ### Required arguments:
 * `--ref`: FASTA file containing one or more reference sequences
 * `--reads`: FASTQ file of long reads
@@ -27,12 +33,6 @@ This tool is intended for cases where the reads and reference are expected to ma
 
 ### Build instructions
 This aligner uses a C++ shared library, so it must be compiled first. Just run `make` in the respository directory and it should (hopefully) build everything required.
-
-Required inputs:
-  1) FASTA file of one or more reference sequences
-  2) FASTQ file of long reads
-
-Output: SAM file of alignments
 
 # assembly_checker.py
 

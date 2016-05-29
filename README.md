@@ -25,6 +25,9 @@ This tool is intended for cases where the reads and reference are expected to ma
 * `--threads`: The number of CPU threads to use (default is to use all available CPUs).
 * `--verbosity`: How much stdout to produce. 0 = no stdout. 1 = default. 2 = extra output (display the alignments for each read). 3 = lots of extra output (display the attempted alignments for each read). 4 = tons (I use this for debugging - you probably shouldn't use it).
 
+### Build instructions
+This aligner uses a C++ shared library, so it must be compiled first. Just run `make` in the respository directory and it should (hopefully) build everything required.
+
 Required inputs:
   1) FASTA file of one or more reference sequences
   2) FASTQ file of long reads

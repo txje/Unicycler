@@ -504,6 +504,7 @@ char * getRandomSequenceAlignmentErrorRates(int seqLength, int n,
     std::vector<double> errorsOverAlignmentLength;
     std::vector<double> matchesOverSeqLength;
     std::vector<double> errorsOverSeqLength;
+    std::vector<double> errorsOverSeqLengthCountAllInsertionsAsOne;
     std::vector<double> scores;
     std::vector<double> alignmentLengths;
 
@@ -514,6 +515,7 @@ char * getRandomSequenceAlignmentErrorRates(int seqLength, int n,
     for (int i = 0; i < n; ++i) {
         int totalMatches = 0;
         int totalErrors = 0;
+        int totalErrorsCountAllInsertionsAsOne = 0;
 
         std::string s1 = getRandomSequence(seqLength, gen, dist);
         std::string s2 = getRandomSequence(seqLength, gen, dist);
@@ -538,18 +540,29 @@ char * getRandomSequenceAlignmentErrorRates(int seqLength, int n,
         std::ostringstream stream2;
         stream2 << row(alignment, 1);
         std::string s2Alignment =  stream2.str();
+        int alignmentLength = s1Alignment.size();
 
+        int insertionLength = 0;
         for (size_t i = 0; i < s1Alignment.size(); ++i)
         {
-            if (s1Alignment[i] == '-' || s2Alignment[i] == '-' || s1Alignment[i] != s2Alignment[i])
+            if (s1Alignment[i] != '-' && s2Alignment[i] == '-')
+                ++insertionLength;
+            else
+                insertionLength = 0;
+
+            if (s1Alignment[i] == '-' || s2Alignment[i] == '-' || s1Alignment[i] != s2Alignment[i]) {
                 ++totalErrors;
+                if (insertionLength < 2)
+                    ++totalErrorsCountAllInsertionsAsOne;
+            }
             else // match
                 ++totalMatches;
         }
-        matchesOverAlignmentLength.push_back(double(totalMatches) / double(s1Alignment.size()));
-        errorsOverAlignmentLength.push_back(double(totalErrors) / double(s1Alignment.size()));
+        matchesOverAlignmentLength.push_back(double(totalMatches) / double(alignmentLength));
+        errorsOverAlignmentLength.push_back(double(totalErrors) / double(alignmentLength));
         matchesOverSeqLength.push_back(double(totalMatches) / double(seqLength));
         errorsOverSeqLength.push_back(double(totalErrors) / double(seqLength));
+        errorsOverSeqLengthCountAllInsertionsAsOne.push_back(double(totalErrorsCountAllInsertionsAsOne) / double(seqLength));
         scores.push_back(double(score));
         alignmentLengths.push_back(double(s1Alignment.size()));
     }
@@ -565,6 +578,8 @@ char * getRandomSequenceAlignmentErrorRates(int seqLength, int n,
     returnString += "identity (using sequence length) std dev\t";
     returnString += "errors (using sequence length) mean\t";
     returnString += "errors (using sequence length) std dev\t";
+    returnString += "errors (using sequence length, count all insertions as one) mean\t";
+    returnString += "errors (using sequence length, count all insertions as one) std dev\t";
     returnString += "score mean\t";
     returnString += "score std dev\t";
     returnString += "alignment length mean\t";
@@ -580,6 +595,9 @@ char * getRandomSequenceAlignmentErrorRates(int seqLength, int n,
     returnString += std::to_string(mean) + "\t";
     returnString += std::to_string(stdev) + "\t";
     getMeanAndStDev(errorsOverSeqLength, mean, stdev);
+    returnString += std::to_string(mean) + "\t";
+    returnString += std::to_string(stdev) + "\t";
+    getMeanAndStDev(errorsOverSeqLengthCountAllInsertionsAsOne, mean, stdev);
     returnString += std::to_string(mean) + "\t";
     returnString += std::to_string(stdev) + "\t";
     getMeanAndStDev(scores, mean, stdev);

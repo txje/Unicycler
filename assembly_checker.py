@@ -189,33 +189,33 @@ def get_random_sequence_error_rate(scoring_scheme):
     # I've precalculated the error rate for some typical scoring schemes.
     scoring_scheme_str = str(scoring_scheme)
     if scoring_scheme_str == '1,0,0,0':
-        return 0.587
+        return 0.498197
     elif scoring_scheme_str == '0,-1,-1,-1':
-        return 0.526
+        return 0.506547
     elif scoring_scheme_str == '1,-1,-1,-1':
-        return 0.533
-    elif scoring_scheme_str == '5,-4,-8,-6':
-        return 0.527
-    elif scoring_scheme_str == '5,-6,-10,0':
-        return 1.012
-    elif scoring_scheme_str == '2,-5,-2,-1':
-        return 0.713
-    elif scoring_scheme_str == '1,-3,-5,-2':
-        return 0.544
-    elif scoring_scheme_str == '5,-11,-2,-4':
-        return 0.707
-    elif scoring_scheme_str == '3,-6,-5,-2':
-        return 0.641
-    elif scoring_scheme_str == '2,-3,-5,-2':
-        return 0.546
-    elif scoring_scheme_str == '1,-2,0,0':
-        return 0.707
-    elif scoring_scheme_str == '0,-6,-5,-3':
-        return 0.575
-    elif scoring_scheme_str == '2,-6,-5,-3':
-        return 0.578
-    elif scoring_scheme_str == '1,-4,-6,-1':
-        return 0.812
+        return 0.489942
+    elif scoring_scheme_str == '5,-4,-8,-6': # GraphMap
+        return 0.496997
+    elif scoring_scheme_str == '5,-6,-10,0': # BLASR
+        return 0.585428
+    elif scoring_scheme_str == '2,-5,-2,-1': # BWA-MEM
+        return 0.52616
+    elif scoring_scheme_str == '1,-3,-5,-2': # CUSHAW2 / blastn-short
+        return 0.482431
+    elif scoring_scheme_str == '5,-11,-2,-4': # proovread
+        return 0.571232
+    elif scoring_scheme_str == '3,-6,-5,-2': # my aligner
+        return 0.477499
+    elif scoring_scheme_str == '2,-3,-5,-2': # blastn / dc-megablast
+        return 0.471655
+    elif scoring_scheme_str == '1,-2,0,0': # megablast
+        return 0.571199
+    elif scoring_scheme_str == '0,-6,-5,-3': # Bowtie2 end-to-end
+        return 0.466259
+    elif scoring_scheme_str == '2,-6,-5,-3': # Bowtie2 local
+        return 0.468592
+    elif scoring_scheme_str == '1,-4,-6,-1': # BWA
+        return 0.523119
 
     # If the scoring scheme doesn't match a previously known one, we will use the C++ code to get
     # an error rate estimate.
@@ -899,8 +899,10 @@ class Alignment(object):
         for i in xrange(len(cigar_types)):
             cigar_count = cigar_counts[i]
             cigar_type = cigar_types[i]
+
+            # Insertions are only counted as a single error, regardless of size.
             if cigar_type == 'I':
-                self.ref_insertion_positions += [ref_i]*cigar_count
+                self.ref_insertion_positions += [ref_i] 
                 read_i += cigar_count
             elif cigar_type == 'D':
                 for i in xrange(cigar_count):

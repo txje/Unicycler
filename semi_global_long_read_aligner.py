@@ -366,8 +366,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     # Output a summary of the reads' alignments.
     fully_aligned, partially_aligned, unaligned = group_reads_by_fraction_aligned(read_dict)
     if VERBOSITY > 0:
-        print('Read summary')
-        print('------------')
+        print('Read alignment summary')
+        print('----------------------')
         max_v = len(read_dict)
         print('Total read count:       ', int_to_str(len(read_dict), max_v))
         print('Fully aligned reads:    ', int_to_str(len(fully_aligned), max_v))

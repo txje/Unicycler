@@ -431,6 +431,9 @@ def count_depth_and_errors_per_window(references, window_size, high_error_rate,
         if current_problem_region is not None:
             ref.problem_regions.append(current_problem_region)
 
+        if ref.min_window_error_rate is None:
+            ref.min_window_error_rate = 0.0
+
 def determine_thresholds(scoring_scheme, references, alignments):
     '''
     This function sets thresholds for error rate and depth. Error rate thresholds are set once for
@@ -864,6 +867,11 @@ class Alignment(object):
         self.read_end_pos = self.read.get_length() - self.get_end_soft_clips(cigar_parts)
         self.read_end_gap = self.get_end_soft_clips(cigar_parts)
 
+        ref_name = get_nice_header(sam_parts[2])
+        if ref_name not in reference_dict:
+            print()
+            quit_with_error('the sequence ' + ref_name + ' is in the SAM file but not in the '
+                            'provided references')
         self.ref = reference_dict[get_nice_header(sam_parts[2])]
         ref_len = self.ref.get_length()
         self.ref_start_pos = int(sam_parts[3]) - 1

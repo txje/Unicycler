@@ -1,4 +1,5 @@
-
+#ifndef SEQAN_ALIGN_H
+#define SEQAN_ALIGN_H
 
 #include <seqan/sequence.h>
 #include <string>
@@ -7,6 +8,7 @@
 #include "commonkmerset.h"
 #include "alignmentline.h"
 #include "semiglobalalignment.h"
+#include "random_alignments.h"
 
 using namespace seqan;
 
@@ -26,12 +28,7 @@ extern "C" {
                                  int matchScore, int mismatchScore, int gapOpenScore,
                                  int gapExtensionScore);
 
-    void freeCString(char * p) {free(p);}
-
-    char * getRandomSequenceAlignmentScores(int seqLength, int n,
-                                            int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore);
-    char * getRandomSequenceAlignmentErrorRates(int seqLength, int n,
-                                               int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore);
+    void freeCString(char * p);
 }
 
 SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readName, std::string & refName,
@@ -46,9 +43,6 @@ SemiGlobalAlignment * semiGlobalAlignmentOneLineOneBand(std::string & readName, 
                                                         int verbosity, std::string & output,
                                                         Score<int, Simple> & scoringScheme);
 
-SemiGlobalAlignment * fullyGlobalAlignment(std::string s1, std::string s2,
-                                           int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore);
-
 char * cppStringToCString(std::string cpp_string);
 
 std::string getReverseComplement(std::string sequence);
@@ -57,11 +51,6 @@ double fractionOfReadAligned(std::vector<SemiGlobalAlignment *> & alignments);
 
 std::vector<std::pair<int, int> > simplifyRanges(std::vector<std::pair<int, int> > & ranges);
 
-std::string getRandomSequence(int seqLength, std::mt19937 & gen, std::uniform_int_distribution<int> & dist);
-
-char getRandomBase(std::mt19937 & gen, std::uniform_int_distribution<int> & dist);
-
 CommonKmerSet * getHighestScoringSet(std::vector<CommonKmerSet *> & commonKmerSets);
 
-void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdev);
-
+#endif // SEQAN_ALIGN_H

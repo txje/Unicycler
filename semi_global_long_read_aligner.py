@@ -38,6 +38,10 @@ import time
 from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p, c_bool
 from multiprocessing.dummy import Pool as ThreadPool
 from multiprocessing import cpu_count
+import threading
+
+# Used to ensure that multiple threads writing to the same SAM file don't write at the same time.
+sam_write_lock = threading.Lock()
 
 '''
 VERBOSITY controls how much the script prints to the screen.
@@ -714,10 +718,12 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
 
     # Write alignments to SAM.
     if sam_filename and read.alignments:
+        sam_write_lock.acquire()
         sam_file = open(sam_filename, 'a')
         for alignment in read.alignments:
             sam_file.write(alignment.get_sam_line())
         sam_file.close()
+        sam_write_lock.release()
 
     update_expected_slope(read, low_score_threshold)
     return output

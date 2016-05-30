@@ -766,7 +766,7 @@ def produce_html_report(references, html_filename, high_error_rate, very_high_er
 
     first_reference = True
     for ref in references:
-        html_file.write('<br><br><br>')
+        html_file.write('<br><br><br><br>')
         html_file.write('<h2>' + ref.name + '</h2>')
 
         # WRITE SOME GENERAL REFERENCE STATS HERE
@@ -829,14 +829,13 @@ def get_error_rate_plotly_plot(ref, py, go, include_javascript, high_error_rate,
                                   x1=max_x, y1=max_y,
                                   line=dict(width=0), fillcolor=red)]
 
-    layout = dict(autosize=False, width=1000, height=450, hovermode='closest',
-                  xaxis=dict(title='Position', range=[0, max_x],
-                             rangeslider=dict(), type='linear'),
-                  yaxis=dict(title='Error rate', ticksuffix='%', range=[0.0, max_y]),
-                  shapes=error_rate_background)
+    layout = dict(autosize=False, width=800, height=300, hovermode='closest',
+                  margin=go.Margin(l=40, r=0, b=10, t=10),
+                  xaxis=dict(range=[0, max_x], rangeslider=dict(), type='linear'),
+                  yaxis=dict(ticksuffix='%', range=[0.0, max_y]), shapes=error_rate_background)
 
     fig = dict(data=data, layout=layout)
-    return py.plot(fig, output_type='div', include_plotlyjs=include_javascript)
+    return py.plot(fig, output_type='div', include_plotlyjs=include_javascript, show_link=False)
 
 
 def get_depth_plotly_plot(ref, py, go, include_javascript):
@@ -885,14 +884,13 @@ def get_depth_plotly_plot(ref, py, go, include_javascript):
 
     # Create the depth plot.
 
-    layout = dict(autosize=False, width=1000, height=450, hovermode='closest',
-                  xaxis=dict(title='Position', range=[0, max_x],
-                             rangeslider=dict(), type='linear'),
-                  yaxis=dict(title='Depth', ticksuffix='x', range=[0.0, max_y]),
-                  shapes=depth_background)
+    layout = dict(autosize=False, width=800, height=300, hovermode='closest',
+                  margin=go.Margin(l=40, r=0, b=10, t=10),
+                  xaxis=dict(range=[0, max_x], rangeslider=dict(), type='linear'),
+                  yaxis=dict(ticksuffix='x', range=[0.0, max_y]), shapes=depth_background)
 
     fig = dict(data=data, layout=layout)
-    return py.plot(fig, output_type='div', include_plotlyjs=include_javascript)
+    return py.plot(fig, output_type='div', include_plotlyjs=include_javascript, show_link=False)
 
 def get_plot_background_colours():
     '''

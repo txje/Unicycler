@@ -221,7 +221,7 @@ def get_random_sequence_error_rate(scoring_scheme):
     # an error rate estimate.
     else:
         error_rate_str = get_random_sequence_alignment_error_rates(1000, 100, scoring_scheme)
-        return float(error_rate_str.split('\n')[1].split('\t')[6])
+        return float(error_rate_str.split('\n')[1].split('\t')[8])
 
 def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme, threads):
     '''

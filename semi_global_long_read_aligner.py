@@ -35,7 +35,7 @@ import re
 import random
 import argparse
 import time
-from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p, c_bool
+from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p, c_bool, POINTER
 from multiprocessing.dummy import Pool as ThreadPool
 from multiprocessing import cpu_count
 import threading
@@ -1773,10 +1773,47 @@ def get_random_sequence_alignment_error_rates(seq_length, count, scoring_scheme)
     Python wrapper for getRandomSequenceAlignmentErrorRate C++ function.
     '''
     ptr = C_LIB.getRandomSequenceAlignmentErrorRates(seq_length, count,
-                                                    scoring_scheme.match, scoring_scheme.mismatch,
-                                                    scoring_scheme.gap_open,
-                                                    scoring_scheme.gap_extend)
+                                                     scoring_scheme.match, scoring_scheme.mismatch,
+                                                     scoring_scheme.gap_open,
+                                                     scoring_scheme.gap_extend)
     return c_string_to_python_string(ptr)
+
+
+'''
+This function gets the mean and standard deviation of alignments between random sequences.
+'''
+C_LIB.simulateDepths.argtypes = [POINTER(c_int), # Alignment lengths
+                                 c_int,          # Alignment count
+                                 c_int,          # Reference length
+                                 c_int,          # Iterations
+                                 c_int]          # Threads
+C_LIB.simulateDepths.restype = c_void_p
+
+
+def get_depth_min_and_max_distributions(read_lengths, reference_length, iterations, threads):
+    '''
+    Python wrapper for getRandomSequenceAlignmentErrorRate C++ function.
+    '''
+    read_lengths_array = (c_int * len(read_lengths))(*read_lengths)
+    ptr = C_LIB.simulateDepths(read_lengths_array, len(read_lengths), reference_length, iterations,
+                               threads)
+    distribution_str = c_string_to_python_string(ptr)
+    min_distribution_str, max_distribution_str = distribution_str.split(';')
+
+    min_distribution_pieces = min_distribution_str.split(',')
+    min_distribution = []
+    for piece in min_distribution_pieces:
+        piece_parts = piece.split(':')
+        min_distribution.append((int(piece_parts[0]), float(piece_parts[1])))
+
+    max_distribution_pieces = max_distribution_str.split(',')
+    max_distribution = []
+    for piece in max_distribution_pieces:
+        piece_parts = piece.split(':')
+        max_distribution.append((int(piece_parts[0]), float(piece_parts[1])))
+
+    return min_distribution, max_distribution
+
 
 if __name__ == '__main__':
     main()

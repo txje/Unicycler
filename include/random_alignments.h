@@ -16,7 +16,12 @@ extern "C" {
                                             int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore);
     char * getRandomSequenceAlignmentErrorRates(int seqLength, int n,
                                                int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore);
+    char * simulateDepths(int alignmentLengths[], int alignmentCount, int refLength, int iterations, int threadCount);
 }
+
+void simulateDepthsOneThread(int alignmentLengths[], int alignmentCount, int refLength, int iterations,
+                             std::vector<int> * minDepthCounts, std::vector<int> * maxDepthCounts,
+                             std::mutex * mut);
 
 SemiGlobalAlignment * fullyGlobalAlignment(std::string s1, std::string s2,
                                            int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore);
@@ -26,6 +31,8 @@ std::string getRandomSequence(int seqLength, std::mt19937 & gen, std::uniform_in
 char getRandomBase(std::mt19937 & gen, std::uniform_int_distribution<int> & dist);
 
 void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdev);
+
+std::string toStringWithPrecision(double val, int precision);
 
 
 #endif // RANDOM_ALIGNMENTS_H

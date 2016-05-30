@@ -24,7 +24,8 @@ from semi_global_long_read_aligner import AlignmentScoringScheme, Read, Referenc
                                           load_long_reads, quit_with_error, get_nice_header, \
                                           get_random_sequence_alignment_error_rates, \
                                           reverse_complement, int_to_str, float_to_str, \
-                                          print_progress_line, check_file_exists
+                                          print_progress_line, check_file_exists, \
+                                          get_depth_min_and_max_distributions
 
 '''
 VERBOSITY controls how much the script prints to the screen.
@@ -53,7 +54,7 @@ def main():
 
     count_depth_and_errors_per_base(references, reference_dict, alignments)
     high_error_rate, very_high_error_rate, random_seq_error_rate = \
-                                       determine_thresholds(scoring_scheme, references, alignments)
+                         determine_thresholds(scoring_scheme, references, alignments, args.threads)
     count_depth_and_errors_per_window(references, args.window_size, high_error_rate,
                                       very_high_error_rate)
 
@@ -397,7 +398,30 @@ def count_depth_and_errors_per_window(references, window_size, high_error_rate,
                         total_window_error_rate = 0.0
                     total_window_error_rate += ref.error_rates[j]
 
+            # Check for low depth regions.
             window_depth = total_window_depth / this_window_size
+            if window_depth <= ref.very_low_depth_cutoff:
+                if current_low_depth_region is None:
+                    current_low_depth_region = (window_start, window_end)
+                else:
+                    current_low_depth_region = (current_low_depth_region[0], window_end)
+            elif window_depth > ref.low_depth_cutoff: # depth is not low
+                if current_low_depth_region is not None:
+                    ref.low_depth_regions.append(current_low_depth_region)
+                    current_low_depth_region = None
+
+            # Check for high depth regions.
+            if window_depth >= ref.very_high_depth_cutoff:
+                if current_low_depth_region is None:
+                    current_high_depth_region = (window_start, window_end)
+                else:
+                    current_high_depth_region = (current_high_depth_region[0], window_end)
+            elif window_depth < ref.high_depth_cutoff: # depth is not high
+                if current_high_depth_region is not None:
+                    ref.high_depth_regions.append(current_high_depth_region)
+                    current_high_depth_region = None
+
+            # Check for high error regions.
             if total_window_error_rate is None:
                 window_error_rate = None
             else:
@@ -407,7 +431,7 @@ def count_depth_and_errors_per_window(references, window_size, high_error_rate,
                         current_problem_region = (window_start, window_end)
                     else:
                         current_problem_region = (current_problem_region[0], window_end)
-                elif window_error_rate < high_error_rate: # error rate is not very high
+                elif window_error_rate < high_error_rate: # error rate is not high
                     if current_problem_region is not None:
                         ref.problem_regions.append(current_problem_region)
                         current_problem_region = None
@@ -428,13 +452,17 @@ def count_depth_and_errors_per_window(references, window_size, high_error_rate,
             ref.max_window_depth = max(window_depth, ref.max_window_depth)
             ref.max_window_error_rate = max(window_error_rate, ref.max_window_error_rate)
 
+        if current_low_depth_region is not None:
+            ref.low_depth_regions.append(current_low_depth_region)
+        if current_high_depth_region is not None:
+            ref.high_depth_regions.append(current_high_depth_region)
         if current_problem_region is not None:
             ref.problem_regions.append(current_problem_region)
 
         if ref.min_window_error_rate is None:
             ref.min_window_error_rate = 0.0
 
-def determine_thresholds(scoring_scheme, references, alignments):
+def determine_thresholds(scoring_scheme, references, alignments, threads):
     '''
     This function sets thresholds for error rate and depth. Error rate thresholds are set once for
     all references, while depth thresholds are per-reference.
@@ -468,7 +496,7 @@ def determine_thresholds(scoring_scheme, references, alignments):
     else:
         difference = random_seq_error_rate - mean_error_rate
         high_error_rate = mean_error_rate + (0.2 * difference)
-        very_high_error_rate = mean_error_rate + (0.4 * difference)
+        very_high_error_rate = mean_error_rate + (0.3 * difference)
 
     if VERBOSITY > 0:
         print('Error rate threshold 1:     ',
@@ -478,71 +506,28 @@ def determine_thresholds(scoring_scheme, references, alignments):
         print()
 
     for ref in references:
-        determine_depth_thresholds(ref, alignments)
+        determine_depth_thresholds(ref, alignments, threads, 0.2, 0.05)
 
     return high_error_rate, very_high_error_rate, random_seq_error_rate
 
 
-def determine_depth_thresholds(ref, alignments):
+def determine_depth_thresholds(ref, alignments, threads, depth_p_val_1, depth_p_val_2):
     '''
     This function determines read depth thresholds by simulating a random distribution of reads.
     '''
-
-    ref.ideal_read_depth_distribution = {}
-    ref.actual_read_depth_distribution = {}
-
-    # Build the reference's actual read depth distribution.
-    ref_length = ref.get_length()
-    for i in range(ref_length):
-        depth = ref.depths[i]
-        if depth not in ref.actual_read_depth_distribution:
-            ref.actual_read_depth_distribution[depth] = 0
-        ref.actual_read_depth_distribution[depth] += 1
-    ref.actual_read_depth_distribution = {depth: (count / ref_length) for depth, count \
-                                          in ref.actual_read_depth_distribution.iteritems()}
-
-    # Build the reference's ideal read depth distribution (randomly-placed reads).
     alignment_lengths = [x.ref_end_pos - x.ref_start_pos for x in alignments \
                          if x.ref.name == ref.name]
-    total_bases = 0
-    while total_bases < 100000000:
-        alignment_positions = []
-        for alignment_length in alignment_lengths:
-            start = random.randint(0, ref_length-1)
-            end = start + alignment_length
-            if end <= ref_length:
-                alignment_positions.append((start, 1))
-                alignment_positions.append((end, -1))
-            else:
-                alignment_positions.append((start, 1))
-                alignment_positions.append((ref_length, -1))
-                alignment_positions.append((0, 1))
-                alignment_positions.append((end - ref_length, -1))
-        alignment_positions.sort()
-        current_depth = 0
-        last_pos = 0
-        for pos, change in alignment_positions:
-            bases_at_current_depth = pos - last_pos
-            if bases_at_current_depth > 0:
-                if current_depth not in ref.ideal_read_depth_distribution:
-                    ref.ideal_read_depth_distribution[current_depth] = 0
-                ref.ideal_read_depth_distribution[current_depth] += bases_at_current_depth
-                total_bases += bases_at_current_depth
-            current_depth += change
-            last_pos = pos
-        if last_pos != ref_length:
-            bases_at_current_depth = ref_length - last_pos
-            if current_depth not in ref.ideal_read_depth_distribution:
-                ref.ideal_read_depth_distribution[current_depth] = 0
-            ref.ideal_read_depth_distribution[current_depth] += bases_at_current_depth
-            total_bases += bases_at_current_depth
-    ref.ideal_read_depth_distribution = {depth: (count / total_bases) for depth, count \
-                                         in ref.ideal_read_depth_distribution.iteritems()}
+    ref_length = ref.get_length()
 
-    ref.low_depth_cutoff, ref.high_depth_cutoff = \
-                            depths_to_capture_fraction(ref.ideal_read_depth_distribution, 0.999)
-    ref.very_low_depth_cutoff, ref.very_high_depth_cutoff = \
-                            depths_to_capture_fraction(ref.ideal_read_depth_distribution, 0.999999)
+    min_depth_dist, max_depth_dist = get_depth_min_and_max_distributions(alignment_lengths,
+                                                                         ref_length, 10000,
+                                                                         threads)
+    ref.low_depth_cutoff = get_low_depth_cutoff(min_depth_dist, depth_p_val_1)
+    ref.very_low_depth_cutoff = get_low_depth_cutoff(min_depth_dist, depth_p_val_2)
+
+    ref.high_depth_cutoff = get_high_depth_cutoff(max_depth_dist, depth_p_val_1)
+    ref.very_high_depth_cutoff = get_high_depth_cutoff(max_depth_dist, depth_p_val_2)
+
     if VERBOSITY > 0:
         print(ref.name + ':')
         max_v = ref.very_high_depth_cutoff
@@ -552,6 +537,22 @@ def determine_depth_thresholds(ref, alignments):
         print('   very high depth threshold:', int_to_str(ref.very_high_depth_cutoff, max_v))
         print()
 
+
+def get_low_depth_cutoff(min_depth_dist, p_val):
+    dist_sum = 0.0
+    for depth, fraction in reversed(min_depth_dist):
+        dist_sum += fraction
+        if dist_sum >= 1.0 - p_val:
+            return depth
+    return 0
+
+def get_high_depth_cutoff(max_depth_dist, p_val):
+    dist_sum = 0.0
+    for depth, fraction in max_depth_dist:
+        dist_sum += fraction
+        if dist_sum >= 1.0 - p_val:
+            return depth
+    return max_depth_dist[-1][0]
 
 def depths_to_capture_fraction(depth_distribution, fraction):
     '''
@@ -776,7 +777,6 @@ def produce_html_files(references, html_prefix, high_error_rate, very_high_error
                                  line=dict(color='rgb(50, 50, 50)', width=2))
         data = [error_trace]
 
-
         # Produce the coloured background rectangles for the error rate plot.
         green = 'rgba(50, 200, 50, 0.1)'
         yellow = 'rgba(255, 200, 0, 0.1)'
@@ -861,7 +861,13 @@ class Alignment(object):
         cigar_types = [x[-1] for x in cigar_parts]
         cigar_counts = [int(x[:-1]) for x in cigar_parts]
 
-        self.read = read_dict[sam_parts[0]]
+        read_name = sam_parts[0]
+        if read_name not in read_dict:
+            print()
+            quit_with_error('the read ' + read_name + ' is in the SAM file but not in the '
+                            'provided reads')
+
+        self.read = read_dict[read_name]
         read_len = self.read.get_length()
         self.read_start_pos = self.get_start_soft_clips(cigar_parts)
         self.read_end_pos = self.read.get_length() - self.get_end_soft_clips(cigar_parts)
@@ -870,8 +876,9 @@ class Alignment(object):
         ref_name = get_nice_header(sam_parts[2])
         if ref_name not in reference_dict:
             print()
-            quit_with_error('the sequence ' + ref_name + ' is in the SAM file but not in the '
+            quit_with_error('the reference ' + ref_name + ' is in the SAM file but not in the '
                             'provided references')
+
         self.ref = reference_dict[get_nice_header(sam_parts[2])]
         ref_len = self.ref.get_length()
         self.ref_start_pos = int(sam_parts[3]) - 1

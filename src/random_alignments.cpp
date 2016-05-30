@@ -8,6 +8,8 @@
 #include <utility>
 #include <random>
 #include "seqan_align.h"
+#include <thread>
+#include <mutex>
 
 
 
@@ -212,4 +214,139 @@ void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdDev) {
     }
     stdDev = sqrt(devSum / v.size());
 }
+
+char * simulateDepths(int alignmentLengths[], int alignmentCount, int refLength, int iterations, int threadCount) {
+
+
+    std::vector<int> minDepthCounts;
+    std::vector<int> maxDepthCounts;
+    std::mutex mut;
+
+    std::vector<std::thread *> threads;
+    int iterationsPerThread = iterations / threadCount;
+    int iterationsInFirstThread = iterations - (iterationsPerThread * (threadCount - 1));
+    for (int i = 0; i < threadCount; ++i) {
+        int iterationsThisThread;
+        if (i == 0)
+            iterationsThisThread = iterationsInFirstThread;
+        else
+            iterationsThisThread = iterationsPerThread;
+        std::thread * thread = new std::thread(simulateDepthsOneThread, alignmentLengths, alignmentCount, refLength, iterationsThisThread,
+                                               &minDepthCounts, &maxDepthCounts, &mut);
+        threads.push_back(thread);
+    }
+    for (int i = 0; i < threadCount; ++i) {
+        threads[i]->join();
+        delete threads[i];
+    }
+
+
+    std::vector<double> minDepthDistribution;
+    for (size_t i = 0; i < minDepthCounts.size(); ++i)
+        minDepthDistribution.push_back(double(minDepthCounts[i]) / iterations);
+
+    std::vector<double> maxDepthDistribution;
+    for (size_t i = 0; i < maxDepthCounts.size(); ++i)
+        maxDepthDistribution.push_back(double(maxDepthCounts[i]) / iterations);
+
+    std::string returnString;
+    for (size_t i = 0; i < minDepthDistribution.size(); ++i) {
+        if (i > 0)
+            returnString += ',';
+        returnString += std::to_string(i) + ':' + toStringWithPrecision(minDepthDistribution[i], 12);
+    }
+    returnString += ';';
+    for (size_t i = 0; i < maxDepthDistribution.size(); ++i) {
+        if (i > 0)
+            returnString += ',';
+        returnString += std::to_string(i) + ':' + toStringWithPrecision(maxDepthDistribution[i], 12);
+    }
+    return cppStringToCString(returnString);
+}
+
+void simulateDepthsOneThread(int alignmentLengths[], int alignmentCount, int refLength, int iterations,
+                             std::vector<int> * minDepthCounts, std::vector<int> * maxDepthCounts,
+                             std::mutex * mut) {
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<int> dist(0, refLength-1);
+
+    for (int i = 0; i < iterations; ++i) {
+
+        std::vector<std::pair<int, int> > alignmentPositions;
+
+        for (int j = 0; j < alignmentCount; ++j) {
+            int alignmentLength = alignmentLengths[j];
+            int start = dist(gen);
+            int end = start + alignmentLength;
+
+            // If the end landed within the reference, then we just need to make a single alignment.
+            if (end <= refLength) {
+                alignmentPositions.push_back(std::pair<int, int>(start, 1));
+                alignmentPositions.push_back(std::pair<int, int>(end, -1));
+            }
+            // If the end landed past the reference, then we make two alignments (looping it back to the start).
+            else {
+                alignmentPositions.push_back(std::pair<int, int>(start, 1));
+                alignmentPositions.push_back(std::pair<int, int>(refLength, -1));
+                alignmentPositions.push_back(std::pair<int, int>(0, 1));
+                alignmentPositions.push_back(std::pair<int, int>(end - refLength, -1));
+            }
+        }
+        std::sort(alignmentPositions.begin(), alignmentPositions.end());
+
+        int lastPos = 0;
+        int currentDepth = 0;
+        int minDepth = std::numeric_limits<int>::max();
+        int maxDepth = std::numeric_limits<int>::min();
+        for (size_t j = 0; j < alignmentPositions.size(); ++j)
+        {
+            int pos = alignmentPositions[j].first;
+            int change = alignmentPositions[j].second;
+
+            int basesAtCurrentDepth = pos - lastPos;
+            if (basesAtCurrentDepth > 0) {
+                minDepth = std::min(minDepth, currentDepth);
+                maxDepth = std::max(maxDepth, currentDepth);
+            }
+            currentDepth += change;
+            lastPos = pos;
+        }
+        if (lastPos != refLength) {
+            int basesAtCurrentDepth = refLength - lastPos;
+            if (basesAtCurrentDepth > 0) {
+                minDepth = std::min(minDepth, currentDepth);
+                maxDepth = std::max(maxDepth, currentDepth);
+            }
+        }
+
+        mut->lock();
+        if (int(minDepthCounts->size()) < minDepth + 1)
+            minDepthCounts->resize(minDepth + 1, 0);
+        (*minDepthCounts)[minDepth] += 1;
+        if (int(maxDepthCounts->size()) < maxDepth + 1)
+            maxDepthCounts->resize(maxDepth + 1, 0);
+        (*maxDepthCounts)[maxDepth] += 1;
+        mut->unlock();
+    }
+}
+
+// http://stackoverflow.com/questions/16605967/set-precision-of-stdto-string-when-converting-floating-point-values
+std::string toStringWithPrecision(double val, int precision)
+{
+    std::ostringstream out;
+    out << std::setprecision(precision) << val;
+    return out.str();
+}
+
+
+
+
+
+
+
+
+
+
 

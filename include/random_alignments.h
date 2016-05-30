@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include "semiglobalalignment.h"
+#include <mutex>
 
 using namespace seqan;
 

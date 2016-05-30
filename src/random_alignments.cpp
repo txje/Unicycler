@@ -9,7 +9,6 @@
 #include <random>
 #include "seqan_align.h"
 #include <thread>
-#include <mutex>
 
 
 

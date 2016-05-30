@@ -37,6 +37,7 @@ def main():
     Script execution starts here.
     '''
     args = get_arguments()
+    full_command = ' '.join(sys.argv)
     
     check_file_exists(args.sam)
     check_file_exists(args.ref)
@@ -67,9 +68,8 @@ def main():
         produce_base_tables(references, base_tables_prefix)
 
     if args.html:
-        html_prefix = prepare_output_dirs(args.html)
-        produce_html_files(references, html_prefix, high_error_rate, very_high_error_rate,
-                           random_seq_error_rate)
+        produce_html_report(references, args.html, high_error_rate, very_high_error_rate,
+                            random_seq_error_rate, full_command)
 
     if VERBOSITY > 0:
         produce_console_output(references, very_high_error_rate)
@@ -98,8 +98,7 @@ def get_arguments():
                         help='Path and/or prefix for table files summarising reference errors at '
                              'each base (default: do not save base tables)')
     parser.add_argument('--html', type=str, required=False, default=argparse.SUPPRESS,
-                        help='Path and/or prefix for html files with plots (default: do not save '
-                             'html files)')
+                        help='Path for HTML report (default: do not save HTML report)')
     parser.add_argument('--threads', type=int, required=False, default=argparse.SUPPRESS,
                         help='Number of CPU threads used to align (default: the number of '
                              'available CPUs)')
@@ -738,8 +737,8 @@ def produce_base_tables(references, base_tables_prefix):
         print()
 
 
-def produce_html_files(references, html_prefix, high_error_rate, very_high_error_rate,
-                       random_seq_error_rate):
+def produce_html_report(references, html_filename, high_error_rate, very_high_error_rate,
+                        random_seq_error_rate, full_command):
     '''
     Write html files containing plots of results.
     '''
@@ -750,102 +749,161 @@ def produce_html_files(references, html_prefix, high_error_rate, very_high_error
     import plotly.offline as py
     import plotly.graph_objs as go
 
+    if not html_filename.endswith('.htm') and not html_filename.endswith('.html'):
+        html_filename += '.html'
+
+    html_file = open(html_filename, 'w')
+
+    # Write the necessary starting parts of the HTML report.
+    html_file.write('<!DOCTYPE html>\n')
+    html_file.write('<html>\n')
+    html_file.write('<body>\n')
+
+    # Add a title and general information to the report.
+    html_file.write('<h1>Assembly checker report</h1>\n')
+    html_file.write('<p>Command:<br><tt>' + full_command + '</tt></p>\n')
+    html_file.write('<p>Directory of execution:<br><tt>' + os.getcwd() + '</tt></p>\n')
+
+    first_reference = True
     for ref in references:
-        error_rate_html_filename = add_ref_name_to_output_prefix(ref, html_prefix,
-                                                                 '_error_rate.html')
-        depth_html_filename = add_ref_name_to_output_prefix(ref, html_prefix, '_depth.html')
+        html_file.write('<br><br><br>')
+        html_file.write('<h2>' + ref.name + '</h2>')
 
-        half_window_size = ref.window_size / 2
-        x = []
-        error_rate_y = []
-        depth_y = []
-        for i, window_start in enumerate(ref.window_starts):
-            x.append(window_start + half_window_size)
-            if ref.window_error_rates[i] is None:
-                error_rate_y.append(None)
-            else:
-                error_rate_y.append(round(100.0 * ref.window_error_rates[i], 2))
-            depth_y.append(ref.window_depths[i])
-        if all(y is None for y in error_rate_y):
-            continue
+        # WRITE SOME GENERAL REFERENCE STATS HERE
 
-        max_error_rate = max(error_rate_y)
-        max_depth = max(depth_y)
+        html_file.write('<h3>Error rate</h3>')
+        html_file.write(get_error_rate_plotly_plot(ref, py, go, first_reference,
+                                                   high_error_rate, very_high_error_rate,
+                                                   random_seq_error_rate))
+        html_file.write('<h3>Read depth</h3>')
+        html_file.write(get_depth_plotly_plot(ref, py, go, False))
 
-        # Prepare the points for error rate plot.
-        error_trace = go.Scatter(x=x, y=error_rate_y, mode='lines',
-                                 line=dict(color='rgb(50, 50, 50)', width=2))
-        data = [error_trace]
+        # Note that the first reference is done. This is so we only save the Plotly Javascript to
+        # the HTML once.
+        first_reference = False
 
-        # Produce the coloured background rectangles for the error rate plot.
-        green = 'rgba(50, 200, 50, 0.1)'
-        yellow = 'rgba(255, 200, 0, 0.1)'
-        red = 'rgba(255, 0, 0, 0.1)'
-        max_x = ref.get_length()
-        max_y = max(max_error_rate * 1.05, 100.0 * random_seq_error_rate)
-        error_rate_background = [dict(type='rect', x0=0, y0=0,
-                                      x1=max_x, y1=high_error_rate * 100.0,
-                                      line=dict(width=0), fillcolor=green),
-                                 dict(type='rect', x0=0, y0=high_error_rate * 100.0,
-                                      x1=max_x, y1=very_high_error_rate * 100.0,
-                                      line=dict(width=0), fillcolor=yellow),
-                                 dict(type='rect', x0=0, y0=very_high_error_rate * 100.0,
-                                      x1=max_x, y1=max_y,
-                                      line=dict(width=0), fillcolor=red)]
-
-        layout = dict(title='Error rate: ' + ref.name, autosize=False,
-                      width=1400, height=500, hovermode='closest',
-                      xaxis=dict(title='Reference position', range=[0, max_x],
-                                 rangeslider=dict(), type='linear'),
-                      yaxis=dict(title='Error rate', ticksuffix='%', range=[0.0, max_y]),
-                      shapes=error_rate_background)
-
-        fig = dict(data=data, layout=layout)
-        py.plot(fig, filename=error_rate_html_filename, auto_open=False)
-        if VERBOSITY > 0:
-            print(error_rate_html_filename)
-
-        # Prepare the points for depth plot.
-        depth_trace = go.Scatter(x=x, y=depth_y,
-                                 mode='lines',
-                                 line=dict(color='rgb(50, 50, 50)', width=2))
-        data = [depth_trace]
-
-        # Produce the coloured background rectangles for the depth plot.
-        max_y = max(max_depth * 1.05, ref.very_high_depth_cutoff * 1.2)
-        depth_background = []
-        current_y = 0
-        if ref.very_low_depth_cutoff > 0:
-            depth_background.append(dict(type='rect', x0=0, y0=current_y,
-                                         x1=max_x, y1=ref.very_low_depth_cutoff,
-                                         line=dict(width=0), fillcolor=red))
-            current_y = ref.very_low_depth_cutoff
-        if ref.low_depth_cutoff > 0:
-            depth_background.append(dict(type='rect', x0=0, y0=current_y,
-                                         x1=max_x, y1=ref.low_depth_cutoff,
-                                         line=dict(width=0), fillcolor=yellow))
-            current_y = ref.low_depth_cutoff
-        depth_background.append(dict(type='rect', x0=0, y0=current_y,
-                                     x1=max_x, y1=ref.high_depth_cutoff,
-                                     line=dict(width=0), fillcolor=green))
-        depth_background.append(dict(type='rect', x0=0, y0=ref.high_depth_cutoff,
-                                     x1=max_x, y1=ref.very_high_depth_cutoff,
-                                     line=dict(width=0), fillcolor=yellow))
-        depth_background.append(dict(type='rect', x0=0, y0=ref.very_high_depth_cutoff,
-                                     x1=max_x, y1=max_y, line=dict(width=0), fillcolor=red))
-
-        # Create the depth plot.
-        layout.update(title='Depth: ' + ref.name,
-                      yaxis=dict(title='Depth', range=[0.0, max_y]),
-                      shapes=depth_background)
-        fig = dict(data=data, layout=layout)
-        py.plot(fig, filename=depth_html_filename, auto_open=False)
-        if VERBOSITY > 0:
-            print(depth_html_filename)
+    # Finish the HTML file.
+    html_file.write('</body>\n')
+    html_file.write('</html>\n')
+    html_file.close()
 
     if VERBOSITY > 0:
-        print()
+        print(html_filename)
 
+
+def get_error_rate_plotly_plot(ref, py, go, include_javascript, high_error_rate,
+                               very_high_error_rate, random_seq_error_rate):
+    '''
+    Returns the HTML div for the error rate plot.
+    '''
+    half_window_size = ref.window_size / 2
+    x = []
+    y = []
+    for i, window_start in enumerate(ref.window_starts):
+        x.append(window_start + half_window_size)
+        if ref.window_error_rates[i] is None:
+            y.append(None)
+        else:
+            y.append(round(100.0 * ref.window_error_rates[i], 2))
+    if all(y_val is None for y_val in y):
+        return ''
+
+    max_error_rate = max(y)
+
+    # Prepare the points.
+    error_trace = go.Scatter(x=x, y=y, mode='lines',
+                             line=dict(color='rgb(50, 50, 50)', width=2))
+    data = [error_trace]
+
+    # Produce the coloured background rectangles.
+    red, yellow, green = get_plot_background_colours()
+    max_x = ref.get_length()
+    max_y = max(max_error_rate * 1.05, 100.0 * random_seq_error_rate)
+    error_rate_background = [dict(type='rect', x0=0, y0=0,
+                                  x1=max_x, y1=high_error_rate * 100.0,
+                                  line=dict(width=0), fillcolor=green),
+                             dict(type='rect', x0=0, y0=high_error_rate * 100.0,
+                                  x1=max_x, y1=very_high_error_rate * 100.0,
+                                  line=dict(width=0), fillcolor=yellow),
+                             dict(type='rect', x0=0, y0=very_high_error_rate * 100.0,
+                                  x1=max_x, y1=max_y,
+                                  line=dict(width=0), fillcolor=red)]
+
+    layout = dict(autosize=False, width=1000, height=450, hovermode='closest',
+                  xaxis=dict(title='Position', range=[0, max_x],
+                             rangeslider=dict(), type='linear'),
+                  yaxis=dict(title='Error rate', ticksuffix='%', range=[0.0, max_y]),
+                  shapes=error_rate_background)
+
+    fig = dict(data=data, layout=layout)
+    return py.plot(fig, output_type='div', include_plotlyjs=include_javascript)
+
+
+def get_depth_plotly_plot(ref, py, go, include_javascript):
+    '''
+    Returns the HTML div for the error rate plot.
+    '''
+    half_window_size = ref.window_size / 2
+    x = []
+    y = []
+    for i, window_start in enumerate(ref.window_starts):
+        x.append(window_start + half_window_size)
+        y.append(ref.window_depths[i])
+    if all(y_val is None for y_val in y):
+        return ''
+    max_depth = max(y)
+
+    # Prepare the points.
+    depth_trace = go.Scatter(x=x, y=y, mode='lines',
+                             line=dict(color='rgb(50, 50, 50)', width=2))
+    data = [depth_trace]
+
+    # Produce the coloured background rectangles.
+    red, yellow, green = get_plot_background_colours()
+    max_x = ref.get_length()
+    max_y = max(max_depth * 1.05, ref.very_high_depth_cutoff * 1.2)
+    depth_background = []
+    current_y = 0
+    if ref.very_low_depth_cutoff > 0:
+        depth_background.append(dict(type='rect', x0=0, y0=current_y,
+                                     x1=max_x, y1=ref.very_low_depth_cutoff,
+                                     line=dict(width=0), fillcolor=red))
+        current_y = ref.very_low_depth_cutoff
+    if ref.low_depth_cutoff > 0:
+        depth_background.append(dict(type='rect', x0=0, y0=current_y,
+                                     x1=max_x, y1=ref.low_depth_cutoff,
+                                     line=dict(width=0), fillcolor=yellow))
+        current_y = ref.low_depth_cutoff
+    depth_background.append(dict(type='rect', x0=0, y0=current_y,
+                                 x1=max_x, y1=ref.high_depth_cutoff,
+                                 line=dict(width=0), fillcolor=green))
+    depth_background.append(dict(type='rect', x0=0, y0=ref.high_depth_cutoff,
+                                 x1=max_x, y1=ref.very_high_depth_cutoff,
+                                 line=dict(width=0), fillcolor=yellow))
+    depth_background.append(dict(type='rect', x0=0, y0=ref.very_high_depth_cutoff,
+                                 x1=max_x, y1=max_y, line=dict(width=0), fillcolor=red))
+
+    # Create the depth plot.
+
+    layout = dict(autosize=False, width=1000, height=450, hovermode='closest',
+                  xaxis=dict(title='Position', range=[0, max_x],
+                             rangeslider=dict(), type='linear'),
+                  yaxis=dict(title='Depth', ticksuffix='x', range=[0.0, max_y]),
+                  shapes=depth_background)
+
+    fig = dict(data=data, layout=layout)
+    return py.plot(fig, output_type='div', include_plotlyjs=include_javascript)
+
+def get_plot_background_colours():
+    '''
+    Returns strings describing the red, yellow and green (in that order) used for the plot
+    backgrounds.
+    '''
+    red = 'rgba(255, 0, 0, 0.1)'
+    yellow = 'rgba(255, 200, 0, 0.1)'
+    green = 'rgba(50, 200, 50, 0.1)'
+    return red, yellow, green
+    
 
 
 class Alignment(object):

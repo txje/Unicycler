@@ -400,7 +400,7 @@ def count_depth_and_errors_per_window(references, window_size, high_error_rate,
 
             # Check for low depth regions.
             window_depth = total_window_depth / this_window_size
-            if window_depth <= ref.very_low_depth_cutoff:
+            if window_depth < ref.very_low_depth_cutoff:
                 if current_low_depth_region is None:
                     current_low_depth_region = (window_start, window_end)
                 else:
@@ -411,7 +411,7 @@ def count_depth_and_errors_per_window(references, window_size, high_error_rate,
                     current_low_depth_region = None
 
             # Check for high depth regions.
-            if window_depth >= ref.very_high_depth_cutoff:
+            if window_depth > ref.very_high_depth_cutoff:
                 if current_low_depth_region is None:
                     current_high_depth_region = (window_start, window_end)
                 else:
@@ -426,7 +426,7 @@ def count_depth_and_errors_per_window(references, window_size, high_error_rate,
                 window_error_rate = None
             else:
                 window_error_rate = total_window_error_rate / this_window_pos_with_error_rate
-                if window_error_rate >= very_high_error_rate:
+                if window_error_rate > very_high_error_rate:
                     if current_problem_region is None:
                         current_problem_region = (window_start, window_end)
                     else:

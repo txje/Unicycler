@@ -54,7 +54,7 @@ def main():
                                      args.threads)
 
     count_depth_and_errors_per_base(references, reference_dict, alignments)
-    high_error_rate, very_high_error_rate, random_seq_error_rate = \
+    high_error_rate, very_high_error_rate, random_seq_error_rate, mean_error_rate = \
                          determine_thresholds(scoring_scheme, references, alignments, args.threads)
     count_depth_and_errors_per_window(references, args.window_size, high_error_rate,
                                       very_high_error_rate)
@@ -70,7 +70,7 @@ def main():
     if args.html:
         produce_html_report(references, args.html, high_error_rate, very_high_error_rate,
                             random_seq_error_rate, full_command, args.ref, args.sam,
-                            scoring_scheme, alignments)
+                            scoring_scheme, alignments, mean_error_rate)
 
     if VERBOSITY > 0:
         produce_console_output(references, very_high_error_rate)
@@ -517,7 +517,7 @@ def determine_thresholds(scoring_scheme, references, alignments, threads):
     for ref in references:
         determine_depth_thresholds(ref, alignments, threads, 0.2, 0.05)
 
-    return high_error_rate, very_high_error_rate, random_seq_error_rate
+    return high_error_rate, very_high_error_rate, random_seq_error_rate, mean_error_rate
 
 
 def determine_depth_thresholds(ref, alignments, threads, depth_p_val_1, depth_p_val_2):
@@ -754,7 +754,7 @@ def produce_base_tables(references, base_tables_prefix):
 
 def produce_html_report(references, html_filename, high_error_rate, very_high_error_rate,
                         random_seq_error_rate, full_command, ref_filename, sam_filename,
-                        scoring_scheme, alignments):
+                        scoring_scheme, alignments, mean_error_rate):
     '''
     Write html files containing plots of results.
     '''
@@ -775,11 +775,17 @@ def produce_html_report(references, html_filename, high_error_rate, very_high_er
 
     # Add a title and general information to the report.
     html_file.write('<h1>Assembly checker report</h1>\n')
+    total_problems = 0
+    for ref in references:
+        total_problems += len(ref.high_error_regions)
+        total_problems += len(ref.low_depth_regions)
+        total_problems += len(ref.high_depth_regions)
     html_file.write(get_report_html_table(ref_filename, sam_filename, full_command, os.getcwd(),
                                           scoring_scheme,
                                           sum([x.get_length() for x in references]),
                                           len(alignments), random_seq_error_rate,
-                                          very_high_error_rate))
+                                          very_high_error_rate, total_problems,
+                                          mean_error_rate))
 
 
 
@@ -977,7 +983,7 @@ def get_html_style(report_width):
 
 def get_report_html_table(ref_filename, sam_filename, full_command, directory, scoring_scheme,
                           total_ref_length, alignment_count, random_seq_error_rate,
-                          very_high_error_rate):
+                          very_high_error_rate, total_problems, mean_error_rate):
     table = '<table>\n'
     table += '  <col width="30%">\n'
     table += '  <tr><td>Reference file:</td>' + \
@@ -1003,12 +1009,18 @@ def get_report_html_table(ref_filename, sam_filename, full_command, directory, s
              '<td>Scoring scheme:</td>' + \
              '<td>' + scoring_scheme.get_full_string() + \
              '</td></tr>\n'
-    table += '  <tr title="The average error rate for random sequences with the given ' + \
-             'scoring scheme"><td>Random alignment error rate:</td>' + \
+    table += '  <tr title="The average error rate across all references">' + \
+             '<td>Mean error rate:</td>' + \
+             '<td>' + float_to_str(mean_error_rate * 100.0, 1) + '%</td></tr>\n'
+    table += '  <tr title="The average error rate for random sequences (using the specified ' + \
+             'scoring scheme)"><td>Random alignment error rate:</td>' + \
              '<td>' + float_to_str(random_seq_error_rate * 100.0, 1) + '%</td></tr>\n'
     table += '  <tr title="Reference windows exceeding this threshold are counted as high ' + \
              'error regions"><td>High error threshold:</td>' + \
              '<td >' + float_to_str(very_high_error_rate * 100.0, 1) + '%</td></tr>\n'
+    table += '  <tr title="Sum of high error, low depth and high depth regions across all ' + \
+             'references"><td>Total problem regions:</td>' + \
+             '<td >' + int_to_str(total_problems) + '</td></tr>\n'
     table += '</table>\n'
     return table
 

@@ -69,7 +69,8 @@ def main():
 
     if args.html:
         produce_html_report(references, args.html, high_error_rate, very_high_error_rate,
-                            random_seq_error_rate, full_command)
+                            random_seq_error_rate, full_command, args.ref, args.sam,
+                            scoring_scheme, alignments)
 
     if VERBOSITY > 0:
         produce_console_output(references, very_high_error_rate)
@@ -368,15 +369,15 @@ def count_depth_and_errors_per_window(references, window_size, high_error_rate,
         ref.window_depths = []
         ref.window_error_rates = []
         ref.min_window_depth = None
-        ref.min_window_error_rate = None
         ref.max_window_depth = 0.0
+        ref.min_window_error_rate = None
         ref.max_window_error_rate = 0.0
 
-        ref.problem_regions = []
+        ref.high_error_regions = []
         ref.low_depth_regions = []
         ref.high_depth_regions = []
 
-        current_problem_region = None
+        current_high_error_region = None
         current_low_depth_region = None
         current_high_depth_region = None
 
@@ -426,14 +427,14 @@ def count_depth_and_errors_per_window(references, window_size, high_error_rate,
             else:
                 window_error_rate = total_window_error_rate / this_window_pos_with_error_rate
                 if window_error_rate > very_high_error_rate:
-                    if current_problem_region is None:
-                        current_problem_region = (window_start, window_end)
+                    if current_high_error_region is None:
+                        current_high_error_region = (window_start, window_end)
                     else:
-                        current_problem_region = (current_problem_region[0], window_end)
+                        current_high_error_region = (current_high_error_region[0], window_end)
                 elif window_error_rate < high_error_rate: # error rate is not high
-                    if current_problem_region is not None:
-                        ref.problem_regions.append(current_problem_region)
-                        current_problem_region = None
+                    if current_high_error_region is not None:
+                        ref.high_error_regions.append(current_high_error_region)
+                        current_high_error_region = None
 
             ref.window_depths.append(window_depth)
             ref.window_error_rates.append(window_error_rate)
@@ -451,12 +452,21 @@ def count_depth_and_errors_per_window(references, window_size, high_error_rate,
             ref.max_window_depth = max(window_depth, ref.max_window_depth)
             ref.max_window_error_rate = max(window_error_rate, ref.max_window_error_rate)
 
+        if ref.window_depths:
+            ref.mean_window_depth = sum(ref.window_depths) / len(ref.window_depths)
+        else:
+            ref.mean_window_depth = None
+        if ref.window_error_rates:
+            ref.mean_window_error_rate = sum(ref.window_error_rates) / len(ref.window_error_rates)
+        else:
+            ref.mean_window_error_rate = None
+
         if current_low_depth_region is not None:
             ref.low_depth_regions.append(current_low_depth_region)
         if current_high_depth_region is not None:
             ref.high_depth_regions.append(current_high_depth_region)
-        if current_problem_region is not None:
-            ref.problem_regions.append(current_problem_region)
+        if current_high_error_region is not None:
+            ref.high_error_regions.append(current_high_error_region)
 
         if ref.min_window_error_rate is None:
             ref.min_window_error_rate = 0.0
@@ -494,7 +504,7 @@ def determine_thresholds(scoring_scheme, references, alignments, threads):
     # set the thresholds between these values.
     else:
         difference = random_seq_error_rate - mean_error_rate
-        high_error_rate = mean_error_rate + (0.2 * difference)
+        high_error_rate = mean_error_rate + (0.15 * difference)
         very_high_error_rate = mean_error_rate + (0.3 * difference)
 
     if VERBOSITY > 0:
@@ -633,19 +643,24 @@ def produce_console_output(references, very_high_error_rate):
         ref_length = ref.get_length()
         max_v = max(100, ref_length)
 
-        print('Length:        ', int_to_str(ref_length, max_v) + ' bp')
-        print('Alignments:    ', int_to_str(ref.alignment_count, max_v))
-        print('Min depth:     ', float_to_str(ref.min_window_depth, 1, max_v))
-        print('Max depth:     ', float_to_str(ref.max_window_depth, 1, max_v))
-        print('Min error rate:', float_to_str(ref.min_window_error_rate * 100.0, 1, max_v) + '%')
-        print('Max error rate:', float_to_str(ref.max_window_error_rate * 100.0, 1, max_v) + '%')
+        print('Length:         ', int_to_str(ref_length, max_v) + ' bp')
+        print('Alignments:     ', int_to_str(ref.alignment_count, max_v))
         print()
-        print('High error regions:', int_to_str(len(ref.problem_regions)))
-        if ref.problem_regions:
-            for i, problem_region in enumerate(ref.problem_regions):
-                print('   ' + str(i+1) + ') ' + int_to_str(problem_region[0]) + ' bp to ' + 
-                      int_to_str(problem_region[1]) + ' bp')
+        print('Min error rate: ', float_to_str(ref.min_window_error_rate * 100.0, 1, max_v) + '%')
+        print('Mean error rate:', float_to_str(ref.mean_window_error_rate * 100.0, 1, max_v) + '%')
+        print('Max error rate: ', float_to_str(ref.max_window_error_rate * 100.0, 1, max_v) + '%')
+        print()
+        print('High error regions:', int_to_str(len(ref.high_error_regions)))
+        if ref.high_error_regions:
+            for i, high_error_region in enumerate(ref.high_error_regions):
+                print('   ' + str(i+1) + ') ' + int_to_str(high_error_region[0]) + ' bp to ' + 
+                      int_to_str(high_error_region[1]) + ' bp')
             print()
+
+        print('Min depth:      ', float_to_str(ref.min_window_depth, 1, max_v) + 'x')
+        print('Mean depth:     ', float_to_str(ref.mean_window_depth, 1, max_v) + 'x')
+        print('Max depth:      ', float_to_str(ref.max_window_depth, 1, max_v) + 'x')
+        print()
         print('Low depth regions: ', int_to_str(len(ref.low_depth_regions)))
         if ref.low_depth_regions:
             for i, low_depth_region in enumerate(ref.low_depth_regions):
@@ -738,7 +753,8 @@ def produce_base_tables(references, base_tables_prefix):
 
 
 def produce_html_report(references, html_filename, high_error_rate, very_high_error_rate,
-                        random_seq_error_rate, full_command):
+                        random_seq_error_rate, full_command, ref_filename, sam_filename,
+                        scoring_scheme, alignments):
     '''
     Write html files containing plots of results.
     '''
@@ -752,39 +768,43 @@ def produce_html_report(references, html_filename, high_error_rate, very_high_er
     if not html_filename.endswith('.htm') and not html_filename.endswith('.html'):
         html_filename += '.html'
 
-    html_file = open(html_filename, 'w')
+    report_width = 900
 
-    # Write the necessary starting parts of the HTML report.
-    html_file.write('<!DOCTYPE html>\n')
-    html_file.write('<html>\n')
-    html_file.write('<body>\n')
+    html_file = open(html_filename, 'w')
+    html_file.write(get_html_start(report_width))
 
     # Add a title and general information to the report.
     html_file.write('<h1>Assembly checker report</h1>\n')
-    html_file.write('<p>Command:<br><tt>' + full_command + '</tt></p>\n')
-    html_file.write('<p>Directory of execution:<br><tt>' + os.getcwd() + '</tt></p>\n')
+    html_file.write(get_report_html_table(ref_filename, sam_filename, full_command, os.getcwd(),
+                                          scoring_scheme,
+                                          sum([x.get_length() for x in references]),
+                                          len(alignments), random_seq_error_rate,
+                                          very_high_error_rate))
+
+
+
+
 
     first_reference = True
     for ref in references:
-        html_file.write('<br><br><br><br>')
-        html_file.write('<h2>' + ref.name + '</h2>')
-
-        # WRITE SOME GENERAL REFERENCE STATS HERE
-
+        html_file.write('<br><br><br>\n')
+        html_file.write('<h2>' + ref.name + '</h2>\n<hr>\n')
+        html_file.write(get_reference_html_table(ref))
         html_file.write('<h3>Error rate</h3>')
         html_file.write(get_error_rate_plotly_plot(ref, py, go, first_reference,
                                                    high_error_rate, very_high_error_rate,
-                                                   random_seq_error_rate))
+                                                   random_seq_error_rate, report_width))
+        html_file.write(get_reference_error_rate_html_table(ref))
         html_file.write('<h3>Read depth</h3>')
-        html_file.write(get_depth_plotly_plot(ref, py, go, False))
+        html_file.write(get_depth_plotly_plot(ref, py, go, False, report_width))
+        html_file.write(get_reference_depth_html_table(ref))
 
         # Note that the first reference is done. This is so we only save the Plotly Javascript to
         # the HTML once.
         first_reference = False
 
     # Finish the HTML file.
-    html_file.write('</body>\n')
-    html_file.write('</html>\n')
+    html_file.write(get_html_end())
     html_file.close()
 
     if VERBOSITY > 0:
@@ -792,7 +812,7 @@ def produce_html_report(references, html_filename, high_error_rate, very_high_er
 
 
 def get_error_rate_plotly_plot(ref, py, go, include_javascript, high_error_rate,
-                               very_high_error_rate, random_seq_error_rate):
+                               very_high_error_rate, random_seq_error_rate, report_width):
     '''
     Returns the HTML div for the error rate plot.
     '''
@@ -829,16 +849,17 @@ def get_error_rate_plotly_plot(ref, py, go, include_javascript, high_error_rate,
                                   x1=max_x, y1=max_y,
                                   line=dict(width=0), fillcolor=red)]
 
-    layout = dict(autosize=False, width=800, height=300, hovermode='closest',
-                  margin=go.Margin(l=40, r=0, b=10, t=10),
+    layout = dict(autosize=False, width=report_width-10, height=300, hovermode='closest',
+                  margin=go.Margin(l=40, r=10, b=10, t=10),
                   xaxis=dict(range=[0, max_x], rangeslider=dict(), type='linear'),
                   yaxis=dict(ticksuffix='%', range=[0.0, max_y]), shapes=error_rate_background)
 
     fig = dict(data=data, layout=layout)
-    return py.plot(fig, output_type='div', include_plotlyjs=include_javascript, show_link=False)
+    return '<div style="align:center"><div class="plotbox">' + \
+           py.plot(fig, output_type='div', include_plotlyjs=include_javascript, show_link=False) + \
+           '</div></div>'
 
-
-def get_depth_plotly_plot(ref, py, go, include_javascript):
+def get_depth_plotly_plot(ref, py, go, include_javascript, report_width):
     '''
     Returns the HTML div for the error rate plot.
     '''
@@ -883,14 +904,15 @@ def get_depth_plotly_plot(ref, py, go, include_javascript):
                                  x1=max_x, y1=max_y, line=dict(width=0), fillcolor=red))
 
     # Create the depth plot.
-
-    layout = dict(autosize=False, width=800, height=300, hovermode='closest',
-                  margin=go.Margin(l=40, r=0, b=10, t=10),
+    layout = dict(autosize=False, width=report_width-10, height=300, hovermode='closest',
+                  margin=go.Margin(l=40, r=10, b=10, t=10),
                   xaxis=dict(range=[0, max_x], rangeslider=dict(), type='linear'),
                   yaxis=dict(ticksuffix='x', range=[0.0, max_y]), shapes=depth_background)
 
     fig = dict(data=data, layout=layout)
-    return py.plot(fig, output_type='div', include_plotlyjs=include_javascript, show_link=False)
+    return '<div style="align:center"><div class="plotbox">' + \
+           py.plot(fig, output_type='div', include_plotlyjs=include_javascript, show_link=False) + \
+           '</div></div>'
 
 def get_plot_background_colours():
     '''
@@ -901,7 +923,173 @@ def get_plot_background_colours():
     yellow = 'rgba(255, 200, 0, 0.1)'
     green = 'rgba(50, 200, 50, 0.1)'
     return red, yellow, green
-    
+
+def get_html_start(report_width):
+    return '<!DOCTYPE html>\n<html>\n' + \
+           get_html_style(report_width) + \
+           '<body><div class="content">\n'
+
+def get_html_end():
+    return '</div></body>\n</html>\n'
+
+def get_html_style(report_width):
+    style = '<style>\n'
+    style += 'body {' + \
+             'text-align: center;' + \
+             'position: relative; ' + \
+             'font-family: verdana, arial, helvetica, sans-serif; ' + \
+             'color: #323232; ' + \
+             'background-color: #666;' + \
+             '}\n'
+    style += 'div.content {' + \
+             'width: ' + str(report_width) + 'px; ' + \
+             'padding: 10px; ' + \
+             'background: #F0F0F0; ' + \
+             'margin-top: 20px; ' + \
+             'margin-bottom: 20px; ' + \
+             'margin-right: auto; ' + \
+             'margin-left: auto; ' + \
+             'border: 3px solid #323232; ' + \
+             'text-align:left; ' + \
+             '}\n'
+    style += 'div.plotbox {' + \
+             'background-color:#ffffff; ' + \
+             'width: ' + str(report_width) + 'px; ' + \
+             'border: 2px solid #323232; ' + \
+             '}\n'
+    style += 'h2 {word-wrap: break-word;}\n'
+    # style += 'h3 {text-align: center;}\n'
+    style += 'table {' + \
+             'padding: 10px; ' + \
+             'border-collapse: collapse; ' + \
+             'border-style: hidden; ' + \
+             '}\n'
+    style += 'td {' + \
+             'white-space: pre;' + \
+             'padding: 5px; ' + \
+             'border-bottom: 1px solid #d5d5d5; ' + \
+             '}\n'
+    style += 'td.monospace {' + \
+             'font-family: \'Lucida Console\', monospace; ' + \
+             '}\n'
+    style += '</style>\n'
+    return style
+
+def get_report_html_table(ref_filename, sam_filename, full_command, directory, scoring_scheme,
+                          total_ref_length, alignment_count, random_seq_error_rate,
+                          very_high_error_rate):
+    table = '<table>\n'
+    table += '  <col width="30%">\n'
+    table += '  <tr><td>Reference file:</td>' + \
+             '<td class="monospace">' + ref_filename + \
+             '</td></tr>\n'
+    table += '  <tr><td>Alignment file:</td>' + \
+             '<td class="monospace">' + sam_filename + \
+             '</td></tr>\n'
+    full_command = full_command.replace(' --', '\n    --')
+    table += '  <tr><td>Full command:</td>' + \
+             '<td class="monospace">' + full_command + \
+             '</td></tr>\n'
+    table += '  <tr><td>Directory of execution:</td>' + \
+             '<td class="monospace">' + directory + '</td></tr>\n'
+    table += '  <tr title="The sum length of all reference sequences">' + \
+             '<td>Total reference length:</td>' + \
+             '<td>' + int_to_str(total_ref_length) + \
+             ' bp</td></tr>\n'
+    table += '  <tr><td>Total alignments:</td>' + \
+             '<td>' + int_to_str(alignment_count) + \
+             '</td></tr>\n'
+    table += '  <tr title="The scores used in the alignment (gotten from the SAM file)">' + \
+             '<td>Scoring scheme:</td>' + \
+             '<td>' + scoring_scheme.get_full_string() + \
+             '</td></tr>\n'
+    table += '  <tr title="The average error rate for random sequences with the given ' + \
+             'scoring scheme"><td>Random alignment error rate:</td>' + \
+             '<td>' + float_to_str(random_seq_error_rate * 100.0, 1) + '%</td></tr>\n'
+    table += '  <tr title="Reference windows exceeding this threshold are counted as high ' + \
+             'error regions"><td>High error threshold:</td>' + \
+             '<td >' + float_to_str(very_high_error_rate * 100.0, 1) + '%</td></tr>\n'
+    table += '</table>\n'
+    return table
+
+def get_reference_html_table(ref):
+    table = '<table width="35%">\n'
+    table += '  <tr><td>Length:</td><td align="right">' + int_to_str(ref.get_length()) + \
+             ' bp</td></tr>\n'
+    table += '      <tr><td>Alignments:</td><td align="right">' + \
+             int_to_str(ref.alignment_count) + '</td></tr>\n'
+    table += '</table>\n'
+    return table
+
+def get_reference_error_rate_html_table(ref):
+    table = '<br>\n'
+    table += '<table width="35%">\n'
+    table += '  <tr><td>Min error rate:</td>' + \
+             '<td align="right">' + float_to_str(ref.min_window_error_rate * 100.0, 1) + \
+             '%</td></tr>\n'
+    table += '  <tr><td>Mean error rate:</td>' + \
+             '<td align="right">' + float_to_str(ref.mean_window_error_rate * 100.0, 1) + \
+             '%</td></tr>\n'
+    table += '  <tr><td>Max error rate:</td>' + \
+             '<td align="right">' + float_to_str(ref.max_window_error_rate * 100.0, 1) + \
+             '%</td></tr>\n'
+    table += '</table>\n'
+    table += '<br>\n'
+    table += '<table width="35%">\n'
+    if ref.high_error_regions:
+        table += '  <tr><th colspan="4">High error regions</th></tr>'
+        for i, high_error_region in enumerate(ref.high_error_regions):
+            table += '      <tr><td>' + int_to_str(i+1) + ')</td>' + \
+                     '<td>' + int_to_str(high_error_region[0]) + ' bp</td>' + '<td> to </td>' + \
+                     '<td align="right">' + int_to_str(high_error_region[1]) + ' bp</td></tr>\n'
+    else:
+        table += '  <tr><th>No high error regions</th></tr>'
+    table += '</table>\n'
+    return table
+
+def get_reference_depth_html_table(ref):
+    table = '<br>\n'
+    table += '<table width="35%">\n'
+    table += '  <tr><td>Min depth:</td><td align="right">' + \
+             float_to_str(ref.min_window_depth, 1) + 'x</td></tr>\n'
+    table += '  <tr><td>Mean depth:</td><td align="right">' + \
+             float_to_str(ref.mean_window_depth, 1) + 'x</td></tr>\n'
+    table += '  <tr><td>Max depth:</td><td align="right">' + \
+             float_to_str(ref.max_window_depth, 1) + 'x</td></tr>\n'
+    table += '  <tr title="Reference windows with depth below this threshold are counted as ' + \
+             'low depth regions"><td>Low depth threshold:</td><td align="right">'
+    if ref.very_low_depth_cutoff > 0.0:
+        table += float_to_str(ref.very_low_depth_cutoff, 1) + 'x'
+    else:
+        table += 'n/a'
+    table += '</td></tr>\n'
+    table += '  <tr title="Reference windows with depth above this threshold are counted as ' + \
+             'high depth regions"><td>High depth threshold:</td><td align="right">' + \
+             float_to_str(ref.very_high_depth_cutoff, 1) + 'x</td></tr>\n'
+    table += '</table>\n'
+    table += '<br>\n'
+    table += '<table width="35%">\n'
+    if ref.low_depth_regions:
+        table += '  <tr><th colspan="4">Low depth regions</th></tr>'
+        for i, low_depth_region in enumerate(ref.low_depth_regions):
+            table += '  <tr><td>' + int_to_str(i+1) + ')</td>' + \
+                     '<td>' + int_to_str(low_depth_region[0]) + ' bp</td>' + '<td> to </td>' + \
+                     '<td align="right">' + int_to_str(low_depth_region[1]) + ' bp</td></tr>\n'
+    else:
+        table += '  <tr><th>No low depth regions</th></tr>'
+    table += '</table>\n'
+    table += '<br>\n'
+    table += '<table width="35%">\n'
+    if ref.high_depth_regions:
+        table += '  <tr><th colspan="4">High depth regions</th></tr>'
+        for i, high_depth_region in enumerate(ref.high_depth_regions):
+            table += '  <tr><td>' + int_to_str(i+1) + ')</td>' + \
+                     '<td>' + int_to_str(high_depth_region[0]) + ' bp</td>' + '<td> to </td>' + \
+                     '<td align="right">' + int_to_str(high_depth_region[1]) + ' bp</td></tr>\n'
+    else:
+        table += '  <tr><th>No high depth regions</th></tr>'
+    table += '</table>\n'
+    return table
 
 
 class Alignment(object):

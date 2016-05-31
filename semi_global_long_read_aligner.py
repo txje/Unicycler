@@ -855,7 +855,10 @@ def int_to_str(num, max_num=0):
     Converts a number to a string. Will add left padding based on the max value to ensure numbers
     align well.
     '''
-    num_str = '{:,}'.format(num)
+    if num is None:
+        num_str = 'n/a'
+    else:
+        num_str = '{:,}'.format(num)
     max_str = '{:,}'.format(int(max_num))
     return num_str.rjust(len(max_str))
 
@@ -988,6 +991,11 @@ class AlignmentScoringScheme(object):
     def __repr__(self):
         return str(self.match) + ',' + str(self.mismatch) + ',' + str(self.gap_open) + ',' + \
                str(self.gap_extend)
+
+    def get_full_string(self):
+        return 'match = ' + str(self.match) + ', mismatch = ' + str(self.mismatch) + \
+               ', gap open = ' + str(self.gap_open) + ', gap extend = ' + str(self.gap_extend)
+
 
     def get_graphmap_parameters(self):
         '''

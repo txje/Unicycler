@@ -27,10 +27,8 @@ from semi_global_long_read_aligner import AlignmentScoringScheme, Read, Referenc
                                           print_progress_line, check_file_exists, \
                                           get_depth_min_and_max_distributions
 
-'''
-VERBOSITY controls how much the script prints to the screen.
-'''
-VERBOSITY = 0
+VERBOSITY = 0 # Controls how much the script prints to the screen
+CONSOLE_WIDTH = 40 # The width of many things printed to stdout
 
 def main():
     '''
@@ -45,6 +43,7 @@ def main():
     
     if args.html:
         check_plotly_exists()
+
 
     references = load_references(args.ref, VERBOSITY)
     reference_dict = {x.name: x for x in references}
@@ -73,7 +72,7 @@ def main():
                             scoring_scheme, alignments, mean_error_rate)
 
     if VERBOSITY > 0:
-        produce_console_output(references, very_high_error_rate)
+        produce_console_output(references)
 
     sys.exit(0)
 
@@ -368,10 +367,6 @@ def count_depth_and_errors_per_window(references, window_size, high_error_rate,
         ref.window_starts = []
         ref.window_depths = []
         ref.window_error_rates = []
-        ref.min_window_depth = None
-        ref.max_window_depth = 0.0
-        ref.min_window_error_rate = None
-        ref.max_window_error_rate = 0.0
 
         ref.high_error_regions = []
         ref.low_depth_regions = []
@@ -439,26 +434,21 @@ def count_depth_and_errors_per_window(references, window_size, high_error_rate,
             ref.window_depths.append(window_depth)
             ref.window_error_rates.append(window_error_rate)
 
-            if ref.min_window_depth is None:
-                ref.min_window_depth = window_depth
-            else:
-                ref.min_window_depth = min(window_depth, ref.min_window_depth)
-
-            if ref.min_window_error_rate is None:
-                ref.min_window_error_rate = window_error_rate
-            else:
-                ref.min_window_error_rate = min(window_error_rate, ref.min_window_error_rate)
-
-            ref.max_window_depth = max(window_depth, ref.max_window_depth)
-            ref.max_window_error_rate = max(window_error_rate, ref.max_window_error_rate)
-
-        # Calculate the mean window depth and mean window error rate for this reference.
-        ref.mean_window_depth = None
+        # Calculate the min/max/mean window depth and error rate for this reference.
+        ref.min_window_depth = 0.0
+        ref.max_window_depth = 0.0
+        ref.mean_window_depth = 0.0
         if ref.window_depths:
+            ref.min_window_depth = min(ref.window_depths)
+            ref.max_window_depth = max(ref.window_depths)
             ref.mean_window_depth = sum(ref.window_depths) / len(ref.window_depths)
+        ref.min_window_error_rate = None
+        ref.max_window_error_rate = None
         ref.mean_window_error_rate = None
         not_none_error_rates = [x for x in ref.window_error_rates if x is not None]
         if not_none_error_rates:
+            ref.min_window_error_rate = min(not_none_error_rates)
+            ref.max_window_error_rate = max(not_none_error_rates)
             ref.mean_window_error_rate = sum(not_none_error_rates) / len(not_none_error_rates)
 
         if current_low_depth_region is not None:
@@ -467,9 +457,6 @@ def count_depth_and_errors_per_window(references, window_size, high_error_rate,
             ref.high_depth_regions.append(current_high_depth_region)
         if current_high_error_region is not None:
             ref.high_error_regions.append(current_high_error_region)
-
-        if ref.min_window_error_rate is None:
-            ref.min_window_error_rate = 0.0
 
 def determine_thresholds(scoring_scheme, references, alignments, threads):
     '''
@@ -486,12 +473,12 @@ def determine_thresholds(scoring_scheme, references, alignments, threads):
         all_error_rates += [x for x in ref.error_rates if x is not None]
     mean_error_rate = get_mean(all_error_rates)
     if VERBOSITY > 0:
-        print('Mean error rate:            ',
-              float_to_str(mean_error_rate * 100.0, 2, 100.0) + '%')
+        print(lr_justify('Mean error rate:',
+                         float_to_str(mean_error_rate * 100.0, 2) + '%'))
     random_seq_error_rate = get_random_sequence_error_rate(scoring_scheme)
     if VERBOSITY > 0:
-        print('Random alignment error rate:',
-              float_to_str(random_seq_error_rate * 100.0, 2, 100.0) + '%')
+        print(lr_justify('Random alignment error rate:',
+                         float_to_str(random_seq_error_rate * 100.0, 2) + '%'))
         print()
 
     # The median error rate should not be as big as the random alignment error rate. If it is, then
@@ -508,10 +495,10 @@ def determine_thresholds(scoring_scheme, references, alignments, threads):
         very_high_error_rate = mean_error_rate + (0.3 * difference)
 
     if VERBOSITY > 0:
-        print('Error rate threshold 1:     ',
-              float_to_str(high_error_rate * 100.0, 2, 100.0) + '%')
-        print('Error rate threshold 2:     ',
-              float_to_str(very_high_error_rate * 100.0, 2, 100.0) + '%')
+        print(lr_justify('Error rate threshold 1:',
+                         float_to_str(high_error_rate * 100.0, 2) + '%'))
+        print(lr_justify('Error rate threshold 2:',
+                         float_to_str(very_high_error_rate * 100.0, 2) + '%'))
         print()
 
     for ref in references:
@@ -539,9 +526,8 @@ def determine_depth_thresholds(ref, alignments, threads, depth_p_val_1, depth_p_
 
     if VERBOSITY > 0:
         print(ref.name + ':')
-        max_v = ref.very_high_depth_cutoff
-        print('   low depth threshold: ', int_to_str(ref.very_low_depth_cutoff, max_v))
-        print('   high depth threshold:', int_to_str(ref.very_high_depth_cutoff, max_v))
+        print(lr_justify('   low depth threshold: ', int_to_str(ref.very_low_depth_cutoff)))
+        print(lr_justify('   high depth threshold:', int_to_str(ref.very_high_depth_cutoff)))
         print()
 
 
@@ -630,49 +616,69 @@ def get_mean(num_list):
 #     mad = 1.4826 * get_median(absolute_deviations)
 #     return median, mad
 
-def produce_console_output(references, very_high_error_rate):
+def produce_console_output(references):
     '''
     Write a summary of the results to std out.
     '''
     for ref in references:
         print()
         print('Results: ' + ref.name)
-        print('-' * (len(ref.name) + 9))
+        print('-' * max(CONSOLE_WIDTH, len(ref.name) + 9))
         ref_length = ref.get_length()
-        max_v = max(100, ref_length)
 
-        print('Length:         ', int_to_str(ref_length, max_v) + ' bp')
-        print('Alignments:     ', int_to_str(ref.alignment_count, max_v))
+        print(lr_justify('Length:', int_to_str(ref_length) + ' bp'))
+        print(lr_justify('Alignments:', int_to_str(ref.alignment_count))) 
         print()
-        print('Min error rate: ', float_to_str(ref.min_window_error_rate * 100.0, 1, max_v) + '%')
-        print('Mean error rate:', float_to_str(ref.mean_window_error_rate * 100.0, 1, max_v) + '%')
-        print('Max error rate: ', float_to_str(ref.max_window_error_rate * 100.0, 1, max_v) + '%')
+        min_er = ref.min_window_error_rate
+        print(lr_justify('Min error rate:', 'n/a') if min_er is None else \
+              lr_justify('Min error rate:', (float_to_str(min_er * 100.0, 1) + '%')))
+        mean_er = ref.mean_window_error_rate
+        print(lr_justify('Mean error rate:', 'n/a') if mean_er is None else \
+              lr_justify('Mean error rate:', (float_to_str(mean_er * 100.0, 1) + '%')))
+        max_er = ref.max_window_error_rate
+        print(lr_justify('Max error rate:', 'n/a') if max_er is None else \
+              lr_justify('Max error rate:', (float_to_str(max_er * 100.0, 1) + '%')))
         print()
-        print('High error regions:', int_to_str(len(ref.high_error_regions)))
+
         if ref.high_error_regions:
+            print('High error regions:')
             for i, high_error_region in enumerate(ref.high_error_regions):
-                print('   ' + str(i+1) + ') ' + int_to_str(high_error_region[0]) + ' bp to ' + 
-                      int_to_str(high_error_region[1]) + ' bp')
+                print('  ' + str(i+1) + ') ' + int_to_str(high_error_region[0]) +
+                      ' bp to ' + int_to_str(high_error_region[1]) + ' bp')
             print()
+        else:
+            print(lr_justify('High error regions:', 'none'))
 
-        print('Min depth:      ', float_to_str(ref.min_window_depth, 1, max_v) + 'x')
-        print('Mean depth:     ', float_to_str(ref.mean_window_depth, 1, max_v) + 'x')
-        print('Max depth:      ', float_to_str(ref.max_window_depth, 1, max_v) + 'x')
+        print(lr_justify('Min depth:', float_to_str(ref.min_window_depth, 1) + 'x'))
+        print(lr_justify('Mean depth:', float_to_str(ref.mean_window_depth, 1) + 'x'))
+        print(lr_justify('Max depth:', float_to_str(ref.max_window_depth, 1) + 'x'))
         print()
-        print('Low depth regions: ', int_to_str(len(ref.low_depth_regions)))
+
         if ref.low_depth_regions:
+            print('Low depth regions:')
             for i, low_depth_region in enumerate(ref.low_depth_regions):
-                print('   ' + str(i+1) + ') ' + int_to_str(low_depth_region[0]) + ' bp to ' + 
-                      int_to_str(low_depth_region[1]) + ' bp')
+                print(str(i+1) + ') ' + int_to_str(low_depth_region[0]) +
+                      ' bp to ' + int_to_str(low_depth_region[1]) + ' bp')
             print()
-        print('High depth regions:', int_to_str(len(ref.high_depth_regions)))
+        else:
+            print(lr_justify('Low depth regions:', 'none'))
+
         if ref.high_depth_regions:
+            print('High depth regions:')
             for i, high_depth_region in enumerate(ref.high_depth_regions):
                 print('   ' + str(i+1) + ') ' + int_to_str(high_depth_region[0]) + ' bp to ' + 
                       int_to_str(high_depth_region[1]) + ' bp')
+        else:
+            print(lr_justify('High depth regions:', 'none'))
 
         print()
 
+def lr_justify(str_1, str_2):
+    '''
+    Concatenates the two strings with enough spaces in the middle to make the
+    whole string at least CONSOLE_WIDTH in width.
+    '''
+    return str_1 + (' ' * (CONSOLE_WIDTH - len(str_1) - len(str_2))) + str_2
 
 def clean_str_for_filename(filename):
     '''
@@ -812,7 +818,7 @@ def produce_html_report(references, html_filename, high_error_rate, very_high_er
     html_file.close()
 
     if VERBOSITY > 0:
-        print(html_filename)
+        print(os.path.abspath(html_filename))
 
 
 def get_error_rate_plotly_plot(ref, py, go, include_javascript, high_error_rate,
@@ -1034,15 +1040,18 @@ def get_reference_html_table(ref):
 def get_reference_error_rate_html_table(ref):
     table = '<br>\n'
     table += '<table width="35%">\n'
-    table += '  <tr><td>Min error rate:</td>' + \
-             '<td align="right">' + float_to_str(ref.min_window_error_rate * 100.0, 1) + \
-             '%</td></tr>\n'
-    table += '  <tr><td>Mean error rate:</td>' + \
-             '<td align="right">' + float_to_str(ref.mean_window_error_rate * 100.0, 1) + \
-             '%</td></tr>\n'
-    table += '  <tr><td>Max error rate:</td>' + \
-             '<td align="right">' + float_to_str(ref.max_window_error_rate * 100.0, 1) + \
-             '%</td></tr>\n'
+    table += '  <tr><td>Min error rate:</td><td align="right">'
+    table += 'n/a' if ref.min_window_error_rate is None \
+                   else float_to_str(ref.min_window_error_rate * 100.0, 1)
+    table += '%</td></tr>\n'
+    table += '  <tr><td>Mean error rate:</td><td align="right">'
+    table += 'n/a' if ref.mean_window_error_rate is None \
+                   else float_to_str(ref.mean_window_error_rate * 100.0, 1)
+    table += '%</td></tr>\n'
+    table += '  <tr><td>Max error rate:</td><td align="right">'
+    table += 'n/a' if ref.max_window_error_rate is None \
+                   else float_to_str(ref.max_window_error_rate * 100.0, 1)
+    table += '%</td></tr>\n'
     table += '</table>\n'
     table += '<br>\n'
     table += '<table width="35%">\n'

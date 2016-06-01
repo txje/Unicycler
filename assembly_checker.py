@@ -502,7 +502,7 @@ def determine_thresholds(scoring_scheme, references, alignments, threads):
         print()
 
     for ref in references:
-        determine_depth_thresholds(ref, alignments, threads, 0.2, 0.05)
+        determine_depth_thresholds(ref, alignments, threads, 0.1, 0.01)
 
     return high_error_rate, very_high_error_rate, random_seq_error_rate, mean_error_rate
 
@@ -772,7 +772,7 @@ def produce_html_report(references, html_filename, high_error_rate, very_high_er
     if not html_filename.endswith('.htm') and not html_filename.endswith('.html'):
         html_filename += '.html'
 
-    report_width = 900
+    report_width = 1000
 
     html_file = open(html_filename, 'w')
     html_file.write(get_html_start(report_width))
@@ -975,9 +975,9 @@ def get_html_style(report_width):
              'border-style: hidden; ' + \
              '}\n'
     style += 'td {' + \
-             'white-space: pre;' + \
              'padding: 5px; ' + \
              'border-bottom: 1px solid #d5d5d5; ' + \
+             'word-wrap: break-word; ' + \
              '}\n'
     style += 'td.monospace {' + \
              'font-family: \'Lucida Console\', monospace; ' + \
@@ -996,7 +996,7 @@ def get_report_html_table(ref_filename, sam_filename, full_command, directory, s
     table += '  <tr><td>Alignment file:</td>' + \
              '<td class="monospace">' + sam_filename + \
              '</td></tr>\n'
-    full_command = full_command.replace(' --', '\n    --')
+    full_command = full_command.replace(' --', ' &#x2011&#x2011')
     table += '  <tr><td>Full command:</td>' + \
              '<td class="monospace">' + full_command + \
              '</td></tr>\n'

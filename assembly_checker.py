@@ -658,9 +658,9 @@ def produce_console_output(references):
             for i, high_error_region in enumerate(ref.high_error_regions):
                 print('  ' + str(i+1) + ') ' + int_to_str(high_error_region[0]) +
                       ' bp to ' + int_to_str(high_error_region[1]) + ' bp')
-            print()
         else:
             print(lr_justify('High error regions:', 'none'))
+        print()
 
         print(lr_justify('Min depth:', float_to_str(ref.min_window_depth, 1) + 'x'))
         print(lr_justify('Mean depth:', float_to_str(ref.mean_window_depth, 1) + 'x'))
@@ -683,7 +683,6 @@ def produce_console_output(references):
                       int_to_str(high_depth_region[1]) + ' bp')
         else:
             print(lr_justify('High depth regions:', 'none'))
-
         print()
 
 def lr_justify(str_1, str_2):

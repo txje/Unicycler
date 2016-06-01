@@ -453,15 +453,13 @@ def count_depth_and_errors_per_window(references, window_size, high_error_rate,
             ref.max_window_error_rate = max(window_error_rate, ref.max_window_error_rate)
 
         # Calculate the mean window depth and mean window error rate for this reference.
+        ref.mean_window_depth = None
         if ref.window_depths:
             ref.mean_window_depth = sum(ref.window_depths) / len(ref.window_depths)
-        else:
-            ref.mean_window_depth = None
-        if ref.window_error_rates:
-            not_none_error_rates = [x for x in ref.window_error_rates if x is not None]
+        ref.mean_window_error_rate = None
+        not_none_error_rates = [x for x in ref.window_error_rates if x is not None]
+        if not_none_error_rates:
             ref.mean_window_error_rate = sum(not_none_error_rates) / len(not_none_error_rates)
-        else:
-            ref.mean_window_error_rate = None
 
         if current_low_depth_region is not None:
             ref.low_depth_regions.append(current_low_depth_region)

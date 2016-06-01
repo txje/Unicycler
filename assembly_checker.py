@@ -452,12 +452,14 @@ def count_depth_and_errors_per_window(references, window_size, high_error_rate,
             ref.max_window_depth = max(window_depth, ref.max_window_depth)
             ref.max_window_error_rate = max(window_error_rate, ref.max_window_error_rate)
 
+        # Calculate the mean window depth and mean window error rate for this reference.
         if ref.window_depths:
             ref.mean_window_depth = sum(ref.window_depths) / len(ref.window_depths)
         else:
             ref.mean_window_depth = None
         if ref.window_error_rates:
-            ref.mean_window_error_rate = sum(ref.window_error_rates) / len(ref.window_error_rates)
+            not_none_error_rates = [x for x in ref.window_error_rates if x is not None]
+            ref.mean_window_error_rate = sum(not_none_error_rates) / len(not_none_error_rates)
         else:
             ref.mean_window_error_rate = None
 
@@ -540,10 +542,8 @@ def determine_depth_thresholds(ref, alignments, threads, depth_p_val_1, depth_p_
     if VERBOSITY > 0:
         print(ref.name + ':')
         max_v = ref.very_high_depth_cutoff
-        print('   very low depth threshold: ', int_to_str(ref.very_low_depth_cutoff, max_v))
-        print('   low depth threshold:      ', int_to_str(ref.low_depth_cutoff, max_v))
-        print('   high depth threshold:     ', int_to_str(ref.high_depth_cutoff, max_v))
-        print('   very high depth threshold:', int_to_str(ref.very_high_depth_cutoff, max_v))
+        print('   low depth threshold: ', int_to_str(ref.very_low_depth_cutoff, max_v))
+        print('   high depth threshold:', int_to_str(ref.very_high_depth_cutoff, max_v))
         print()
 
 
@@ -774,7 +774,7 @@ def produce_html_report(references, html_filename, high_error_rate, very_high_er
     html_file.write(get_html_start(report_width))
 
     # Add a title and general information to the report.
-    html_file.write('<h1>Assembly checker report</h1>\n')
+    html_file.write('<h1>Long read assembly checker</h1>\n')
     total_problems = 0
     for ref in references:
         total_problems += len(ref.high_error_regions)

@@ -55,8 +55,8 @@ def main():
     count_depth_and_errors_per_base(references, reference_dict, alignments)
     high_error_rate, very_high_error_rate, random_seq_error_rate, mean_error_rate = \
                          determine_thresholds(scoring_scheme, references, alignments, args.threads)
-    count_depth_and_errors_per_window(references, args.window_size, high_error_rate,
-                                      very_high_error_rate)
+    count_depth_and_errors_per_window(references, args.error_window_size, args.depth_window_size,
+                                      high_error_rate, very_high_error_rate)
 
     if args.window_tables:
         window_tables_prefix = prepare_output_dirs(args.window_tables)
@@ -89,8 +89,10 @@ def get_arguments():
                         help='FASTA file containing one or more reference sequences')
     parser.add_argument('--reads', type=str, required=True, default=argparse.SUPPRESS,
                         help='FASTQ file of long reads')
-    parser.add_argument('--window_size', type=int, required=False, default=100,
+    parser.add_argument('--error_window_size', type=int, required=False, default=100,
                         help='Window size for error summaries')
+    parser.add_argument('--depth_window_size', type=int, required=False, default=10000,
+                        help='Window size for depth summaries')
     parser.add_argument('--window_tables', type=str, required=False, default=argparse.SUPPRESS,
                         help='Path and/or prefix for table files summarising reference errors for '
                              'reference windows (default: do not save window tables)')
@@ -353,45 +355,74 @@ def count_depth_and_errors_per_base(references, reference_dict, alignments):
         print('\n')
 
 
-def count_depth_and_errors_per_window(references, window_size, high_error_rate,
-                                      very_high_error_rate):
+def count_depth_and_errors_per_window(references, er_window_size, depth_window_size,
+                                      high_error_rate, very_high_error_rate):
     '''
     Counts up the depth and errors for each window of each reference and stores the counts in the
     Reference objects.
     '''
     for ref in references:
         ref_length = ref.get_length()
-        window_count = max(1, int(round(ref_length / window_size)))
-        ref.window_size = ref_length / window_count
 
-        ref.window_starts = []
-        ref.window_depths = []
+        er_window_count = max(1, int(round(ref_length / er_window_size)))
+        ref.er_window_size = ref_length / er_window_count
+        ref.er_window_starts = []
         ref.window_error_rates = []
-
         ref.high_error_regions = []
-        ref.low_depth_regions = []
-        ref.high_depth_regions = []
-
         current_high_error_region = None
-        current_low_depth_region = None
-        current_high_depth_region = None
 
-        for i in xrange(window_count):
-            window_start = int(round(ref.window_size * i))
-            window_end = int(round(ref.window_size * (i + 1)))
-            ref.window_starts.append(window_start)
+        for i in xrange(er_window_count):
+            window_start = int(round(ref.er_window_size * i))
+            window_end = int(round(ref.er_window_size * (i + 1)))
+            ref.er_window_starts.append(window_start)
             this_window_size = window_end - window_start
             this_window_pos_with_error_rate = 0
 
-            total_window_depth = 0
             total_window_error_rate = None
             for j in xrange(window_start, window_end):
-                total_window_depth += ref.depths[j]
                 if ref.error_rates[j] is not None:
                     this_window_pos_with_error_rate += 1
                     if total_window_error_rate is None:
                         total_window_error_rate = 0.0
                     total_window_error_rate += ref.error_rates[j]
+
+            # Check for high error regions.
+            if total_window_error_rate is None:
+                window_error_rate = None
+            else:
+                window_error_rate = total_window_error_rate / this_window_pos_with_error_rate
+                if window_error_rate > very_high_error_rate:
+                    if current_high_error_region is None:
+                        current_high_error_region = (window_start, window_end)
+                    else:
+                        current_high_error_region = (current_high_error_region[0], window_end)
+                elif window_error_rate < high_error_rate: # error rate is not high
+                    if current_high_error_region is not None:
+                        ref.high_error_regions.append(current_high_error_region)
+                        current_high_error_region = None
+
+            ref.window_error_rates.append(window_error_rate)
+
+        if current_high_error_region is not None:
+            ref.high_error_regions.append(current_high_error_region)
+
+        depth_window_count = max(1, int(round(ref_length / depth_window_size)))
+        ref.depth_window_size = ref_length / depth_window_count
+        ref.depth_window_starts = []
+        ref.window_depths = []
+        ref.low_depth_regions = []
+        ref.high_depth_regions = []
+        current_low_depth_region = None
+        current_high_depth_region = None
+
+        for i in xrange(depth_window_count):
+            window_start = int(round(ref.depth_window_size * i))
+            window_end = int(round(ref.depth_window_size * (i + 1)))
+            ref.depth_window_starts.append(window_start)
+            this_window_size = window_end - window_start
+            total_window_depth = 0
+            for j in xrange(window_start, window_end):
+                total_window_depth += ref.depths[j]
 
             # Check for low depth regions.
             window_depth = total_window_depth / this_window_size
@@ -416,23 +447,12 @@ def count_depth_and_errors_per_window(references, window_size, high_error_rate,
                     ref.high_depth_regions.append(current_high_depth_region)
                     current_high_depth_region = None
 
-            # Check for high error regions.
-            if total_window_error_rate is None:
-                window_error_rate = None
-            else:
-                window_error_rate = total_window_error_rate / this_window_pos_with_error_rate
-                if window_error_rate > very_high_error_rate:
-                    if current_high_error_region is None:
-                        current_high_error_region = (window_start, window_end)
-                    else:
-                        current_high_error_region = (current_high_error_region[0], window_end)
-                elif window_error_rate < high_error_rate: # error rate is not high
-                    if current_high_error_region is not None:
-                        ref.high_error_regions.append(current_high_error_region)
-                        current_high_error_region = None
-
             ref.window_depths.append(window_depth)
-            ref.window_error_rates.append(window_error_rate)
+
+        if current_low_depth_region is not None:
+            ref.low_depth_regions.append(current_low_depth_region)
+        if current_high_depth_region is not None:
+            ref.high_depth_regions.append(current_high_depth_region)
 
         # Calculate the min/max/mean window depth and error rate for this reference.
         ref.min_window_depth = 0.0
@@ -450,13 +470,6 @@ def count_depth_and_errors_per_window(references, window_size, high_error_rate,
             ref.min_window_error_rate = min(not_none_error_rates)
             ref.max_window_error_rate = max(not_none_error_rates)
             ref.mean_window_error_rate = sum(not_none_error_rates) / len(not_none_error_rates)
-
-        if current_low_depth_region is not None:
-            ref.low_depth_regions.append(current_low_depth_region)
-        if current_high_depth_region is not None:
-            ref.high_depth_regions.append(current_high_depth_region)
-        if current_high_error_region is not None:
-            ref.high_error_regions.append(current_high_error_region)
 
 def determine_thresholds(scoring_scheme, references, alignments, threads):
     '''
@@ -826,11 +839,11 @@ def get_error_rate_plotly_plot(ref, py, go, include_javascript, high_error_rate,
     '''
     Returns the HTML div for the error rate plot.
     '''
-    half_window_size = ref.window_size / 2
+    half_er_window_size = ref.er_window_size / 2
     x = []
     y = []
-    for i, window_start in enumerate(ref.window_starts):
-        x.append(window_start + half_window_size)
+    for i, window_start in enumerate(ref.er_window_starts):
+        x.append(window_start + half_er_window_size)
         if ref.window_error_rates[i] is None:
             y.append(None)
         else:
@@ -873,11 +886,11 @@ def get_depth_plotly_plot(ref, py, go, include_javascript, report_width):
     '''
     Returns the HTML div for the error rate plot.
     '''
-    half_window_size = ref.window_size / 2
+    half_depth_window_size = ref.depth_window_size / 2
     x = []
     y = []
-    for i, window_start in enumerate(ref.window_starts):
-        x.append(window_start + half_window_size)
+    for i, window_start in enumerate(ref.depth_window_starts):
+        x.append(window_start + half_depth_window_size)
         y.append(ref.window_depths[i])
     if all(y_val is None for y_val in y):
         return ''

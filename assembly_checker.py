@@ -37,6 +37,8 @@ def main():
     full_command = ' '.join(sys.argv)    
     check_file_exists(args.ref)
     check_file_exists(args.reads)
+    if must_perform_alignment and not args.no_graphmap:
+        check_graphmap(args.graphmap_path)
 
     references = load_references(args.ref, VERBOSITY)
     reference_dict = {x.name: x for x in references}

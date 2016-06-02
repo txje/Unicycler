@@ -13,6 +13,8 @@ import shutil
 import gzip
 import math
 from assembly_graph import AssemblyGraph, load_sam_alignments
+from semi_global_long_read_aligner import quit_with_error, add_aligning_arguments, \
+                                          fix_up_arguments
 
 
 spades_path = '/Users/Ryan/Applications/SPAdes-3.7.1-Darwin/bin/spades.py'
@@ -34,23 +36,86 @@ def main():
     check_file_exists(args.short1)
     check_file_exists(args.short2)
     check_file_exists(args.long)
-    assembly_graph = get_best_spades_graph(args.short1, args.short2, args.out, log_file)
-    assembly_graph.save_to_fastg(os.path.join(args.out, 'assembly_graph.fastg'))
-    assembly_graph.save_to_fasta(os.path.join(args.out, 'assembly_graph.fasta'))
-    scaffold_with_long_reads(assembly_graph, args.long, args.out)
 
+    # Produce a SPAdes assembly graph with a k-mer that balances contig length and connectivity.
+    assembly_graph, kmer = get_best_spades_graph(args.short1, args.short2, args.out, log_file,
+                                                 args.read_depth_filter)
+    spades_assembly_path = os.path.join(args.out, '01_spades_assembly')
+    assembly_graph.save_to_gfa(spades_assembly_path + '.gfa')
+    assembly_graph.save_to_fasta(spades_assembly_path + '.fasta')
 
+    # Get a list of single-copy nodes.
+    assembly_graph.determine_copy_depth(1000)
+    alignment_path = os.path.join(args.out, '02_long_read_alignment')
+    assembly_graph.save_to_gfa(os.path.join(alignment_path, 'unbridged_graph.gfa'))
+    # TO DO: GET SINGLE COPY NODES
+
+    # Produce an initial set of bridges using SPAdes contig paths.
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+
+    # If all long reads are available now, then we do the entire process in one pass.
+    if args.long:
+        # TO DO: ALIGN LONG READS TO GRAPH
+        # TO DO: PRODUCE BRIDGES USING LONG READ ALIGNMENTS
+        # TO DO: APPLY THE BRIDGES TO THE GRAPH
+        # TO DO: SAVE THE RESULTS
+
+    # If we are getting long reads incrementally, then we do the process iteratively.
+    elif args.long_dir:
+        finished = False
+        while not finished:
+            # TO DO: WAIT FOR NEW READS TO BECOME AVAILABLE
+            # TO DO: ALIGN LONG READS TO GRAPH
+            # TO DO: PRODUCE BRIDGES USING LONG READ ALIGNMENTS
+            # TO DO: APPLY THE BRIDGES TO THE GRAPH
+            # TO DO: SAVE THE RESULTS
+            # TO DO: ASSESS WHETHER THE PROCESS IS COMPLETE
 
 def get_arguments():
     '''
     Parse the command line arguments.
     '''
     parser = argparse.ArgumentParser(description='Hybrid Assembler')
-    parser.add_argument('short1', help='Illumina reads 1')
-    parser.add_argument('short2', help='Illumina reads 2')
-    parser.add_argument('long', help='Long reads')
-    parser.add_argument('out', help='Output directory')
-    return parser.parse_args()
+
+    parser.add_argument('-1', required=True, default=argparse.SUPPRESS,
+                        help='FASTQ file of short reads (first reads in each pair).')
+    parser.add_argument('-2', required=True, default=argparse.SUPPRESS,
+                        help='FASTQ file of short reads (second reads in each pair).')
+    parser.add_argument('--long', required=False, default=argparse.SUPPRESS,
+                        help='FASTQ file of long reads, if all reads are available at start.')
+    parser.add_argument('--long_dir', required=False, default=argparse.SUPPRESS,
+                        help='Directory where FASTQ files will be deposited.')
+    parser.add_argument('--out', required=True, default=argparse.SUPPRESS,
+                        help='Output directory')
+    parser.add_argument('--read_depth_filter', type=float, required=False, default=0.25,
+                        help='Minimum allowed read depth, expressed as a fraction of the median'
+                             'read depth. Graph segments with less depth will be removed.')
+
+    # Add the arguments for the aligner, but suppress the help text.
+    add_aligning_arguments(parser, True)
+
+    args = parser.parse_args()
+    fix_up_arguments(args)
+
+    try:
+        args.long
+    except AttributeError:
+        args.long = None
+    try:
+        args.long_dir
+    except AttributeError:
+        args.long_dir = None
+
+    if not args.long and not args.long_dir:
+        quit_with_error('either --long or --long_dir is required')
+    if args.long and args.long_dir:
+        quit_with_error('--long and --long_dir cannot both be used')
+
+    return args
 
 
 def make_output_directory(outdir):
@@ -74,15 +139,14 @@ def check_file_exists(filename):
         print('Error: could not find ' + filename, file=sys.stderr)
         quit()
 
-
-def get_best_spades_graph(short1, short2, outdir, log_file):
+def get_best_spades_graph(short1, short2, outdir, log_file, read_depth_filter):
     '''
     This function tries a SPAdes assembly at different kmers and returns the best.
     'The best' is defined as the smallest dead-end count after low-depth filtering.  If multiple
     graphs have the same dead-end count (e.g. zero!) then the highest kmer is used.
     '''
     kmer_range = get_kmer_range(short1, short2, log_file)
-    spades_dir = os.path.join(outdir, 'spades_assembly')
+    spades_dir = os.path.join(outdir, '01_spades_assembly')
     read_correction_dir = os.path.join(spades_dir, 'read_correction')
     read_files = spades_read_correction(short1, short2, read_correction_dir, log_file)
     shutil.rmtree(read_correction_dir)
@@ -93,7 +157,9 @@ def get_best_spades_graph(short1, short2, outdir, log_file):
     for i, kmer in enumerate(kmer_range):
         graph_file = spades_assembly(read_files, assem_dir, log_file, kmer_range[:i+1])
         assembly_graph = AssemblyGraph(graph_file, kmer)
-        filter_graph(assembly_graph, spades_dir, kmer)
+        clean_graph(assembly_graph, read_depth_filter)
+        assembly_graph.save_to_fastg(os.path.join(spades_dir,
+                                                  'k' + str(kmer) + '_assembly_graph_cleaned.gfa'))
         dead_ends, connected_components, segment_count = get_graph_info(assembly_graph)
         score = 1.0 / (segment_count * ((dead_ends + 1) ** 2))
         print(str(kmer) + '\t' + str(segment_count) + '\t' + str(dead_ends) +
@@ -104,49 +170,18 @@ def get_best_spades_graph(short1, short2, outdir, log_file):
             best_assembly_graph = assembly_graph
     shutil.rmtree(assem_dir)
     print('\nBest kmer: ' + str(best_kmer))
-    return best_assembly_graph
+    return best_assembly_graph, best_kmer
 
-def scaffold_with_long_reads(assembly_graph, long_reads, outdir):
+def clean_graph(assembly_graph, read_depth_filter):
     '''
-    This is where the magic happens!
+    For the given graph, this function normalises the read depths, filters based on depth and
+    simplifies some graph structures.
     '''
-    alignment_dir = os.path.join(outdir, 'alignments')
-    if not os.path.exists(alignment_dir):
-        os.makedirs(alignment_dir)
-
-
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-
-
-
-    shutil.rmtree(alignment_dir)
-
-def filter_graph(assembly_graph, graph_dir, kmer):
-    '''
-    For the given graph, this function normalises the read depths, filters based on depth and saves
-    it, with '_filtered' in the filename.
-    '''
-    assembly_graph.filter_by_read_depth(read_depth_filter_cutoff)
+    assembly_graph.repair_four_way_junctions()
+    # TO DO: FIX UP SELF REV COMP NODE STRUCTURES
+    assembly_graph.filter_by_read_depth(read_depth_filter)
     assembly_graph.filter_homopolymer_loops()
     assembly_graph.normalise_read_depths()
-    filtered_path = os.path.join(graph_dir, 'assembly_graph_k' + str(kmer) + '_filtered.fastg')
-    assembly_graph.save_to_fastg(filtered_path)
 
 def get_graph_info(assembly_graph):
     '''
@@ -226,9 +261,15 @@ def spades_assembly(read_files, outdir, log_file, kmers):
     log_file.write(out)
     log_file.write('\n\n\n\n\n\n\n\n\n\n\n')
     graph_file = os.path.join(outdir, 'assembly_graph.fastg')
+    paths_file = os.path.join(outdir, 'contigs.paths')
+
     parent_dir = os.path.dirname(outdir)
-    moved_graph_file = os.path.join(parent_dir, 'assembly_graph_' + this_kmer + '.fastg')
+    moved_graph_file = os.path.join(parent_dir, this_kmer + '_assembly_graph.fastg')
     shutil.move(graph_file, moved_graph_file)
+    moved_paths_file = os.path.join(parent_dir, this_kmer + '_contigs.paths')
+    shutil.move(paths_file, moved_paths_file)
+
+
     sys.stdout.flush()
     return moved_graph_file
 

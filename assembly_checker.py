@@ -10,22 +10,20 @@ from __future__ import division
 
 import sys
 import re
-import random
 import imp
 import os
 import string
 import argparse
-# import time
-from multiprocessing import cpu_count
-# from multiprocessing import Process, Manager
 
-
+sys.dont_write_bytecode = True
 from semi_global_long_read_aligner import AlignmentScoringScheme, Read, Reference, load_references, \
                                           load_long_reads, quit_with_error, get_nice_header, \
                                           get_random_sequence_alignment_error_rates, \
                                           reverse_complement, int_to_str, float_to_str, \
                                           print_progress_line, check_file_exists, \
-                                          get_depth_min_and_max_distributions
+                                          get_depth_min_and_max_distributions, \
+                                          semi_global_align_long_reads, add_aligning_arguments, \
+                                          fix_up_arguments
 
 VERBOSITY = 0 # Controls how much the script prints to the screen
 CONSOLE_WIDTH = 40 # The width of many things printed to stdout
@@ -35,20 +33,27 @@ def main():
     Script execution starts here.
     '''
     args = get_arguments()
-    full_command = ' '.join(sys.argv)
-    
-    check_file_exists(args.sam)
+    must_perform_alignment = not os.path.isfile(args.sam)
+    full_command = ' '.join(sys.argv)    
     check_file_exists(args.ref)
     check_file_exists(args.reads)
-    
-    if args.html:
-        check_plotly_exists()
-
 
     references = load_references(args.ref, VERBOSITY)
     reference_dict = {x.name: x for x in references}
-    read_dict, _ = load_long_reads(args.reads, VERBOSITY)
-    scoring_scheme = get_scoring_scheme_from_sam(args.sam)
+    read_dict, read_names = load_long_reads(args.reads, VERBOSITY)
+
+    if must_perform_alignment:
+        scoring_scheme = AlignmentScoringScheme(args.scores)
+    else:
+        scoring_scheme = get_scoring_scheme_from_sam(args.sam)
+
+    if must_perform_alignment:
+        semi_global_align_long_reads(references, args.ref, read_dict, read_names, args.reads,
+                                     args.temp_dir, args.graphmap_path, args.threads,
+                                     scoring_scheme, args.low_score, not args.no_graphmap,
+                                     args.keep_bad, args.kmer, args.min_len, args.sam,
+                                     full_command, VERBOSITY)
+
     alignments = load_sam_alignments(args.sam, read_dict, reference_dict, scoring_scheme,
                                      args.threads)
 
@@ -87,7 +92,9 @@ def get_arguments():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--sam', type=str, required=True, default=argparse.SUPPRESS,
-                        help='Input SAM file of alignments')
+                        help='Input SAM file of alignments (if this file doesn\'t exist, the '
+                             'alignment will be performed with results saved to this file - you '
+                             'can use the aligner arguments with this script)')
     parser.add_argument('--ref', type=str, required=True, default=argparse.SUPPRESS,
                         help='FASTA file containing one or more reference sequences')
     parser.add_argument('--reads', type=str, required=True, default=argparse.SUPPRESS,
@@ -115,7 +122,11 @@ def get_arguments():
     parser.add_argument('--verbosity', type=int, required=False, default=1,
                         help='Level of stdout information (0 to 2)')
 
+    # Add the arguments for the aligner, but suppress the help text.
+    add_aligning_arguments(parser, True)
+
     args = parser.parse_args()
+    fix_up_arguments(args)
 
     global VERBOSITY
     VERBOSITY = args.verbosity
@@ -134,17 +145,18 @@ def get_arguments():
         args.html
     except AttributeError:
         args.html = None
-    try:
-        args.threads
-    except AttributeError:
-        args.threads = cpu_count()
-        if VERBOSITY > 2:
-            print('\nThread count set to', args.threads)
 
     if args.depth_p_val > 0.1 or args.depth_p_val <= 0.0:
         quit_with_error('--depth_p_val must be greater than 0.0 and less than or equal to 0.1')
     if args.error_rate_threshold >= 1.0 or args.error_rate_threshold <= 0.0:
         quit_with_error('--error_rate_threshold must be greater than 0.0 and less than 1.0')
+
+    if args.html:
+        check_plotly_exists()
+
+    # Add the process ID to the default temp directory so multiple instances can run at once in the
+    # same directory.
+    args.temp_dir = args.temp_dir.replace('PID', str(os.getpid()))
 
     return args
 
@@ -254,7 +266,10 @@ def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme,
         if line and not line.startswith('@') and line.split('\t', 3)[2] != '*':
             sam_lines.append(line)
     num_alignments = sum(1 for line in open(sam_filename) if not line.startswith('@'))
-    print_progress_line(0, num_alignments)
+    if not num_alignments:
+        quit_with_error('there are no alignments in the file: ' + sam_filename)
+    if VERBOSITY > 0:
+        print_progress_line(0, num_alignments)
 
     # If single-threaded, just do the work in a simple loop.
     threads = 1 # TEMP
@@ -508,18 +523,15 @@ def determine_thresholds(scoring_scheme, references, alignments, threads, depth_
                          float_to_str(random_seq_error_rate * 100.0, 2) + '%'))
         print()
 
-    # The median error rate should not be as big as the random alignment error rate. If it is, then
-    # we set the 
+    # The mean error rate should not be as big as the random alignment error rate.
     if mean_error_rate >= random_seq_error_rate:
-        high_error_rate = random_seq_error_rate * 0.9
-        very_high_error_rate = random_seq_error_rate
+        quit_with_error('the mean error rate (' + float_to_str(mean_error_rate * 100.0, 2) + \
+                        '%) is too high and exceeds the randoml alignment error rate (' + \
+                        float_to_str(random_seq_error_rate * 100.0, 2) + '%)')
     
-    # In the expected case where the median error rate is below the random alignment error rate, we
-    # set the thresholds between these values.
-    else:
-        difference = random_seq_error_rate - mean_error_rate
-        high_error_rate = mean_error_rate + (error_rate_fraction * 0.5 * difference)
-        very_high_error_rate = mean_error_rate + (error_rate_fraction * difference)
+    difference = random_seq_error_rate - mean_error_rate
+    high_error_rate = mean_error_rate + (error_rate_fraction * 0.5 * difference)
+    very_high_error_rate = mean_error_rate + (error_rate_fraction * difference)
 
     if VERBOSITY > 0:
         print(lr_justify('Error rate threshold 1:',
@@ -615,33 +627,6 @@ def get_mean(num_list):
     if not num_list:
         return None
     return sum(num_list) / len(num_list)
-
-# def get_median(num_list):
-#     '''
-#     Returns the median of the given list of numbers.
-#     '''
-#     count = len(num_list)
-#     if count == 0:
-#         return 0.0
-#     sorted_list = sorted(num_list)
-#     if count % 2 == 0:
-#         return (sorted_list[count // 2 - 1] + sorted_list[count // 2]) / 2.0
-#     else:
-#         return sorted_list[count // 2]
-
-# def get_median_and_mad(num_list):
-#     '''
-#     Returns the median and MAD of the given list of numbers.
-#     '''
-#     if not num_list:
-#         return None, None
-#     if len(num_list) == 1:
-#         return num_list[0], None
-
-#     median = get_median(num_list)
-#     absolute_deviations = [abs(x - median) for x in num_list]
-#     mad = 1.4826 * get_median(absolute_deviations)
-#     return median, mad
 
 def produce_console_output(references):
     '''

@@ -91,7 +91,7 @@ def main():
     semi_global_align_long_reads(references, args.ref, read_dict, read_names, args.reads,
                                  args.temp_dir, args.graphmap_path, args.threads, scoring_scheme,
                                  args.low_score, not args.no_graphmap, args.keep_bad, args.kmer,
-                                 args.min_len, args.sam, full_command)
+                                 args.min_len, args.sam, full_command, VERBOSITY)
     sys.exit(0)
 
 def get_arguments():
@@ -107,28 +107,9 @@ def get_arguments():
                         help='FASTQ file of long reads')
     parser.add_argument('--sam', type=str, required=True, default=argparse.SUPPRESS,
                         help='SAM file of resulting alignments')
-    parser.add_argument('--temp_dir', type=str, required=False, default='align_temp_PID',
-                        help='Temp directory for working files ("PID" will be replaced with the '
-                             'process ID)')
-    parser.add_argument('--no_graphmap', action='store_true', default=argparse.SUPPRESS,
-                        help='Do not use GraphMap as a first-pass aligner (default: GraphMap is '
-                             'used)')
-    parser.add_argument('--graphmap_path', type=str, required=False, default='graphmap',
-                        help='Path to the GraphMap executable')
-    parser.add_argument('--scores', type=str, required=False, default='3,-6,-5,-2',
-                        help='Comma-delimited string of alignment scores: match, mismatch, gap '
-                             'open, gap extend')
-    parser.add_argument('--low_score', type=float, required=False, default=argparse.SUPPRESS,
-                        help='Score threshold - alignments below this are considered poor '
-                             '(default: set threshold automatically)')
-    parser.add_argument('--min_len', type=float, required=False, default=100,
-                        help='Minimum alignment length (bp) - exclude alignments shorter than '
-                             'this length')
-    parser.add_argument('--keep_bad', action='store_true', default=argparse.SUPPRESS,
-                        help='Include alignments in the results even if they are below the low '
-                             'score threshold (default: low-scoring alignments are discarded)')
-    parser.add_argument('--kmer', type=int, required=False, default=7,
-                        help='K-mer size used for seeding alignments')
+    
+    add_aligning_arguments(parser, False)
+
     parser.add_argument('--threads', type=int, required=False, default=argparse.SUPPRESS,
                         help='Number of CPU threads used to align (default: the number of '
                              'available CPUs)')
@@ -140,8 +121,57 @@ def get_arguments():
     global VERBOSITY
     VERBOSITY = args.verbosity
 
-    # If some arguments weren't set, set them to None/False. We don't use None/False as a default
-    # in add_argument because it makes the help text look weird.
+    fix_up_arguments(args)
+
+    return args
+
+def add_aligning_arguments(parser, hide_help):
+    '''
+    Adds the aligning-specific arguments to the parser.
+    '''
+    temp_dir_help = argparse.SUPPRESS if hide_help else 'Temp directory for working files ' + \
+                                                        '("PID" will be replaced with the ' + \
+                                                        'process ID)'
+    parser.add_argument('--temp_dir', type=str, required=False, default='align_temp_PID',
+                        help=temp_dir_help)
+    no_graphmap_help = argparse.SUPPRESS if hide_help else 'Do not use GraphMap as a ' + \
+                                                           'first-pass aligner (default: ' + \
+                                                           'GraphMap is used)'
+    parser.add_argument('--no_graphmap', action='store_true', default=argparse.SUPPRESS,
+                        help=no_graphmap_help)
+    graphmap_path_help = argparse.SUPPRESS if hide_help else 'Path to the GraphMap executable'
+    parser.add_argument('--graphmap_path', type=str, required=False, default='graphmap',
+                        help=graphmap_path_help)
+    scores_help = argparse.SUPPRESS if hide_help else 'Comma-delimited string of alignment ' + \
+                                                      'scores: match, mismatch, gap open, gap ' + \
+                                                      'extend'
+    parser.add_argument('--scores', type=str, required=False, default='3,-6,-5,-2',
+                        help=scores_help)
+    low_score_help = argparse.SUPPRESS if hide_help else 'Score threshold - alignments below ' + \
+                                                         'this are considered poor (default: ' + \
+                                                         'set threshold automatically)'
+    parser.add_argument('--low_score', type=float, required=False, default=argparse.SUPPRESS,
+                        help=low_score_help)
+    min_len_help = argparse.SUPPRESS if hide_help else 'Minimum alignment length (bp) - ' + \
+                                                       'exclude alignments shorter than this ' + \
+                                                       'length'
+    parser.add_argument('--min_len', type=float, required=False, default=100,
+                        help=min_len_help)
+    keep_bad_help = argparse.SUPPRESS if hide_help else 'Include alignments in the results ' + \
+                                                        'even if they are below the low score ' + \
+                                                        'threshold (default: low-scoring ' + \
+                                                        'alignments are discarded)'
+    parser.add_argument('--keep_bad', action='store_true', default=argparse.SUPPRESS,
+                        help=keep_bad_help)
+    kmer_help = argparse.SUPPRESS if hide_help else 'K-mer size used for seeding alignments'
+    parser.add_argument('--kmer', type=int, required=False, default=7,
+                        help=kmer_help)
+
+def fix_up_arguments(args):
+    '''
+    Repairs issues with the arguments, like not existing. We don't use None/False as a default
+    in add_argument because it makes the help text look weird.
+    '''
     try:
         args.low_score
     except AttributeError:
@@ -165,12 +195,10 @@ def get_arguments():
     # same directory.
     args.temp_dir = args.temp_dir.replace('PID', str(os.getpid()))
 
-    return args
-
 def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, reads_fastq,
                                  temp_dir, graphmap_path, threads, scoring_scheme,
                                  low_score_threshold, use_graphmap, keep_bad, kmer_size,
-                                 min_align_length, sam_filename, full_command):
+                                 min_align_length, sam_filename, full_command, verbosity=None):
     '''
     This function does the primary work of this module: aligning long reads to references in an
     end-gap-free, semi-global manner. It returns a list of Read objects which contain their
@@ -179,6 +207,10 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     If seqan_all is False, then only the overlap alignments and a small set of long contained
     alignments will be run through Seqan.
     '''
+    if verbosity:
+        global VERBOSITY
+        VERBOSITY = verbosity
+        
     # If the user supplied a low score threshold, we use that. Otherwise, we'll use the median
     # score minus three times the MAD.
     if VERBOSITY > 0:

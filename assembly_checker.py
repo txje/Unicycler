@@ -54,7 +54,8 @@ def main():
 
     count_depth_and_errors_per_base(references, reference_dict, alignments)
     high_error_rate, very_high_error_rate, random_seq_error_rate, mean_error_rate = \
-                         determine_thresholds(scoring_scheme, references, alignments, args.threads)
+                    determine_thresholds(scoring_scheme, references, alignments,
+                                         args.threads, args.depth_p_val, args.error_rate_threshold)
     count_depth_and_errors_per_window(references, args.error_window_size, args.depth_window_size,
                                       high_error_rate, very_high_error_rate)
 
@@ -69,7 +70,9 @@ def main():
     if args.html:
         produce_html_report(references, args.html, high_error_rate, very_high_error_rate,
                             random_seq_error_rate, full_command, args.ref, args.sam,
-                            scoring_scheme, alignments, mean_error_rate)
+                            scoring_scheme, alignments, mean_error_rate,
+                            args.error_window_size, args.depth_window_size,
+                            args.depth_p_val, args.error_rate_threshold)
 
     if VERBOSITY > 0:
         produce_console_output(references)
@@ -91,8 +94,13 @@ def get_arguments():
                         help='FASTQ file of long reads')
     parser.add_argument('--error_window_size', type=int, required=False, default=100,
                         help='Window size for error summaries')
-    parser.add_argument('--depth_window_size', type=int, required=False, default=10000,
+    parser.add_argument('--depth_window_size', type=int, required=False, default=100,
                         help='Window size for depth summaries')
+    parser.add_argument('--error_rate_threshold', type=float, required=False, default=0.3,
+                        help='Threshold for high error rates, expressed as the fraction between '
+                             'the mean error rate and the random alignment error rate')
+    parser.add_argument('--depth_p_val', type=float, required=False, default=0.01,
+                        help='P-value for low/high depth thresholds')
     parser.add_argument('--window_tables', type=str, required=False, default=argparse.SUPPRESS,
                         help='Path and/or prefix for table files summarising reference errors for '
                              'reference windows (default: do not save window tables)')
@@ -132,6 +140,11 @@ def get_arguments():
         args.threads = cpu_count()
         if VERBOSITY > 2:
             print('\nThread count set to', args.threads)
+
+    if args.depth_p_val > 0.1 or args.depth_p_val <= 0.0:
+        quit_with_error('--depth_p_val must be greater than 0.0 and less than or equal to 0.1')
+    if args.error_rate_threshold >= 1.0 or args.error_rate_threshold <= 0.0:
+        quit_with_error('--error_rate_threshold must be greater than 0.0 and less than 1.0')
 
     return args
 
@@ -471,7 +484,8 @@ def count_depth_and_errors_per_window(references, er_window_size, depth_window_s
             ref.max_window_error_rate = max(not_none_error_rates)
             ref.mean_window_error_rate = sum(not_none_error_rates) / len(not_none_error_rates)
 
-def determine_thresholds(scoring_scheme, references, alignments, threads):
+def determine_thresholds(scoring_scheme, references, alignments, threads, depth_p_val,
+                         error_rate_fraction):
     '''
     This function sets thresholds for error rate and depth. Error rate thresholds are set once for
     all references, while depth thresholds are per-reference.
@@ -504,8 +518,8 @@ def determine_thresholds(scoring_scheme, references, alignments, threads):
     # set the thresholds between these values.
     else:
         difference = random_seq_error_rate - mean_error_rate
-        high_error_rate = mean_error_rate + (0.15 * difference)
-        very_high_error_rate = mean_error_rate + (0.3 * difference)
+        high_error_rate = mean_error_rate + (error_rate_fraction * 0.5 * difference)
+        very_high_error_rate = mean_error_rate + (error_rate_fraction * difference)
 
     if VERBOSITY > 0:
         print(lr_justify('Error rate threshold 1:',
@@ -515,7 +529,7 @@ def determine_thresholds(scoring_scheme, references, alignments, threads):
         print()
 
     for ref in references:
-        determine_depth_thresholds(ref, alignments, threads, 0.1, 0.01)
+        determine_depth_thresholds(ref, alignments, threads, 0.1, depth_p_val)
 
     return high_error_rate, very_high_error_rate, random_seq_error_rate, mean_error_rate
 
@@ -770,7 +784,8 @@ def produce_base_tables(references, base_tables_prefix):
 
 def produce_html_report(references, html_filename, high_error_rate, very_high_error_rate,
                         random_seq_error_rate, full_command, ref_filename, sam_filename,
-                        scoring_scheme, alignments, mean_error_rate):
+                        scoring_scheme, alignments, mean_error_rate, er_window_size,
+                        depth_window_size, depth_p_val, error_rate_fraction):
     '''
     Write html files containing plots of results.
     '''
@@ -791,35 +806,39 @@ def produce_html_report(references, html_filename, high_error_rate, very_high_er
 
     # Add a title and general information to the report.
     html_file.write('<h1>Long read assembly checker</h1>\n')
-    total_problems = 0
-    for ref in references:
-        total_problems += len(ref.high_error_regions)
-        total_problems += len(ref.low_depth_regions)
-        total_problems += len(ref.high_depth_regions)
+    html_file.write('<h5>Hold the mouse over text in this report for explanations.</h5>\n')
     html_file.write(get_report_html_table(ref_filename, sam_filename, full_command, os.getcwd(),
-                                          scoring_scheme,
-                                          sum([x.get_length() for x in references]),
-                                          len(alignments), random_seq_error_rate,
-                                          very_high_error_rate, total_problems,
-                                          mean_error_rate))
-
-
-
-
-
+                                          scoring_scheme, references, alignments,
+                                          random_seq_error_rate, very_high_error_rate,
+                                          mean_error_rate, er_window_size, depth_window_size,
+                                          error_rate_fraction))
     first_reference = True
     for ref in references:
         html_file.write('<br><br><br>\n')
-        html_file.write('<h2>' + ref.name + '</h2>\n<hr>\n')
+        ref_name_help = 'This is the name of the reference sequence, taken from the reference ' + \
+                        'FASTA file.'
+        html_file.write('<h2 title="' + ref_name_help + '">' + ref.name + '</h2>\n<hr>\n')
         html_file.write(get_reference_html_table(ref))
-        html_file.write('<h3>Error rate</h3>')
+        error_rate_help = 'Error rates are defined as the fraction of alignment errors ' + \
+                          '(mismatches, insertions and deletions) for all reads at a given ' + \
+                          'base in the reference. Insertions only count as a single error, ' + \
+                          'regardless of their length. If a region of the reference has ' + \
+                          'abnormally high error rates (often appearing as a sharp spike), ' + \
+                          'that could indicate misassembly.'
+        html_file.write('<h3 title="' + error_rate_help + '">Error rate</h3>')
         html_file.write(get_error_rate_plotly_plot(ref, py, go, first_reference,
                                                    high_error_rate, very_high_error_rate,
                                                    random_seq_error_rate, report_width))
-        html_file.write(get_reference_error_rate_html_table(ref))
-        html_file.write('<h3>Read depth</h3>')
+        html_file.write(get_reference_error_rate_html_table(ref, er_window_size))
+        read_depth_help = 'Read depths are defined as the number of alignments which span a ' + \
+                          'given base of the reference. If a region of the reference has ' + \
+                          'abnormally low or high error rates (often appearing as a shift to ' + \
+                          'a different mean), that could indicate misassembly. However, there ' + \
+                          'are other possible reasons for read depth variation, so regions of ' + \
+                          'high or low depth do not always indicate misassembly.'
+        html_file.write('<h3 title="' + read_depth_help + '">Read depth</h3>')
         html_file.write(get_depth_plotly_plot(ref, py, go, False, report_width))
-        html_file.write(get_reference_depth_html_table(ref))
+        html_file.write(get_reference_depth_html_table(ref, depth_window_size, depth_p_val))
 
         # Note that the first reference is done. This is so we only save the Plotly Javascript to
         # the HTML once.
@@ -871,7 +890,7 @@ def get_error_rate_plotly_plot(ref, py, go, include_javascript, high_error_rate,
                                   x1=max_x, y1=max_y,
                                   line=dict(width=0), fillcolor=red)]
 
-    layout = dict(autosize=False, width=report_width-10, height=300, hovermode='closest',
+    layout = dict(autosize=False, width=report_width-15, height=300, hovermode='closest',
                   margin=go.Margin(l=40, r=10, b=10, t=10),
                   xaxis=dict(range=[0, max_x], rangeslider=dict(), type='linear'),
                   yaxis=dict(ticksuffix='%', range=[0.0, max_y]), shapes=error_rate_background)
@@ -965,18 +984,18 @@ def get_html_style(report_width):
              '}\n'
     style += 'div.content {' + \
              'width: ' + str(report_width) + 'px; ' + \
-             'padding: 10px; ' + \
+             'padding: 15px; ' + \
              'background: #F0F0F0; ' + \
-             'margin-top: 20px; ' + \
-             'margin-bottom: 20px; ' + \
+             'margin-top: 15px; ' + \
+             'margin-bottom: 10px; ' + \
              'margin-right: auto; ' + \
              'margin-left: auto; ' + \
-             'border: 3px solid #323232; ' + \
+             'border: 2px solid #323232; ' + \
              'text-align:left; ' + \
              '}\n'
     style += 'div.plotbox {' + \
              'background-color:#ffffff; ' + \
-             'width: ' + str(report_width) + 'px; ' + \
+             'width: ' + str(report_width - 5) + 'px; ' + \
              'border: 2px solid #323232; ' + \
              '}\n'
     style += 'h2 {word-wrap: break-word;}\n'
@@ -998,128 +1017,290 @@ def get_html_style(report_width):
     return style
 
 def get_report_html_table(ref_filename, sam_filename, full_command, directory, scoring_scheme,
-                          total_ref_length, alignment_count, random_seq_error_rate,
-                          very_high_error_rate, total_problems, mean_error_rate):
-    table = '<table>\n'
+                          references, alignments, random_seq_error_rate, very_high_error_rate,
+                          mean_error_rate, er_window_size, depth_window_size, error_rate_fraction):
+    '''
+    Produces the table of information at the top of the report, not specific to any one reference.
+    '''
+    table = '<table width="100%">\n'
     table += '  <col width="30%">\n'
-    table += '  <tr><td>Reference file:</td>' + \
+
+    ref_file_help = 'The file of reference sequences used in the alignment.'
+    table += '  <tr title="' + ref_file_help + '">' + \
+             '<td>Reference file:</td>' + \
              '<td class="monospace">' + ref_filename + \
              '</td></tr>\n'
-    table += '  <tr><td>Alignment file:</td>' + \
+
+    ref_count_help = 'The number of separate sequences in the reference file.'
+    table += '  <tr title="' + ref_count_help + '">' + \
+             '<td>Number of references:</td>' + \
+             '<td>' + int_to_str(len(references)) + \
+             '</td></tr>\n'
+
+    total_ref_length = sum([x.get_length() for x in references])
+    total_ref_length_help = 'The sum of the length of all reference sequences.'
+    table += '  <tr title="' + total_ref_length_help + '">' + \
+             '<td>Total reference length:</td>' + \
+             '<td>' + int_to_str(total_ref_length) + ' bp' + \
+             '</td></tr>\n'
+
+    ref_file_help = 'The SAM file of alignments. These alignments are assumed to be ' + \
+                    'semi-global (i.e. not clipped except at the end of a reference).'
+    table += '  <tr title="' + ref_file_help + '">' + \
+             '<td>Alignment file:</td>' + \
              '<td class="monospace">' + sam_filename + \
              '</td></tr>\n'
+
+    total_alignments_help = 'The number of alignments in the SAM file.'
+    table += '  <tr title="' + total_alignments_help + '">' + \
+             '<td>Total alignments:</td>' + \
+             '<td>' + int_to_str(len(alignments)) + \
+             '</td></tr>\n'
+
+    full_command_help = 'The command used to generate this HTML report.'
     full_command = full_command.replace(' --', ' &#x2011&#x2011')
-    table += '  <tr><td>Full command:</td>' + \
+    table += '  <tr title="' + full_command_help + '">' + \
+             '<td>Full command:</td>' + \
              '<td class="monospace">' + full_command + \
              '</td></tr>\n'
-    table += '  <tr><td>Directory of execution:</td>' + \
+
+    directory_help = 'The directory where the above command was executed.'
+    table += '  <tr title="' + directory_help + '">' + \
+             '<td>Directory of execution:</td>' + \
              '<td class="monospace">' + directory + '</td></tr>\n'
-    table += '  <tr title="The sum length of all reference sequences">' + \
-             '<td>Total reference length:</td>' + \
-             '<td>' + int_to_str(total_ref_length) + \
-             ' bp</td></tr>\n'
-    table += '  <tr><td>Total alignments:</td>' + \
-             '<td>' + int_to_str(alignment_count) + \
-             '</td></tr>\n'
-    table += '  <tr title="The scores used in the alignment (gotten from the SAM file)">' + \
+
+    scoring_scheme_help = 'The scores used in the alignment (gotten from the SAM file).'
+    table += '  <tr title="' + scoring_scheme_help + '">' + \
              '<td>Scoring scheme:</td>' + \
              '<td>' + scoring_scheme.get_full_string() + \
              '</td></tr>\n'
-    table += '  <tr title="The average error rate across all references">' + \
+
+    mean_error_rate_help = 'The average error rate across all references.'
+    table += '  <tr title="' + mean_error_rate_help + '">' + \
              '<td>Mean error rate:</td>' + \
-             '<td>' + float_to_str(mean_error_rate * 100.0, 1) + '%</td></tr>\n'
-    table += '  <tr title="The average error rate for random sequences (using the specified ' + \
-             'scoring scheme)"><td>Random alignment error rate:</td>' + \
-             '<td>' + float_to_str(random_seq_error_rate * 100.0, 1) + '%</td></tr>\n'
-    table += '  <tr title="Reference windows exceeding this threshold are counted as high ' + \
-             'error regions"><td>High error threshold:</td>' + \
-             '<td >' + float_to_str(very_high_error_rate * 100.0, 1) + '%</td></tr>\n'
-    table += '  <tr title="Sum of high error, low depth and high depth regions across all ' + \
-             'references"><td>Total problem regions:</td>' + \
-             '<td >' + int_to_str(total_problems) + '</td></tr>\n'
+             '<td>' + float_to_str(mean_error_rate * 100.0, 1) + '%' + \
+             '</td></tr>\n'
+
+    random_seq_error_rate_help = 'The average error rate for random sequences (using the ' + \
+                                 'specified scoring scheme). This is the expected error rate ' + \
+                                 'when two sequences do not align.'
+    table += '  <tr title="' + random_seq_error_rate_help + '">' + \
+             '<td>Random alignment error rate:</td>' + \
+             '<td>' + float_to_str(random_seq_error_rate * 100.0, 1) + '%' + \
+             '</td></tr>\n'
+
+    very_high_error_rate_help = int_to_str(er_window_size) + ' bp windows exceeding this ' + \
+                                'threshold are counted as high error regions. This is ' + \
+                                'indicated in the plots with the colour red. ' + \
+                                'This value was set to an intermediate value (' + \
+                                float_to_str(error_rate_fraction * 100.0, 1) + '%) ' + \
+                                'between the mean error rate and random alignment error rate.'
+    table += '  <tr title="' + very_high_error_rate_help + '">' + \
+             '<td>High error threshold:</td>' + \
+             '<td>' + float_to_str(very_high_error_rate * 100.0, 1) + '%' + \
+             '</td></tr>\n'
+
+    er_window_size_help = 'The size of the sliding window used to make the error rate plots. ' + \
+                          'I.e. the plotted error rates are averages over a reference window ' + \
+                          'of this size.'
+    table += '  <tr title="' + er_window_size_help + '">' + \
+             '<td>Error rate window size:</td>' + \
+             '<td>' + int_to_str(er_window_size) + ' bp' + \
+             '</td></tr>\n'
+
+    depth_window_size_help = 'The size of the sliding window used to make the depth plots. ' + \
+                          'I.e. the plotted read depths are averages over a reference window ' + \
+                          'of this size.'
+    table += '  <tr title="' + depth_window_size_help + '">' + \
+             '<td>Read depth window size:</td>' + \
+             '<td>' + int_to_str(depth_window_size) + ' bp' + \
+             '</td></tr>\n'
+
+    total_high_error_regions = sum([len(x.high_error_regions) for x in references])
+    total_high_error_regions_help = 'The total count of high error regions for all ' + \
+                                    'references. A value of 0 indicates a good assembly.'
+    table += '  <tr title="' + total_high_error_regions_help + '">' + \
+             '<td>Total high error regions:</td>' + \
+             '<td>' + int_to_str(total_high_error_regions) + \
+             '</td></tr>\n'
+
+    total_depth_problem_regions = sum([len(x.low_depth_regions) + len(x.high_depth_regions) \
+                                       for x in references])
+    total_depth_problems_help = 'The total count of depth problem regions for all ' + \
+                                'references. A value of 0 is ideal, but depth problems do not ' + \
+                                'necessarily indicate misassembly.'
+    table += '  <tr title="' + total_depth_problems_help + '">' + \
+             '<td>Total depth problem regions:</td>' + \
+             '<td>' + int_to_str(total_depth_problem_regions) + \
+             '</td></tr>\n'
+
     table += '</table>\n'
     return table
 
 def get_reference_html_table(ref):
-    table = '<table width="35%">\n'
-    table += '  <tr><td>Length:</td><td align="right">' + int_to_str(ref.get_length()) + \
-             ' bp</td></tr>\n'
-    table += '      <tr><td>Alignments:</td><td align="right">' + \
-             int_to_str(ref.alignment_count) + '</td></tr>\n'
+    table = '<table width="100%">\n'
+    table += '  <col width="30%">\n'
+
+    ref_length_help = 'The length of this reference sequence.'
+    table += '  <tr title="' + ref_length_help + '">' + \
+             '<td>Length:</td>' + \
+             '<td>' + int_to_str(ref.get_length()) + ' bp' + \
+             '</td></tr>\n'
+
+    alignment_count_help = 'The number of alignments for this reference.'
+    table += '  <tr title="' + alignment_count_help + '">' + \
+             '<td>Alignments:</td>' + \
+             '<td>' + int_to_str(ref.alignment_count) + \
+             '</td></tr>\n'
+
     table += '</table>\n'
     return table
 
-def get_reference_error_rate_html_table(ref):
+def get_reference_error_rate_html_table(ref, er_window_size):
+    '''
+    Produces an HTML table summarising the error rate for the reference.
+    '''
+    window_str = int_to_str(er_window_size) + ' bp'
     table = '<br>\n'
-    table += '<table width="35%">\n'
-    table += '  <tr><td>Min error rate:</td><td align="right">'
+    table += '<table width="100%">\n'
+    table += '  <col width="30%">\n'
+
+    min_error_rate_help = 'The lowest error rate of any ' + window_str + ' window in this ' + \
+                          'reference.'
+    table += '  <tr title="' + min_error_rate_help + '">' + \
+             '<td>Min error rate:</td><td>'
     table += 'n/a' if ref.min_window_error_rate is None \
                    else float_to_str(ref.min_window_error_rate * 100.0, 1)
     table += '%</td></tr>\n'
-    table += '  <tr><td>Mean error rate:</td><td align="right">'
+
+    mean_error_rate_help = 'The mean error rate for all ' + window_str + ' windows in this ' + \
+                           'reference.'
+    table += '  <tr title="' + mean_error_rate_help + '">' + \
+             '<td>Mean error rate:</td><td>'
     table += 'n/a' if ref.mean_window_error_rate is None \
                    else float_to_str(ref.mean_window_error_rate * 100.0, 1)
     table += '%</td></tr>\n'
-    table += '  <tr><td>Max error rate:</td><td align="right">'
+
+    max_error_rate_help = 'The highest error rate of any ' + window_str + ' window in this ' + \
+                          'reference.'
+    table += '  <tr title="' + max_error_rate_help + '">' + \
+             '<td>Max error rate:</td><td>'
     table += 'n/a' if ref.max_window_error_rate is None \
                    else float_to_str(ref.max_window_error_rate * 100.0, 1)
     table += '%</td></tr>\n'
+
     table += '</table>\n'
+
     table += '<br>\n'
-    table += '<table width="35%">\n'
+    table += '<table width="100%">\n'
     if ref.high_error_regions:
-        table += '  <tr><th colspan="4">High error regions</th></tr>'
+        high_error_regions_help = 'These regions of the reference exceed the high error rate ' + \
+                                  'threshold.'
+        table += '  <tr title="' + high_error_regions_help + '">' + \
+                 '<th>High error regions</th></tr>'
         for i, high_error_region in enumerate(ref.high_error_regions):
-            table += '      <tr><td>' + int_to_str(i+1) + ')</td>' + \
-                     '<td>' + int_to_str(high_error_region[0]) + ' bp</td>' + '<td> to </td>' + \
-                     '<td align="right">' + int_to_str(high_error_region[1]) + ' bp</td></tr>\n'
+            table += '      <tr title="' + high_error_regions_help + '">' + \
+                     '<td>' + int_to_str(i+1) + ')  ' + \
+                     int_to_str(high_error_region[0]) + ' bp to ' + \
+                     int_to_str(high_error_region[1]) + ' bp</td></tr>\n'
     else:
-        table += '  <tr><th>No high error regions</th></tr>'
+        no_high_error_regions_help = 'No ' + window_str + ' windows in this reference exceed the high error rate ' + \
+                                     'threshold.'
+        table += '  <tr title="' + no_high_error_regions_help + '">' + \
+                 '<th>No high error regions</th></tr>'
     table += '</table>\n'
+
     return table
 
-def get_reference_depth_html_table(ref):
+def get_reference_depth_html_table(ref, depth_window_size, depth_p_val):
+    '''
+    Produces an HTML table summarising the read depth for the reference.
+    '''
+    window_str = int_to_str(depth_window_size) + ' bp'
     table = '<br>\n'
-    table += '<table width="35%">\n'
-    table += '  <tr><td>Min depth:</td><td align="right">' + \
-             float_to_str(ref.min_window_depth, 1) + 'x</td></tr>\n'
-    table += '  <tr><td>Mean depth:</td><td align="right">' + \
-             float_to_str(ref.mean_window_depth, 1) + 'x</td></tr>\n'
-    table += '  <tr><td>Max depth:</td><td align="right">' + \
-             float_to_str(ref.max_window_depth, 1) + 'x</td></tr>\n'
-    table += '  <tr title="Reference windows with depth below this threshold are counted as ' + \
-             'low depth regions"><td>Low depth threshold:</td><td align="right">'
-    if ref.very_low_depth_cutoff > 0.0:
-        table += float_to_str(ref.very_low_depth_cutoff, 1) + 'x'
-    else:
-        table += 'n/a'
-    table += '</td></tr>\n'
-    table += '  <tr title="Reference windows with depth above this threshold are counted as ' + \
-             'high depth regions"><td>High depth threshold:</td><td align="right">' + \
-             float_to_str(ref.very_high_depth_cutoff, 1) + 'x</td></tr>\n'
+    table += '<table width="100%">\n'
+    table += '  <col width="30%">\n'
+
+    min_depth_help = 'The lowest error rate of any ' + window_str + ' window in this reference.'
+    table += '  <tr title="' + min_depth_help + '">' + \
+             '<td>Min depth:</td><td>' + \
+             float_to_str(ref.min_window_depth, 1) + 'x' + \
+             '</td></tr>\n'
+
+    mean_depth_help = 'The mean depth for all ' + window_str + ' windows in this reference.'
+    table += '  <tr title="' + mean_depth_help + '">' + \
+             '<td>Mean depth:</td><td>' + \
+             float_to_str(ref.mean_window_depth, 1) + 'x' + \
+             '</td></tr>\n'
+
+    max_depth_help = 'The highest error rate of any ' + window_str + ' window in this reference.'
+    table += '  <tr title="' + max_depth_help + '">' + \
+             '<td>Max depth:</td><td>' + \
+             float_to_str(ref.max_window_depth, 1) + 'x' + \
+             '</td></tr>\n'
+
+    low_depth_help = window_str + ' windows with depth below this threshold are counted as ' + \
+                     'low depth regions. This is indicated in the plots with the colour red. ' + \
+                     'This value was set using the p-value of ' + float_to_str(depth_p_val, 3) + \
+                     '. When reads are placed randomly, only ' + \
+                     float_to_str(depth_p_val * 100.0, 1) + '% of trials contain a lower ' + \
+                     'minimum depth.'
+    table += '  <tr title="' + low_depth_help + '">' + \
+             '<td>Low depth threshold:</td><td>' + \
+             float_to_str(ref.very_low_depth_cutoff, 1) + 'x' + \
+             '</td></tr>\n'
+
+    high_depth_help = window_str + ' windows with depth above this threshold are counted as ' + \
+                      'high depth regions. This is indicated in the plots with the colour red. ' + \
+                     'This value was set using the p-value of ' + float_to_str(depth_p_val, 3) + \
+                     '. When reads are placed randomly, only ' + \
+                     float_to_str(depth_p_val * 100.0, 1) + '% of trials contain a higher ' + \
+                     'maximum depth.'
+    table += '  <tr title="' + high_depth_help + '">' + \
+             '<td>High depth threshold:</td><td>' + \
+             float_to_str(ref.very_high_depth_cutoff, 1) + 'x' + \
+             '</td></tr>\n'
+
     table += '</table>\n'
+
     table += '<br>\n'
-    table += '<table width="35%">\n'
+    table += '<table width="100%">\n'
     if ref.low_depth_regions:
-        table += '  <tr><th colspan="4">Low depth regions</th></tr>'
+        low_depth_regions_help = 'These regions of the reference fall below the low depth ' + \
+                                 'threshold.'
+        table += '  <tr title="' + low_depth_regions_help + '">' + \
+                 '<th>Low depth regions</th></tr>'
         for i, low_depth_region in enumerate(ref.low_depth_regions):
-            table += '  <tr><td>' + int_to_str(i+1) + ')</td>' + \
-                     '<td>' + int_to_str(low_depth_region[0]) + ' bp</td>' + '<td> to </td>' + \
-                     '<td align="right">' + int_to_str(low_depth_region[1]) + ' bp</td></tr>\n'
+            table += '      <tr title="' + low_depth_regions_help + '">' + \
+                     '<td>' + int_to_str(i+1) + ')  ' + \
+                     int_to_str(low_depth_region[0]) + ' bp to ' + \
+                     int_to_str(low_depth_region[1]) + ' bp</td></tr>\n'
     else:
-        table += '  <tr><th>No low depth regions</th></tr>'
+        no_low_depth_regions_help = 'No ' + window_str + ' windows in this reference fall ' + \
+                                    'below the low depth threshold.'
+        table += '  <tr title="' + no_low_depth_regions_help + '">' + \
+                 '<th>No low depth regions</th></tr>'
     table += '</table>\n'
+
     table += '<br>\n'
-    table += '<table width="35%">\n'
+    table += '<table width="100%">\n'
     if ref.high_depth_regions:
-        table += '  <tr><th colspan="4">High depth regions</th></tr>'
+        high_depth_regions_help = 'These regions of the reference exceed the high depth ' + \
+                                  'threshold.'
+        table += '  <tr title="' + high_depth_regions_help + '">' + \
+                 '<th>High depth regions</th></tr>'
         for i, high_depth_region in enumerate(ref.high_depth_regions):
-            table += '  <tr><td>' + int_to_str(i+1) + ')</td>' + \
-                     '<td>' + int_to_str(high_depth_region[0]) + ' bp</td>' + '<td> to </td>' + \
-                     '<td align="right">' + int_to_str(high_depth_region[1]) + ' bp</td></tr>\n'
+            table += '      <tr title="' + high_depth_regions_help + '">' + \
+                     '<td>' + int_to_str(i+1) + ')  ' + \
+                     int_to_str(high_depth_region[0]) + ' bp to ' + \
+                     int_to_str(high_depth_region[1]) + ' bp</td></tr>\n'
     else:
-        table += '  <tr><th>No high depth regions</th></tr>'
+        no_high_depth_regions_help = 'No ' + window_str + ' windows in this reference exceed' + \
+                                     ' the high depth threshold.'
+        table += '  <tr title="' + no_high_depth_regions_help + '">' + \
+                 '<th>No high depth regions</th></tr>'
     table += '</table>\n'
+
     return table
 
 

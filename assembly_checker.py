@@ -23,7 +23,7 @@ from semi_global_long_read_aligner import AlignmentScoringScheme, Read, Referenc
                                           print_progress_line, check_file_exists, \
                                           get_depth_min_and_max_distributions, \
                                           semi_global_align_long_reads, add_aligning_arguments, \
-                                          fix_up_arguments
+                                          fix_up_arguments, check_graphmap
 
 VERBOSITY = 0 # Controls how much the script prints to the screen
 CONSOLE_WIDTH = 40 # The width of many things printed to stdout

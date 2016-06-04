@@ -32,7 +32,7 @@ Output: SAM file of alignments
 * `--verbosity`: How much stdout to produce. 0 = no stdout. 1 = default. 2 = extra output (display the alignments for each read). 3 = lots of extra output (display the attempted alignments for each read). 4 = tons (I use this for debugging - you probably shouldn't use it).
 
 ### Build instructions
-This aligner uses a C++ shared library, so it must be compiled first. Just run `make` in the respository directory and it should (hopefully) build everything required.
+This aligner uses a C++ shared library, so it must be compiled first. Just run `make` in the repository directory and it should (hopefully) build everything required.
 
 # assembly_checker.py
 

@@ -16,14 +16,13 @@ import string
 import argparse
 
 sys.dont_write_bytecode = True
-from semi_global_long_read_aligner import AlignmentScoringScheme, Read, Reference, load_references, \
-                                          load_long_reads, quit_with_error, get_nice_header, \
-                                          get_random_sequence_alignment_error_rates, \
-                                          reverse_complement, int_to_str, float_to_str, \
-                                          print_progress_line, check_file_exists, \
-                                          get_depth_min_and_max_distributions, \
-                                          semi_global_align_long_reads, add_aligning_arguments, \
-                                          fix_up_arguments, check_graphmap
+from semi_global_aligner import AlignmentScoringScheme, Read, Reference, load_references, \
+                                load_long_reads, quit_with_error, get_nice_header, \
+                                get_random_sequence_alignment_error_rates, reverse_complement, \
+                                int_to_str, float_to_str, print_progress_line, check_file_exists, \
+                                get_depth_min_and_max_distributions, \
+                                semi_global_align_long_reads, add_aligning_arguments, \
+                                fix_up_arguments, check_graphmap
 
 VERBOSITY = 0 # Controls how much the script prints to the screen
 CONSOLE_WIDTH = 40 # The width of many things printed to stdout

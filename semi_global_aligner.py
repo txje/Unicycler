@@ -67,10 +67,10 @@ TOTAL_READ_LENGTH = 10000
 
 
 '''
-This script makes use of several C++ functions which are in seqan_align.so. They are wrapped in
+This script makes use of several C++ functions which are in cpp_functions.so. They are wrapped in
 similarly named Python functions.
 '''
-C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'seqan_align.so'))
+C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'lib/cpp_functions.so'))
 
 
 def main():
@@ -497,7 +497,8 @@ def load_references(fasta_filename, verbosity):
     references = []
     total_bases = 0
     if verbosity > 0:
-        print('\nLoading references')
+        print()
+        print('Loading references')
         print('------------------')
         num_refs = sum(1 for line in open(fasta_filename) if line.startswith('>'))
         if not num_refs:

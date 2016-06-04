@@ -7,13 +7,16 @@ class AssemblyGraph(object):
     '''
     This class holds an assembly graph with segments and links.
     '''
-    def __init__(self, filename, overlap):
+    def __init__(self, filename, overlap, paths_file=None):
         self.segments = {} # Dictionary of segment number -> segment
         self.forward_links = {} # Dictionary of segment number -> segment number
         self.reverse_links = {} # Dictionary of segment number <- segment number
         self.copy_depths = {} # Dictionary of segment number -> list of copy depths
+        self.paths = {} # Dictionary of path name -> list of segment numbers
         self.overlap = overlap
         self.load_graph(filename)
+        if paths_file:
+            self.load_spades_paths(paths_file)
 
     def load_graph(self, filename):
         # Load in the graph segments.
@@ -42,6 +45,54 @@ class AssemblyGraph(object):
                 self.forward_links[start] = end_list
         self.forward_links = build_rc_links_if_necessary(self.forward_links)
         self.reverse_links = build_reverse_links(self.forward_links)
+
+    def load_spades_paths(self, filename):
+        '''
+        Loads in SPAdes contig paths from file.
+        It only saves the positive paths and does not save paths with only one segment.
+        '''
+        names = []
+        segment_strings = []
+        name = ''
+        segment_string = ''
+
+        paths_file = open(filename, 'r')
+        for line in paths_file:
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith('NODE'):
+                if name:
+                    names.append(name)
+                    segment_strings.append(segment_string)
+                    name = ''
+                    segment_string = ''
+                name = line
+            else:
+                segment_string += line
+        paths_file.close()
+        if name:
+            names.append(name)
+            segment_strings.append(segment_string)
+
+        for i, name in enumerate(names):
+            if name.endswith("'"):
+                continue
+            name_parts = name.split('_')
+            if len(name_parts) < 2:
+                continue
+            name = '_'.join(name_parts[:2])
+            segment_string = segment_strings[i]
+            if not segment_string:
+                continue
+            segment_string_parts = segment_string.split(';')
+            segment_string_parts = [x for x in segment_string_parts if len(x.split(',')) > 1]
+            for j, segment_string_part in enumerate(segment_string_parts):
+                path_name = name
+                if len(segment_string_parts) > 1:
+                    path_name += '_' + str(j+1)
+                segments = [int(x[-1] + x[:-1]) for x in segment_string_part.split(',')]
+                self.paths[path_name] = segments
 
     def get_median_read_depth(self, segment_list=None):
         '''
@@ -120,6 +171,15 @@ class AssemblyGraph(object):
                 segment_line += '\n'
             gfa.write(segment_line)
         gfa.write(self.get_all_gfa_link_lines())
+        paths = sorted(self.paths.items())
+        overlap_cigar = str(self.overlap) + 'M'
+        for path_name, segment_list in paths:
+            gfa.write('P\t' + path_name + '\t')
+            gfa.write(','.join([move_sign_to_end(x) for x in segment_list]))
+            gfa.write('\t')
+            gfa.write(','.join([overlap_cigar] * (len(segment_list) - 1)))
+            gfa.write('\n')
+        gfa.close()
 
     def get_all_gfa_link_lines(self):
         gfa_link_lines = ''
@@ -430,102 +490,6 @@ class AssemblyGraph(object):
         current_largest = max(self.segments.iterkeys())
         return current_largest + 1
 
-
-
-class Segment(object):
-    '''
-    This hold a graph segment with a number, depth, direction and sequence.
-    '''
-    def __init__(self, header, sequence):
-        self.number = 0
-        self.depth = 0.0
-        self.forward_sequence = ''
-        self.reverse_sequence = ''
-        self.parse_header(header)
-        if is_header_positive(header):
-            self.forward_sequence = sequence
-        else:
-            self.reverse_sequence = sequence
-
-    def __repr__(self):
-        if len(self.forward_sequence) > 6:
-            seq_string = self.forward_sequence[:3] + '...' + self.forward_sequence[-3:]
-        else:
-            seq_string = self.forward_sequence
-        return str(self.number) + ' (' + seq_string + ')'
-
-
-    def parse_header(self, header):
-        header = header[:-1]
-        header = header.split(':')[0]
-        if header[-1] == "'":
-            header = header[:-1]
-        parts = header.split('_')
-        self.number = int(parts[1])
-        self.depth = float(parts[5])
-
-    def add_sequence(self, header, sequence):
-        if is_header_positive(header):
-            self.forward_sequence = sequence
-        else:
-            self.reverse_sequence = sequence
-
-    def build_other_sequence_if_necessary(self):
-        if not self.forward_sequence:
-            self.forward_sequence = reverse_complement(self.reverse_sequence)
-        if not self.reverse_sequence:
-            self.reverse_sequence = reverse_complement(self.forward_sequence)
-
-    def divide_depth(self, divisor):
-        self.depth /= divisor
-
-    def get_fastg_header(self, positive):
-        '''
-        Returns a SPAdes-style FASTG header, without the leading '>' or ending ';'.
-        '''
-        header = 'EDGE_' + str(self.number) + '_length_' + str(len(self.forward_sequence)) + '_cov_' + str(self.depth)
-        if not positive:
-            header += "'"
-        return header
-
-    def get_length(self):
-        return len(self.forward_sequence)
-
-    def get_length_no_overlap(self, overlap):
-        return len(self.forward_sequence) - overlap
-
-    def is_homopolymer(self):
-        '''
-        Returns True if the segment's sequence is made up of only one base.
-        '''
-        if len(self.forward_sequence) == 0:
-            return False
-        first_base = self.forward_sequence[0].lower()
-        for base in self.forward_sequence[1:]:
-            if base.lower() != first_base:
-                return False
-        return True
-
-    def gfa_segment_line(self):
-        '''
-        Returns an entire S line for GFA output, including the newline.
-        '''
-        s_line = 'S\t'
-        s_line += str(self.number) + '\t'
-        s_line += self.forward_sequence + '\t'
-        s_line += 'LN:i:' + str(self.get_length()) + '\t'
-        s_line += 'DP:f:' + str(self.depth) + '\n'
-        return s_line
-
-    def save_to_fasta(self, fasta_filename):
-        '''
-        Saves the segment's sequence to FASTA file.
-        '''
-        fasta = open(fasta_filename, 'w')
-        fasta.write('>' + self.get_fastg_header(True) + '\n')
-        fasta.write(add_line_breaks_to_sequence(self.forward_sequence, 60))
-        fasta.close()
-
     def get_depth_string(self, segment):
         '''
         Given a particular segment, this function returns a string with the segment's copy depths
@@ -819,6 +783,102 @@ class Segment(object):
 
 
 
+class Segment(object):
+    '''
+    This hold a graph segment with a number, depth, direction and sequence.
+    '''
+    def __init__(self, header, sequence):
+        self.number = 0
+        self.depth = 0.0
+        self.forward_sequence = ''
+        self.reverse_sequence = ''
+        self.parse_header(header)
+        if is_header_positive(header):
+            self.forward_sequence = sequence
+        else:
+            self.reverse_sequence = sequence
+
+    def __repr__(self):
+        if len(self.forward_sequence) > 6:
+            seq_string = self.forward_sequence[:3] + '...' + self.forward_sequence[-3:]
+        else:
+            seq_string = self.forward_sequence
+        return str(self.number) + ' (' + seq_string + ')'
+
+
+    def parse_header(self, header):
+        header = header[:-1]
+        header = header.split(':')[0]
+        if header[-1] == "'":
+            header = header[:-1]
+        parts = header.split('_')
+        self.number = int(parts[1])
+        self.depth = float(parts[5])
+
+    def add_sequence(self, header, sequence):
+        if is_header_positive(header):
+            self.forward_sequence = sequence
+        else:
+            self.reverse_sequence = sequence
+
+    def build_other_sequence_if_necessary(self):
+        if not self.forward_sequence:
+            self.forward_sequence = reverse_complement(self.reverse_sequence)
+        if not self.reverse_sequence:
+            self.reverse_sequence = reverse_complement(self.forward_sequence)
+
+    def divide_depth(self, divisor):
+        self.depth /= divisor
+
+    def get_fastg_header(self, positive):
+        '''
+        Returns a SPAdes-style FASTG header, without the leading '>' or ending ';'.
+        '''
+        header = 'EDGE_' + str(self.number) + '_length_' + str(len(self.forward_sequence)) + '_cov_' + str(self.depth)
+        if not positive:
+            header += "'"
+        return header
+
+    def get_length(self):
+        return len(self.forward_sequence)
+
+    def get_length_no_overlap(self, overlap):
+        return len(self.forward_sequence) - overlap
+
+    def is_homopolymer(self):
+        '''
+        Returns True if the segment's sequence is made up of only one base.
+        '''
+        if len(self.forward_sequence) == 0:
+            return False
+        first_base = self.forward_sequence[0].lower()
+        for base in self.forward_sequence[1:]:
+            if base.lower() != first_base:
+                return False
+        return True
+
+    def gfa_segment_line(self):
+        '''
+        Returns an entire S line for GFA output, including the newline.
+        '''
+        s_line = 'S\t'
+        s_line += str(self.number) + '\t'
+        s_line += self.forward_sequence + '\t'
+        s_line += 'LN:i:' + str(self.get_length()) + '\t'
+        s_line += 'DP:f:' + str(self.depth) + '\n'
+        return s_line
+
+    def save_to_fasta(self, fasta_filename):
+        '''
+        Saves the segment's sequence to FASTA file.
+        '''
+        fasta = open(fasta_filename, 'w')
+        fasta.write('>' + self.get_fastg_header(True) + '\n')
+        fasta.write(add_line_breaks_to_sequence(self.forward_sequence, 60))
+        fasta.close()
+
+
+
 
 
 
@@ -1067,4 +1127,11 @@ def get_sign_string(num):
         return '+'
     else:
         return '-'
+
+def move_sign_to_end(num):
+    '''
+    Takes an integer and returns a string with the sign at the end.
+    E.g. 5 -> 5+
+    '''
+    return str(abs(num)) + get_sign_string(num)
 

@@ -12,9 +12,16 @@ import sys
 import shutil
 import gzip
 import math
-from assembly_graph import AssemblyGraph, load_sam_alignments
-from semi_global_long_read_aligner import quit_with_error, add_aligning_arguments, \
-                                          fix_up_arguments
+from multiprocessing import cpu_count
+
+
+script_dir = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(os.path.join(script_dir, 'lib'))
+from assembly_graph import AssemblyGraph
+
+sys.dont_write_bytecode = True
+from semi_global_aligner import quit_with_error, add_aligning_arguments, fix_up_arguments, \
+                                int_to_str, float_to_str
 
 
 spades_path = '/Users/Ryan/Applications/SPAdes-3.7.1-Darwin/bin/spades.py'
@@ -24,22 +31,25 @@ max_kmer_fraction = 0.9 # Relative to median read length
 kmer_count = 10
 read_depth_filter_cutoff = 0.25
 
-
 def main():
     '''
     Script execution starts here.
     '''
     args = get_arguments()
-    make_output_directory(args.out)
-    log_filepath = make_log_file(args.out)
-    log_file = open(log_filepath, 'w')
+
+    if args.verbosity > 0:
+        print()
+
     check_file_exists(args.short1)
     check_file_exists(args.short2)
     check_file_exists(args.long)
 
+    make_output_directory(args.out, args.verbosity)
+
     # Produce a SPAdes assembly graph with a k-mer that balances contig length and connectivity.
-    assembly_graph, kmer = get_best_spades_graph(args.short1, args.short2, args.out, log_file,
-                                                 args.read_depth_filter)
+    assembly_graph, kmer = get_best_spades_graph(args.short1, args.short2, args.out,
+                                                 args.read_depth_filter, args.verbosity,
+                                                 args.threads)
     spades_assembly_path = os.path.join(args.out, '01_spades_assembly')
     assembly_graph.save_to_gfa(spades_assembly_path + '.gfa')
     assembly_graph.save_to_fasta(spades_assembly_path + '.fasta')
@@ -59,6 +69,7 @@ def main():
 
     # If all long reads are available now, then we do the entire process in one pass.
     if args.long:
+        temp = 5
         # TO DO: ALIGN LONG READS TO GRAPH
         # TO DO: PRODUCE BRIDGES USING LONG READ ALIGNMENTS
         # TO DO: APPLY THE BRIDGES TO THE GRAPH
@@ -68,6 +79,7 @@ def main():
     elif args.long_dir:
         finished = False
         while not finished:
+            temp = 5
             # TO DO: WAIT FOR NEW READS TO BECOME AVAILABLE
             # TO DO: ALIGN LONG READS TO GRAPH
             # TO DO: PRODUCE BRIDGES USING LONG READ ALIGNMENTS
@@ -81,9 +93,9 @@ def get_arguments():
     '''
     parser = argparse.ArgumentParser(description='Hybrid Assembler')
 
-    parser.add_argument('-1', required=True, default=argparse.SUPPRESS,
+    parser.add_argument('--short1', required=True, default=argparse.SUPPRESS,
                         help='FASTQ file of short reads (first reads in each pair).')
-    parser.add_argument('-2', required=True, default=argparse.SUPPRESS,
+    parser.add_argument('--short2', required=True, default=argparse.SUPPRESS,
                         help='FASTQ file of short reads (second reads in each pair).')
     parser.add_argument('--long', required=False, default=argparse.SUPPRESS,
                         help='FASTQ file of long reads, if all reads are available at start.')
@@ -94,6 +106,11 @@ def get_arguments():
     parser.add_argument('--read_depth_filter', type=float, required=False, default=0.25,
                         help='Minimum allowed read depth, expressed as a fraction of the median'
                              'read depth. Graph segments with less depth will be removed.')
+    parser.add_argument('--threads', type=int, required=False, default=argparse.SUPPRESS,
+                        help='Number of CPU threads used to align (default: the number of '
+                             'available CPUs)')
+    parser.add_argument('--verbosity', type=int, required=False, default=1,
+                        help='Level of stdout information (0 to 2)')
 
     # Add the arguments for the aligner, but suppress the help text.
     add_aligning_arguments(parser, True)
@@ -109,26 +126,39 @@ def get_arguments():
         args.long_dir
     except AttributeError:
         args.long_dir = None
+    try:
+        args.threads
+    except AttributeError:
+        args.threads = cpu_count()
+        if VERBOSITY > 2:
+            print('\nThread count set to', args.threads)
 
     if not args.long and not args.long_dir:
         quit_with_error('either --long or --long_dir is required')
     if args.long and args.long_dir:
         quit_with_error('--long and --long_dir cannot both be used')
 
+    # Change the output directory to a more useful full path.
+    args.out = os.path.abspath(args.out)
+
     return args
 
-
-def make_output_directory(outdir):
+def make_output_directory(outdir, verbosity):
     '''
     Creates the output directory, if it doesn't already exist.  If it does exist, that's okay as
     long as it's empty, in which case this function does nothing.  If it exists and isn't empty,
     this function quits with an error.
     '''
+    if verbosity > 1:
+        print('Making output directory')
+        print('-----------------------')
+        print(outdir)
     if not os.path.exists(outdir):
         os.makedirs(outdir)
-    elif os.listdir(outdir):
-        print('Error: the output directory (' + outdir + ') is not empty.', file=sys.stderr)
-        quit()
+    elif os.listdir(outdir) and verbosity > 1:
+        print('The directory already exists and files may be reused and/or overwritten.')
+    if verbosity > 1:
+        print()
 
 def check_file_exists(filename):
     '''
@@ -136,40 +166,73 @@ def check_file_exists(filename):
     error and quits.
     '''
     if not os.path.isfile(filename):
-        print('Error: could not find ' + filename, file=sys.stderr)
-        quit()
+        quit_with_error('could not find ' + filename)
 
-def get_best_spades_graph(short1, short2, outdir, log_file, read_depth_filter):
+def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, threads):
     '''
     This function tries a SPAdes assembly at different kmers and returns the best.
     'The best' is defined as the smallest dead-end count after low-depth filtering.  If multiple
     graphs have the same dead-end count (e.g. zero!) then the highest kmer is used.
     '''
-    kmer_range = get_kmer_range(short1, short2, log_file)
     spades_dir = os.path.join(outdir, '01_spades_assembly')
-    read_correction_dir = os.path.join(spades_dir, 'read_correction')
-    read_files = spades_read_correction(short1, short2, read_correction_dir, log_file)
-    shutil.rmtree(read_correction_dir)
+    reads = spades_read_correction(short1, short2, spades_dir, verbosity, threads)
+
+    kmer_range = get_kmer_range(short1, short2, verbosity)
+
     assem_dir = os.path.join(spades_dir, 'assembly')
-    print('Conducting SPAdes assemblies...\n')
-    print('kmer\tsegments\tdead ends\tconnected_components\tscore')
+
+    if verbosity > 0:
+        print('Conducting SPAdes assemblies')
+        print('----------------------------')
+
+    # Check to see if the SPAdes assembies already exist, and if so, use them.
+    files_exist = True
+    file_list = []
+    for kmer in kmer_range:
+        graph_file = os.path.join(spades_dir, 'k' + str(kmer) + '_assembly_graph_cleaned.gfa')
+        file_list.append(graph_file)
+        if not os.path.isfile(graph_file):
+            files_exist = False
+            break
+    if files_exist and verbosity > 0:
+        print('Assemblies already exist. Will use these files instead of running SPAdes assembly:')
+        print(''.join(['  ' + x + '\n' for x in file_list]))
+
+    if verbosity == 1:
+        print('     kmer     segments     dead ends     components     score')
     best_score = 0.0
     for i, kmer in enumerate(kmer_range):
-        graph_file = spades_assembly(read_files, assem_dir, log_file, kmer_range[:i+1])
-        assembly_graph = AssemblyGraph(graph_file, kmer)
-        clean_graph(assembly_graph, read_depth_filter)
-        assembly_graph.save_to_fastg(os.path.join(spades_dir,
-                                                  'k' + str(kmer) + '_assembly_graph_cleaned.gfa'))
+        clean_graph_filename = 'k' + str(kmer) + '_assembly_graph_cleaned.gfa'
+        if files_exist:
+            assembly_graph = AssemblyGraph(clean_graph_filename, kmer)
+        else:
+            graph_file, paths_file = spades_assembly(reads, assem_dir, kmer_range[:i+1], verbosity)
+            assembly_graph = AssemblyGraph(graph_file, kmer, paths_file=paths_file)
+            clean_graph(assembly_graph, read_depth_filter)
+            assembly_graph.save_to_gfa(os.path.join(spades_dir, clean_graph_filename))
         dead_ends, connected_components, segment_count = get_graph_info(assembly_graph)
         score = 1.0 / (segment_count * ((dead_ends + 1) ** 2))
-        print(str(kmer) + '\t' + str(segment_count) + '\t' + str(dead_ends) +
-              '\t' + str(connected_components) + '\t' + str(score))
+        if verbosity == 1:
+            print(int_to_str(kmer).rjust(9) + int_to_str(segment_count).rjust(13) + 
+                  int_to_str(dead_ends).rjust(14) + int_to_str(connected_components).rjust(15) + 
+                  float_to_str(score, 4).rjust(10))
+        if verbosity > 1:
+            print()
+            print('Summary for k = ' + int_to_str(kmer) + ':')
+            print('segments:            ', int_to_str(segment_count))
+            print('dead ends:           ', int_to_str(dead_ends))
+            print('connected components:', int_to_str(connected_components))
+            print('score:               ', float_to_str(score, 3))
+            print()
         if score >= best_score:
             best_kmer = kmer
             best_score = score
             best_assembly_graph = assembly_graph
     shutil.rmtree(assem_dir)
-    print('\nBest kmer: ' + str(best_kmer))
+    if verbosity == 1:
+        print()
+    if verbosity > 0:
+        print('Best kmer: ' + str(best_kmer))
     return best_assembly_graph, best_kmer
 
 def clean_graph(assembly_graph, read_depth_filter):
@@ -181,6 +244,7 @@ def clean_graph(assembly_graph, read_depth_filter):
     # TO DO: FIX UP SELF REV COMP NODE STRUCTURES
     assembly_graph.filter_by_read_depth(read_depth_filter)
     assembly_graph.filter_homopolymer_loops()
+    # TO DO: MERGE ALL POSSIBLE NODES
     assembly_graph.normalise_read_depths()
 
 def get_graph_info(assembly_graph):
@@ -193,30 +257,57 @@ def get_graph_info(assembly_graph):
     segment_count = len(assembly_graph.segments)
     return dead_ends, connected_components, segment_count
 
-def spades_read_correction(short1, short2, outdir, log_file):
+def spades_read_correction(short1, short2, spades_dir, verbosity, threads):
     '''
     This runs SPAdes with the --only-error-correction option.
     '''
+    if verbosity > 0:
+        print('SPAdes read error correction')
+        print('----------------------------')
+        sys.stdout.flush()
+
+    # If the corrected reads already exist, then we just use them and proceed.
+    corrected_1 = os.path.join(spades_dir, 'corrected_1.fastq.gz')
+    corrected_2 = os.path.join(spades_dir, 'corrected_2.fastq.gz')
+    corrected_u = os.path.join(spades_dir, 'corrected_u.fastq.gz')
+    if os.path.isfile(corrected_1) and os.path.isfile(corrected_2):
+        if verbosity > 0:
+            print('Corrected reads already exist. Will use these reads instead of running SPAdes '
+                  'error correction:')
+            print('  ' + corrected_1)
+            print('  ' + corrected_2)
+            if os.path.isfile(corrected_u):
+                print('  ' + corrected_u)
+            print()
+        return (corrected_1, corrected_2, corrected_u)
+
+    # If the corrected reads don't exist, then we run SPAdes in error correction only mode.
+    read_correction_dir = os.path.join(spades_dir, 'read_correction')
+    command = [spades_path, '-1', short1, '-2', short2, '-o', read_correction_dir,
+               '--threads', str(threads), '--only-error-correction']
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    while process.poll() is None:
+        spades_output = process.stdout.readline().rstrip()
+        print_line = False
+        if verbosity > 1:
+            print_line = True
+        elif verbosity > 0:
+            if 'Command line:' in spades_output:
+                print_line = True
+        if spades_output and print_line:
+            print(spades_output)
+            sys.stdout.flush()
+
+    spades_error = process.stderr.readline().strip()
+    if spades_error:
+        quit_with_error('SPAdes encountered an error: ' + spades_error)
+
+    # Read error correction should be done now, so copy the correct read files to a more permanent
+    # location.
     short1_no_extension = strip_read_extensions(short1)
     short2_no_extension = strip_read_extensions(short2)
-    print('SPAdes read error correction... ', end='')
-    sys.stdout.flush()
-    log_file.write('SPAdes read error correction\n')
-    log_file.write('----------------------------\n')
-    command = [spades_path, '-1', short1, '-2', short2, '--only-error-correction', '-o', outdir]
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = process.communicate()
-    if len(err) > 0:
-        print('\nSPAdes encountered an error:', file=sys.stderr)
-        print(err, file=sys.stderr)
-        quit()
-    log_file.write(out)
-    log_file.write('\n\n\n\n\n\n\n\n\n\n\n')
-    corrected_dir = os.path.join(outdir, 'corrected')
-    parent_dir = os.path.dirname(outdir)
-    corrected_1 = os.path.join(parent_dir, 'corrected_reads_1.fastq.gz')
-    corrected_2 = os.path.join(parent_dir, 'corrected_reads_2.fastq.gz')
-    corrected_u = os.path.join(parent_dir, 'corrected_reads_u.fastq.gz')
+    corrected_dir = os.path.join(read_correction_dir, 'corrected')
     files = os.listdir(corrected_dir)
     for spades_file in files:
         file_path = os.path.join(corrected_dir, spades_file)
@@ -226,11 +317,23 @@ def spades_read_correction(short1, short2, outdir, log_file):
             shutil.move(file_path, corrected_2)
         elif '_unpaired' in spades_file:
             shutil.move(file_path, corrected_u)
-    print('done')
-    sys.stdout.flush()
+    shutil.rmtree(read_correction_dir)
+
+    if not os.path.isfile(corrected_1) or not os.path.isfile(corrected_2):
+        quit_with_error('SPAdes read error correction failed')
+
+    if verbosity > 0:
+        print()
+        print('Corrected reads:')
+        print('  ' + corrected_1)
+        print('  ' + corrected_2)
+        if os.path.isfile(corrected_u):
+            print('  ' + corrected_u)
+        print()
+
     return (corrected_1, corrected_2, corrected_u)
 
-def spades_assembly(read_files, outdir, log_file, kmers):
+def spades_assembly(read_files, outdir, kmers, verbosity):
     '''
     This runs a SPAdes assembly, possibly continuing from a previous assembly.
     '''
@@ -239,12 +342,7 @@ def spades_assembly(read_files, outdir, log_file, kmers):
     unpaired = read_files[2]
     kmer_string = ','.join([str(x) for x in kmers])
     this_kmer = 'k' + str(kmers[-1])
-    message = 'SPAdes assembly: k=' + kmer_string
-    log_file.write(message + '\n')
-    dashes = '-' * len(message)
-    log_file.write(dashes + '\n')
-    command = [spades_path]
-    command += ['--disable-rr', '-o', outdir, '-k', kmer_string]
+    command = [spades_path, '-o', outdir, '-k', kmer_string]
     if len(kmers) > 1:
         last_kmer = 'k' + str(kmers[-2])
         command += ['--restart-from', last_kmer]
@@ -253,13 +351,17 @@ def spades_assembly(read_files, outdir, log_file, kmers):
         if unpaired:
             command += ['-s', unpaired]
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = process.communicate()
-    if len(err) > 0:
-        print('\nSPAdes encountered an error:', file=sys.stderr)
-        print(err, file=sys.stderr)
-        quit()
-    log_file.write(out)
-    log_file.write('\n\n\n\n\n\n\n\n\n\n\n')
+
+    while process.poll() is None:
+        spades_output = process.stdout.readline().rstrip()
+        if spades_output and verbosity > 1:
+            print(spades_output)
+            sys.stdout.flush()
+
+    spades_error = process.stderr.readline().strip()
+    if spades_error:
+        quit_with_error('SPAdes encountered an error: ' + spades_error)
+
     graph_file = os.path.join(outdir, 'assembly_graph.fastg')
     paths_file = os.path.join(outdir, 'contigs.paths')
 
@@ -269,9 +371,7 @@ def spades_assembly(read_files, outdir, log_file, kmers):
     moved_paths_file = os.path.join(parent_dir, this_kmer + '_contigs.paths')
     shutil.move(paths_file, moved_paths_file)
 
-
-    sys.stdout.flush()
-    return moved_graph_file
+    return moved_graph_file, moved_paths_file
 
 def strip_read_extensions(read_file_name):
     '''
@@ -286,18 +386,15 @@ def strip_read_extensions(read_file_name):
         no_extensions = no_extensions[:-6]
     return no_extensions
 
-def make_log_file(outdir):
-    '''
-    Creates an empty log file named log.txt in the given directory.
-    '''
-    log_file_path = os.path.join(outdir, 'log.txt')
-    open(log_file_path, 'w')
-    return log_file_path
-
-def get_kmer_range(reads_1_filename, reads_2_filename, log_file):
+def get_kmer_range(reads_1_filename, reads_2_filename, verbosity):
     '''
     Uses the read lengths to determine the k-mer range to be used in the SPAdes assembly.
     '''
+    if verbosity > 0:
+        print('Choosing k-mer range for assembly')
+        print('---------------------------------')
+        sys.stdout.flush()
+
     read_lengths = get_read_lengths(reads_1_filename) + get_read_lengths(reads_2_filename)
     read_lengths = sorted(read_lengths)
     median_read_length = read_lengths[len(read_lengths) // 2]
@@ -313,13 +410,13 @@ def get_kmer_range(reads_1_filename, reads_2_filename, log_file):
         if len(kmer_range) <= kmer_count:
             break
         interval += 2
-    log_file.write('K-mer sizes for SPAdes assembly\n')
-    log_file.write('-------------------------------\n')
-    log_file.write('Median read length: ' + str(median_read_length) + '\n')
-    log_file.write('Starting k-mer:     ' + str(starting_kmer) + '\n')
-    log_file.write('Maximum k-mer:      ' + str(max_kmer) + '\n')
-    log_file.write('k-mer range:        ' + ', '.join([str(x) for x in kmer_range]) + '\n')
-    log_file.write('\n\n\n\n\n\n\n\n\n\n\n')
+
+    if verbosity > 0:
+        print('Median read length: ' + str(median_read_length))
+        print('Starting k-mer:     ' + str(starting_kmer))
+        print('Maximum k-mer:      ' + str(max_kmer))
+        print('k-mer range:        ' + ', '.join([str(x) for x in kmer_range]))
+        print()
     return kmer_range
 
 

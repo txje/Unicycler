@@ -14,17 +14,17 @@ CXX         ?= g++-5
 CXXFLAGS    ?= -Wall -Wextra -pedantic -march=native
 
 # These flags are required for the build to work.
-FLAGS        = -std=c++11 -Iinclude -fPIC
+FLAGS        = -std=c++11 -Ilib/include -fPIC
 LDFLAGS      = -shared
 
 # Different debug/optimisation levels for debug/release builds.
 DEBUGFLAGS   = -DSEQAN_ENABLE_DEBUG=1 -g
 RELEASEFLAGS = -O3 -D NDEBUG
 
-TARGET       = seqan_align.so
+TARGET       = lib/cpp_functions.so
 SHELL        = /bin/sh
-SOURCES      = $(shell echo src/*.cpp)
-HEADERS      = $(shell echo include/*.h)
+SOURCES      = $(shell echo lib/src/*.cpp)
+HEADERS      = $(shell echo lib/include/*.h)
 OBJECTS      = $(SOURCES:.cpp=.o)
 
 # Linux needs '-soname' while Mac needs '-install_name'

@@ -187,7 +187,8 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
         print('Conducting SPAdes assemblies')
         print('----------------------------')
 
-    # Check to see if the SPAdes assembies already exist, and if so, use them.
+    # Check to see if the SPAdes assembies already exist. If so, we'll use them instead of doing
+    # the assembly again.
     files_exist = True
     file_list = []
     for kmer in kmer_range:
@@ -197,14 +198,19 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
             files_exist = False
             break
     if files_exist and verbosity > 0:
-        print('Assemblies already exist. Will use these files instead of running SPAdes assembly:')
+        print('Assemblies already exist. Will use these graphs instead of running SPAdes '
+              'assemblies:')
         print(''.join(['  ' + x + '\n' for x in file_list]))
 
+    # Conduct a SPAdes assembly for each k-mer (or load existing ones) and score them to choose
+    # the best.
     if verbosity == 1:
-        print('     kmer     segments     dead ends     components     score')
+        print('  kmer    segments    dead ends    components     score')
     best_score = 0.0
+    best_assembly_graph = None
     for i, kmer in enumerate(kmer_range):
-        clean_graph_filename = 'k' + str(kmer) + '_assembly_graph_cleaned.gfa'
+        clean_graph_filename = os.path.join(spades_dir, 'k' + str(kmer) +
+                                            '_assembly_graph_cleaned.gfa')
         if files_exist:
             assembly_graph = AssemblyGraph(clean_graph_filename, kmer)
         else:
@@ -214,28 +220,41 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
             assembly_graph.clean(read_depth_filter)
             assembly_graph.save_to_gfa(os.path.join(spades_dir, clean_graph_filename))
         dead_ends, connected_components, segment_count = get_graph_info(assembly_graph)
-        score = 1.0 / (segment_count * ((dead_ends + 1) ** 2))
+        if segment_count == 0:
+            score = 0.0
+        else:
+            score = 100.0 / (segment_count * ((dead_ends + 1) ** 2))
         if verbosity == 1:
-            print(int_to_str(kmer).rjust(9) + int_to_str(segment_count).rjust(13) + 
-                  int_to_str(dead_ends).rjust(14) + int_to_str(connected_components).rjust(15) + 
-                  float_to_str(score, 4).rjust(10))
+            print(int_to_str(kmer).rjust(6) + int_to_str(segment_count).rjust(12) + 
+                  int_to_str(dead_ends).rjust(13) + int_to_str(connected_components).rjust(14) + 
+                  float_to_str(score, 2).rjust(10))
         if verbosity > 1:
             print()
             print('Summary for k = ' + int_to_str(kmer) + ':')
             print('segments:            ', int_to_str(segment_count))
             print('dead ends:           ', int_to_str(dead_ends))
             print('connected components:', int_to_str(connected_components))
-            print('score:               ', float_to_str(score, 3))
+            print('score:               ', float_to_str(score, 2))
             print()
         if score >= best_score:
             best_kmer = kmer
             best_score = score
             best_assembly_graph = assembly_graph
-    shutil.rmtree(assem_dir)
+
+    # The graphs have been copied out, so we can delete the actual SPAdes directory now to save
+    # space.
+    if os.path.isdir(assem_dir):
+        shutil.rmtree(assem_dir)
+
     if verbosity == 1:
         print()
+
+    if best_score == 0.0:
+        quit_with_error('none of the SPAdes assemblies produced assembled sequence')
+
     if verbosity > 0:
         print('Best kmer: ' + str(best_kmer))
+
     return best_assembly_graph, best_kmer
 
 def get_graph_info(assembly_graph):

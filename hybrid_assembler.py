@@ -54,6 +54,8 @@ def main():
     assembly_graph.save_to_gfa(spades_assembly_path + '.gfa')
     assembly_graph.save_to_fasta(spades_assembly_path + '.fasta')
 
+    quit() # TEMP
+
     # Get a list of single-copy nodes.
     assembly_graph.determine_copy_depth(1000)
     alignment_path = os.path.join(args.out, '02_long_read_alignment')
@@ -206,9 +208,10 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
         if files_exist:
             assembly_graph = AssemblyGraph(clean_graph_filename, kmer)
         else:
-            graph_file, paths_file = spades_assembly(reads, assem_dir, kmer_range[:i+1], verbosity)
+            graph_file, paths_file = spades_assembly(reads, assem_dir, kmer_range[:i+1],
+                                                     verbosity, threads)
             assembly_graph = AssemblyGraph(graph_file, kmer, paths_file=paths_file)
-            clean_graph(assembly_graph, read_depth_filter)
+            assembly_graph.clean(read_depth_filter)
             assembly_graph.save_to_gfa(os.path.join(spades_dir, clean_graph_filename))
         dead_ends, connected_components, segment_count = get_graph_info(assembly_graph)
         score = 1.0 / (segment_count * ((dead_ends + 1) ** 2))
@@ -234,18 +237,6 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
     if verbosity > 0:
         print('Best kmer: ' + str(best_kmer))
     return best_assembly_graph, best_kmer
-
-def clean_graph(assembly_graph, read_depth_filter):
-    '''
-    For the given graph, this function normalises the read depths, filters based on depth and
-    simplifies some graph structures.
-    '''
-    assembly_graph.repair_four_way_junctions()
-    # TO DO: FIX UP SELF REV COMP NODE STRUCTURES
-    assembly_graph.filter_by_read_depth(read_depth_filter)
-    assembly_graph.filter_homopolymer_loops()
-    # TO DO: MERGE ALL POSSIBLE NODES
-    assembly_graph.normalise_read_depths()
 
 def get_graph_info(assembly_graph):
     '''
@@ -333,7 +324,7 @@ def spades_read_correction(short1, short2, spades_dir, verbosity, threads):
 
     return (corrected_1, corrected_2, corrected_u)
 
-def spades_assembly(read_files, outdir, kmers, verbosity):
+def spades_assembly(read_files, outdir, kmers, verbosity, threads):
     '''
     This runs a SPAdes assembly, possibly continuing from a previous assembly.
     '''
@@ -342,7 +333,7 @@ def spades_assembly(read_files, outdir, kmers, verbosity):
     unpaired = read_files[2]
     kmer_string = ','.join([str(x) for x in kmers])
     this_kmer = 'k' + str(kmers[-1])
-    command = [spades_path, '-o', outdir, '-k', kmer_string]
+    command = [spades_path, '-o', outdir, '-k', kmer_string, '--threads', str(threads)]
     if len(kmers) > 1:
         last_kmer = 'k' + str(kmers[-2])
         command += ['--restart-from', last_kmer]

@@ -426,6 +426,18 @@ class AssemblyGraph(object):
                 return True
         return False
 
+    def clean(self, read_depth_filter):
+        '''
+        This function does various graph repairs, filters and normalisations to make it a bit
+        nicer.
+        '''
+        self.repair_four_way_junctions()
+        # TO DO: FIX UP SELF REV COMP NODE STRUCTURES
+        self.filter_by_read_depth(read_depth_filter)
+        self.filter_homopolymer_loops()
+        # TO DO: MERGE ALL POSSIBLE NODES
+        self.normalise_read_depths()
+
     def repair_four_way_junctions(self):
         '''
         This function finds and fixes four-way junctions in the graph, as these can mess up copy

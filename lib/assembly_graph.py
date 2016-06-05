@@ -1096,7 +1096,10 @@ def get_depth_from_header(header):
     if header[-1] == "'":
         header = header[:-1]
     parts = header.split('_')
-    return float(parts[5])
+    depth_str = parts[5]
+    if depth_str.endswith(';'):
+        depth_str = depth_str[:-1]
+    return float(depth_str)
 
 def get_links_from_header(header):
     '''

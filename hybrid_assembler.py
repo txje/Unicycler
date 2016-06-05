@@ -212,7 +212,7 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
     # Conduct a SPAdes assembly for each k-mer (or load existing ones) and score them to choose
     # the best.
     if verbosity == 1:
-        print('  kmer    segments    dead ends    components     score')
+        print('  kmer   segments   dead ends   components         score')
     best_score = 0.0
     best_assembly_graph = None
     for i, kmer in enumerate(kmer_range):
@@ -233,18 +233,18 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
         if segment_count == 0:
             score = 0.0
         else:
-            score = 100.0 / (segment_count * ((dead_ends + 1) ** 2))
+            score = 1.0 / (segment_count * ((dead_ends + 1) ** 2))
         if verbosity == 1:
-            print(int_to_str(kmer).rjust(6) + int_to_str(segment_count).rjust(12) + 
-                  int_to_str(dead_ends).rjust(13) + int_to_str(connected_components).rjust(14) + 
-                  float_to_str(score, 2).rjust(10))
+            print(int_to_str(kmer).rjust(6) + int_to_str(segment_count).rjust(11) +
+                  int_to_str(dead_ends).rjust(12) + int_to_str(connected_components).rjust(13) +
+                  '{:.2e}'.format(score).rjust(14))
         if verbosity > 1:
             print()
             print('Summary for k = ' + int_to_str(kmer) + ':')
             print('segments:            ', int_to_str(segment_count))
             print('dead ends:           ', int_to_str(dead_ends))
             print('connected components:', int_to_str(connected_components))
-            print('score:               ', float_to_str(score, 2))
+            print('score:               ', '{:.2e}'.format(score))
             print()
         if score >= best_score:
             best_kmer = kmer

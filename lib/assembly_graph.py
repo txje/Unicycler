@@ -31,7 +31,6 @@ class AssemblyGraph(object):
         headers, sequences = get_headers_and_sequences(filename)
         for i, header in enumerate(headers):
             num = get_unsigned_number_from_header(header)
-            depth = get_depth_from_header(header)
             sequence = sequences[i]
             positive = is_header_positive(header)
 
@@ -41,6 +40,7 @@ class AssemblyGraph(object):
 
             # If the segment does not exist, make it.
             else:
+                depth = get_depth_from_header(header)
                 segment = Segment(num, depth, sequence, positive)
                 self.segments[num] = segment
 
@@ -1098,6 +1098,8 @@ def get_depth_from_header(header):
     parts = header.split('_')
     depth_str = parts[5]
     if depth_str.endswith(';'):
+        depth_str = depth_str[:-1]
+    if depth_str.endswith("'"):
         depth_str = depth_str[:-1]
     return float(depth_str)
 

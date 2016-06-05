@@ -47,9 +47,9 @@ def main():
     make_output_directory(args.out, args.verbosity)
 
     # Produce a SPAdes assembly graph with a k-mer that balances contig length and connectivity.
-    assembly_graph, kmer = get_best_spades_graph(args.short1, args.short2, args.out,
+    assembly_graph = get_best_spades_graph(args.short1, args.short2, args.out,
                                                  args.read_depth_filter, args.verbosity,
-                                                 args.threads)
+                                                 args.threads, args.keep_temp)
     spades_assembly_path = os.path.join(args.out, '01_spades_assembly')
     assembly_graph.save_to_gfa(spades_assembly_path + '.gfa')
     assembly_graph.save_to_fasta(spades_assembly_path + '.fasta')
@@ -111,6 +111,9 @@ def get_arguments():
     parser.add_argument('--threads', type=int, required=False, default=argparse.SUPPRESS,
                         help='Number of CPU threads used to align (default: the number of '
                              'available CPUs)')
+    parser.add_argument('--keep_temp', action='store_true', default=argparse.SUPPRESS,
+                        help='Keep all temporary files in output directory (default: delete most '
+                             'temporary files to save space)')
     parser.add_argument('--verbosity', type=int, required=False, default=1,
                         help='Level of stdout information (0 to 2)')
 
@@ -132,8 +135,12 @@ def get_arguments():
         args.threads
     except AttributeError:
         args.threads = cpu_count()
-        if VERBOSITY > 2:
+        if args.verbosity > 2:
             print('\nThread count set to', args.threads)
+    try:
+        args.keep_temp
+    except AttributeError:
+        args.keep_temp = False
 
     if not args.long and not args.long_dir:
         quit_with_error('either --long or --long_dir is required')
@@ -170,7 +177,8 @@ def check_file_exists(filename):
     if not os.path.isfile(filename):
         quit_with_error('could not find ' + filename)
 
-def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, threads):
+def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, threads,
+                          keep_temp):
     '''
     This function tries a SPAdes assembly at different kmers and returns the best.
     'The best' is defined as the smallest dead-end count after low-depth filtering.  If multiple
@@ -179,7 +187,7 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
     spades_dir = os.path.join(outdir, '01_spades_assembly')
     reads = spades_read_correction(short1, short2, spades_dir, verbosity, threads)
 
-    kmer_range = get_kmer_range(short1, short2, verbosity)
+    kmer_range = get_kmer_range(short1, short2, spades_dir, verbosity)
 
     assem_dir = os.path.join(spades_dir, 'assembly')
 
@@ -192,11 +200,10 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
     files_exist = True
     file_list = []
     for kmer in kmer_range:
-        graph_file = os.path.join(spades_dir, 'k' + str(kmer) + '_assembly_graph_cleaned.gfa')
+        graph_file = os.path.join(spades_dir, 'k' + str(kmer) + '_assembly_graph.gfa')
         file_list.append(graph_file)
         if not os.path.isfile(graph_file):
             files_exist = False
-            break
     if files_exist and verbosity > 0:
         print('Assemblies already exist. Will use these graphs instead of running SPAdes '
               'assemblies:')
@@ -210,7 +217,7 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
     best_assembly_graph = None
     for i, kmer in enumerate(kmer_range):
         clean_graph_filename = os.path.join(spades_dir, 'k' + str(kmer) +
-                                            '_assembly_graph_cleaned.gfa')
+                                            '_assembly_graph.gfa')
         if files_exist:
             assembly_graph = AssemblyGraph(clean_graph_filename, kmer)
         else:
@@ -219,6 +226,9 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
             assembly_graph = AssemblyGraph(graph_file, kmer, paths_file=paths_file)
             assembly_graph.clean(read_depth_filter)
             assembly_graph.save_to_gfa(os.path.join(spades_dir, clean_graph_filename))
+            if not keep_temp:
+                os.remove(graph_file)
+                os.remove(paths_file)
         dead_ends, connected_components, segment_count = get_graph_info(assembly_graph)
         if segment_count == 0:
             score = 0.0
@@ -241,9 +251,8 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
             best_score = score
             best_assembly_graph = assembly_graph
 
-    # The graphs have been copied out, so we can delete the actual SPAdes directory now to save
-    # space.
-    if os.path.isdir(assem_dir):
+    # Clean up SPAdes files.
+    if not keep_temp and os.path.isdir(assem_dir):
         shutil.rmtree(assem_dir)
 
     if verbosity == 1:
@@ -255,7 +264,7 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
     if verbosity > 0:
         print('Best kmer: ' + str(best_kmer))
 
-    return best_assembly_graph, best_kmer
+    return best_assembly_graph
 
 def get_graph_info(assembly_graph):
     '''
@@ -396,7 +405,7 @@ def strip_read_extensions(read_file_name):
         no_extensions = no_extensions[:-6]
     return no_extensions
 
-def get_kmer_range(reads_1_filename, reads_2_filename, verbosity):
+def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity):
     '''
     Uses the read lengths to determine the k-mer range to be used in the SPAdes assembly.
     '''
@@ -405,6 +414,26 @@ def get_kmer_range(reads_1_filename, reads_2_filename, verbosity):
         print('---------------------------------')
         sys.stdout.flush()
 
+    # If the k-mer range file already exists, we use its values and proceed.
+    kmer_range_filename = os.path.join(spades_dir, 'kmer_range')
+    if os.path.isfile(kmer_range_filename):
+        with open(kmer_range_filename, 'r') as kmer_range_file:
+            kmer_range = kmer_range_file.readline().strip().split(', ')
+        if len(kmer_range) == kmer_count:
+            try:
+                kmer_range = [int(x) for x in kmer_range]
+                if verbosity > 0:
+                    print('K-mer range already exists:')
+                    print('  ' + kmer_range_filename)
+                    print('Will use this existing range:')
+                    print('  ' + ', '.join([str(x) for x in kmer_range]))
+                    print()
+                return kmer_range
+            except ValueError:
+                pass
+
+    # If the code got here, then the k-mer range doesn't already exist and we'll create one by
+    # examining the read lengths.
     read_lengths = get_read_lengths(reads_1_filename) + get_read_lengths(reads_2_filename)
     read_lengths = sorted(read_lengths)
     median_read_length = read_lengths[len(read_lengths) // 2]
@@ -420,15 +449,19 @@ def get_kmer_range(reads_1_filename, reads_2_filename, verbosity):
         if len(kmer_range) <= kmer_count:
             break
         interval += 2
+    kmer_range_str = ', '.join([str(x) for x in kmer_range])
 
     if verbosity > 0:
         print('Median read length: ' + str(median_read_length))
         print('Starting k-mer:     ' + str(starting_kmer))
         print('Maximum k-mer:      ' + str(max_kmer))
-        print('k-mer range:        ' + ', '.join([str(x) for x in kmer_range]))
+        print('k-mer range:        ' + kmer_range_str)
         print()
-    return kmer_range
 
+    kmer_range_file = open(kmer_range_filename, 'w')
+    kmer_range_file.write(kmer_range_str)
+    kmer_range_file.close()
+    return kmer_range
 
 def round_to_nearest_odd(num):
     '''

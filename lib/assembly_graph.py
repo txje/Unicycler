@@ -206,7 +206,7 @@ class AssemblyGraph(object):
         fasta = open(filename, 'w')
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
         for segment in sorted_segments:
-            fasta.write('>' + segment.get_fastg_header(True) + '\n')
+            fasta.write('>' + str(segment.number) + '\n')
             fasta.write(add_line_breaks_to_sequence(segment.forward_sequence, 60))
 
     def save_to_fastg(self, filename):
@@ -550,7 +550,7 @@ class AssemblyGraph(object):
             bridge_depth = (start_1.depth + start_2.depth + end_1.depth + end_2.depth) / 2.0
             bridge_num = self.get_next_available_seg_number()
             bridge_seg = Segment(bridge_num, bridge_depth, bridge_seq, True)
-            bridge_seq.build_other_sequence_if_necessary()
+            bridge_seg.build_other_sequence_if_necessary()
             self.segments[bridge_num] = bridge_seg
 
             # Now rebuild the links around the junction.

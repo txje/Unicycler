@@ -332,6 +332,31 @@ class AssemblyGraph(object):
                 segment_nums_to_remove += component_nums
         self.remove_segments(segment_nums_to_remove)
 
+    def remove_segments(self, nums_to_remove):
+        '''
+        Given a list of segment numbers to remove, this function rebuilds the graph's segments
+        and links, excluding those segments. It also deletes any paths which contain those
+        segments.
+        '''
+        new_segments = {}
+        for num, segment in self.segments.iteritems():
+            if num not in nums_to_remove:
+                new_segments[num] = segment
+        self.segments = new_segments
+
+        self.forward_links = remove_nums_from_links(self.forward_links, nums_to_remove)
+        self.reverse_links = remove_nums_from_links(self.reverse_links, nums_to_remove)
+
+        paths_to_delete = []
+        neg_nums_to_remove = [-x for x in nums_to_remove]
+        for path_name, path_nums in self.paths.iteritems():
+            if len(list(set(nums_to_remove) & set(path_nums))) > 0:
+                paths_to_delete.append(path_name)
+            if len(list(set(neg_nums_to_remove) & set(path_nums))) > 0:
+                paths_to_delete.append(path_name)
+        for path_to_delete in paths_to_delete:
+            del self.paths[path_to_delete]
+
     def get_connected_components(self):
         '''
         Returns a list of lists, where each inner list is the segment numbers of one connected
@@ -383,19 +408,6 @@ class AssemblyGraph(object):
             if self.segments[num].depth >= cutoff:
                 return False
         return True
-
-    def remove_segments(self, nums_to_remove):
-        '''
-        Given a list of segment numbers to remove, this function rebuilds the graph's segments
-        and links, exclude those segments.
-        '''
-        new_segments = {}
-        for num, segment in self.segments.iteritems():
-            if num not in nums_to_remove:
-                new_segments[num] = segment
-        self.segments = new_segments
-        self.forward_links = remove_nums_from_links(self.forward_links, nums_to_remove)
-        self.reverse_links = remove_nums_from_links(self.reverse_links, nums_to_remove)
 
     def get_n_segment_length(self, n_percent):
         '''
@@ -537,10 +549,11 @@ class AssemblyGraph(object):
                 bridge_seq = end_1.reverse_sequence[:self.overlap]
             bridge_depth = (start_1.depth + start_2.depth + end_1.depth + end_2.depth) / 2.0
             bridge_num = self.get_next_available_seg_number()
-            bridge_header = 'Node_' + str(bridge_num) + '_length_' + str(len(bridge_seq)) + \
-                            '_cov_' + str(bridge_depth)
-            bridge_seg = Segment(bridge_header, bridge_seq)
+            bridge_seg = Segment(bridge_num, bridge_depth, bridge_seq, True)
+            bridge_seq.build_other_sequence_if_necessary()
             self.segments[bridge_num] = bridge_seg
+
+            # Now rebuild the links around the junction.
             self.forward_links[start_num_1] = [bridge_num]
             self.forward_links[start_num_2] = [bridge_num]
             self.forward_links[bridge_num] = [end_num_1, end_num_2]
@@ -553,6 +566,18 @@ class AssemblyGraph(object):
             self.forward_links[-bridge_num] = [-start_num_1, -start_num_2]
             self.forward_links[-end_num_1] = [-bridge_num]
             self.forward_links[-end_num_2] = [-bridge_num]
+
+            # Finally, we need to check to see if there were any paths through the junction. If so,
+            # they need to be adjusted to contain the new segment.
+            for name, segs in self.paths.iteritems():
+                self.paths[name] = insert_num_in_list(segs, start_num_1, end_num_1, bridge_num)
+                self.paths[name] = insert_num_in_list(segs, start_num_1, end_num_2, bridge_num)
+                self.paths[name] = insert_num_in_list(segs, start_num_2, end_num_1, bridge_num)
+                self.paths[name] = insert_num_in_list(segs, start_num_2, end_num_2, bridge_num)
+                self.paths[name] = insert_num_in_list(segs, -end_num_1, -start_num_1, -bridge_num)
+                self.paths[name] = insert_num_in_list(segs, -end_num_1, -start_num_2, -bridge_num)
+                self.paths[name] = insert_num_in_list(segs, -end_num_2, -start_num_1, -bridge_num)
+                self.paths[name] = insert_num_in_list(segs, -end_num_2, -start_num_2, -bridge_num)
 
     def get_next_available_seg_number(self):
         '''
@@ -939,11 +964,6 @@ class Segment(object):
 
 
 
-
-
-
-
-
 def get_error(source, target):
     '''
     Returns the relative error from trying to assign the source value to the target value.
@@ -1211,5 +1231,24 @@ def signed_string_to_int(signed_str):
         return num
     else:
         return -num
+
+def insert_num_in_list(lst, val_1, val_2, insert_val):
+    '''
+    If the list lst contains val_1 immediately followed by val_2, the function returns a new list
+    with insert_val between them. If the list does not contain that sequence of values, this
+    function just returns the original list.
+    '''
+    if len(lst) < 2:
+        return lst
+    new_list = []
+    for i, val in enumerate(lst[:-1]):
+        next_val = lst[i+1]
+        new_list.append(val)
+        if val == val_1 and next_val == val_2:
+            new_list.append(insert_val)
+    new_list.append(lst[-1])
+    return new_list 
+
+
 
 

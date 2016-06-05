@@ -313,6 +313,7 @@ def spades_read_correction(short1, short2, spades_dir, verbosity, threads):
             print_line = True
         elif verbosity > 0:
             if 'Command line:' in spades_output:
+                spades_output = ' '.join(spades_output.split())
                 print_line = True
         if spades_output and print_line:
             print(spades_output)

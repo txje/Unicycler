@@ -23,8 +23,8 @@ sys.dont_write_bytecode = True
 from semi_global_aligner import quit_with_error, add_aligning_arguments, fix_up_arguments, \
                                 int_to_str, float_to_str
 
-
-spades_path = '/Users/Ryan/Applications/SPAdes-3.7.1-Darwin/bin/spades.py'
+# TO DO: make these parameters, not globals.
+spades_path = '/Users/Ryan/Applications/SPAdes-3.8.0-Darwin/bin/spades.py'
 graphmap_path = '/Users/Ryan/Applications/graphmap/bin/Mac/graphmap'
 starting_kmer_fraction = 0.2 # Relative to median read length
 max_kmer_fraction = 0.9 # Relative to median read length

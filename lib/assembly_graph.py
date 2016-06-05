@@ -8,30 +8,40 @@ class AssemblyGraph(object):
     This class holds an assembly graph with segments and links.
     '''
     def __init__(self, filename, overlap, paths_file=None):
-        self.segments = {} # Dictionary of segment number -> segment
-        self.forward_links = {} # Dictionary of segment number -> segment number
-        self.reverse_links = {} # Dictionary of segment number <- segment number
-        self.copy_depths = {} # Dictionary of segment number -> list of copy depths
-        self.paths = {} # Dictionary of path name -> list of segment numbers
+        self.segments = {} # Dictionary of unsigned segment number -> segment
+        self.forward_links = {} # Dictionary of signed segment number -> signed segment number
+        self.reverse_links = {} # Dictionary of signed segment number <- signed segment number
+        self.copy_depths = {} # Dictionary of unsigned segment number -> list of copy depths
+        self.paths = {} # Dictionary of path name -> list of signed segment numbers
         self.overlap = overlap
-        self.load_graph(filename)
+
+        if filename.endswith('.fastg'):
+            self.load_from_fastg(filename)
+        else:
+            self.load_from_gfa(filename)
+
         if paths_file:
             self.load_spades_paths(paths_file)
 
-    def load_graph(self, filename):
+    def load_from_fastg(self, filename):
+        '''
+        Loads a Graph from a SPAdes-style FASTG file.
+        '''
         # Load in the graph segments.
         headers, sequences = get_headers_and_sequences(filename)
         for i, header in enumerate(headers):
-            sequence = sequences[i]
             num = get_unsigned_number_from_header(header)
+            depth = get_depth_from_header(header)
+            sequence = sequences[i]
+            positive = is_header_positive(header)
 
             # If the segment already exists, then add this sequence.
             if num in self.segments:
-                self.segments[num].add_sequence(header, sequence)
+                self.segments[num].add_sequence(sequence, positive)
 
             # If the segment does not exist, make it.
             else:
-                segment = Segment(header, sequence)
+                segment = Segment(num, depth, sequence, positive)
                 self.segments[num] = segment
 
         # Make sure that every segment has both a forward and reverse sequence.
@@ -46,10 +56,59 @@ class AssemblyGraph(object):
         self.forward_links = build_rc_links_if_necessary(self.forward_links)
         self.reverse_links = build_reverse_links(self.forward_links)
 
+    def load_from_gfa(self, filename):   
+        '''
+        Loads a Graph from a GFA file. It does not load any GFA file, but makes some restrictions:
+        1) The segment names must be integers.
+        2) The depths should be stored in a DP tag.
+        3) All link overlaps are the same (equal to the graph overlap value).
+        '''
+        # Load in the segments.
+        gfa_file = open(filename, 'r')
+        for line in gfa_file:
+            if line.startswith('S'):
+                line_parts = line.strip().split('\t')
+                num = int(line_parts[1])
+                depth = 1.0
+                for part in line_parts:
+                    if part.startswith('DP:'):
+                        depth = float(part[5:])
+                sequence = line_parts[2]
+                self.segments[num] = Segment(num, depth, sequence, True)
+                self.segments[num].build_other_sequence_if_necessary()
+        gfa_file.close()
+
+        # Load in the links.
+        gfa_file = open(filename, 'r')
+        for line in gfa_file:
+            if line.startswith('L'):
+                line_parts = line.strip().split('\t')
+                start = signed_string_to_int(line_parts[1] + line_parts[2])
+                end = signed_string_to_int(line_parts[3] + line_parts[4])
+                if start not in self.forward_links:
+                    self.forward_links[start] = [end]
+                else:
+                    self.forward_links[start].append(end)
+        self.forward_links = build_rc_links_if_necessary(self.forward_links)
+        self.reverse_links = build_reverse_links(self.forward_links)
+        gfa_file.close()
+
+        # Load in the paths
+        gfa_file = open(filename, 'r')
+        for line in gfa_file:
+            if line.startswith('P'):
+                line_parts = line.strip().split('\t')
+                path_name = line_parts[1]
+                segments = [signed_string_to_int(x) for x in line_parts[2].split(',')]
+                self.paths[path_name] = segments
+        gfa_file.close()
+
     def load_spades_paths(self, filename):
         '''
         Loads in SPAdes contig paths from file.
         It only saves the positive paths and does not save paths with only one segment.
+        If a SPAdes path has a gap (semicolon), then it treats each component part as a separate
+        path (i.e. paths do not span gaps).
         '''
         names = []
         segment_strings = []
@@ -91,7 +150,7 @@ class AssemblyGraph(object):
                 path_name = name
                 if len(segment_string_parts) > 1:
                     path_name += '_' + str(j+1)
-                segments = [int(x[-1] + x[:-1]) for x in segment_string_part.split(',')]
+                segments = [signed_string_to_int(x) for x in segment_string_part.split(',')]
                 self.paths[path_name] = segments
 
     def get_median_read_depth(self, segment_list=None):
@@ -175,7 +234,7 @@ class AssemblyGraph(object):
         overlap_cigar = str(self.overlap) + 'M'
         for path_name, segment_list in paths:
             gfa.write('P\t' + path_name + '\t')
-            gfa.write(','.join([move_sign_to_end(x) for x in segment_list]))
+            gfa.write(','.join([int_to_signed_string(x) for x in segment_list]))
             gfa.write('\t')
             gfa.write(','.join([overlap_cigar] * (len(segment_list) - 1)))
             gfa.write('\n')
@@ -799,13 +858,12 @@ class Segment(object):
     '''
     This hold a graph segment with a number, depth, direction and sequence.
     '''
-    def __init__(self, header, sequence):
-        self.number = 0
-        self.depth = 0.0
+    def __init__(self, number, depth, sequence, positive):
+        self.number = number
+        self.depth = depth
         self.forward_sequence = ''
         self.reverse_sequence = ''
-        self.parse_header(header)
-        if is_header_positive(header):
+        if positive:
             self.forward_sequence = sequence
         else:
             self.reverse_sequence = sequence
@@ -817,18 +875,8 @@ class Segment(object):
             seq_string = self.forward_sequence
         return str(self.number) + ' (' + seq_string + ')'
 
-
-    def parse_header(self, header):
-        header = header[:-1]
-        header = header.split(':')[0]
-        if header[-1] == "'":
-            header = header[:-1]
-        parts = header.split('_')
-        self.number = int(parts[1])
-        self.depth = float(parts[5])
-
-    def add_sequence(self, header, sequence):
-        if is_header_positive(header):
+    def add_sequence(self, sequence, positive):
+        if positive:
             self.forward_sequence = sequence
         else:
             self.reverse_sequence = sequence
@@ -947,13 +995,6 @@ def get_median(sorted_list):
     else:
         return (sorted_list[index] + sorted_list[index + 1]) / 2.0
 
-
-
-
-
-
-
-
 def get_headers_and_sequences(filename):
     '''
     Reads through a SPAdes assembly graph file and returns two lists:
@@ -1025,7 +1066,18 @@ def is_header_positive(header):
     if header[-1] == ';':
         header = header[:-1]
     return header.split(':')[0][-1] != "'"
-        
+
+def get_depth_from_header(header):
+    '''
+    Input: a SPAdes FASTG header line
+    Output: The segment's depth
+    '''
+    header = header.split(':')[0]
+    if header[-1] == "'":
+        header = header[:-1]
+    parts = header.split('_')
+    return float(parts[5])
+
 def get_links_from_header(header):
     '''
     Input: a SPAdes FASTG header line
@@ -1140,10 +1192,24 @@ def get_sign_string(num):
     else:
         return '-'
 
-def move_sign_to_end(num):
+def int_to_signed_string(num):
     '''
     Takes an integer and returns a string with the sign at the end.
-    E.g. 5 -> 5+
+    Examples:
+      5 -> 5+
+      -6 -> 6-
     '''
     return str(abs(num)) + get_sign_string(num)
+
+def signed_string_to_int(signed_str):
+    '''
+    Takes a string with the sign at the end and returns an integer.
+    '''
+    sign = signed_str[-1]
+    num = int(signed_str[:-1])
+    if sign == '+':
+        return num
+    else:
+        return -num
+
 

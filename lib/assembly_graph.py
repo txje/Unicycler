@@ -347,13 +347,13 @@ class AssemblyGraph(object):
         self.forward_links = remove_nums_from_links(self.forward_links, nums_to_remove)
         self.reverse_links = remove_nums_from_links(self.reverse_links, nums_to_remove)
 
-        paths_to_delete = []
+        paths_to_delete = set()
         neg_nums_to_remove = [-x for x in nums_to_remove]
         for path_name, path_nums in self.paths.iteritems():
             if len(list(set(nums_to_remove) & set(path_nums))) > 0:
-                paths_to_delete.append(path_name)
+                paths_to_delete.add(path_name)
             if len(list(set(neg_nums_to_remove) & set(path_nums))) > 0:
-                paths_to_delete.append(path_name)
+                paths_to_delete.add(path_name)
         for path_to_delete in paths_to_delete:
             del self.paths[path_to_delete]
 

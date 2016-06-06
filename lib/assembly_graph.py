@@ -357,6 +357,152 @@ class AssemblyGraph(object):
         for path_to_delete in paths_to_delete:
             del self.paths[path_to_delete]
 
+    def merge_all_possible(self):
+        '''
+        This function merges nodes which are in a simple, unbranching path.
+        '''
+        try_to_merge = True
+        while try_to_merge:
+            try_to_merge = False
+            for num, _ in self.segments.iteritems():
+                if num in self.forward_links and len(self.forward_links[num]) == 1:
+                    merged = self.try_to_merge_two_segments(num, self.forward_links[num][0])
+                    if merged:
+                        try_to_merge = True
+                        break
+                if -num in self.forward_links and len(self.forward_links[-num]) == 1:
+                    merged = self.try_to_merge_two_segments(-num, self.forward_links[-num][0])
+                    if merged:
+                        try_to_merge = True
+                        break
+
+    def try_to_merge_two_segments(self, seg_num_1, seg_num_2):
+        '''
+        If seg_1 and seg_2 can be merged, this function does so and returns True. Otherwise it
+        returns False.
+        '''
+        if seg_num_1 == seg_num_2:
+            return False
+        if seg_num_1 not in self.forward_links or seg_num_2 not in self.reverse_links:
+            return False
+        if len(self.forward_links[seg_num_1]) != 1 or len(self.reverse_links[seg_num_2]) != 1:
+            return False
+        if self.forward_links[seg_num_1][0] != seg_num_2 or \
+           self.reverse_links[seg_num_2][0] != seg_num_1:
+            return False
+        self.merge_two_segments(seg_num_1, seg_num_2)
+        return True
+
+
+    def merge_two_segments(self, seg_num_1, seg_num_2):
+        '''
+        Merges seg_1 and seg_2 into a single segment and adjusts any paths as necessary. Assumes
+        that seg_1 and seg_2 form a simple, unbranching path and can be merged.
+        '''
+        seg_1 = self.segments[abs(seg_num_1)]
+        seg_2 = self.segments[abs(seg_num_2)]
+
+        seg_1_len = seg_1.get_length()
+        seg_2_len = seg_2.get_length()
+
+        seg_1_seq = self.get_seq_from_signed_seg_num(seg_num_1)
+        seg_2_seq = self.get_seq_from_signed_seg_num(seg_num_2)
+
+        merged_forward_seq = seg_1_seq[:-self.overlap] + seg_2_seq
+        merged_reverse_seq = reverse_complement(merged_forward_seq)
+
+        # The merged sequence depth is the weighted mean of the two components.
+        seg_1_len = seg_1.get_length() - self.overlap
+        seg_2_len = seg_2.get_length() - self.overlap
+        len_sum = seg_1_len + seg_2_len
+        if len_sum > 0.0:
+            mean_depth = seg_1.depth * (seg_1_len / len_sum) + seg_2.depth * (seg_2_len / len_sum)
+        else:
+            mean_depth = 1.0
+
+        # Create a new merged segment using the number of whichever component segment is larger.
+        new_seg_num = self.get_next_available_seg_number()
+        if seg_2_len > seg_1_len:
+            new_seg_num = abs(seg_num_2)
+        new_seg = Segment(new_seg_num, mean_depth, merged_forward_seq, True)
+        new_seg.reverse_sequence = merged_reverse_seq
+
+        # Save some info that we'll need, and then delete the old segments.
+        paths_copy = self.paths.copy()
+        outgoing_links = []
+        if seg_num_2 in self.forward_links:
+            outgoing_links = self.forward_links[seg_num_2]
+        incoming_links = []
+        if seg_num_1 in self.reverse_links:
+            incoming_links = self.reverse_links[seg_num_1]
+        self.remove_segments([abs(seg_num_1), abs(seg_num_2)])
+
+        # Add the new segment to the graph and give it the links from its source segments.
+        self.segments[new_seg_num] = new_seg
+        for link in outgoing_links:
+            self.add_link(new_seg_num, link)
+        for link in incoming_links:
+            self.add_link(link, new_seg_num)
+
+        # Merge the segments in any paths.
+        for path_name in paths_copy.iterkeys():
+            paths_copy[path_name] = find_replace_in_list(paths_copy[path_name],
+                                                         [seg_num_1, seg_num_2], new_seg_num)
+            paths_copy[path_name] = find_replace_in_list(paths_copy[path_name],
+                                                         [-seg_num_2, -seg_num_1], -new_seg_num)
+
+        # If any paths still contain the original segments, then split those paths into pieces,
+        # removing the original segments.
+        new_paths = {}
+        for path_name, path_segments in paths_copy.iteritems():
+            split_paths = split_path_multiple(path_segments, [seg_num_1, seg_num_2,
+                                                              -seg_num_1, -seg_num_2])
+            if len(split_paths) == 1:
+                new_paths[path_name] = split_paths[0]
+            elif len(split_paths) > 1:
+                for i, path in enumerate(split_paths):
+                    new_paths[path_name+'_'+str(i+1)] = path
+        self.paths = new_paths
+
+
+
+
+
+    def add_link(self, start, end):
+        '''
+        Adds a link to the graph in all necessary ways: forward and reverse, and for reverse
+        complements too.
+        '''
+        if start not in self.forward_links:
+            self.forward_links[start] = []
+        if end not in self.forward_links[start]:
+            self.forward_links[start].append(end)
+
+        if end not in self.reverse_links:
+            self.reverse_links[end] = []
+        if start not in self.reverse_links[end]:
+            self.reverse_links[end].append(start)
+
+        if -start not in self.reverse_links:
+            self.reverse_links[-start] = []
+        if -end not in self.reverse_links[-start]:
+            self.reverse_links[-start].append(-end)
+
+        if -end not in self.forward_links:
+            self.forward_links[-end] = []
+        if -start not in self.forward_links[-end]:
+            self.forward_links[-end].append(-start)
+
+    def get_seq_from_signed_seg_num(self, signed_num):
+        '''
+        Returns the forwards or reverse sequence of a segment, if the number is next_positive or
+        negative, respectively. Assumes the segment number is in the graph.
+        '''
+        if signed_num > 0:
+            return self.segments[signed_num].forward_sequence
+        else:
+            return self.segments[-signed_num].reverse_sequence
+
     def get_connected_components(self):
         '''
         Returns a list of lists, where each inner list is the segment numbers of one connected
@@ -503,10 +649,9 @@ class AssemblyGraph(object):
         nicer.
         '''
         self.repair_four_way_junctions()
-        # TO DO: FIX UP SELF REV COMP NODE STRUCTURES
         self.filter_by_read_depth(read_depth_filter)
         self.filter_homopolymer_loops()
-        # TO DO: MERGE ALL POSSIBLE NODES
+        self.merge_all_possible()
         self.normalise_read_depths()
 
     def repair_four_way_junctions(self):
@@ -1254,6 +1399,48 @@ def insert_num_in_list(lst, val_1, val_2, insert_val):
     new_list.append(lst[-1])
     return new_list 
 
+def find_replace_in_list(lst, pattern, replacement):
+    '''
+    This function looks for the given pattern in the list and if found, replaces it.
+    Example: find_replace_in_list([1,5,8,3], [5,8], 7) -> [1,7,3]
+    If there are multiple occurrences, it will replace them all.
+    '''
+    replacement_made = True
+    while replacement_made:
+        replacement_made = False
+        for i, _ in enumerate(lst):
+            if lst[i] == pattern[0] and lst[i:i+len(pattern)] == pattern:
+                replacement_made = True
+                lst = lst[:i] + [replacement] + lst[i+len(pattern):]
+                break
+    return lst
+
+def split_path(path, seg):
+    '''
+    If val is in the list, it returns multiple lists split at that point, excluding val.
+    Sort of like the string split function, but it throws out lists of 1 (because they aren't
+    useful as paths).
+    '''
+    return_paths = []
+    while seg in path:
+        seg_i = path.index(seg)
+        return_paths.append(path[:seg_i])
+        path = path[seg_i+1:]
+    return_paths.append(path)
+    return_paths = [x for x in return_paths if len(x) > 1]
+    return return_paths
+
+def split_path_multiple(path, segs):
+    '''
+    Like split_path, but vals is a list of vals, all of which split the list.
+    '''
+    path_parts = [path]
+    for seg in segs:
+        new_path_parts = []
+        for part in path_parts:
+            new_path_parts += split_path(part, seg)
+        path_parts = new_path_parts
+    return path_parts
 
 
 

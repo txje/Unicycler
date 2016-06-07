@@ -393,7 +393,6 @@ class AssemblyGraph(object):
         self.merge_two_segments(seg_num_1, seg_num_2)
         return True
 
-
     def merge_two_segments(self, seg_num_1, seg_num_2):
         '''
         Merges seg_1 and seg_2 into a single segment and adjusts any paths as necessary. Assumes
@@ -422,8 +421,6 @@ class AssemblyGraph(object):
 
         # Create a new merged segment using the number of whichever component segment is larger.
         new_seg_num = self.get_next_available_seg_number()
-        if seg_2_len > seg_1_len:
-            new_seg_num = abs(seg_num_2)
         new_seg = Segment(new_seg_num, mean_depth, merged_forward_seq, True)
         new_seg.reverse_sequence = merged_reverse_seq
 

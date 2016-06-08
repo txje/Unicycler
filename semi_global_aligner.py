@@ -40,6 +40,10 @@ from multiprocessing.dummy import Pool as ThreadPool
 from multiprocessing import cpu_count
 import threading
 
+SCIRPT_DIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(os.path.join(SCIRPT_DIR, 'lib'))
+from misc import int_to_str, float_to_str, check_file_exists, quit_with_error
+
 # Used to ensure that multiple threads writing to the same SAM file don't write at the same time.
 sam_write_lock = threading.Lock()
 
@@ -840,13 +844,6 @@ def get_nice_header(header):
     else:
         return header.split()[0]
 
-def check_file_exists(filename): # type: (str) -> bool
-    '''
-    Checks to make sure the single given file exists.
-    '''
-    if not os.path.isfile(filename):
-        quit_with_error('could not find ' + filename)
-
 def check_graphmap(graphmap_path):
     '''
     Makes sure the GraphMap executable is available.
@@ -858,42 +855,6 @@ def check_graphmap(graphmap_path):
     if not found_graphmap:
         quit_with_error('could not find GraphMap at ' + graphmap_path + 
                         ', either fix path or run with --no_graphmap')
-
-def quit_with_error(message): # type: (str) -> None
-    '''
-    Displays the given message and ends the program's execution.
-    '''
-    print('Error:', message, file=sys.stderr)
-    sys.exit(1)
-
-def float_to_str(num, decimals, max_num=0):
-    '''
-    Converts a number to a string. Will add left padding based on the max value to ensure numbers
-    align well.
-    '''
-    if num is None:
-        num_str = 'n/a'
-    else:
-        num_str = '%.' + str(decimals) + 'f'
-        num_str = num_str % num
-        after_decimal = num_str.split('.')[1]
-        num_str = int_to_str(int(num)) + '.' + after_decimal
-    if max_num > 0:
-        max_str = float_to_str(max_num, decimals)
-        num_str = num_str.rjust(len(max_str))
-    return num_str
-
-def int_to_str(num, max_num=0):
-    '''
-    Converts a number to a string. Will add left padding based on the max value to ensure numbers
-    align well.
-    '''
-    if num is None:
-        num_str = 'n/a'
-    else:
-        num_str = '{:,}'.format(num)
-    max_str = '{:,}'.format(int(max_num))
-    return num_str.rjust(len(max_str))
 
 def reverse_complement(seq):
     '''Given a DNA sequences, this function returns the reverse complement sequence.'''

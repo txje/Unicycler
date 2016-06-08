@@ -14,14 +14,14 @@ import gzip
 import math
 from multiprocessing import cpu_count
 
-
-script_dir = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(os.path.join(script_dir, 'lib'))
+SCIRPT_DIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(os.path.join(SCIRPT_DIR, 'lib'))
 from assembly_graph import AssemblyGraph
+from misc import int_to_str, float_to_str, quit_with_error, check_file_exists
 
 sys.dont_write_bytecode = True
-from semi_global_aligner import quit_with_error, add_aligning_arguments, fix_up_arguments, \
-                                int_to_str, float_to_str
+from semi_global_aligner import add_aligning_arguments, fix_up_arguments
+                                
 
 # TO DO: make these parameters, not globals.
 spades_path = '/Users/Ryan/Applications/SPAdes-3.8.0-Darwin/bin/spades.py'
@@ -48,18 +48,23 @@ def main():
 
     # Produce a SPAdes assembly graph with a k-mer that balances contig length and connectivity.
     assembly_graph = get_best_spades_graph(args.short1, args.short2, args.out,
-                                                 args.read_depth_filter, args.verbosity,
-                                                 args.threads, args.keep_temp)
+                                           args.read_depth_filter, args.verbosity,
+                                           args.threads, args.keep_temp)
     spades_assembly_path = os.path.join(args.out, '01_spades_assembly')
-    assembly_graph.save_to_gfa(spades_assembly_path + '.gfa')
-    assembly_graph.save_to_fasta(spades_assembly_path + '.fasta')
 
+    single_copy_segments = get_single_copy_segments(assembly_graph, args.verbosity)
+    assembly_graph.save_to_gfa(os.path.join(args.out, 'unbridged_graph.gfa'))
+    
     quit() # TEMP
 
-    # Get a list of single-copy nodes.
-    assembly_graph.determine_copy_depth(1000)
-    alignment_path = os.path.join(args.out, '02_long_read_alignment')
-    assembly_graph.save_to_gfa(os.path.join(alignment_path, 'unbridged_graph.gfa'))
+
+    alignment_dir = os.path.join(args.out, '02_read_alignment')
+    if not os.path.exists(alignment_dir):
+        os.makedirs(alignment_dir)
+    assembly_graph.save_to_fasta(alignment_dir + '.fasta')
+
+
+
     # TO DO: GET SINGLE COPY NODES
 
     # Produce an initial set of bridges using SPAdes contig paths.
@@ -169,14 +174,6 @@ def make_output_directory(outdir, verbosity):
     if verbosity > 1:
         print()
 
-def check_file_exists(filename):
-    '''
-    If the given file exists, this function does nothing.  If it doesn't exist, it displays an
-    error and quits.
-    '''
-    if not os.path.isfile(filename):
-        quit_with_error('could not find ' + filename)
-
 def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, threads,
                           keep_temp):
     '''
@@ -212,7 +209,7 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
     # Conduct a SPAdes assembly for each k-mer (or load existing ones) and score them to choose
     # the best.
     if verbosity == 1:
-        print('  kmer   segments   dead ends   components         score')
+        print('  kmer   segments   dead ends         score')
     best_score = 0.0
     best_assembly_graph = None
     for i, kmer in enumerate(kmer_range):
@@ -236,12 +233,12 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
             score = 1.0 / (segment_count * ((dead_ends + 1) ** 2))
         if verbosity == 1:
             print(int_to_str(kmer).rjust(6) + int_to_str(segment_count).rjust(11) +
-                  int_to_str(dead_ends).rjust(12) + int_to_str(connected_components).rjust(13) +
-                  '{:.2e}'.format(score).rjust(14))
+                  int_to_str(dead_ends).rjust(12) + '{:.2e}'.format(score).rjust(14))
         if verbosity > 1:
             print()
-            print('Summary for k = ' + int_to_str(kmer) + ':')
+            print('Summary for k' + int_to_str(kmer) + ':')
             print('segments:            ', int_to_str(segment_count))
+            print('total length:        ', int_to_str(assembly_graph.get_total_length()), 'bp')
             print('dead ends:           ', int_to_str(dead_ends))
             print('connected components:', int_to_str(connected_components))
             print('score:               ', '{:.2e}'.format(score))
@@ -263,6 +260,7 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
 
     if verbosity > 0:
         print('Best kmer: ' + str(best_kmer))
+        print()
 
     return best_assembly_graph
 
@@ -463,6 +461,33 @@ def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity):
     kmer_range_file.write(kmer_range_str)
     kmer_range_file.close()
     return kmer_range
+
+def get_single_copy_segments(graph, verbosity):
+    '''
+    Returns a list of the graph segments determined to be single-copy.
+    '''
+    if verbosity > 0:
+        print('Finding single-copy segments')
+        print('----------------------------')
+        sys.stdout.flush()
+
+    graph.determine_copy_depth(verbosity)
+
+    single_copy_segments = graph.get_single_copy_segments()
+
+    if verbosity > 1:
+        print()
+    if verbosity > 0:
+        total_single_copy_length = sum([x.get_length() for x in single_copy_segments])
+        print(int_to_str(len(single_copy_segments)),
+              'single copy segments (' + int_to_str(total_single_copy_length) + ' bp) out of',
+              int_to_str(len(graph.segments)),
+              'total segments (' + int_to_str(graph.get_total_length()) + ' bp)')
+        sys.stdout.flush()
+
+    return single_copy_segments
+
+
 
 def round_to_nearest_odd(num):
     '''

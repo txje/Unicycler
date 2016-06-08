@@ -2,6 +2,7 @@ from __future__ import print_function
 from __future__ import division
 from collections import deque
 
+from misc import int_to_str, float_to_str
 
 class AssemblyGraph(object):
     '''
@@ -187,20 +188,14 @@ class AssemblyGraph(object):
         '''
         Returns the sum of all segment sequence lengths.
         '''
-        total_length = 0
-        for segment in self.segments.itervalues():
-            total_length += segment.get_length()
-        return total_length
+        return sum([x.get_length() for x in self.segments.itervalues()])
 
     def get_total_length_no_overlaps(self):
         '''
         Returns the sum of all segment sequence lengths, subtracting the overlap size from each
         node.
         '''
-        total_length = 0
-        for segment in self.segments.itervalues():
-            total_length += segment.get_length_no_overlap(self.overlap)
-        return total_length
+        return sum([x.get_length_no_overlap(self.overlap) for x in self.segments.itervalues()])
 
     def save_to_fasta(self, filename):
         fasta = open(filename, 'w')
@@ -404,9 +399,9 @@ class AssemblyGraph(object):
         seg_1_len = seg_1.get_length()
         seg_2_len = seg_2.get_length()
 
+        # Create the merged sequence by removing overlap and concatenating
         seg_1_seq = self.get_seq_from_signed_seg_num(seg_num_1)
         seg_2_seq = self.get_seq_from_signed_seg_num(seg_num_2)
-
         merged_forward_seq = seg_1_seq[:-self.overlap] + seg_2_seq
         merged_reverse_seq = reverse_complement(merged_forward_seq)
 
@@ -432,6 +427,10 @@ class AssemblyGraph(object):
         incoming_links = []
         if seg_num_1 in self.reverse_links:
             incoming_links = self.reverse_links[seg_num_1]
+        outgoing_links = find_replace_one_val_in_list(outgoing_links, seg_num_1, new_seg_num)
+        outgoing_links = find_replace_one_val_in_list(outgoing_links, -seg_num_2, -new_seg_num)
+        incoming_links = find_replace_one_val_in_list(incoming_links, seg_num_2, new_seg_num)
+        incoming_links = find_replace_one_val_in_list(incoming_links, -seg_num_1, -new_seg_num)
         self.remove_segments([abs(seg_num_1), abs(seg_num_2)])
 
         # Add the new segment to the graph and give it the links from its source segments.
@@ -444,9 +443,9 @@ class AssemblyGraph(object):
         # Merge the segments in any paths.
         for path_name in paths_copy.iterkeys():
             paths_copy[path_name] = find_replace_in_list(paths_copy[path_name],
-                                                         [seg_num_1, seg_num_2], new_seg_num)
+                                                         [seg_num_1, seg_num_2], [new_seg_num])
             paths_copy[path_name] = find_replace_in_list(paths_copy[path_name],
-                                                         [-seg_num_2, -seg_num_1], -new_seg_num)
+                                                         [-seg_num_2, -seg_num_1], [-new_seg_num])
 
         # If any paths still contain the original segments, then split those paths into pieces,
         # removing the original segments.
@@ -460,10 +459,6 @@ class AssemblyGraph(object):
                 for i, path in enumerate(split_paths):
                     new_paths[path_name+'_'+str(i+1)] = path
         self.paths = new_paths
-
-
-
-
 
     def add_link(self, start, end):
         '''
@@ -753,78 +748,98 @@ class AssemblyGraph(object):
         else: # 4+
             return 'red'
 
-    # def determine_copy_depth(self):
-
-    #     one_link_segments = [x for x in self.segments.values() if self.at_most_one_link_per_end(x)]
-
-    #     for seg in one_link_segments:
-    #         depth = seg.depth
-
-    #     base_depths = []
-    #     for seg in one_link_segments:
-    #         base_depths += [seg.depth] * seg.get_length()
-    #     base_depths = sorted(base_depths)
-    #     median_depth = get_median(base_depths)
-    #     absolute_deviations = [abs(x - median_depth) for x in base_depths]
-    #     median_absolute_deviation = 1.4826 * get_median(sorted(absolute_deviations))
-
-    #     print('median_depth', median_depth)
-    #     print('median_absolute_deviation', median_absolute_deviation)
-
-    #     for seg in one_link_segments:
-    #         depth = seg.depth
-    #         robust_z_score = (seg.depth - median_depth) / median_absolute_deviation
-    #         print(seg.number, seg.depth, robust_z_score)
-
-
-    #     # depth_file = open('/Users/Ryan/Desktop/depths.txt', 'w')
-    #     # for depth in base_depths:
-    #     #     depth_file.write(str(depth) + '\n')
-    #     # depth_file.close()
-
-
-
-
-
-
-
-    def determine_copy_depth(self, minimum_auto_single):
+    def determine_copy_depth(self, verbosity):
         '''
-        This function iteratively applies the various methods for assigning copy depth to segments
-        until no more assignments can be made.  It may not succeed in assigning copy depths to all
-        segments, as some segments will have strange/difficult connections or depth which prevent
-        automatic copy depth determination.
+        Assigns a copy depth to each segment in the graph.
         '''
+        # Reset any existing copy depths.
+        self.copy_depths = {}
+
+        # TO DO: These should be parameters, after I have them sorted out.
+        initial_tolerance = 0.1
+        propogation_tolerance = 0.2
+        min_half_median_for_diploid = 0.1
+
+        # Determine the single-copy read depth for the graph. In haploid and some diploid cases,
+        # this will be the median depth. But in some diploid cases, the single-copy depth may at
+        # about half the median (because the median depth holds the sequences shared between sister
+        # chromosomes). To catch these cases, we look to see whether the graph peaks more strongly
+        # at half the median or double the median. In the former case, we move the single-copy
+        # depth down to half the median.
+        median_depth = self.get_median_read_depth()
+        if verbosity > 1:
+            print('Median graph depth:', float_to_str(median_depth, 3))
+        bases_near_half_median = self.get_base_count_in_depth_range(median_depth * 0.4,
+                                                                    median_depth * 0.6)
+        bases_near_double_median = self.get_base_count_in_depth_range(median_depth * 1.6,
+                                                                      median_depth * 2.4)
+        total_graph_bases = self.get_total_length()
+        half_median_frac = bases_near_half_median / total_graph_bases
+        double_median_frac = bases_near_double_median / total_graph_bases
+        if half_median_frac > double_median_frac and \
+           half_median_frac >= min_half_median_for_diploid:
+            single_copy_depth = median_depth / 2.0
+        else:
+            single_copy_depth = median_depth
+        if verbosity > 1:
+            print('Single-copy depth:', float_to_str(median_depth, 3))
+
+        # Assign single-copy status to segments within the tolerance of the single-copy depth.
+        min_depth = single_copy_depth - initial_tolerance
+        max_depth = single_copy_depth + initial_tolerance
+        initial_single_copy_segments = []
+        for seg_num, segment in self.segments.iteritems():
+            if segment.depth >= min_depth and segment.depth <= max_depth and \
+               self.at_most_one_link_per_end(segment):
+                self.copy_depths[segment.number] = [segment.depth]
+                initial_single_copy_segments.append(seg_num)
+        if verbosity > 1:
+            if initial_single_copy_segments:
+                print()
+                print('Initial single copy segments:',
+                      ', '.join([str(x) for x in initial_single_copy_segments]))
+            else:
+                print('Initial single copy segments: none')
+            print()
+
+        # Propogate copy depth as possible using those initial assignments.
+        self.determine_copy_depth_part_2(propogation_tolerance, verbosity)
+
+        # Assign single-copy to the largest available segment, propogate and repeat.
         while True:
-            assignments = self.assign_single_copy_depth(minimum_auto_single)
-            self.determine_copy_depth_part_2()
+            assignments = self.assign_single_copy_depth(verbosity)
+            self.determine_copy_depth_part_2(propogation_tolerance, verbosity)
             if not assignments:
                 break
 
-    def determine_copy_depth_part_2(self):
-        while self.merge_copy_depths():
-            pass
-        if self.redistribute_copy_depths():
-            self.determine_copy_depth_part_2()
-        while self.simple_loop_copy_depths():
-            pass
+        # As a final step, propogate with no tolerance threshold.
+        self.determine_copy_depth_part_2(1.0, verbosity)
 
-    def assign_single_copy_depth(self, minimum_auto_single):
+    def determine_copy_depth_part_2(self, tolerance, verbosity):
         '''
-        This function assigns a single copy to the longest segment with no more than one link per
-        end.
+        Propogates copy depth repeatedly until assignments stop.
         '''
-        segments = sorted(self.get_segments_without_copies(), key=lambda x: x.get_length(), reverse=True)
+        while self.merge_copy_depths(tolerance, verbosity):
+            pass
+        if self.redistribute_copy_depths(tolerance, verbosity):
+            self.determine_copy_depth_part_2(tolerance, verbosity)
+
+    def assign_single_copy_depth(self, verbosity):
+        '''
+        This function assigns a single copy to the longest available segment.
+        '''
+        segments = sorted(self.get_segments_without_copies(),
+                          key=lambda x: x.get_length(), reverse=True)
         for segment in segments:
-            if segment.get_length() >= minimum_auto_single and \
-               self.at_most_one_link_per_end(segment):
+            if self.exactly_one_link_per_end(segment):
                 self.copy_depths[segment.number] = [segment.depth]
-                print('assign_single_copy_segments:', segment.number) # TEMP
+                if verbosity > 1:
+                    print('New single copy:', segment.number,
+                          '(' + float_to_str(segment.depth, 2) + 'x)')
                 return 1
-        print('assign_single_copy_segments: ') # TEMP
         return 0
 
-    def merge_copy_depths(self):
+    def merge_copy_depths(self, error_margin, verbosity):
         '''
         This function looks for segments where they have input on one end where:
           1) All input segments have copy depth assigned.
@@ -835,12 +850,10 @@ class AssemblyGraph(object):
         '''
         segments = self.get_segments_without_copies()
         if not segments:
-            print('merge_copy_depths:           ') # TEMP
             return 0
 
-        error_margin = 1.0 # TEMP: EITHER REMOVE LATER OR MAKE A PARAMETER
-        
         best_segment_num = None
+        best_source_nums = None
         best_new_depths = []
         lowest_error = float('inf')
 
@@ -855,22 +868,28 @@ class AssemblyGraph(object):
                 if error < lowest_error:
                     lowest_error = error
                     best_segment_num = num
+                    best_source_nums = exclusive_inputs
                     best_new_depths = depths
             if out_depth_possible:
                 depths, error = self.scale_copy_depths_from_source_segments(num, exclusive_outputs)
                 if error < lowest_error:
                     lowest_error = error
                     best_segment_num = num
+                    best_source_nums = exclusive_outputs
                     best_new_depths = depths
         if best_segment_num and lowest_error < error_margin:
-            print('merge_copy_depths:          ', best_segment_num) # TEMP
             self.copy_depths[best_segment_num] = best_new_depths
+            if verbosity > 1:
+                print('Merged copies:  ',
+                      ' + '.join([str(x) + ' (' + float_to_str(self.segments[x].depth, 2) + 'x)' \
+                                  for x in best_source_nums]), '->',
+                      best_segment_num,
+                      '(' + float_to_str(self.segments[best_segment_num].depth, 2) + 'x)')
             return 1
         else:
-            print('merge_copy_depths:           ') # TEMP
             return 0
 
-    def redistribute_copy_depths(self):
+    def redistribute_copy_depths(self, error_margin, verbosity):
         '''
         This function deals with the easier case of copy depth redistribution: where one segments
         with copy depth leads exclusively to multiple segments without copy depth.
@@ -878,13 +897,9 @@ class AssemblyGraph(object):
         segments.  If it can be done within the allowed error margin, the destination segments will
         get their copy depths.
         '''
-        error_margin = 1.0 # TEMP: EITHER REMOVE LATER OR MAKE A PARAMETER
-
         segments = self.get_segments_with_two_or_more_copies()
         if not segments:
-            print('redistribute_copy_depths:    ') # TEMP
             return 0
-        assignment_count = 0
         for segment in segments:
             num = segment.number
             connections = self.get_exclusive_inputs(num)
@@ -897,7 +912,8 @@ class AssemblyGraph(object):
             # connections which are lacking copy depth.
             copy_depths = self.copy_depths[num]
             bins = [[]] * len(connections)
-            targets = [None if x not in self.copy_depths else len(self.copy_depths[x]) for x in connections]
+            targets = [None if x not in self.copy_depths else len(self.copy_depths[x]) \
+                       for x in connections]
             arrangments = shuffle_into_bins(copy_depths, bins, targets)
             if not arrangments:
                 continue
@@ -909,29 +925,16 @@ class AssemblyGraph(object):
                     lowest_error = error
                     best_arrangement = arrangment
             if lowest_error < error_margin:
-                if self.assign_copy_depths_where_needed(connections, best_arrangement):
-                    print('redistribute_copy_depths:   ', num) # TEMP
+                if self.assign_copy_depths_where_needed(connections, best_arrangement,
+                                                        error_margin):
+                    if verbosity > 1:
+                        print('Split copies:   ', num,
+                              '(' + float_to_str(self.segments[num].depth, 2) + 'x) ->',
+                              ' + '.join([str(x) + ' (' + float_to_str(self.segments[x].depth, 2) + 'x)' \
+                                  for x in connections]))
                     return 1
-
-        print('redistribute_copy_depths:    ') # TEMP
         return 0
 
-    def simple_loop_copy_depths(self):
-        '''
-        This function assigns copy depths to simple loop structures.  It will only assign copy
-        depths in cases where the loop occurs once - higher repetition loops will not be given copy
-        depths due to the increasing uncertainty in repetition counts.
-        '''
-        assignment_count = 0
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        print('simple_loop_copy_depths:     ') # TEMP
-        return assignment_count
-        
     def at_most_one_link_per_end(self, segment):
         '''
         Returns True if the given segment has no more than one link on either end.
@@ -940,6 +943,17 @@ class AssemblyGraph(object):
         if num in self.forward_links and len(self.forward_links[num]) > 1:
             return False
         if num in self.reverse_links and len(self.reverse_links[num]) > 1:
+            return False
+        return True
+
+    def exactly_one_link_per_end(self, segment):
+        '''
+        Returns True if the given segment has exactly one link on either end.
+        '''
+        num = segment.number
+        if num in self.forward_links and len(self.forward_links[num]) != 1:
+            return False
+        if num in self.reverse_links and len(self.reverse_links[num]) != 1:
             return False
         return True
 
@@ -993,32 +1007,49 @@ class AssemblyGraph(object):
         For the given segments, this function assesses how well the given copy depths match up.
         The maximum error for any segment is what's returned at the end.
         '''
-        max_error = 0
+        max_error = 0.0
         for i, num in enumerate(segment_numbers):
             segment_depth = self.segments[num].depth
             depth_sum = sum(copy_depths[i])
             max_error = max(max_error, get_error(depth_sum, segment_depth))
         return max_error
 
-    def assign_copy_depths_where_needed(self, segment_numbers, new_depths):
+    def assign_copy_depths_where_needed(self, segment_numbers, new_depths, error_margin):
         '''
         For the given segments, this function assigns the corresponding copy depths, scaled to fit
         the segment.  If a segment already has copy depths, it is skipped (i.e. this function only
         write new copy depths, doesn't overwrite existing ones).
         It will only create copy depths if doing so is within the allowed error margin.
         '''
-        error_margin = 1.0 # TEMP: EITHER REMOVE LATER OR MAKE A PARAMETER
-
         success = False
         for i, num in enumerate(segment_numbers):
             if num not in self.copy_depths:
-                new_copy_depths, error = self.scale_copy_depths(self.segments[num].depth, new_depths[i])
+                new_copy_depths, error = self.scale_copy_depths(self.segments[num].depth,
+                                                                new_depths[i])
                 if error <= error_margin:
                     self.copy_depths[num] = new_copy_depths
                     success = True
         return success
 
+    def get_base_count_in_depth_range(self, min_depth, max_depth):
+        '''
+        Returns the total number of bases in the graph in the given depth range.
+        '''
+        total_bases = 0
+        for segment in self.segments.itervalues():
+            if segment.depth >= min_depth and segment.depth <= max_depth:
+                total_bases += segment.get_length()
+        return total_bases
 
+    def get_single_copy_segments(self):
+        '''
+        Returns a list of the graph segments with a copy number of 1.
+        '''
+        single_copy_segments = []
+        for num, segment in self.segments.iteritems():
+            if num in self.copy_depths and len(self.copy_depths[num]) == 1:
+                single_copy_segments.append(segment)
+        return single_copy_segments
 
 
 class Segment(object):
@@ -1103,8 +1134,6 @@ class Segment(object):
         fasta.write('>' + self.get_fastg_header(True) + '\n')
         fasta.write(add_line_breaks_to_sequence(self.forward_sequence, 60))
         fasta.close()
-
-
 
 def get_error(source, target):
     '''
@@ -1408,9 +1437,19 @@ def find_replace_in_list(lst, pattern, replacement):
         for i, _ in enumerate(lst):
             if lst[i] == pattern[0] and lst[i:i+len(pattern)] == pattern:
                 replacement_made = True
-                lst = lst[:i] + [replacement] + lst[i+len(pattern):]
+                lst = lst[:i] + replacement + lst[i+len(pattern):]
                 break
     return lst
+
+
+def find_replace_one_val_in_list(lst, val, replacement):
+    '''
+    This function looks for the given value in the list and if found, replaces it.
+    Like the above function, but simpler.
+    '''
+    if val not in lst:
+        return lst
+    return [replacement if x == val else x for x in lst]
 
 def split_path(path, seg):
     '''

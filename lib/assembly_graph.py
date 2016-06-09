@@ -213,16 +213,25 @@ class AssemblyGraph(object):
             fastg.write(self.get_fastg_header_with_links(segment, False))
             fastg.write(add_line_breaks_to_sequence(segment.reverse_sequence, 60))
 
-    def save_to_gfa(self, filename):
+    def save_to_gfa(self, filename, verbosity, save_copy_depth_info=False,
+                    save_seg_type_info=False):
         gfa = open(filename, 'w')
+        if verbosity > 0:
+            print('Saving', filename)
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
         for segment in sorted_segments:
             segment_line = segment.gfa_segment_line()
-            if segment.number in self.copy_depths:
+            if save_copy_depth_info and segment.number in self.copy_depths:
                 segment_line = segment_line[:-1] # Remove newline
                 segment_line += '\tLB:z:' + self.get_depth_string(segment)
                 segment_line += '\tCL:z:' + self.get_copy_number_colour(segment)
                 segment_line += '\n'
+            if save_seg_type_info:
+                segment_line = segment_line[:-1] # Remove newline
+                segment_line += '\tLB:z:' + segment.get_seg_type_label()
+                segment_line += '\tCL:z:' + segment.get_seg_type_colour()
+                segment_line += '\n'
+
             gfa.write(segment_line)
         gfa.write(self.get_all_gfa_link_lines())
         paths = sorted(self.paths.items())
@@ -338,6 +347,10 @@ class AssemblyGraph(object):
             if num not in nums_to_remove:
                 new_segments[num] = segment
         self.segments = new_segments
+
+        for num in nums_to_remove:
+            if num in self.copy_depths:
+                del self.copy_depths[num]
 
         self.forward_links = remove_nums_from_links(self.forward_links, nums_to_remove)
         self.reverse_links = remove_nums_from_links(self.reverse_links, nums_to_remove)
@@ -484,6 +497,20 @@ class AssemblyGraph(object):
             self.forward_links[-end] = []
         if -start not in self.forward_links[-end]:
             self.forward_links[-end].append(-start)
+
+    def remove_link(self, start, end):
+        '''
+        Removes a link from the graph in all necessary ways: forward and reverse, and for reverse
+        complements too.
+        '''
+        if start in self.forward_links:
+            self.forward_links[start].remove(end)
+        if -end in self.forward_links:
+            self.forward_links[-end].remove(-start)
+        if end in self.reverse_links:
+            self.reverse_links[end].remove(start)
+        if -start in self.reverse_links:
+            self.reverse_links[-start].remove(-end)
 
     def get_seq_from_signed_seg_num(self, signed_num):
         '''
@@ -1031,6 +1058,21 @@ class AssemblyGraph(object):
                     success = True
         return success
 
+    def remove_closest_copy_depth(self, seg_num, depth_to_remove):
+        '''
+        This function removes a copy depth from the specified segment. It chooses to remove the
+        one closest to the given depth.
+        '''
+        seg_num = abs(seg_num)
+        if seg_num not in self.copy_depths:
+            return
+        if not self.copy_depths[seg_num]:
+            return
+        closest_depth = min(self.copy_depths[seg_num], key=lambda x: abs(x - depth_to_remove))
+        new_copy_depths = [x for x in self.copy_depths[seg_num] if x != closest_depth]
+        assert len(new_copy_depths) == len(self.copy_depths[seg_num]) - 1
+        self.copy_depths[seg_num] = new_copy_depths
+
     def get_base_count_in_depth_range(self, min_depth, max_depth):
         '''
         Returns the total number of bases in the graph in the given depth range.
@@ -1066,18 +1108,102 @@ class AssemblyGraph(object):
             if i == 0:
                 path_sequence = seg_sequence
             else:
-                assert seg_num in self.forward_links[prev_segment_number] # TO DO: remove this later when I'm confident it's never a problem.
-                assert path_sequence[-self.overlap:] == seg_sequence[:self.overlap] # TO DO: remove this later when I'm confident it's never a problem.
+                assert seg_num in self.forward_links[prev_segment_number] 
+                assert path_sequence[-self.overlap:] == seg_sequence[:self.overlap]
                 path_sequence += seg_sequence[self.overlap:]
             prev_segment_number = seg_num
         return path_sequence
 
-
-
-    def apply_bridges(self, bridges):
+    def apply_bridges(self, bridges, verbosity):
         '''
         Uses the supplied bridges to simplify the graph.
         '''
+        # Each segment can have only one bridge per side, so we will track which segments have had
+        # a bridge applied off one side or the other.
+        right_bridged_segments = set()
+        left_bridged_segments = set()
+
+        # Sort bridges by quality so we apply the best bridges first.
+        sorted_bridges = sorted(bridges, key=lambda x: x.get_quality(), reverse=True)
+
+        applied_bridges = []
+        for bridge in sorted_bridges:
+            start = bridge.start_segment
+            end = bridge.end_segment
+
+            # If either of the segments has already been bridged, then we can't use this bridge.
+            if (start > 0 and start in right_bridged_segments) or \
+               (start < 0 and -start in left_bridged_segments) or \
+               (end > 0 and end in left_bridged_segments) or \
+               (end < 0 and -end in right_bridged_segments):
+                continue
+
+            bridge_seg = self.apply_bridge(bridge, verbosity)
+            applied_bridges.append((bridge, bridge_seg))
+
+            # Remember that these segments have been bridged in this direction so no more
+            # bridges can be applied to them in the same direction.
+            if start > 0:
+                right_bridged_segments.add(start)
+            else:
+                left_bridged_segments.add(-start)
+            if end > 0:
+                left_bridged_segments.add(end)
+            else:
+                right_bridged_segments.add(-end)
+
+        # Clean up segment segments which have been used in the bridges.
+        segment_nums_to_remove = []
+        for bridge, bridge_seg in applied_bridges:
+            bridge_depth = bridge_seg.depth
+            for seg_in_bridge_path in bridge.graph_path:
+                seg_in_bridge_path_abs = abs(seg_in_bridge_path)
+                self.remove_closest_copy_depth(seg_in_bridge_path_abs, bridge_depth)
+                if not self.copy_depths[seg_in_bridge_path_abs]:
+                    segment_nums_to_remove.append(seg_in_bridge_path_abs)
+        self.remove_segments(segment_nums_to_remove)
+
+        if verbosity > 1:
+            print()
+
+
+    def apply_bridge(self, bridge, verbosity):
+        '''
+        Applies one bridge to the graph.
+        '''
+        if verbosity > 1:
+            print('Applying bridge:', bridge)
+
+        start = bridge.start_segment
+        end = bridge.end_segment
+        start_seg = self.segments[abs(start)]
+        end_seg = self.segments[abs(end)]
+        start_depth = start_seg.depth
+        end_depth = end_seg.depth
+        start_len = start_seg.get_length()
+        end_len = end_seg.get_length()
+
+        # Remove all existing links for the segments being bridged.
+        if start in self.forward_links:
+            for link in self.forward_links[start]:
+                self.remove_link(start, link)
+        if end in self.reverse_links:
+            for link in self.reverse_links[end]:
+                self.remove_link(link, end)
+
+        # Create a new bridge segment.
+        new_seg_num = self.get_next_available_seg_number()
+        new_seg_depth = ((start_depth * start_len) + (end_depth * end_len)) / (start_len + end_len)
+        new_seg = Segment(new_seg_num, new_seg_depth, bridge.bridge_sequence, True,
+                          bridge.bridge_type)
+        self.segments[new_seg_num] = new_seg
+
+        # Link the bridge segment in to the start/end segments.
+        self.add_link(start, new_seg_num)
+        self.add_link(new_seg_num, end)
+
+        return new_seg
+
 
 
 
@@ -1085,11 +1211,12 @@ class Segment(object):
     '''
     This hold a graph segment with a number, depth, direction and sequence.
     '''
-    def __init__(self, number, depth, sequence, positive):
+    def __init__(self, number, depth, sequence, positive, seg_type='regular'):
         self.number = number
         self.depth = depth
         self.forward_sequence = ''
         self.reverse_sequence = ''
+        self.seg_type = seg_type
         if positive:
             self.forward_sequence = sequence
         else:
@@ -1163,6 +1290,36 @@ class Segment(object):
         fasta.write('>' + self.get_fastg_header(True) + '\n')
         fasta.write(add_line_breaks_to_sequence(self.forward_sequence, 60))
         fasta.close()
+
+    def get_seg_type_colour(self):
+        '''
+        Given a particular segment, this function returns a colour string based its type.
+        '''
+        if self.seg_type == 'regular':
+            return 'gray'
+        elif self.seg_type == 'spades_contig_bridge':
+            return 'forestgreen'
+        elif self.seg_type == 'long_read_bridge_through_graph':
+            return 'blue'
+        elif self.seg_type == 'long_read_bridge_not_through_graph':
+            return 'red'
+        else:
+            return 'black'
+
+    def get_seg_type_label(self):
+        '''
+        Given a particular segment, this function returns a label string based its type.
+        '''
+        if self.seg_type == 'regular':
+            return 'unchanged'
+        elif self.seg_type == 'spades_contig_bridge':
+            return 'SPAdes contig bridge'
+        elif self.seg_type == 'long_read_bridge_through_graph':
+            return 'long read bridge' 
+        elif self.seg_type == 'long_read_bridge_not_through_graph':
+            return 'gapped long read bridge'
+        else:
+            return ''
 
 def get_error(source, target):
     '''

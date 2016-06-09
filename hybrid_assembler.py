@@ -55,16 +55,23 @@ def main():
                                            args.threads, args.keep_temp)
 
     # Determine copy number and get single-copy segments.
-    single_copy_segments = get_single_copy_segments(assembly_graph, verbosity)
-    assembly_graph.save_to_gfa(os.path.join(args.out, '01_unbridged_graph.gfa'))
+    min_single_copy_length = assembly_graph.overlap * 4
+    single_copy_segments = get_single_copy_segments(assembly_graph, verbosity,
+                                                    min_single_copy_length)
+    assembly_graph.save_to_gfa(os.path.join(args.out, '01_unbridged_graph.gfa'), verbosity, 
+                               save_copy_depth_info=True)
 
     # Make an initial set of bridges using the SPAdes contig paths.
     bridges = create_spades_contig_bridges(assembly_graph, single_copy_segments, verbosity)
     bridged_graph = copy.deepcopy(assembly_graph)
-    bridged_graph.apply_bridges(bridges)
-    bridged_graph.save_to_gfa(os.path.join(args.out, '02_spades_bridged_graph.gfa'))
+    bridged_graph.apply_bridges(bridges, verbosity)
+    bridged_graph.save_to_gfa(os.path.join(args.out, '02_spades_bridged_graph.gfa'), verbosity, 
+                              save_seg_type_info=True)
     bridged_graph.merge_all_possible()
-    bridged_graph.save_to_gfa(os.path.join(args.out, '03_spades_bridged_graph_merged.gfa'))
+    bridged_graph.save_to_gfa(os.path.join(args.out, '03_spades_bridged_graph_merged.gfa'),
+                              verbosity)
+    if verbosity > 0:
+        print()
 
 
 
@@ -235,7 +242,7 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
                                                      verbosity, threads)
             assembly_graph = AssemblyGraph(graph_file, kmer, paths_file=paths_file)
             assembly_graph.clean(read_depth_filter)
-            assembly_graph.save_to_gfa(os.path.join(spades_dir, clean_graph_filename))
+            assembly_graph.save_to_gfa(os.path.join(spades_dir, clean_graph_filename), 0)
             if not keep_temp:
                 os.remove(graph_file)
                 os.remove(paths_file)
@@ -248,7 +255,6 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
             print(int_to_str(kmer).rjust(6) + int_to_str(segment_count).rjust(11) +
                   int_to_str(dead_ends).rjust(12) + '{:.2e}'.format(score).rjust(14))
         if verbosity > 1:
-            print()
             print('Summary for k' + int_to_str(kmer) + ':')
             print('segments:            ', int_to_str(segment_count))
             print('total length:        ', int_to_str(assembly_graph.get_total_length()), 'bp')
@@ -475,7 +481,7 @@ def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity):
     kmer_range_file.close()
     return kmer_range
 
-def get_single_copy_segments(graph, verbosity):
+def get_single_copy_segments(graph, verbosity, min_single_copy_length):
     '''
     Returns a list of the graph segments determined to be single-copy.
     '''
@@ -485,8 +491,8 @@ def get_single_copy_segments(graph, verbosity):
         sys.stdout.flush()
 
     graph.determine_copy_depth(verbosity)
-
-    single_copy_segments = graph.get_single_copy_segments()
+    single_copy_segments = [x for x in graph.get_single_copy_segments() \
+                            if x.get_length() >= min_single_copy_length]
 
     if verbosity > 1:
         print()
@@ -537,8 +543,14 @@ def create_spades_contig_bridges(graph, single_copy_segments, verbosity):
             bridge_paths_by_start[start] = []
         if end not in bridge_paths_by_end:
             bridge_paths_by_end[end] = []
+        if -end not in bridge_paths_by_start:
+            bridge_paths_by_start[-end] = []
+        if -start not in bridge_paths_by_end:
+            bridge_paths_by_end[-start] = []
         bridge_paths_by_start[start].append(path)
         bridge_paths_by_end[end].append(path)
+        bridge_paths_by_start[-end].append(path)
+        bridge_paths_by_end[-start].append(path)
     conflicting_paths = []
     for grouped_paths in bridge_paths_by_start.itervalues():
         if len(grouped_paths) > 1:
@@ -560,8 +572,6 @@ def create_spades_contig_bridges(graph, single_copy_segments, verbosity):
         print()
 
     final_bridge_paths = [x for x in bridge_path_list if x not in conflicting_paths]
-    if verbosity == 1:
-        print('Created', int_to_str(len(final_bridge_paths)), 'SPAdes contig bridges')
     if verbosity > 1:
         print('Final SPAdes contig bridge paths: ', end='')
         if final_bridge_paths:
@@ -578,9 +588,9 @@ def find_contig_bridges(segment_num, path, single_copy_numbers):
     and ends on any of the single_copy_numbers.
     '''
     bridge_paths = []
-    indices = [i for i, x in enumerate(path) if x == segment_num]
+    indices = [i for i, x in enumerate(path) if abs(x) == segment_num]
     for index in indices:
-        bridge_path = [segment_num]
+        bridge_path = [path[index]]
         for i in range(index+1, len(path)):
             bridge_path.append(path[i])
             if path[i] in single_copy_numbers or -path[i] in single_copy_numbers:

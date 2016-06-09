@@ -1051,6 +1051,35 @@ class AssemblyGraph(object):
                 single_copy_segments.append(segment)
         return single_copy_segments
 
+    def get_path_sequence(self, path_segments):
+        '''
+        Gets a linear (i.e. not circular) path sequence from the graph.
+        '''
+        path_sequence = ''
+        prev_segment_number = None
+        for i, seg_num in enumerate(path_segments):
+            segment = self.segments[abs(seg_num)]
+            if seg_num > 0:
+                seg_sequence = segment.forward_sequence
+            else:
+                seg_sequence = segment.reverse_sequence
+            if i == 0:
+                path_sequence = seg_sequence
+            else:
+                assert seg_num in self.forward_links[prev_segment_number] # TO DO: remove this later when I'm confident it's never a problem.
+                assert path_sequence[-self.overlap:] == seg_sequence[:self.overlap] # TO DO: remove this later when I'm confident it's never a problem.
+                path_sequence += seg_sequence[self.overlap:]
+            prev_segment_number = seg_num
+        return path_sequence
+
+
+
+    def apply_bridges(self, bridges):
+        '''
+        Uses the supplied bridges to simplify the graph.
+        '''
+
+
 
 class Segment(object):
     '''

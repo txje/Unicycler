@@ -12,11 +12,13 @@ import sys
 import shutil
 import gzip
 import math
+import copy
 from multiprocessing import cpu_count
 
 SCIRPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(SCIRPT_DIR, 'lib'))
 from assembly_graph import AssemblyGraph
+from bridge import Bridge
 from misc import int_to_str, float_to_str, quit_with_error, check_file_exists
 
 sys.dont_write_bytecode = True
@@ -37,24 +39,35 @@ def main():
     '''
     args = get_arguments()
 
-    if args.verbosity > 0:
+    verbosity = args.verbosity
+    if verbosity > 0:
         print()
 
     check_file_exists(args.short1)
     check_file_exists(args.short2)
     check_file_exists(args.long)
 
-    make_output_directory(args.out, args.verbosity)
+    make_output_directory(args.out, verbosity)
 
     # Produce a SPAdes assembly graph with a k-mer that balances contig length and connectivity.
     assembly_graph = get_best_spades_graph(args.short1, args.short2, args.out,
-                                           args.read_depth_filter, args.verbosity,
+                                           args.read_depth_filter, verbosity,
                                            args.threads, args.keep_temp)
-    spades_assembly_path = os.path.join(args.out, '01_spades_assembly')
 
-    single_copy_segments = get_single_copy_segments(assembly_graph, args.verbosity)
-    assembly_graph.save_to_gfa(os.path.join(args.out, 'unbridged_graph.gfa'))
-    
+    # Determine copy number and get single-copy segments.
+    single_copy_segments = get_single_copy_segments(assembly_graph, verbosity)
+    assembly_graph.save_to_gfa(os.path.join(args.out, '01_unbridged_graph.gfa'))
+
+    # Make an initial set of bridges using the SPAdes contig paths.
+    bridges = create_spades_contig_bridges(assembly_graph, single_copy_segments, verbosity)
+    bridged_graph = copy.deepcopy(assembly_graph)
+    bridged_graph.apply_bridges(bridges)
+    bridged_graph.save_to_gfa(os.path.join(args.out, '02_spades_bridged_graph.gfa'))
+    bridged_graph.merge_all_possible()
+    bridged_graph.save_to_gfa(os.path.join(args.out, '03_spades_bridged_graph_merged.gfa'))
+
+
+
     quit() # TEMP
 
 
@@ -486,6 +499,106 @@ def get_single_copy_segments(graph, verbosity):
         sys.stdout.flush()
 
     return single_copy_segments
+
+def create_spades_contig_bridges(graph, single_copy_segments, verbosity):
+    '''
+    Builds graph bridges using the SPAdes contig paths.
+    '''
+    if verbosity > 0:
+        print()
+        print('Bridging graph with SPAdes contig paths')
+        print('---------------------------------------')
+        sys.stdout.flush()
+
+    bridge_path_set = set()
+    single_copy_numbers = [x.number for x in single_copy_segments]
+    for segment in single_copy_segments:
+        for path in graph.paths.itervalues():
+            flipped_path = [-x for x in reversed(path)]
+            contig_bridges = find_contig_bridges(segment.number, path, single_copy_numbers)
+            contig_bridges += find_contig_bridges(segment.number, flipped_path, single_copy_numbers)
+            for contig_bridge in contig_bridges:
+                flipped_contig_bridge = [-x for x in reversed(contig_bridge)]
+                contig_bridge_str = ','.join([str(x) for x in contig_bridge])
+                flipped_contig_bridge_str = ','.join([str(x) for x in flipped_contig_bridge])
+                if contig_bridge_str not in bridge_path_set and \
+                   flipped_contig_bridge_str not in bridge_path_set:
+                    bridge_path_set.add(contig_bridge_str)
+    bridge_path_list = sorted(list([[int(y) for y in x.split(',')] for x in bridge_path_set]))
+
+    # If multiple bridge paths start with or end with the same segment, that implies a conflict
+    # between SPADes' paths and our single-copy determination. Throw these bridges out.
+    bridge_paths_by_start = {}
+    bridge_paths_by_end = {}
+    for path in bridge_path_list:
+        start = path[0]
+        end = path[-1]
+        if start not in bridge_paths_by_start:
+            bridge_paths_by_start[start] = []
+        if end not in bridge_paths_by_end:
+            bridge_paths_by_end[end] = []
+        bridge_paths_by_start[start].append(path)
+        bridge_paths_by_end[end].append(path)
+    conflicting_paths = []
+    for grouped_paths in bridge_paths_by_start.itervalues():
+        if len(grouped_paths) > 1:
+            conflicting_paths += grouped_paths
+    for grouped_paths in bridge_paths_by_end.itervalues():
+        if len(grouped_paths) > 1:
+            conflicting_paths += grouped_paths
+    conflicting_paths_no_dups = []
+    for path in conflicting_paths:
+        if path not in conflicting_paths_no_dups:
+            conflicting_paths_no_dups.append(path)
+    conflicting_paths = conflicting_paths_no_dups
+    if verbosity > 1:
+        print('Bridge paths in conflict with single-copy segments: ', end='')
+        if conflicting_paths:
+            print(', '.join([str(x) for x in conflicting_paths]))
+        else:
+            print('none')
+        print()
+
+    final_bridge_paths = [x for x in bridge_path_list if x not in conflicting_paths]
+    if verbosity == 1:
+        print('Created', int_to_str(len(final_bridge_paths)), 'SPAdes contig bridges')
+    if verbosity > 1:
+        print('Final SPAdes contig bridge paths: ', end='')
+        if final_bridge_paths:
+            print(', '.join([str(x) for x in final_bridge_paths]))
+        else:
+            print('none')
+        print()
+
+    return [Bridge(spades_contig_path=x, graph=graph) for x in final_bridge_paths]
+
+def find_contig_bridges(segment_num, path, single_copy_numbers):
+    '''
+    This function returns a list of lists: every part of the path which starts on the segment_num
+    and ends on any of the single_copy_numbers.
+    '''
+    bridge_paths = []
+    indices = [i for i, x in enumerate(path) if x == segment_num]
+    for index in indices:
+        bridge_path = [segment_num]
+        for i in range(index+1, len(path)):
+            bridge_path.append(path[i])
+            if path[i] in single_copy_numbers or -path[i] in single_copy_numbers:
+                break
+        else:
+            bridge_path = []
+        if bridge_path:
+            bridge_paths.append(bridge_path)
+    return bridge_paths
+
+
+
+
+
+
+
+
+
 
 
 

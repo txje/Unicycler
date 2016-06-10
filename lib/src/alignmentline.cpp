@@ -62,8 +62,10 @@ void AlignmentLine::addPoint(CommonKmer & newPoint) {
         m_varY = m_ssY / (n - 1.0);
         m_covariance = m_coMoment / (n - 1.0);
 
-        m_slope = m_covariance / m_varX;
-        m_intercept = m_meanY - (m_slope * m_meanX);
+        if (m_varX != 0.0) {
+            m_slope = m_covariance / m_varX;
+            m_intercept = m_meanY - (m_slope * m_meanX);
+        }
     }
 
     // Calculating the error requires at least 3 points.

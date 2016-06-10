@@ -558,7 +558,7 @@ def load_long_reads(fastq_filename, verbosity):
         print_progress_line(0, num_reads)
     fastq = open(fastq_filename, 'r')
     for line in fastq:
-        name = line.strip()[1:]
+        name = line.strip()[1:].split()[0]
         sequence = next(fastq).strip()
         _ = next(fastq)
         qualities = next(fastq).strip()

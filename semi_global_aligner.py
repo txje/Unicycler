@@ -405,10 +405,13 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
 
     # Output a summary of the reads' alignments.
     fully_aligned, partially_aligned, unaligned = group_reads_by_fraction_aligned(read_dict)
+    ref_bases_aligned = 0
+    for read in read_dict.itervalues():
+        ref_bases_aligned += read.get_reference_bases_aligned()
     if VERBOSITY > 0:
         print('Read alignment summary')
         print('----------------------')
-        max_v = len(read_dict)
+        max_v = max(len(read_dict), ref_bases_aligned)
         print('Total read count:       ', int_to_str(len(read_dict), max_v))
         print('Fully aligned reads:    ', int_to_str(len(fully_aligned), max_v))
         print('Partially aligned reads:', int_to_str(len(partially_aligned), max_v))
@@ -417,6 +420,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         print('Unaligned reads:        ', int_to_str(len(unaligned), max_v))
         if VERBOSITY > 2 and unaligned:
             print('    ' + ', '.join([x.name for x in unaligned]))
+        print('Total bases aligned:    ', int_to_str(ref_bases_aligned, max_v) + ' bp')
         print()
 
     return read_dict
@@ -1148,6 +1152,13 @@ class Read(object):
         read_ranges = simplify_ranges(read_ranges)
         aligned_length = sum([x[1] - x[0] for x in read_ranges])
         return aligned_length / len(self.sequence)
+
+    def get_reference_bases_aligned(self):
+        '''
+        This function returns the number of bases aligned with respect to the reference.
+        '''
+        return sum([x.get_aligned_ref_length() for x in self.alignments])
+
 
 
 

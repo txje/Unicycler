@@ -58,6 +58,7 @@ def main():
     min_single_copy_length = assembly_graph.overlap * 4
     single_copy_segments = get_single_copy_segments(assembly_graph, verbosity,
                                                     min_single_copy_length)
+    assembly_graph.remove_overlaps(single_copy_segments)
     assembly_graph.save_to_gfa(os.path.join(args.out, '01_unbridged_graph.gfa'), verbosity, 
                                save_copy_depth_info=True)
 
@@ -229,7 +230,7 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
     # Conduct a SPAdes assembly for each k-mer (or load existing ones) and score them to choose
     # the best.
     if verbosity == 1:
-        print('  kmer   segments   dead ends         score')
+        print('  k-mer   segments   dead ends         score')
     best_score = 0.0
     best_assembly_graph = None
     for i, kmer in enumerate(kmer_range):
@@ -252,7 +253,7 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
         else:
             score = 1.0 / (segment_count * ((dead_ends + 1) ** 2))
         if verbosity == 1:
-            print(int_to_str(kmer).rjust(6) + int_to_str(segment_count).rjust(11) +
+            print(int_to_str(kmer).rjust(7) + int_to_str(segment_count).rjust(11) +
                   int_to_str(dead_ends).rjust(12) + '{:.2e}'.format(score).rjust(14))
         if verbosity > 1:
             print('Summary for k' + int_to_str(kmer) + ':')

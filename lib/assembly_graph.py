@@ -9,11 +9,11 @@ class AssemblyGraph(object):
     This class holds an assembly graph with segments and links.
     '''
     def __init__(self, filename, overlap, paths_file=None):
-        self.segments = {} # Dictionary of unsigned segment number -> segment
-        self.forward_links = {} # Dictionary of signed segment number -> signed segment number
-        self.reverse_links = {} # Dictionary of signed segment number <- signed segment number
-        self.copy_depths = {} # Dictionary of unsigned segment number -> list of copy depths
-        self.paths = {} # Dictionary of path name -> list of signed segment numbers
+        self.segments = {} # Dict of unsigned segment number -> segment
+        self.forward_links = {} # Dict of signed segment number -> list of signed segment numbers
+        self.reverse_links = {} # Dict of signed segment number <- list of signed segment numbers
+        self.copy_depths = {} # Dict of unsigned segment number -> list of copy depths
+        self.paths = {} # Dict of path name -> list of signed segment numbers
         self.overlap = overlap
 
         if filename.endswith('.fastg'):
@@ -193,7 +193,7 @@ class AssemblyGraph(object):
     def get_total_length_no_overlaps(self):
         '''
         Returns the sum of all segment sequence lengths, subtracting the overlap size from each
-        node.
+        segment.
         '''
         return sum([x.get_length_no_overlap(self.overlap) for x in self.segments.itervalues()])
 
@@ -325,8 +325,8 @@ class AssemblyGraph(object):
 
     def filter_homopolymer_loops(self):
         '''
-        A common feature in SPAdes graphs is a small piece of the graph (often just one node) which
-        has nothing but one base.  Filter these out.
+        A common feature in SPAdes graphs is a small piece of the graph (often just one segment)
+        which has nothing but one base.  Filter these out.
         '''
         segment_nums_to_remove = []
         connected_components = self.get_connected_components()
@@ -367,7 +367,7 @@ class AssemblyGraph(object):
 
     def merge_all_possible(self):
         '''
-        This function merges nodes which are in a simple, unbranching path.
+        This function merges segments which are in a simple, unbranching path.
         '''
         try_to_merge = True
         while try_to_merge:
@@ -676,7 +676,7 @@ class AssemblyGraph(object):
     def repair_four_way_junctions(self):
         '''
         This function finds and fixes four-way junctions in the graph, as these can mess up copy
-        number determination. It fixes them by creating a new node with no length (i.e with the
+        number determination. It fixes them by creating a new segment with no length (i.e with the
         overlap size) to bridge the connection.
         For example: A->B,C and D->B,C becomes A->E and D->E and E->B and E->C
         '''
@@ -742,6 +742,125 @@ class AssemblyGraph(object):
                 self.paths[name] = insert_num_in_list(segs, -end_num_1, -start_num_2, -bridge_num)
                 self.paths[name] = insert_num_in_list(segs, -end_num_2, -start_num_1, -bridge_num)
                 self.paths[name] = insert_num_in_list(segs, -end_num_2, -start_num_2, -bridge_num)
+
+    def remove_overlaps(self, priority_segments=[]):
+        '''
+        This function tries to remove all overlaps in the graph by trimming segment sequences. The
+        given list of priority segments are preferentially kept long (i.e. the overlap is trimmed
+        not from them but from their connected segments).
+        '''
+        # Overlaps need to be removed once per link so we track which links have an overlap
+        # (i.e. indicate a trim is required).
+        links_with_overlap = set()
+        for start, end_list in self.forward_links.iteritems():
+            for end in end_list:
+                links_with_overlap.add((start, end))
+                links_with_overlap.add((-end, -start))
+
+        # We need to track which segment ends have been trimmed and which can't be trimmed.
+        segs_with_trimmed_starts = set()
+        segs_with_trimmed_ends = set()
+        segs_with_untrimmable_starts = set()
+        segs_with_untrimmable_ends = set()
+
+        # Now we build a list of the links we'll fix, in order. It's first ordered by the priority
+        # segments (if any), and then the rest of the segments. Duplicates in the list are okay.
+        links_to_trim = []
+        priority_segments = sorted(priority_segments, key=lambda x: x.get_length(), reverse=True)
+        for segment in priority_segments:
+            seg_num = segment.number
+            for downstream_seg_num in self.forward_links[seg_num]:
+                links_to_trim.append((seg_num, downstream_seg_num))
+            for upstream_seg_num in self.reverse_links[seg_num]:
+                links_to_trim.append((-seg_num, -upstream_seg_num))
+        priority_nums = set([x.number for x in priority_segments])
+
+        other_segments = sorted([x for x in self.segments.itervalues() \
+                                 if x.number not in priority_nums],
+                                key=lambda x: x.get_length(), reverse=True)
+        for segment in other_segments:
+            seg_num = segment.number
+            for downstream_seg_num in self.forward_links[seg_num]:
+                links_to_trim.append((seg_num, downstream_seg_num))
+            for upstream_seg_num in self.reverse_links[seg_num]:
+                links_to_trim.append((-seg_num, -upstream_seg_num))
+
+        # Now we perform the trimming for each link in the list.
+        for start, end in links_to_trim:
+            start_already_trimmed = start in segs_with_trimmed_ends
+            end_already_trimmed = end in segs_with_trimmed_starts
+
+            # If both start and end are already trimmed, that's a problem! I'm not sure if this can
+            # ever happen in SPAdes graph...
+            assert not (start_already_trimmed and end_already_trimmed)
+
+            # If the trim has already taken place, there's nothing more to do for this link.
+            if start_already_trimmed or end_already_trimmed:
+                continue
+
+            # If the code got here, then we can perform a trim! Our first preference is to trim
+            # the start off the second segment.
+            if end not in segs_with_untrimmable_starts:
+                print('TRIMMING FROM START OF', end) # TEMP
+                self.trim_from_start(end)
+                segs_with_trimmed_starts.add(end)
+                segs_with_untrimmable_starts.add(end)
+                segs_with_trimmed_ends.add(-end)
+                segs_with_untrimmable_ends.add(-end)
+                if self.segments[abs(end)].get_length() < self.overlap:
+                    segs_with_untrimmable_ends.add(end)
+                    segs_with_untrimmable_starts.add(-end)
+                for upstream_seg_num in self.reverse_links[end]:
+                    segs_with_untrimmable_ends.add(upstream_seg_num)
+                    segs_with_untrimmable_starts.add(-upstream_seg_num)
+
+            # Failing that, we'll have to trim off the end of the first segment.
+            elif start not in segs_with_untrimmable_ends:
+                print('TRIMMING FROM END OF', start) # TEMP
+                self.trim_from_end(start)
+                segs_with_trimmed_ends.add(start)
+                segs_with_untrimmable_ends.add(start)
+                segs_with_trimmed_starts.add(-start)
+                segs_with_untrimmable_starts.add(-start)
+                if self.segments[abs(start)].get_length() < self.overlap:
+                    segs_with_untrimmable_starts.add(start)
+                    segs_with_untrimmable_ends.add(-start)
+                for downstream_seg_num in self.forward_links[start]:
+                    segs_with_untrimmable_starts.add(downstream_seg_num)
+                    segs_with_untrimmable_ends.add(-downstream_seg_num)
+
+            # We should not find that both the start of the second segment and the end of the first
+            # segment are both untrimmable!
+            else:
+                print('CANNOT TRIM', start, end) # TEMP
+                assert False
+
+        self.overlap = 0
+
+    def trim_from_start(self, seg_num):
+        if seg_num >= 0: 
+            self.segments[seg_num].trim_from_start(self.overlap)
+        else:
+            self.segments[-seg_num].trim_from_end(self.overlap)
+
+    def trim_from_end(self, seg_num):
+        if seg_num >= 0:
+            self.segments[seg_num].trim_from_end(self.overlap)
+        else:
+            self.segments[-seg_num].trim_from_start(self.overlap)
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     def get_next_available_seg_number(self):
         '''
@@ -1108,8 +1227,9 @@ class AssemblyGraph(object):
             if i == 0:
                 path_sequence = seg_sequence
             else:
-                assert seg_num in self.forward_links[prev_segment_number] 
-                assert path_sequence[-self.overlap:] == seg_sequence[:self.overlap]
+                assert seg_num in self.forward_links[prev_segment_number]
+                if self.overlap > 0:
+                    assert path_sequence[-self.overlap:] == seg_sequence[:self.overlap]
                 path_sequence += seg_sequence[self.overlap:]
             prev_segment_number = seg_num
         return path_sequence
@@ -1243,6 +1363,20 @@ class Segment(object):
 
     def divide_depth(self, divisor):
         self.depth /= divisor
+
+    def trim_from_start(self, trim_len):
+        '''
+        Trims the given amount of sequence off the start of the segment.
+        '''
+        self.forward_sequence = self.forward_sequence[trim_len:]
+        self.reverse_sequence = self.reverse_sequence[:-trim_len]
+
+    def trim_from_end(self, trim_len):
+        '''
+        Trims the given amount of sequence off the start of the segment.
+        '''
+        self.forward_sequence = self.forward_sequence[:-trim_len]
+        self.reverse_sequence = self.reverse_sequence[trim_len:]
 
     def get_fastg_header(self, positive):
         '''

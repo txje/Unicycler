@@ -17,7 +17,7 @@ import argparse
 
 SCIRPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(SCIRPT_DIR, 'lib'))
-from misc import int_to_str, float_to_str, check_file_exists, quit_with_error
+from misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap
 
 sys.dont_write_bytecode = True
 from semi_global_aligner import AlignmentScoringScheme, Read, Reference, load_references, \
@@ -26,7 +26,7 @@ from semi_global_aligner import AlignmentScoringScheme, Read, Reference, load_re
                                 print_progress_line, \
                                 get_depth_min_and_max_distributions, \
                                 semi_global_align_long_reads, add_aligning_arguments, \
-                                fix_up_arguments, check_graphmap
+                                fix_up_arguments
 
 VERBOSITY = 0 # Controls how much the script prints to the screen
 CONSOLE_WIDTH = 40 # The width of many things printed to stdout

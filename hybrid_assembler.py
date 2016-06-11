@@ -19,11 +19,13 @@ SCIRPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(SCIRPT_DIR, 'lib'))
 from assembly_graph import AssemblyGraph
 from bridge import Bridge
-from misc import int_to_str, float_to_str, quit_with_error, check_file_exists
+from misc import int_to_str, float_to_str, quit_with_error, check_file_exists, check_graphmap
 
 sys.dont_write_bytecode = True
-from semi_global_aligner import add_aligning_arguments, fix_up_arguments
-                                
+from semi_global_aligner import add_aligning_arguments, fix_up_arguments, \
+                                semi_global_align_long_reads, Read, Reference, \
+                                load_references, load_long_reads, AlignmentScoringScheme, \
+                                load_sam_alignments
 
 # TO DO: make these parameters, not globals.
 spades_path = '/Users/Ryan/Applications/SPAdes-3.8.0-Darwin/bin/spades.py'
@@ -37,6 +39,7 @@ def main():
     '''
     Script execution starts here.
     '''
+    full_command = ' '.join(sys.argv)
     args = get_arguments()
 
     verbosity = args.verbosity
@@ -46,8 +49,13 @@ def main():
     check_file_exists(args.short1)
     check_file_exists(args.short2)
     check_file_exists(args.long)
+    if not args.no_graphmap:
+        check_graphmap(args.graphmap_path)
 
     make_output_directory(args.out, verbosity)
+    unbridged_graph = os.path.join(args.out, '002_unbridged_graph.gfa')
+    spades_bridged_graph_unmerged = os.path.join(args.out, '003_spades_bridges_unmerged.gfa')
+    spades_bridged_graph_merged = os.path.join(args.out, '004_spades_bridges_merged.gfa')
 
     # Produce a SPAdes assembly graph with a k-mer that balances contig length and connectivity.
     assembly_graph = get_best_spades_graph(args.short1, args.short2, args.out,
@@ -58,61 +66,92 @@ def main():
     min_single_copy_length = assembly_graph.overlap * 4
     single_copy_segments = get_single_copy_segments(assembly_graph, verbosity,
                                                     min_single_copy_length)
-    assembly_graph.save_to_gfa(os.path.join(args.out, '01_unbridged_graph.gfa'), verbosity, 
-                               save_copy_depth_info=True)
+    assembly_graph.save_to_gfa(unbridged_graph, verbosity, save_copy_depth_info=True)
 
     # Make an initial set of bridges using the SPAdes contig paths.
     bridges = create_spades_contig_bridges(assembly_graph, single_copy_segments, verbosity)
     bridged_graph = copy.deepcopy(assembly_graph)
     bridged_graph.apply_bridges(bridges, verbosity)
-    bridged_graph.save_to_gfa(os.path.join(args.out, '02_spades_bridged_graph.gfa'), verbosity, 
-                              save_seg_type_info=True)
+    bridged_graph.save_to_gfa(spades_bridged_graph_unmerged, verbosity, save_seg_type_info=True)
     bridged_graph.merge_all_possible()
-    bridged_graph.save_to_gfa(os.path.join(args.out, '03_spades_bridged_graph_merged.gfa'),
-                              verbosity)
+    bridged_graph.save_to_gfa(spades_bridged_graph_merged, verbosity)
     if verbosity > 0:
         print()
 
-
-
-    quit() # TEMP
-
-
-    alignment_dir = os.path.join(args.out, '02_read_alignment')
+    # Prepare the directory for long read alignment.
+    alignment_dir = os.path.join(args.out, '005_read_alignment')
     if not os.path.exists(alignment_dir):
         os.makedirs(alignment_dir)
-    assembly_graph.save_to_fasta(alignment_dir + '.fasta')
-
-
-
-    # TO DO: GET SINGLE COPY NODES
-
-    # Produce an initial set of bridges using SPAdes contig paths.
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
+    graph_fasta = os.path.join(alignment_dir, 'graph_segments.fasta')
+    alignments_sam = os.path.join(alignment_dir, 'long_read_alignments.sam')
+    temp_alignment_dir = os.path.join(alignment_dir, 'temp')
+    assembly_graph.save_to_fasta(graph_fasta)
 
     # If all long reads are available now, then we do the entire process in one pass.
     if args.long:
-        temp = 5
-        # TO DO: ALIGN LONG READS TO GRAPH
+        references = load_references(graph_fasta, 0)
+        reference_dict = {x.name: x for x in references}
+        read_dict, read_names = load_long_reads(args.long, 1)
+        scoring_scheme = AlignmentScoringScheme(args.scores)
+        min_alignment_length = assembly_graph.overlap * 2
+
+        # Load existing alignments if available.
+        if os.path.isfile(alignments_sam) and sam_references_match(alignments_sam, assembly_graph):
+            print('SAM file already exists. Will use these alignments instead of running new '
+                  'alignments:')
+            print('  ' + alignments_sam)
+            alignments = load_sam_alignments(alignments_sam, read_dict, reference_dict,
+                                             scoring_scheme)
+            for alignment in alignments:
+                read_dict[alignment.read.name].alignments.append(alignment)
+
+        # Conduct alignment if existing alignments are not available.
+        else:
+            alignments_sam_in_progress = alignments_sam + '.incomplete'
+            semi_global_align_long_reads(references, graph_fasta, read_dict, read_names,
+                                         args.long, temp_alignment_dir, args.graphmap_path,
+                                         args.threads, scoring_scheme, args.low_score,
+                                         not args.no_graphmap, False, args.kmer,
+                                         min_alignment_length, alignments_sam_in_progress,
+                                         full_command, verbosity)
+            shutil.move(alignments_sam_in_progress, alignments_sam)
+
+
+
+
+
+        quit() # TEMP
+
+
+
+
+
+
         # TO DO: PRODUCE BRIDGES USING LONG READ ALIGNMENTS
-        # TO DO: APPLY THE BRIDGES TO THE GRAPH
-        # TO DO: SAVE THE RESULTS
+
+
+
+
+
+        bridged_graph = copy.deepcopy(assembly_graph)
+        bridged_graph.apply_bridges(bridges, verbosity)
+        bridged_graph.save_to_gfa(os.path.join(args.out, '02_spades_bridged_graph.gfa'), verbosity, 
+                                  save_seg_type_info=True)
+        bridged_graph.merge_all_possible()
+        bridged_graph.save_to_gfa(os.path.join(args.out, '03_spades_bridged_graph_merged.gfa'),
+                                  verbosity)
 
     # If we are getting long reads incrementally, then we do the process iteratively.
     elif args.long_dir:
         finished = False
         while not finished:
-            temp = 5
             # TO DO: WAIT FOR NEW READS TO BECOME AVAILABLE
             # TO DO: ALIGN LONG READS TO GRAPH
             # TO DO: PRODUCE BRIDGES USING LONG READ ALIGNMENTS
             # TO DO: APPLY THE BRIDGES TO THE GRAPH
             # TO DO: SAVE THE RESULTS
             # TO DO: ASSESS WHETHER THE PROCESS IS COMPLETE
+            finished = True # TEMP
 
 def get_arguments():
     '''
@@ -201,7 +240,7 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
     'The best' is defined as the smallest dead-end count after low-depth filtering.  If multiple
     graphs have the same dead-end count (e.g. zero!) then the highest kmer is used.
     '''
-    spades_dir = os.path.join(outdir, '01_spades_assembly')
+    spades_dir = os.path.join(outdir, '001_spades_assembly')
     reads = spades_read_correction(short1, short2, spades_dir, verbosity, threads)
 
     kmer_range = get_kmer_range(short1, short2, spades_dir, verbosity)
@@ -605,17 +644,6 @@ def find_contig_bridges(segment_num, path, single_copy_numbers):
             bridge_paths.append(bridge_path)
     return bridge_paths
 
-
-
-
-
-
-
-
-
-
-
-
 def round_to_nearest_odd(num):
     '''
     Rounds a float to an odd integer.
@@ -633,7 +661,6 @@ def round_to_nearest_odd(num):
     else:
         return round_up
 
-
 def get_read_lengths(reads_filename):
     '''
     Returns a list of the read lengths for the given read file.
@@ -650,6 +677,31 @@ def get_read_lengths(reads_filename):
             i = 0
     return read_lengths
 
+def sam_references_match(sam_filename, assembly_graph):
+    '''
+    Returns True if the references in the SAM header exactly match the graph segment numbers.
+    '''
+    sam_file = open(sam_filename, 'r')
+    ref_numbers_in_sam = []
+    for line in sam_file:
+        if not line.startswith('@'):
+            break
+        if not line.startswith('@SQ'):
+            continue
+        line_parts = line.strip().split()
+        if len(line_parts) < 2:
+            continue
+        ref_name_parts = line_parts[1].split(':')
+        if len(ref_name_parts) < 2:
+            continue
+        try:
+            ref_numbers_in_sam.append(int(ref_name_parts[1]))
+        except ValueError:
+            pass
+
+    ref_numbers_in_sam = sorted(ref_numbers_in_sam)
+    seg_numbers_in_graph = sorted(assembly_graph.segments.keys())
+    return ref_numbers_in_sam == seg_numbers_in_graph
 
 if __name__ == '__main__':
     main()

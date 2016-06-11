@@ -42,7 +42,7 @@ import threading
 
 SCIRPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(SCIRPT_DIR, 'lib'))
-from misc import int_to_str, float_to_str, check_file_exists, quit_with_error
+from misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap
 
 # Used to ensure that multiple threads writing to the same SAM file don't write at the same time.
 sam_write_lock = threading.Lock()
@@ -390,7 +390,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
             arg_list.append((read, reference_dict, scoring_scheme, kmer_positions_ptr,
                              low_score_threshold, keep_bad, kmer_size, min_align_length,
                              sam_filename))
-        for output in pool.imap_unordered(seqan_alignment_one_arg, arg_list, 1):
+        for output in pool.imap(seqan_alignment_one_arg, arg_list, 1):
             completed_count += 1
             if VERBOSITY == 1:
                 print_progress_line(completed_count, num_realignments, prefix='Read: ')
@@ -847,18 +847,6 @@ def get_nice_header(header):
         return 'NODE_' + header.split('_')[1]
     else:
         return header.split()[0]
-
-def check_graphmap(graphmap_path):
-    '''
-    Makes sure the GraphMap executable is available.
-    '''
-    process = subprocess.Popen(['which', graphmap_path], stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
-    out, err = process.communicate()
-    found_graphmap = bool(out) and not bool(err)
-    if not found_graphmap:
-        quit_with_error('could not find GraphMap at ' + graphmap_path + 
-                        ', either fix path or run with --no_graphmap')
 
 def reverse_complement(seq):
     '''Given a DNA sequences, this function returns the reverse complement sequence.'''

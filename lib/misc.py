@@ -2,6 +2,7 @@ from __future__ import print_function
 from __future__ import division
 import sys
 import os
+import subprocess
 
 
 def float_to_str(num, decimals, max_num=0):
@@ -50,3 +51,14 @@ def quit_with_error(message): # type: (str) -> None
     print('Error:', message, file=sys.stderr)
     sys.exit(1)
 
+def check_graphmap(graphmap_path):
+    '''
+    Makes sure the GraphMap executable is available.
+    '''
+    process = subprocess.Popen(['which', graphmap_path], stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE)
+    out, err = process.communicate()
+    found_graphmap = bool(out) and not bool(err)
+    if not found_graphmap:
+        quit_with_error('could not find GraphMap at ' + graphmap_path + 
+                        ', either fix path or run with --no_graphmap')

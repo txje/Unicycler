@@ -58,7 +58,6 @@ def main():
     min_single_copy_length = assembly_graph.overlap * 4
     single_copy_segments = get_single_copy_segments(assembly_graph, verbosity,
                                                     min_single_copy_length)
-    assembly_graph.remove_overlaps(single_copy_segments)
     assembly_graph.save_to_gfa(os.path.join(args.out, '01_unbridged_graph.gfa'), verbosity, 
                                save_copy_depth_info=True)
 

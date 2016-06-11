@@ -786,6 +786,7 @@ class AssemblyGraph(object):
         initial_tolerance = 0.1
         propogation_tolerance = 0.2
         min_half_median_for_diploid = 0.1
+        min_single_copy_length = 1000
 
         # Determine the single-copy read depth for the graph. In haploid and some diploid cases,
         # this will be the median depth. But in some diploid cases, the single-copy depth may at
@@ -812,11 +813,10 @@ class AssemblyGraph(object):
             print('Single-copy depth:', float_to_str(median_depth, 3))
 
         # Assign single-copy status to segments within the tolerance of the single-copy depth.
-        min_depth = single_copy_depth - initial_tolerance
         max_depth = single_copy_depth + initial_tolerance
         initial_single_copy_segments = []
         for seg_num, segment in self.segments.iteritems():
-            if segment.depth >= min_depth and segment.depth <= max_depth and \
+            if segment.depth <= max_depth and \
                self.at_most_one_link_per_end(segment):
                 self.copy_depths[segment.number] = [segment.depth]
                 initial_single_copy_segments.append(seg_num)
@@ -834,12 +834,12 @@ class AssemblyGraph(object):
 
         # Assign single-copy to the largest available segment, propogate and repeat.
         while True:
-            assignments = self.assign_single_copy_depth(verbosity)
+            assignments = self.assign_single_copy_depth(verbosity, min_single_copy_length)
             self.determine_copy_depth_part_2(propogation_tolerance, verbosity)
             if not assignments:
                 break
 
-        # As a final step, propogate with no tolerance threshold.
+        # Now propogate with no tolerance threshold to complete the remaining segments.
         self.determine_copy_depth_part_2(1.0, verbosity)
 
     def determine_copy_depth_part_2(self, tolerance, verbosity):
@@ -851,13 +851,15 @@ class AssemblyGraph(object):
         if self.redistribute_copy_depths(tolerance, verbosity):
             self.determine_copy_depth_part_2(tolerance, verbosity)
 
-    def assign_single_copy_depth(self, verbosity):
+    def assign_single_copy_depth(self, verbosity, min_single_copy_length):
         '''
         This function assigns a single copy to the longest available segment.
         '''
         segments = sorted(self.get_segments_without_copies(),
                           key=lambda x: x.get_length(), reverse=True)
         for segment in segments:
+            if segment.get_length() < min_single_copy_length:
+                continue
             if self.exactly_one_link_per_end(segment):
                 self.copy_depths[segment.number] = [segment.depth]
                 if verbosity > 1:
@@ -1153,14 +1155,15 @@ class AssemblyGraph(object):
             else:
                 right_bridged_segments.add(-end)
 
-        # Clean up segment segments which have been used in the bridges.
+        # Clean up segments which have been used in the bridges.
         segment_nums_to_remove = []
         for bridge, bridge_seg in applied_bridges:
             bridge_depth = bridge_seg.depth
             for seg_in_bridge_path in bridge.graph_path:
                 seg_in_bridge_path_abs = abs(seg_in_bridge_path)
                 self.remove_closest_copy_depth(seg_in_bridge_path_abs, bridge_depth)
-                if not self.copy_depths[seg_in_bridge_path_abs]:
+                if seg_in_bridge_path_abs in self.copy_depths and \
+                   not self.copy_depths[seg_in_bridge_path_abs]:
                     segment_nums_to_remove.append(seg_in_bridge_path_abs)
         self.remove_segments(segment_nums_to_remove)
 

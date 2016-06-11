@@ -1198,8 +1198,7 @@ class AssemblyGraph(object):
         # Create a new bridge segment.
         new_seg_num = self.get_next_available_seg_number()
         new_seg_depth = ((start_depth * start_len) + (end_depth * end_len)) / (start_len + end_len)
-        new_seg = Segment(new_seg_num, new_seg_depth, bridge.bridge_sequence, True,
-                          bridge.bridge_type)
+        new_seg = Segment(new_seg_num, new_seg_depth, bridge.bridge_sequence, True, bridge)
         self.segments[new_seg_num] = new_seg
 
         # Link the bridge segment in to the start/end segments.
@@ -1215,12 +1214,12 @@ class Segment(object):
     '''
     This hold a graph segment with a number, depth, direction and sequence.
     '''
-    def __init__(self, number, depth, sequence, positive, seg_type='regular'):
+    def __init__(self, number, depth, sequence, positive, bridge=None):
         self.number = number
         self.depth = depth
         self.forward_sequence = ''
         self.reverse_sequence = ''
-        self.seg_type = seg_type
+        self.bridge = bridge
         if positive:
             self.forward_sequence = sequence
         else:
@@ -1299,13 +1298,13 @@ class Segment(object):
         '''
         Given a particular segment, this function returns a colour string based its type.
         '''
-        if self.seg_type == 'regular':
+        if self.bridge is None:
             return 'gray'
-        elif self.seg_type == 'spades_contig_bridge':
+        elif self.bridge.bridge_type == 'spades_contig_bridge':
             return 'forestgreen'
-        elif self.seg_type == 'long_read_bridge_through_graph':
+        elif self.bridge.bridge_type == 'long_read_bridge_through_graph':
             return 'blue'
-        elif self.seg_type == 'long_read_bridge_not_through_graph':
+        elif self.bridge.bridge_type == 'long_read_bridge_not_through_graph':
             return 'red'
         else:
             return 'black'
@@ -1314,14 +1313,15 @@ class Segment(object):
         '''
         Given a particular segment, this function returns a label string based its type.
         '''
-        if self.seg_type == 'regular':
-            return 'unchanged'
-        elif self.seg_type == 'spades_contig_bridge':
-            return 'SPAdes contig bridge'
-        elif self.seg_type == 'long_read_bridge_through_graph':
-            return 'long read bridge' 
-        elif self.seg_type == 'long_read_bridge_not_through_graph':
-            return 'gapped long read bridge'
+        if self.bridge is None:
+            return ''
+        graph_path_str = ', '.join([str(x) for x in self.bridge.graph_path])
+        if self.bridge.bridge_type == 'spades_contig_bridge':
+            return 'SPAdes contig bridge: ' + graph_path_str
+        elif self.bridge.bridge_type == 'long_read_bridge_through_graph':
+            return 'long read bridge: ' + graph_path_str
+        elif self.bridge.bridge_type == 'long_read_bridge_not_through_graph':
+            return 'long read sequence'
         else:
             return ''
 

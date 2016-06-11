@@ -1130,6 +1130,7 @@ class AssemblyGraph(object):
         sorted_bridges = sorted(bridges, key=lambda x: x.get_quality(), reverse=True)
 
         applied_bridges = []
+        seg_nums_used_in_bridges = set()
         for bridge in sorted_bridges:
             start = bridge.start_segment
             end = bridge.end_segment
@@ -1143,6 +1144,8 @@ class AssemblyGraph(object):
 
             bridge_seg = self.apply_bridge(bridge, verbosity)
             applied_bridges.append((bridge, bridge_seg))
+            for seg_num in bridge.graph_path:
+                seg_nums_used_in_bridges.add(abs(seg_num))
 
             # Remember that these segments have been bridged in this direction so no more
             # bridges can be applied to them in the same direction.
@@ -1165,6 +1168,18 @@ class AssemblyGraph(object):
                 if seg_in_bridge_path_abs in self.copy_depths and \
                    not self.copy_depths[seg_in_bridge_path_abs]:
                     segment_nums_to_remove.append(seg_in_bridge_path_abs)
+        self.remove_segments(segment_nums_to_remove)
+
+        # Clean up connected components which have been entirely used in bridges.
+        segment_nums_to_remove = []
+        connected_components = self.get_connected_components()
+        for component in connected_components:
+            component_seg_nums = [self.segments[x].number for x in component]
+            for component_seg_num in component_seg_nums:
+                if component_seg_num not in seg_nums_used_in_bridges:
+                    break
+            else:
+                segment_nums_to_remove += component_seg_nums
         self.remove_segments(segment_nums_to_remove)
 
         if verbosity > 1:

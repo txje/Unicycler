@@ -529,7 +529,11 @@ def create_spades_contig_bridges(graph, single_copy_segments, verbosity):
                 flipped_contig_bridge_str = ','.join([str(x) for x in flipped_contig_bridge])
                 if contig_bridge_str not in bridge_path_set and \
                    flipped_contig_bridge_str not in bridge_path_set:
-                    bridge_path_set.add(contig_bridge_str)
+                    if contig_bridge[0] < 0 and contig_bridge[-1] < 0:
+                        bridge_path_set.add(flipped_contig_bridge_str)
+                    else:
+                        bridge_path_set.add(contig_bridge_str)
+
     bridge_path_list = sorted(list([[int(y) for y in x.split(',')] for x in bridge_path_set]))
 
     # If multiple bridge paths start with or end with the same segment, that implies a conflict

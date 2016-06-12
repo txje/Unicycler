@@ -55,6 +55,7 @@ class Bridge(object):
             self.bridge_type = 'spades_contig_bridge'
 
 
+        # self.bridge_type = 'loop_unrolling_bridge'
         # self.bridge_type = 'long_read_bridge_through_graph'
         # self.bridge_type = 'long_read_bridge_not_through_graph'
 
@@ -69,6 +70,7 @@ class Bridge(object):
         a graph path sequence, depending on the bridge type.
         '''
         if self.bridge_type == 'spades_contig_bridge' or \
+           self.bridge_type == 'loop_unrolling_bridge' or \
            self.bridge_type == 'long_read_bridge_through_graph':
             return self.graph_path_sequence
         elif self.bridge_type == 'long_read_bridge_not_through_graph':

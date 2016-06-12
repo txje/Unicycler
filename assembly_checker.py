@@ -18,6 +18,7 @@ import argparse
 SCIRPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(SCIRPT_DIR, 'lib'))
 from misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap
+from cpp_function_wrappers import simulate_depths
 
 sys.dont_write_bytecode = True
 from semi_global_aligner import AlignmentScoringScheme, Read, Reference, load_references, \
@@ -1440,6 +1441,30 @@ def get_ref_shift_from_cigar_part(cigar_type, cigar_count):
         return cigar_count
     else:
         return 0
+
+def get_depth_min_and_max_distributions(read_lengths, reference_length, iterations, threads):
+    '''
+    Python wrapper for getRandomSequenceAlignmentErrorRate C++ function.
+    '''
+    read_lengths_array = (c_int * len(read_lengths))(*read_lengths)
+    distribution_str = simulate_depths(read_lengths_array, len(read_lengths), reference_length,
+                                       iterations, threads)
+    min_distribution_str, max_distribution_str = distribution_str.split(';')
+
+    min_distribution_pieces = min_distribution_str.split(',')
+    min_distribution = []
+    for piece in min_distribution_pieces:
+        piece_parts = piece.split(':')
+        min_distribution.append((int(piece_parts[0]), float(piece_parts[1])))
+
+    max_distribution_pieces = max_distribution_str.split(',')
+    max_distribution = []
+    for piece in max_distribution_pieces:
+        piece_parts = piece.split(':')
+        max_distribution.append((int(piece_parts[0]), float(piece_parts[1])))
+
+    return min_distribution, max_distribution
+
 
 if __name__ == '__main__':
     main()

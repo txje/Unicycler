@@ -35,14 +35,17 @@ import re
 import random
 import argparse
 import time
-from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p, c_bool, POINTER
 from multiprocessing.dummy import Pool as ThreadPool
 from multiprocessing import cpu_count
 import threading
 
-SCIRPT_DIR = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(os.path.join(SCIRPT_DIR, 'lib'))
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(os.path.join(SCRIPT_DIR, 'lib'))
 from misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap
+from cpp_function_wrappers import semi_global_alignment, new_kmer_positions, add_kmer_positions, \
+                                  delete_all_kmer_positions, start_extension_alignment, \
+                                  end_extension_alignment, \
+                                  get_random_sequence_alignment_mean_and_std_dev
 
 # Used to ensure that multiple threads writing to the same SAM file don't write at the same time.
 sam_write_lock = threading.Lock()
@@ -68,13 +71,6 @@ start.
 EXPECTED_SLOPE = 1.0
 TOTAL_REF_LENGTH = 10000
 TOTAL_READ_LENGTH = 10000
-
-
-'''
-This script makes use of several C++ functions which are in cpp_functions.so. They are wrapped in
-similarly named Python functions.
-'''
-C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'lib/cpp_functions.so'))
 
 
 def main():
@@ -381,9 +377,9 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     completed_count = 0
 
     # Create a C++ KmerPositions object and add each reference sequence.
-    kmer_positions_ptr = C_LIB.newKmerPositions()
+    kmer_positions_ptr = new_kmer_positions()
     for ref in references:
-        C_LIB.addKmerPositions(kmer_positions_ptr, ref.name, ref.sequence, kmer_size)
+        add_kmer_positions(kmer_positions_ptr, ref.name, ref.sequence, kmer_size)
 
     # If single-threaded, just do the work in a simple loop.
     if threads == 1:
@@ -413,7 +409,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
                 print(output, end='')
 
     # We're done with the C++ KmerPositions object, so delete it now.
-    C_LIB.deleteAllKmerPositions(kmer_positions_ptr)
+    delete_all_kmer_positions(kmer_positions_ptr)
     
     if VERBOSITY == 1:
         print('\n')
@@ -730,12 +726,11 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
     # print(read, EXPECTED_SLOPE) # TEMP
     # sys.stdout.flush() # TEMP
 
-    ptr = C_LIB.semiGlobalAlignment(read.name, read.sequence, VERBOSITY,
+    results = semi_global_alignment(read.name, read.sequence, VERBOSITY,
                                     EXPECTED_SLOPE, kmer_positions_ptr,
                                     scoring_scheme.match, scoring_scheme.mismatch,
                                     scoring_scheme.gap_open, scoring_scheme.gap_extend,
-                                    low_score_threshold, keep_bad, kmer_size)
-    results = c_string_to_python_string(ptr).split(';')
+                                    low_score_threshold, keep_bad, kmer_size).split(';')
     alignment_strings = results[:-1]
     output += results[-1]
 
@@ -1670,181 +1665,6 @@ class Alignment(object):
         if smaller_alignment_length == 0:
             return False
         return overlap_size / smaller_alignment_length >= 0.9
-
-
-'''
-This is the big semi-global C++ Seqan alignment function.
-'''
-C_LIB.semiGlobalAlignment.argtypes = [c_char_p, # Read name
-                                      c_char_p, # Read sequence
-                                      c_int,    # Verbosity
-                                      c_double, # Expected slope
-                                      c_void_p, # KmerPositions pointer
-                                      c_int,    # Match score
-                                      c_int,    # Mismatch score
-                                      c_int,    # Gap open score
-                                      c_int,    # Gap extension score
-                                      c_double, # Low score threshold
-                                      c_bool,   # Return bad alignments
-                                      c_int]    # K-mer size
-C_LIB.semiGlobalAlignment.restype = c_void_p    # String describing alignments
-
-
-'''
-These functions are used to conduct short alignments for the sake of extending the start and end of
-a GraphMap alignment.
-'''
-C_LIB.startExtensionAlignment.argtypes = [c_char_p, # Read sequence
-                                          c_char_p, # Reference sequence
-                                          c_int,    # Match score
-                                          c_int,    # Mismatch score
-                                          c_int,    # Gap open score
-                                          c_int]    # Gap extension score
-C_LIB.startExtensionAlignment.restype = c_void_p    # String describing alignment
-
-C_LIB.endExtensionAlignment.argtypes = [c_char_p, # Read sequence
-                                        c_char_p, # Reference sequence
-                                        c_int,    # Match score
-                                        c_int,    # Mismatch score
-                                        c_int,    # Gap open score
-                                        c_int]    # Gap extension score
-C_LIB.endExtensionAlignment.restype = c_void_p    # String describing alignment
-
-
-def start_extension_alignment(realigned_read_seq, realigned_ref_seq, scoring_scheme):
-    '''
-    Python wrapper for startExtensionAlignment C++ function.
-    '''
-    ptr = C_LIB.startExtensionAlignment(realigned_read_seq, realigned_ref_seq,
-                                        scoring_scheme.match, scoring_scheme.mismatch,
-                                        scoring_scheme.gap_open, scoring_scheme.gap_extend)
-    return c_string_to_python_string(ptr)
-
-def end_extension_alignment(realigned_read_seq, realigned_ref_seq, scoring_scheme):
-    '''
-    Python wrapper for endExtensionAlignment C++ function.
-    '''
-    ptr = C_LIB.endExtensionAlignment(realigned_read_seq, realigned_ref_seq,
-                                      scoring_scheme.match, scoring_scheme.mismatch,
-                                      scoring_scheme.gap_open, scoring_scheme.gap_extend)
-    return c_string_to_python_string(ptr)
-
-
-'''
-This function cleans up the heap memory for the C strings returned by the other C functions. It
-must be called after them.
-'''
-C_LIB.freeCString.argtypes = [c_void_p]
-C_LIB.freeCString.restype = None
-
-def c_string_to_python_string(c_string):
-    '''
-    This function casts a C string to a Python string and then calls a function to delete the C
-    string from the heap.
-    '''
-    python_string = cast(c_string, c_char_p).value    
-    C_LIB.freeCString(c_string)
-    return python_string
-
-
-'''
-These functions make/delete a C++ object that will be used during line-finding.
-'''
-C_LIB.newKmerPositions.argtypes = []
-C_LIB.newKmerPositions.restype = c_void_p
-
-C_LIB.addKmerPositions.argtypes = [c_void_p, # KmerPositions pointer
-                                   c_char_p, # Name
-                                   c_char_p, # Sequence
-                                   c_int]    # K-mer size
-C_LIB.addKmerPositions.restype = None
-
-C_LIB.deleteAllKmerPositions.argtypes = [c_void_p]
-C_LIB.deleteAllKmerPositions.restype = None
-
-
-'''
-This function gets the mean and standard deviation of alignments between random sequences.
-'''
-C_LIB.getRandomSequenceAlignmentScores.argtypes = [c_int, # Random sequence length
-                                                   c_int, # Count
-                                                   c_int, # Match score
-                                                   c_int, # Mismatch score
-                                                   c_int, # Gap open score
-                                                   c_int] # Gap extension score
-C_LIB.getRandomSequenceAlignmentScores.restype = c_void_p
-
-
-def get_random_sequence_alignment_mean_and_std_dev(seq_length, count, scoring_scheme):
-    '''
-    Python wrapper for getRandomSequenceAlignmentScores C++ function.
-    '''
-    ptr = C_LIB.getRandomSequenceAlignmentScores(seq_length, count,
-                                                 scoring_scheme.match, scoring_scheme.mismatch,
-                                                 scoring_scheme.gap_open, scoring_scheme.gap_extend)
-    return_str = c_string_to_python_string(ptr)
-    return_parts = return_str.split(',')
-    return float(return_parts[0]), float(return_parts[1])
-
-
-'''
-This function gets the mean and standard deviation of alignments between random sequences.
-'''
-C_LIB.getRandomSequenceAlignmentErrorRates.argtypes = [c_int, # Random sequence length
-                                                       c_int, # Count
-                                                       c_int, # Match score
-                                                       c_int, # Mismatch score
-                                                       c_int, # Gap open score
-                                                       c_int] # Gap extension score
-C_LIB.getRandomSequenceAlignmentErrorRates.restype = c_void_p
-
-
-def get_random_sequence_alignment_error_rates(seq_length, count, scoring_scheme):
-    '''
-    Python wrapper for getRandomSequenceAlignmentErrorRate C++ function.
-    '''
-    ptr = C_LIB.getRandomSequenceAlignmentErrorRates(seq_length, count,
-                                                     scoring_scheme.match, scoring_scheme.mismatch,
-                                                     scoring_scheme.gap_open,
-                                                     scoring_scheme.gap_extend)
-    return c_string_to_python_string(ptr)
-
-
-'''
-This function gets the mean and standard deviation of alignments between random sequences.
-'''
-C_LIB.simulateDepths.argtypes = [POINTER(c_int), # Alignment lengths
-                                 c_int,          # Alignment count
-                                 c_int,          # Reference length
-                                 c_int,          # Iterations
-                                 c_int]          # Threads
-C_LIB.simulateDepths.restype = c_void_p
-
-
-def get_depth_min_and_max_distributions(read_lengths, reference_length, iterations, threads):
-    '''
-    Python wrapper for getRandomSequenceAlignmentErrorRate C++ function.
-    '''
-    read_lengths_array = (c_int * len(read_lengths))(*read_lengths)
-    ptr = C_LIB.simulateDepths(read_lengths_array, len(read_lengths), reference_length, iterations,
-                               threads)
-    distribution_str = c_string_to_python_string(ptr)
-    min_distribution_str, max_distribution_str = distribution_str.split(';')
-
-    min_distribution_pieces = min_distribution_str.split(',')
-    min_distribution = []
-    for piece in min_distribution_pieces:
-        piece_parts = piece.split(':')
-        min_distribution.append((int(piece_parts[0]), float(piece_parts[1])))
-
-    max_distribution_pieces = max_distribution_str.split(',')
-    max_distribution = []
-    for piece in max_distribution_pieces:
-        piece_parts = piece.split(':')
-        max_distribution.append((int(piece_parts[0]), float(piece_parts[1])))
-
-    return min_distribution, max_distribution
-
 
 if __name__ == '__main__':
     main()

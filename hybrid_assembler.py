@@ -18,7 +18,8 @@ from multiprocessing import cpu_count
 SCIRPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(SCIRPT_DIR, 'lib'))
 from assembly_graph import AssemblyGraph
-from bridge import Bridge, create_spades_contig_bridges, find_contig_bridges
+from bridge import Bridge, create_spades_contig_bridges, find_contig_bridges, \
+                   create_long_read_bridges
 from misc import int_to_str, float_to_str, quit_with_error, check_file_exists, check_graphmap
 
 sys.dont_write_bytecode = True
@@ -63,9 +64,7 @@ def main():
                                            args.threads, args.keep_temp)
 
     # Determine copy number and get single-copy segments.
-    min_single_copy_length = assembly_graph.overlap * 2
-    single_copy_segments = get_single_copy_segments(assembly_graph, verbosity,
-                                                    min_single_copy_length)
+    single_copy_segments = get_single_copy_segments(assembly_graph, verbosity, 0)
     assembly_graph.save_to_gfa(unbridged_graph, verbosity, save_copy_depth_info=True)
 
     # Make an initial set of bridges using the SPAdes contig paths.
@@ -117,29 +116,15 @@ def main():
                                          full_command, min_alignment_length, verbosity)
             shutil.move(alignments_sam_in_progress, alignments_sam)
 
-
-
-
-
-        quit() # TEMP
-
-
-
-
-
-
-        # TO DO: PRODUCE BRIDGES USING LONG READ ALIGNMENTS
-
-
-
-
-
+        # Make the long read bridges and apply them!
+        bridges += create_long_read_bridges(assembly_graph, read_dict, single_copy_segments,
+                                            verbosity)
         bridged_graph = copy.deepcopy(assembly_graph)
         bridged_graph.apply_bridges(bridges, verbosity)
-        bridged_graph.save_to_gfa(os.path.join(args.out, '02_spades_bridged_graph.gfa'), verbosity, 
-                                  save_seg_type_info=True)
+        bridged_graph.save_to_gfa(os.path.join(args.out, '006_long_read_bridges_unmerged.gfa'),
+                                  verbosity, save_seg_type_info=True)
         bridged_graph.merge_all_possible()
-        bridged_graph.save_to_gfa(os.path.join(args.out, '03_spades_bridged_graph_merged.gfa'),
+        bridged_graph.save_to_gfa(os.path.join(args.out, '007_long_read_bridges_merged.gfa'),
                                   verbosity)
 
     # If we are getting long reads incrementally, then we do the process iteratively.

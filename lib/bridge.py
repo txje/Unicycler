@@ -7,17 +7,51 @@ class Bridge(object):
     This class describes a bridge between two single-copy segments in an assembly graph.
     '''
     def __init__(self, spades_contig_path=None, graph=None):
+
         self.start_segment = None
         self.end_segment = None
-        self.graph_path = []
-        self.bridge_sequence = ''
+
+        # A string indicating where this bridge came from.
         self.bridge_type = ''
 
+        # The individual read sequences contributing to the bridge, along with their FASTQ
+        # qualities.
+        self.read_sequences = []
+        self.read_sequence_qualities = []
+
+        # The lengths of the sequences in self.read_sequences. This is stored separately because
+        # negative bridge lengths are possible (when the start and end segment alignments overlap).
+        # In these cases we don't have any read sequences but will still need to know the lengths
+        # (which will be negative).
+        self.read_sequence_lengths = []
+
+        # The consensus of all read sequences, if applicable. If there is only one read, then this
+        # is the same as that read's sequence. If there are multiple reads, this is hopefully a
+        # more accurate sequence.
+        self.consensus_read_sequence = ''
+
+        # The consensus read sequence length. If self.consensus_read_sequence exists, this is just
+        # the length of that sequence. But if the read sequence lengths are negative, then this is
+        # the mean of those lengths
+        self.consensus_read_sequence_length = 0.0
+
+        # The score of the read sequence consensus. Only applies if there are two or more read
+        # sequences. Used in the calculation of the bridge quality (e.g. a bridge made from reads
+        # with a bad consensus score gets a lower quality).
+        self.consensus_score = 0.0
+
+        # The path through the unbridged graph, its sequence, and its alignment score (the score
+        # for the alignment between the path sequence and the read consensus).
+        self.graph_path = []
+        self.graph_path_sequence = ''
+        self.graph_path_score = 0.0
+
+        # Construct a bridge using a SPAdes contig path.
         if spades_contig_path and graph:
             self.graph_path = spades_contig_path
             self.start_segment = self.graph_path.pop(0)
             self.end_segment = self.graph_path.pop()
-            self.bridge_sequence = graph.get_path_sequence(self.graph_path)
+            self.graph_path_sequence = graph.get_path_sequence(self.graph_path)
             self.bridge_type = 'spades_contig_bridge'
 
 
@@ -29,6 +63,17 @@ class Bridge(object):
         return str(self.start_segment) + ' -> ' + ', '.join([str(x) for x in self.graph_path]) + \
                ' -> ' + str(self.end_segment)
 
+    def get_bridge_sequence(self):
+        '''
+        Returns the best sequence for this bridges. This can be either a read consensus sequence or
+        a graph path sequence, depending on the bridge type.
+        '''
+        if self.bridge_type == 'spades_contig_bridge' or \
+           self.bridge_type == 'long_read_bridge_through_graph':
+            return self.graph_path_sequence
+        elif self.bridge_type == 'long_read_bridge_not_through_graph':
+            return self.consensus_read_sequence
+        assert False # Should never get here!
 
     def get_quality(self):
         '''
@@ -38,14 +83,15 @@ class Bridge(object):
         # TO DO: Make this function more robust! When two bridges are of the same type, they should
         #        give different quality scores.
 
-        if self.bridge_type == 'spades_contig_bridge':
-            return 1.0
 
         if self.bridge_type == 'long_read_bridge_not_through_graph':
-            return 2.0
+            return 1.0
+
+        if self.bridge_type == 'spades_contig_bridge':
+            return 10.0
 
         if self.bridge_type == 'long_read_bridge_through_graph':
-            return 3.0
+            return 100.0
 
         return 0.0
 
@@ -150,6 +196,28 @@ def find_contig_bridges(segment_num, path, single_copy_numbers):
             bridge_paths.append(bridge_path)
     return bridge_paths
 
+def create_long_read_bridges(graph, reads, single_copy_segments, verbosity):
+    '''
+    Makes bridges between single-copy segments using the alignments in the long reads.
+    '''
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
 
+    return [] # TEMP
 
 

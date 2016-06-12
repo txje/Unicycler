@@ -1158,6 +1158,12 @@ class AssemblyGraph(object):
             else:
                 right_bridged_segments.add(-end)
 
+            # Also, any segments within the bridge are now unavailable for bridging in either
+            # direction.
+            for bridge_path_seg in bridge.graph_path:
+                right_bridged_segments.add(abs(bridge_path_seg))
+                left_bridged_segments.add(abs(bridge_path_seg))
+
         # Clean up segments which have been used in the bridges.
         segment_nums_to_remove = []
         for bridge, bridge_seg in applied_bridges:
@@ -1168,6 +1174,21 @@ class AssemblyGraph(object):
                 if seg_in_bridge_path_abs in self.copy_depths and \
                    not self.copy_depths[seg_in_bridge_path_abs]:
                     segment_nums_to_remove.append(seg_in_bridge_path_abs)
+        self.remove_segments(segment_nums_to_remove)
+
+        # Clean up any orphaned bridges. This can happen when a smaller bridges is applied first
+        # and then a larger bridge is applied which encompasses the smaller bridge. This can leave
+        # the first bridge without connections. A bridge is considered orphaned if it's missing a
+        # connection on either side.
+        segment_nums_to_remove = []
+        for seg_num, segment in self.segments.iteritems():
+            if segment.bridge is not None:
+                missing_forward = seg_num not in self.forward_links or \
+                                  not self.forward_links[seg_num]
+                missing_reverse = seg_num not in self.reverse_links or \
+                                  not self.reverse_links[seg_num]
+                if missing_forward or missing_reverse:
+                    segment_nums_to_remove.append(seg_num)
         self.remove_segments(segment_nums_to_remove)
 
         # Clean up connected components which have been entirely used in bridges.
@@ -1213,7 +1234,7 @@ class AssemblyGraph(object):
         # Create a new bridge segment.
         new_seg_num = self.get_next_available_seg_number()
         new_seg_depth = ((start_depth * start_len) + (end_depth * end_len)) / (start_len + end_len)
-        new_seg = Segment(new_seg_num, new_seg_depth, bridge.bridge_sequence, True, bridge)
+        new_seg = Segment(new_seg_num, new_seg_depth, bridge.get_bridge_sequence(), True, bridge)
         self.segments[new_seg_num] = new_seg
 
         # Link the bridge segment in to the start/end segments.

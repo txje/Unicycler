@@ -95,7 +95,8 @@ def main():
     semi_global_align_long_reads(references, args.ref, read_dict, read_names, args.reads,
                                  args.temp_dir, args.graphmap_path, args.threads, scoring_scheme,
                                  args.low_score, not args.no_graphmap, args.keep_bad, args.kmer,
-                                 args.min_len, args.sam, full_command, VERBOSITY)
+                                 args.min_len, args.sam, full_command, args.allowed_overlap,
+                                 VERBOSITY)
     sys.exit(0)
 
 def get_arguments():
@@ -138,35 +139,48 @@ def add_aligning_arguments(parser, hide_help):
                                                         'process ID)'
     parser.add_argument('--temp_dir', type=str, required=False, default='align_temp_PID',
                         help=temp_dir_help)
+
     no_graphmap_help = argparse.SUPPRESS if hide_help else 'Do not use GraphMap as a ' + \
                                                            'first-pass aligner (default: ' + \
                                                            'GraphMap is used)'
     parser.add_argument('--no_graphmap', action='store_true', default=argparse.SUPPRESS,
                         help=no_graphmap_help)
+
     graphmap_path_help = argparse.SUPPRESS if hide_help else 'Path to the GraphMap executable'
     parser.add_argument('--graphmap_path', type=str, required=False, default='graphmap',
                         help=graphmap_path_help)
+
     scores_help = argparse.SUPPRESS if hide_help else 'Comma-delimited string of alignment ' + \
                                                       'scores: match, mismatch, gap open, gap ' + \
                                                       'extend'
     parser.add_argument('--scores', type=str, required=False, default='3,-6,-5,-2',
                         help=scores_help)
+
     low_score_help = argparse.SUPPRESS if hide_help else 'Score threshold - alignments below ' + \
                                                          'this are considered poor (default: ' + \
                                                          'set threshold automatically)'
     parser.add_argument('--low_score', type=float, required=False, default=argparse.SUPPRESS,
                         help=low_score_help)
+
     min_len_help = argparse.SUPPRESS if hide_help else 'Minimum alignment length (bp) - ' + \
                                                        'exclude alignments shorter than this ' + \
                                                        'length'
     parser.add_argument('--min_len', type=float, required=False, default=100,
                         help=min_len_help)
+
     keep_bad_help = argparse.SUPPRESS if hide_help else 'Include alignments in the results ' + \
                                                         'even if they are below the low score ' + \
                                                         'threshold (default: low-scoring ' + \
                                                         'alignments are discarded)'
     parser.add_argument('--keep_bad', action='store_true', default=argparse.SUPPRESS,
                         help=keep_bad_help)
+
+    allowed_overlap_help = argparse.SUPPRESS if hide_help else 'Allow this much overlap ' + \
+                                                               'between alignments in a ' + \
+                                                               'single read'
+    parser.add_argument('--allowed_overlap', type=int, required=False, default=100,
+                        help=allowed_overlap_help)
+
     kmer_help = argparse.SUPPRESS if hide_help else 'K-mer size used for seeding alignments'
     parser.add_argument('--kmer', type=int, required=False, default=7,
                         help=kmer_help)
@@ -202,7 +216,8 @@ def fix_up_arguments(args):
 def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, reads_fastq,
                                  temp_dir, graphmap_path, threads, scoring_scheme,
                                  low_score_threshold, use_graphmap, keep_bad, kmer_size,
-                                 min_align_length, sam_filename, full_command, verbosity=None):
+                                 min_align_length, sam_filename, full_command, allowed_overlap,
+                                 verbosity=None):
     '''
     This function does the primary work of this module: aligning long reads to references in an
     end-gap-free, semi-global manner. It returns a list of Read objects which contain their
@@ -375,7 +390,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         for read in reads_to_align:
             output = seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
                                      low_score_threshold, keep_bad, kmer_size, min_align_length,
-                                     sam_filename)
+                                     sam_filename, allowed_overlap)
             completed_count += 1
             if VERBOSITY == 1:
                 print_progress_line(completed_count, num_realignments, prefix='Read: ')
@@ -389,7 +404,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         for read in reads_to_align:
             arg_list.append((read, reference_dict, scoring_scheme, kmer_positions_ptr,
                              low_score_threshold, keep_bad, kmer_size, min_align_length,
-                             sam_filename))
+                             sam_filename, allowed_overlap))
         for output in pool.imap(seqan_alignment_one_arg, arg_list, 1):
             completed_count += 1
             if VERBOSITY == 1:
@@ -686,13 +701,13 @@ def seqan_alignment_one_arg(all_args):
     in a thread pool.
     '''
     read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold, keep_bad, \
-        kmer_size, min_align_length, sam_filename = all_args
+        kmer_size, min_align_length, sam_filename, allowed_overlap = all_args
     return seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
                            low_score_threshold, keep_bad, kmer_size, min_align_length,
-                           sam_filename)
+                           sam_filename, allowed_overlap)
 
 def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold,
-                    keep_bad, kmer_size, min_align_length, sam_filename):
+                    keep_bad, kmer_size, min_align_length, sam_filename, allowed_overlap):
     '''
     Aligns a single read against all reference sequences using Seqan.
     '''
@@ -742,7 +757,7 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
                     if VERBOSITY > 3:
                         output += alignment.cigar + '\n'
 
-    read.remove_conflicting_alignments()
+    read.remove_conflicting_alignments(allowed_overlap)
     if not keep_bad:
         read.remove_low_score_alignments(low_score_threshold)
     read.remove_short_alignments(min_align_length)
@@ -826,6 +841,16 @@ def range_is_contained(test_range, other_ranges):
         if other_range[0] <= start and other_range[1] >= end:
             return True
     return False
+
+def range_overlap(test_range, other_ranges):
+    '''
+    Returns the size of the overlap (integer) between the two ranges.
+    '''
+    start, end = test_range
+    max_overlap = 0
+    for other_range in other_ranges:
+        max_overlap = max(max_overlap, min(end, other_range[1]) - max(start, other_range[0]))
+    return max_overlap
 
 def is_header_spades_format(contig_name):
     '''
@@ -1054,13 +1079,13 @@ class Read(object):
         well_aligned_length = sum([x[1] - x[0] for x in read_ranges])
         return well_aligned_length < len(self.sequence)
 
-    def remove_conflicting_alignments(self):
+    def remove_conflicting_alignments(self, allowed_overlap):
         '''
         This function removes alignments from the read which are likely to be spurious or
         redundant.
         '''
         self.alignments = sorted(self.alignments, reverse=True,
-                                 key=lambda x: (x.scaled_score, random.random()))
+                                 key=lambda x: (x.raw_score, random.random()))
         kept_alignments = []
         kept_alignment_ranges = []
         for alignment in self.alignments:
@@ -1068,6 +1093,10 @@ class Read(object):
 
             # Don't keep alignments for which their part of the read is already aligned.
             if range_is_contained(this_range, kept_alignment_ranges):
+                continue
+
+            # Don't keep alignments which overlap too much with existing alignments.
+            if range_overlap(this_range, kept_alignment_ranges) > allowed_overlap:
                 continue
 
             # Don't keep alignments that seem to be very similar to an already kept alignment.
@@ -1079,7 +1108,8 @@ class Read(object):
 
             if keep_alignment:
                 kept_alignments.append(alignment)
-                kept_alignment_ranges = simplify_ranges(kept_alignment_ranges + [this_range])   
+                kept_alignment_ranges = simplify_ranges(kept_alignment_ranges + [this_range])
+
         kept_alignments = sorted(kept_alignments,
                                  key=lambda x: x.read_start_end_positive_strand()[0])
         self.alignments = kept_alignments

@@ -11,7 +11,6 @@ SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignmen
     m_readName(readName), m_refName(refName), m_readLength(readLength), m_refLength(refLength),
     m_readStartPos(-1), m_refStartPos(-1), m_rawScore(0), m_bandSize(bandSize)
 {
-
     // Extract the alignment sequences into C++ strings for constant time random access.
     std::ostringstream stream1;
     stream1 << row(alignment, 0);

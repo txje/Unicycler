@@ -1446,9 +1446,7 @@ def get_depth_min_and_max_distributions(read_lengths, reference_length, iteratio
     '''
     Python wrapper for getRandomSequenceAlignmentErrorRate C++ function.
     '''
-    read_lengths_array = (c_int * len(read_lengths))(*read_lengths)
-    distribution_str = simulate_depths(read_lengths_array, len(read_lengths), reference_length,
-                                       iterations, threads)
+    distribution_str = simulate_depths(read_lengths, reference_length, iterations, threads)
     min_distribution_str, max_distribution_str = distribution_str.split(';')
 
     min_distribution_pieces = min_distribution_str.split(',')

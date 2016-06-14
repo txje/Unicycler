@@ -26,8 +26,23 @@
 //     }
 // }
 
-char * multipleSequenceAlignment(char * sequences[], char * qualities[], int sequenceCount,
+char * multipleSequenceAlignment(char * sequences[], char * qualities[], int sequenceCount, int pieceSize,
                                  int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore) {
+    // Convert the input C-string arrays to C++ string vectors.
+    std::vector<std::string> ungappedSequences;
+    ungappedSequences.reserve(sequenceCount);
+    for (int i = 0; i < sequenceCount; ++i)
+        ungappedSequences.push_back(std::string(sequences[i]));
+    std::vector<std::string> ungappedQualities;
+    ungappedQualities.reserve(sequenceCount);
+    for (int i = 0; i < sequenceCount; ++i)
+        ungappedQualities.push_back(std::string(qualities[i]));
+
+    // These vectors will hold the aligned sequences and qualities.
+    std::vector<std::string> gappedSequences;
+    gappedSequences.reserve(sequenceCount);
+    std::vector<std::string> gappedQualities;
+    gappedQualities.reserve(sequenceCount);
 
     // We want to use a scoring scheme which is almost like the simple scoring scheme we use for
     // read alignment, but with the addition of free Ns in the middle.
@@ -45,34 +60,113 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
         }
     }
 
-    // Perform the multiple sequence alignment.
-    Align<Dna5String> align;
-    resize(rows(align), sequenceCount);
+    int totalSeqLength = 0;
     for (int i = 0; i < sequenceCount; ++i)
-        assignSource(row(align, i), sequences[i]);
-    globalMsaAlignment(align, scoringScheme);
+        totalSeqLength += ungappedSequences[i].length();
+    int meanSeqLength = int(0.5 + double(totalSeqLength) / sequenceCount);
 
-    // std::cout << "\n" << align << "\n"; // TEMP
+    // If the sequences are long, we will do the alignment in pieces. This will make it run much
+    // faster, and since we expect the alignment to follow the diagonal pretty well, this shouldn't
+    // affect the alignment's quality.
+    if (meanSeqLength > pieceSize) {
+        gappedSequences.resize(sequenceCount, "");
+        std::vector<std::string> ungappedSequencePieces;
+        ungappedSequencePieces.reserve(sequenceCount);
+        std::vector<int> ungappedSequencePieceIndices;
+        ungappedSequencePieceIndices.reserve(sequenceCount);
+        std::vector<std::string> gappedSequencePieces;
+        gappedSequencePieces.reserve(sequenceCount);
+        std::vector<int> startPositions;
+        startPositions.resize(sequenceCount, 0);
 
-    // Extract the alignment sequences into C++ strings.
-    std::vector<std::string> gappedSequences;
-    for (int i = 0; i < sequenceCount; ++i) {
-        std::ostringstream stream;
-        stream << row(align, i);
-        gappedSequences.push_back(stream.str());
+        bool lastPiece = false;
+        while (!lastPiece) {
+            // std::cout << "\n\n\n\n"; // TEMP
+
+            ungappedSequencePieces.clear();
+            ungappedSequencePieceIndices.clear();
+            lastPiece = true;
+            for (int i = 0; i < sequenceCount; ++i) {
+                std::string ungappedSequencePiece = ungappedSequences[i].substr(startPositions[i], pieceSize);
+                if (!ungappedSequencePiece.empty()) {
+                    ungappedSequencePieces.push_back(ungappedSequencePiece);
+                    ungappedSequencePieceIndices.push_back(i);
+                    // std::cout << ungappedSequencePieces.back() << "\n"; // TEMP
+                }
+                if (int(ungappedSequencePiece.length()) == pieceSize)
+                    lastPiece = false;
+            }
+
+            Align<Dna5String> align;
+            resize(rows(align), ungappedSequencePieces.size());
+            for (size_t i = 0; i < ungappedSequencePieces.size(); ++i)
+                assignSource(row(align, i), ungappedSequencePieces[i]);
+            globalMsaAlignment(align, scoringScheme);
+
+            // std::cout << "\n" << align << "\n"; // TEMP
+
+            gappedSequencePieces.clear();
+            gappedSequencePieces.resize(sequenceCount, "");
+            int longestGappedSequencePiece = 0;
+            for (size_t i = 0; i < ungappedSequencePieces.size(); ++i) {
+                std::ostringstream stream;
+                stream << row(align, i);
+                std::string gappedSequencePiece = stream.str();
+                gappedSequencePieces[ungappedSequencePieceIndices[i]] = gappedSequencePiece;
+                longestGappedSequencePiece = std::max(longestGappedSequencePiece, int(gappedSequencePiece.length()));
+            }
+            for (int i = 0; i < sequenceCount; ++i) {
+                if (gappedSequencePieces[i].empty())
+                    gappedSequencePieces[i] = std::string(longestGappedSequencePiece, '-');
+            }
+
+            // If this was the last piece, then we keep the whole alignment.
+            if (lastPiece) {
+                for (int i = 0; i < sequenceCount; ++i)
+                    gappedSequences[i] += gappedSequencePieces[i];
+            }
+
+            // If the wasn't the last piece, we keep the first half of the alignment and advance the
+            // start positions as appropriate.
+            else {
+                int pieceAlignmentLength = gappedSequencePieces[0].length();
+                int halfPieceAlignmentLength = pieceAlignmentLength / 2;
+                for (int i = 0; i < sequenceCount; ++i) {
+                    std::string keptGappedSequence = gappedSequencePieces[i].substr(0, halfPieceAlignmentLength);
+                    gappedSequences[i] += keptGappedSequence;
+                    startPositions[i] += (halfPieceAlignmentLength - std::count(keptGappedSequence.begin(), keptGappedSequence.end(), '-'));
+                }
+            }
+        }
     }
-    int alignmentLength = gappedSequences[0].length();
+
+    // If the sequences are short enough, we can just do the alignment all at once.
+    else {
+        Align<Dna5String> align;
+        resize(rows(align), sequenceCount);
+        for (int i = 0; i < sequenceCount; ++i)
+            assignSource(row(align, i), ungappedSequences[i]);
+        globalMsaAlignment(align, scoringScheme);
+
+        // std::cout << "\n" << align << "\n"; // TEMP
+
+        for (int i = 0; i < sequenceCount; ++i) {
+            std::ostringstream stream;
+            stream << row(align, i);
+            gappedSequences.push_back(stream.str());
+        }
+    }
 
     // Add gaps to the quality scores so they match up with the bases.
-    std::vector<std::string> gappedQualities;
+    int alignmentLength = gappedSequences[0].length();
     for (int i = 0; i < sequenceCount; ++i) {
-        std::string ungappedQuality(qualities[i]);
+        // std::cout << gappedSequences[i] << "\n"; // TEMP
         std::string gappedQuality;
         gappedQuality.resize(gappedSequences[i].length(), ' ');
         int pos = 0;
         for (int j = 0; j < alignmentLength; ++j) {
             if (gappedSequences[i][j] != '-')
-                gappedQuality[j] = ungappedQuality[pos++];
+                gappedQuality[j] = ungappedQualities[i][pos++];
         }
         gappedQualities.push_back(gappedQuality);
     }

@@ -52,7 +52,7 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
         assignSource(row(align, i), sequences[i]);
     globalMsaAlignment(align, scoringScheme);
 
-    std::cout << "\n" << align << "\n"; // TEMP
+    // std::cout << "\n" << align << "\n"; // TEMP
 
     // Extract the alignment sequences into C++ strings.
     std::vector<std::string> gappedSequences;
@@ -68,7 +68,7 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
     for (int i = 0; i < sequenceCount; ++i) {
         std::string ungappedQuality(qualities[i]);
         std::string gappedQuality;
-        gappedQuality.resize(gappedSequences[i].length(), '-');
+        gappedQuality.resize(gappedSequences[i].length(), ' ');
         int pos = 0;
         for (int j = 0; j < alignmentLength; ++j) {
             if (gappedSequences[i][j] != '-')
@@ -77,28 +77,49 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
         gappedQualities.push_back(gappedQuality);
     }
 
-    // Build a consensus sequence.
+    // Build a consensus sequence. Sequences are ignored before their first non-N base was seen
+    // (for end-only sequences) and after their last non-N base was seen (for start-only
+    // sequences).
+    std::vector<bool> encounteredNonNBase;
+    encounteredNonNBase.resize(sequenceCount, false);
+    std::vector<bool> lastBaseWasN;
+    lastBaseWasN.resize(sequenceCount, false);
+
     std::string consensus;
-    std::string gappedConsensus; // TEMP
+    // std::string gappedConsensus; // TEMP
     for (int i = 0; i < alignmentLength; ++i) {
         std::vector<char> bases;
         std::vector<char> qualities;
         bases.reserve(sequenceCount);
+        qualities.reserve(sequenceCount);
+
+        // std::cout << "Position:  " << i << "\n"; // TEMP
+
         for (int j = 0; j < sequenceCount; ++j) {
             char base = toupper(gappedSequences[j][i]);
-            if (base != 'N')
+            char quality = gappedQualities[j][i];
+
+            if (base == 'N')
+                lastBaseWasN[j] = true;
+            else if (base != '-') // is A, C, G or T
+                lastBaseWasN[j] = false;
+                encounteredNonNBase[j] = true;
+
+            if (base != 'N' and encounteredNonNBase[j] and !lastBaseWasN[j]) {
                 bases.push_back(base);
-                qualities.push_back(gappedQualities[j][i]);
+                qualities.push_back(quality);
+            }
         }
         if (bases.size() > 0) {
             char mostCommonBase = getMostCommonBase(bases, qualities);
+            // std::cout << "Call:      " << mostCommonBase << "\n\n"; // TEMP
             if (mostCommonBase != '-')
                 consensus.push_back(mostCommonBase);
-            gappedConsensus.push_back(mostCommonBase); // TEMP
+            // gappedConsensus.push_back(mostCommonBase); // TEMP
         }
     }
-    
-    std::cout << "\n" << gappedConsensus << "\n"; // TEMP
+
+    // std::cout << "\n" << gappedConsensus << "\n"; // TEMP
 
     return cppStringToCString(consensus);
 }
@@ -106,12 +127,29 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
 char getMostCommonBase(std::vector<char> & bases, std::vector<char> & qualities) {
     std::string baseValues = "ACGT-";
 
+    // std::cout << "Bases:     "; // TEMP
+    // for (size_t i = 0; i < bases.size(); ++i) // TEMP
+    //     std::cout << bases[i]; // TEMP
+    // std::cout << "\n"; // TEMP
+
+    // std::cout << "Qualities: "; // TEMP
+    // for (size_t i = 0; i < qualities.size(); ++i) // TEMP
+    //     std::cout << qualities[i]; // TEMP
+    // std::cout << "\n"; // TEMP
+
     // Tally the count for each base.
     std::map<char, int> baseCounts;
     for (int i = 0; i < 5; ++i)
         baseCounts[baseValues[i]] = 0;
     for (size_t i = 0; i < bases.size(); ++i)
         baseCounts[bases[i]]++;
+
+    // std::cout << "Counts:    "; // TEMP
+    // std::cout << "A: " << baseCounts['A'] << "  "; // TEMP
+    // std::cout << "C: " << baseCounts['C'] << "  "; // TEMP
+    // std::cout << "G: " << baseCounts['G'] << "  "; // TEMP
+    // std::cout << "T: " << baseCounts['T'] << "  "; // TEMP
+    // std::cout << "-: " << baseCounts['-'] << "\n"; // TEMP
 
     // If only one base (or a gap) is the most common, return that.
     int largestCount = 0;

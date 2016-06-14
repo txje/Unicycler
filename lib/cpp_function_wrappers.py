@@ -210,6 +210,10 @@ def multiple_sequence_alignment(full_length_sequences, full_length_qualities,
     entirety. For example, if the sequences were 5000 bp and piece_size is 1000 bp, the C++
     function will conduct the alignment in multiple overlapping 1000 bp pieces.
     '''
+    full_count = len(full_length_sequences)
+    start_count = len(start_only_sequences)
+    end_count = len(end_only_sequences)
+
     full_length_qualities = fill_out_qualities(full_length_sequences, full_length_qualities)
     start_only_qualities = fill_out_qualities(start_only_sequences, start_only_qualities)
     end_only_qualities = fill_out_qualities(end_only_sequences, end_only_qualities)
@@ -233,7 +237,14 @@ def multiple_sequence_alignment(full_length_sequences, full_length_qualities,
                                           piece_size,
                                           scoring_scheme.match, scoring_scheme.mismatch,
                                           scoring_scheme.gap_open, scoring_scheme.gap_extend)
-    return c_string_to_python_string(ptr)
+    result = c_string_to_python_string(ptr)
+    result_parts = result.split(';')
+    consensus = result_parts[0]
+    all_scores = result_parts[1].split(',')
+    full_length_scores = all_scores[:full_count]
+    start_only_scores = all_scores[full_count:full_count + start_count]
+    end_only_scores = all_scores[-end_count:]
+    return consensus, full_length_scores, start_only_scores, end_only_scores
 
 
 def fill_out_qualities(sequences, qualities):

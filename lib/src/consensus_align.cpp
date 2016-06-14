@@ -160,7 +160,7 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
     // Add gaps to the quality scores so they match up with the bases.
     int alignmentLength = gappedSequences[0].length();
     for (int i = 0; i < sequenceCount; ++i) {
-        // std::cout << gappedSequences[i] << "\n"; // TEMP
+        std::cout << gappedSequences[i] << "\n"; // TEMP
         std::string gappedQuality;
         gappedQuality.resize(gappedSequences[i].length(), ' ');
         int pos = 0;
@@ -171,16 +171,38 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
         gappedQualities.push_back(gappedQuality);
     }
 
+    // For each gapped sequence, get the position of the first and last non-N base. This is useful
+    // for sequences which don't span the whole alignment but are just at the start or end.
+    std::vector<int> firstNonN;
+    firstNonN.reserve(sequenceCount);
+    std::vector<int> lastNonN;
+    lastNonN.reserve(sequenceCount);
+    for (int i = 0; i < sequenceCount; ++i) {
+        size_t firstNPos = gappedSequences[i].find_first_of('N');
+        if (firstNPos == std::string::npos) {
+            firstNonN.push_back(0);
+            lastNonN.push_back(gappedSequences[i].length() - 1);
+        }
+        else {
+            size_t firstNonNPos = gappedSequences[i].find_first_of("ACGTacgt");
+            size_t lastNonNPos = gappedSequences[i].find_last_of("ACGTacgt");
+            if (firstNonNPos != std::string::npos) {
+                firstNonN.push_back(int(firstNonNPos));
+                lastNonN.push_back(int(lastNonNPos));
+            }
+            else {
+                firstNonN.push_back(0);
+                lastNonN.push_back(gappedSequences[i].length() - 1);
+            }
+        }
+        // std::cout << firstNonN.back() << "  " << lastNonN.back() << "\n"; // TEMP
+    }
+
     // Build a consensus sequence. Sequences are ignored before their first non-N base was seen
     // (for end-only sequences) and after their last non-N base was seen (for start-only
     // sequences).
-    std::vector<bool> encounteredNonNBase;
-    encounteredNonNBase.resize(sequenceCount, false);
-    std::vector<bool> lastBaseWasN;
-    lastBaseWasN.resize(sequenceCount, false);
-
     std::string consensus;
-    // std::string gappedConsensus; // TEMP
+    std::string gappedConsensus;
     for (int i = 0; i < alignmentLength; ++i) {
         std::vector<char> bases;
         std::vector<char> qualities;
@@ -190,16 +212,11 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
         // std::cout << "Position:  " << i << "\n"; // TEMP
 
         for (int j = 0; j < sequenceCount; ++j) {
+            if (i < firstNonN[j] || i > lastNonN[j])
+                continue;
             char base = toupper(gappedSequences[j][i]);
             char quality = gappedQualities[j][i];
-
-            if (base == 'N')
-                lastBaseWasN[j] = true;
-            else if (base != '-') // is A, C, G or T
-                lastBaseWasN[j] = false;
-                encounteredNonNBase[j] = true;
-
-            if (base != 'N' and encounteredNonNBase[j] and !lastBaseWasN[j]) {
+            if (base != 'N') {
                 bases.push_back(base);
                 qualities.push_back(quality);
             }
@@ -209,13 +226,39 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
             // std::cout << "Call:      " << mostCommonBase << "\n\n"; // TEMP
             if (mostCommonBase != '-')
                 consensus.push_back(mostCommonBase);
-            // gappedConsensus.push_back(mostCommonBase); // TEMP
+            gappedConsensus.push_back(mostCommonBase);
         }
     }
+    std::cout << "\n" << gappedConsensus << "\n"; // TEMP
 
-    // std::cout << "\n" << gappedConsensus << "\n"; // TEMP
+    // Score each sequence against the consensus.
+    std::vector<double> scaledScores;
+    scaledScores.reserve(sequenceCount);
+    for (int i = 0; i < sequenceCount; ++i) {
+        int rawScore = scoreAlignment(gappedConsensus, gappedSequences[i], firstNonN[i], lastNonN[i],
+                                      matchScore, mismatchScore, gapOpenScore, gapExtensionScore);
+        int seqLength = ungappedSequences[i].length();
+        int seqLengthNoN = seqLength;
+        for (int j = 0; j < seqLength; ++j) {
+            if (ungappedSequences[i][j] == 'N')
+                --seqLengthNoN;
+        }
+        int perfectScore = matchScore * seqLengthNoN;
+        int worstScore = mismatchScore * seqLengthNoN;
+        double scaledScore;
+        if (perfectScore > 0)
+            scaledScore = 100.0 * double(rawScore - worstScore) / double(perfectScore - worstScore);
+        else
+            scaledScore = 0.0;
+        scaledScores.push_back(scaledScore);
+        // std::cout << rawScore << "   " << scaledScore << "\n"; // TEMP
+    }
 
-    return cppStringToCString(consensus);
+    std::string returnString = consensus;
+    returnString += ';' + std::to_string(scaledScores[0]);
+    for (int i = 1; i < sequenceCount; ++i)
+        returnString += ',' + std::to_string(scaledScores[i]);
+    return cppStringToCString(returnString);
 }
 
 char getMostCommonBase(std::vector<char> & bases, std::vector<char> & qualities) {
@@ -289,5 +332,63 @@ char getMostCommonBase(std::vector<char> & bases, std::vector<char> & qualities)
     // The code should never get here, as the most common base with the biggest Phred sum should
     // found above.
     return '-';
+}
+
+
+// Takes two sequences (with gaps) and produces a raw alignment score.
+int scoreAlignment(std::string & seq1, std::string & seq2, int startPos, int endPos,
+                   int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore) {
+
+    // std::cout << "\n"; // TEMP
+
+    bool insertionInProgress = false;
+    bool deletionInProgress = false;
+    int score = 0;
+    for (int i = startPos; i <= endPos; ++i) {
+        char base1 = seq1[i];
+        char base2 = seq2[i];
+        if (base1 == '-' && base2 == '-') {
+            // std::cout << " "; // TEMP
+            continue;
+        }
+        if (base1 == 'N' || base2 == 'N') {
+            // std::cout << " "; // TEMP
+            continue;
+        }
+        if (base1 == '-') {
+            if (insertionInProgress)
+                score += gapExtensionScore;
+            else
+                score += gapOpenScore;
+            // std::cout << "I"; // TEMP
+            insertionInProgress = true;
+            deletionInProgress = false;
+        }
+        else if (base2 == '-') {
+            if (deletionInProgress)
+                score += gapExtensionScore;
+            else
+                score += gapOpenScore;
+            // std::cout << "D"; // TEMP
+            insertionInProgress = false;
+            deletionInProgress = true;
+        }
+        else { // match or mismatch
+            if (base1 == base2) {
+                score += matchScore;
+                // std::cout << "M"; // TEMP
+            }
+            else { // base1 != base2
+                score += mismatchScore;
+                // std::cout << "X"; // TEMP
+            }
+            insertionInProgress = false;
+            deletionInProgress = false;
+        }
+    }
+
+    // std::cout << "\n"; // TEMP
+
+    return score;
 }
 

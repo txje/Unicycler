@@ -11,7 +11,7 @@ using namespace seqan;
 // Functions that are called by the Python script must have C linkage, not C++ linkage.
 extern "C" {
 
-    char * multipleSequenceAlignment(char * sequences[], char * qualities[], int sequenceCount, int pieceSize,
+    char * multipleSequenceAlignment(char * sequences[], char * qualities[], int sequenceCount,
                                      int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore);
 
 }

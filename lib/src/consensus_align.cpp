@@ -80,7 +80,7 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
     // This calls my custom copy of the the globalMsaAlignment function. It does global alignments
     // between pairs of full-span sequences (specified by fullLengthCount) and overlap alignments
     // between all other pairs (full-span to partial pairs and partial to partial pairs).
-    globalMsaAlignment(gAlign, sequenceSet, sequenceNames, msaOpt, fullSpanCount);
+    globalMsaAlignment(gAlign, sequenceSet, sequenceNames, msaOpt, fullSpanCount, startOnlyCount, endOnlyCount);
 
     convertAlignment(gAlign, align);
 

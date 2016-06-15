@@ -507,41 +507,98 @@ selectPairs(StringSet<TString, TSpec> const& str,
 }
 
 
-// I (Ryan Wick) made this function to make two separate groups of pairs.
-// The first group of pairs is only between the first group of sequences.
-// The second group of pairs is all pairs, excluding those where both are in the first group.
+// I (Ryan Wick) made this function to make three groups of pairs for my particular MSA needs.
 template<typename TString, typename TSpec, typename TSize2, typename TSpec2>
 inline void
 selectPairs(StringSet<TString, TSpec> const& str,
-            String<TSize2, TSpec2>& pList1,
-            String<TSize2, TSpec2>& pList2,
-            int group1Size)
+            String<TSize2, TSpec2>& pListFullSpan,
+            String<TSize2, TSpec2>& pListStartOnly,
+            String<TSize2, TSpec2>& pListEndOnly,
+            String<TSize2, TSpec2>& pListStartOnlyToEndOnly,
+            int fullSpanCountInt, int startOnlyCountInt, int endOnlyCountInt)
 {
     typedef StringSet<TString, TSpec> TStringSet;
     typedef typename Size<TStringSet>::Type TSize;
     typedef typename Iterator<String<TSize2, TSpec2>, Standard>::Type TPairIter;
 
     TSize nseqAll = length(str);
-    TSize nseq1 = group1Size;
-    TSize nseq2 = nseqAll - group1Size;
+    TSize fullSpanCount = fullSpanCountInt;
+    TSize startOnlyCount = startOnlyCountInt;
+    TSize endOnlyCount = endOnlyCountInt;
 
-    resize(pList1, nseq1 * (nseq1 - 1));
-
-    TPairIter itPair = begin(pList1, Standard());
-    for(TSize i=0; i<nseq1-1; ++i) {
-        for(TSize j=i+1; j<nseq1; ++j) {
+    // Create the full-span to full-span pairs.
+    resize(pListFullSpan, fullSpanCount * (fullSpanCount - 1));
+    TPairIter itPair = begin(pListFullSpan, Standard());
+    for (TSize i = 0; i < fullSpanCount - 1; ++i) {
+        for (TSize j = i + 1; j < fullSpanCount; ++j) {
             *itPair = i; ++itPair;
             *itPair = j; ++itPair;
         }
     }
 
-    if (nseq2 > 0) {
-        resize(pList2, nseqAll * (nseqAll - 1) - nseq1 * (nseq1 - 1));
-        itPair = begin(pList2, Standard());
-        for(TSize i=0; i<nseqAll-1; ++i) {
-            for(TSize j=i+1; j<nseqAll; ++j) {
-                if (i < nseq1 and j < nseq1)
+    // Create the start-only pairs (start-only to start-only and start-only to full-span).
+    if (startOnlyCount > 0) {
+        resize(pListStartOnly, startOnlyCount * ((2 * fullSpanCount) + startOnlyCount - 1));
+        itPair = begin(pListStartOnly, Standard());
+        for (TSize i = 0; i < fullSpanCount + startOnlyCount - 1; ++i) {
+            for (TSize j = i + 1; j < fullSpanCount + startOnlyCount; ++j) {
+
+                // Skip full-span to full-span
+                if (i < fullSpanCount and j < fullSpanCount)
                     continue;
+
+                *itPair = i; ++itPair;
+                *itPair = j; ++itPair;
+            }
+        }
+    }
+
+    // Create the end-only pairs (end-only to end-only and end-only to full-span).
+    if (endOnlyCount > 0) {
+        resize(pListEndOnly, endOnlyCount * ((2 * fullSpanCount) + endOnlyCount - 1));
+        itPair = begin(pListEndOnly, Standard());
+        for (TSize i = 0; i < nseqAll - 1; ++i) {
+
+            // Skip any start-only sequences.
+            if (i >= fullSpanCount and i < fullSpanCount + startOnlyCount)
+                continue;
+
+            for (TSize j = i + 1; j < nseqAll; ++j) {
+
+                // Skip full-span to full-span
+                if (i < fullSpanCount and j < fullSpanCount)
+                    continue;
+
+                // Skip any start-only sequences.
+                if (j >= fullSpanCount and j < fullSpanCount + startOnlyCount)
+                    continue;
+                
+                *itPair = i; ++itPair;
+                *itPair = j; ++itPair;
+            }
+        }
+    }
+
+    // Create the start-only to end-only (and vice-versa) pairs.
+    if (startOnlyCount > 0 && endOnlyCount > 0) {
+        resize(pListStartOnlyToEndOnly, (nseqAll * (nseqAll-1)) - length(pListFullSpan) - length(pListStartOnly) - length(pListEndOnly));
+        itPair = begin(pListStartOnlyToEndOnly, Standard());
+        for (TSize i = 0; i < nseqAll - 1; ++i) {
+            for (TSize j = i + 1; j < nseqAll; ++j) {
+
+                // Skip any full-span pairs.
+                if (i < fullSpanCount || j < fullSpanCount)
+                    continue;
+
+                // Skip any start-only to start-only pairs.
+                if ((i >= fullSpanCount and i < fullSpanCount + startOnlyCount) &&
+                    (j >= fullSpanCount and j < fullSpanCount + startOnlyCount))
+                    continue;
+
+                // Skip any end-only to end-only pairs.
+                if ((i >= fullSpanCount + startOnlyCount) && (j >= fullSpanCount + startOnlyCount))
+                    continue;
+                
                 *itPair = i; ++itPair;
                 *itPair = j; ++itPair;
             }

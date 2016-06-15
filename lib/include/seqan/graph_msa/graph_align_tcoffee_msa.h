@@ -596,10 +596,10 @@ void globalMsaAlignment(Graph<Alignment<TStringSet, TCargo, TSpec> > & gAlign,
     String<TSize> pList4; // Pairs between start-only and end-only sequences
     selectPairs(seqSet, pList1, pList2, pList3, pList4, fullSpanCount, startOnlyCount, endOnlyCount);
 
-    std::cout << "GROUP ONE PAIRS:   " << length(pList1) << std::endl; //TEMP
-    std::cout << "GROUP TWO PAIRS:   " << length(pList2) << std::endl; //TEMP
-    std::cout << "GROUP THREE PAIRS: " << length(pList3) << std::endl; //TEMP
-    std::cout << "GROUP FOUR PAIRS:  " << length(pList4) << std::endl; //TEMP
+    // std::cout << "GROUP ONE PAIRS:   " << length(pList1) << std::endl; //TEMP
+    // std::cout << "GROUP TWO PAIRS:   " << length(pList2) << std::endl; //TEMP
+    // std::cout << "GROUP THREE PAIRS: " << length(pList3) << std::endl; //TEMP
+    // std::cout << "GROUP FOUR PAIRS:  " << length(pList4) << std::endl; //TEMP
 
     // Set-up a distance matrix
     typedef String<TDistanceValue> TDistanceMatrix;

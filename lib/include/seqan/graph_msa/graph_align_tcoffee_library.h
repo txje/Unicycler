@@ -1082,7 +1082,7 @@ appendSegmentMatches(StringSet<TString, Dependent<TSpec> > const& str,
     // Pairwise alignments
     for (TPairIter itPair = begin(pList, Standard()), itPairEnd = end(pList, Standard()); itPair != itPairEnd; itPair += 2) {
         
-        std::cout << "OVERLAP SEGMENT MATCHES: " << *itPair << ", " << *(itPair+1) << std::endl; //TEMP
+        // std::cout << "OVERLAP SEGMENT MATCHES: " << *itPair << ", " << *(itPair+1) << std::endl; //TEMP
 
         TStringSet pairSet = _makePairSet(str, itPair, itPair + 1);
 
@@ -1127,7 +1127,7 @@ appendSegmentMatches(StringSet<TString, Dependent<TSpec> > const& str,
     // Pairwise alignments
     for (TPairIter itPair = begin(pList, Standard()), itPairEnd = end(pList, Standard()); itPair != itPairEnd; itPair += 2) {
 
-        std::cout << "GLOBAL SEGMENT MATCHES: " << *itPair << ", " << *(itPair+1) << std::endl; //TEMP
+        // std::cout << "GLOBAL SEGMENT MATCHES: " << *itPair << ", " << *(itPair+1) << std::endl; //TEMP
 
         TStringSet pairSet = _makePairSet(str, itPair, itPair + 1);
 

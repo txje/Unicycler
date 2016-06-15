@@ -95,7 +95,7 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
     // Add gaps to the quality scores so they match up with the bases.
     int alignmentLength = gappedSequences[0].length();
     for (int i = 0; i < totalSeqCount; ++i) {
-        std::cout << gappedSequences[i] << "\n"; // TEMP
+        // std::cout << gappedSequences[i] << "\n"; // TEMP
         std::string gappedQuality;
         gappedQuality.resize(gappedSequences[i].length(), ' ');
         int pos = 0;
@@ -164,7 +164,7 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
             gappedConsensus.push_back(mostCommonBase);
         }
     }
-    std::cout << "\n" << gappedConsensus << "\n"; // TEMP
+    // std::cout << "\n" << gappedConsensus << "\n"; // TEMP
 
     // Score each sequence against the consensus.
     std::vector<double> scaledScores;

@@ -217,6 +217,10 @@ def multiple_sequence_alignment(full_length_sequences, full_length_qualities,
     start_count = len(start_only_sequences)
     end_count = len(end_only_sequences)
 
+    # At least one full length sequence is required.
+    if not full_count:
+        return "", [], [], []
+
     if len(full_length_qualities) < len(full_length_sequences):
         full_length_qualities += [""] * (len(full_length_sequences) - len(full_length_qualities))
     if len(start_only_qualities) < len(start_only_sequences):
@@ -243,7 +247,10 @@ def multiple_sequence_alignment(full_length_sequences, full_length_qualities,
     all_scores = result_parts[1].split(',')
     full_length_scores = all_scores[:full_count]
     start_only_scores = all_scores[full_count:full_count + start_count]
-    end_only_scores = all_scores[-end_count:]
+    if end_count:
+        end_only_scores = all_scores[-end_count:]
+    else:
+        end_only_scores = []
     return consensus, full_length_scores, start_only_scores, end_only_scores
 
 

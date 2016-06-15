@@ -243,7 +243,9 @@ def multiple_sequence_alignment(full_length_sequences, full_length_qualities,
                                           scoring_scheme.gap_open, scoring_scheme.gap_extend)
     result = c_string_to_python_string(ptr)
     result_parts = result.split(';')
+
     consensus = result_parts[0]
+
     all_scores = result_parts[1].split(',')
     full_length_scores = all_scores[:full_count]
     start_only_scores = all_scores[full_count:full_count + start_count]
@@ -251,6 +253,9 @@ def multiple_sequence_alignment(full_length_sequences, full_length_qualities,
         end_only_scores = all_scores[-end_count:]
     else:
         end_only_scores = []
+
+    # between_seq_scores = [x.split(',') for x in result_parts[2:]]
+
     return consensus, full_length_scores, start_only_scores, end_only_scores
 
 

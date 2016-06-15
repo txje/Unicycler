@@ -22,11 +22,13 @@ extern "C" {
 
 char getMostCommonBase(std::vector<char> & bases, std::vector<char> & qualities);
 
-int scoreAlignment(std::string & seq1, std::string & seq2, int startPos, int endPos,
-                   int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore);
+double getAlignmentIdentity(std::string & seq1, std::string & seq2,
+                            int seq1StartPos, int seq1EndPos, int seq2StartPos, int seq2EndPos);
 
 void fillOutQualities(std::vector<std::string> & sequences, std::vector<std::string> & qualities);
 void padToLength(std::vector<std::string> & sequences, std::vector<std::string> & qualities, int length, bool putAtStart);
+void setStartAndEndPositions(std::vector<std::string> & sequences,
+                             std::vector<int> & startPositions, std::vector<int> & endPositions);
 void cArrayToCppVector(char * seqArray[], char * qualArray[], int count,
                        std::vector<std::string> & seqVector, std::vector<std::string> & qualVector);
 

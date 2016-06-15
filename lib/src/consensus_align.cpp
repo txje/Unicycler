@@ -113,22 +113,15 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
     std::vector<int> lastNonN;
     lastNonN.reserve(totalSeqCount);
     for (int i = 0; i < totalSeqCount; ++i) {
-        size_t firstNPos = gappedSequences[i].find_first_of('N');
-        if (firstNPos == std::string::npos) {
-            firstNonN.push_back(0);
-            lastNonN.push_back(gappedSequences[i].length() - 1);
+        size_t firstNonNPos = gappedSequences[i].find_first_of("ACGTacgt");
+        size_t lastNonNPos = gappedSequences[i].find_last_of("ACGTacgt");
+        if (firstNonNPos != std::string::npos) {
+            firstNonN.push_back(int(firstNonNPos));
+            lastNonN.push_back(int(lastNonNPos));
         }
         else {
-            size_t firstNonNPos = gappedSequences[i].find_first_of("ACGTacgt");
-            size_t lastNonNPos = gappedSequences[i].find_last_of("ACGTacgt");
-            if (firstNonNPos != std::string::npos) {
-                firstNonN.push_back(int(firstNonNPos));
-                lastNonN.push_back(int(lastNonNPos));
-            }
-            else {
-                firstNonN.push_back(0);
-                lastNonN.push_back(gappedSequences[i].length() - 1);
-            }
+            firstNonN.push_back(0);
+            lastNonN.push_back(gappedSequences[i].length() - 1);
         }
         // std::cout << firstNonN.back() << "  " << lastNonN.back() << "\n"; // TEMP
     }
@@ -163,36 +156,54 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
                 consensus.push_back(mostCommonBase);
             gappedConsensus.push_back(mostCommonBase);
         }
+        else
+            gappedConsensus.push_back('-');
     }
     // std::cout << "\n" << gappedConsensus << "\n"; // TEMP
 
     // Score each sequence against the consensus.
-    std::vector<double> scaledScores;
-    scaledScores.reserve(totalSeqCount);
+    size_t consensusFirstNonNPos = gappedConsensus.find_first_of("ACGTacgt");
+    size_t consensusLastNonNPos = gappedConsensus.find_last_of("ACGTacgt");
+    std::vector<double> percentIdentitiesWithConsensus;
     for (int i = 0; i < totalSeqCount; ++i) {
-        int rawScore = scoreAlignment(gappedConsensus, gappedSequences[i], firstNonN[i], lastNonN[i],
-                                      matchScore, mismatchScore, gapOpenScore, gapExtensionScore);
-        int seqLength = ungappedSequences[i].length();
-        int seqLengthNoN = seqLength;
-        for (int j = 0; j < seqLength; ++j) {
-            if (ungappedSequences[i][j] == 'N')
-                --seqLengthNoN;
+        double identity = getAlignmentIdentity(gappedConsensus, gappedSequences[i],
+                                               consensusFirstNonNPos, consensusLastNonNPos,
+                                               firstNonN[i], lastNonN[i]);
+        percentIdentitiesWithConsensus.push_back(identity);
+    }
+
+    // Score each sequence against each other.
+    std::vector< std::vector<double> > percentIdentitiesBetweenReads;
+    for (int i = 0; i < totalSeqCount; ++i)
+        percentIdentitiesBetweenReads.push_back(std::vector<double>(totalSeqCount, 0.0));
+    for (int i = 0; i < totalSeqCount; ++i) {
+        for (int j = i; j < totalSeqCount; ++j) {
+            if (i == j)
+                percentIdentitiesBetweenReads[i][j] = 1.0;
+            else {
+                double identity = getAlignmentIdentity(gappedSequences[i], gappedSequences[j],
+                                                       firstNonN[i], lastNonN[i], firstNonN[j], lastNonN[j]);
+                percentIdentitiesBetweenReads[i][j] = identity;
+                percentIdentitiesBetweenReads[j][i] = identity;
+            }
         }
-        int perfectScore = matchScore * seqLengthNoN;
-        int worstScore = mismatchScore * seqLengthNoN;
-        double scaledScore;
-        if (perfectScore > 0)
-            scaledScore = 100.0 * double(rawScore - worstScore) / double(perfectScore - worstScore);
-        else
-            scaledScore = 0.0;
-        scaledScores.push_back(scaledScore);
-        // std::cout << rawScore << "   " << scaledScore << "\n"; // TEMP
     }
 
     std::string returnString = consensus;
-    returnString += ';' + std::to_string(scaledScores[0]);
+    returnString += ';';
+    returnString += std::to_string(percentIdentitiesWithConsensus[0]);
     for (int i = 1; i < totalSeqCount; ++i)
-        returnString += ',' + std::to_string(scaledScores[i]);
+        returnString += ',' + std::to_string(percentIdentitiesWithConsensus[i]);
+    returnString += ';';
+    for (int i = 0; i < totalSeqCount; ++i) {
+        for (int j = 0; j < totalSeqCount; ++j) {
+            returnString += std::to_string(percentIdentitiesBetweenReads[i][j]);
+            if (j != totalSeqCount - 1)
+                returnString += ',';
+        }
+        if (i != totalSeqCount - 1)
+            returnString += ';';
+    }
     return cppStringToCString(returnString);
 }
 
@@ -270,62 +281,35 @@ char getMostCommonBase(std::vector<char> & bases, std::vector<char> & qualities)
 }
 
 
-// Takes two sequences (with gaps) and produces a raw alignment score.
-int scoreAlignment(std::string & seq1, std::string & seq2, int startPos, int endPos,
-                   int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore) {
-
+double getAlignmentIdentity(std::string & seq1, std::string & seq2,
+                            int seq1StartPos, int seq1EndPos, int seq2StartPos, int seq2EndPos) {
+    // std::cout << "\n"; // TEMP
+    // std::cout << seq1 << "\n"; // TEMP
+    // std::cout << seq1StartPos << ", " << seq1EndPos << "\n"; // TEMP
+    // std::cout << seq2 << "\n"; // TEMP
+    // std::cout << seq2StartPos << ", " << seq2EndPos << "\n"; // TEMP
     // std::cout << "\n"; // TEMP
 
-    bool insertionInProgress = false;
-    bool deletionInProgress = false;
-    int score = 0;
-    for (int i = startPos; i <= endPos; ++i) {
+    int alignedLength = 0, matches = 0;
+    int start = std::max(seq1StartPos, seq2StartPos);
+    int end = std::min(seq1EndPos, seq2EndPos);
+
+    if (start > end)
+        return 0.0;
+
+    for (int i = start; i <= end; ++i) {
         char base1 = seq1[i];
         char base2 = seq2[i];
-        if (base1 == '-' && base2 == '-') {
-            // std::cout << " "; // TEMP
-            continue;
-        }
-        if (base1 == 'N' || base2 == 'N') {
-            // std::cout << " "; // TEMP
-            continue;
-        }
-        if (base1 == '-') {
-            if (insertionInProgress)
-                score += gapExtensionScore;
-            else
-                score += gapOpenScore;
-            // std::cout << "I"; // TEMP
-            insertionInProgress = true;
-            deletionInProgress = false;
-        }
-        else if (base2 == '-') {
-            if (deletionInProgress)
-                score += gapExtensionScore;
-            else
-                score += gapOpenScore;
-            // std::cout << "D"; // TEMP
-            insertionInProgress = false;
-            deletionInProgress = true;
-        }
-        else { // match or mismatch
-            if (base1 == base2) {
-                score += matchScore;
-                // std::cout << "M"; // TEMP
-            }
-            else { // base1 != base2
-                score += mismatchScore;
-                // std::cout << "X"; // TEMP
-            }
-            insertionInProgress = false;
-            deletionInProgress = false;
+        if (base1 != '-' || base2 != '-') {
+            ++alignedLength;
+            if (base1 == base2)
+                ++matches;
         }
     }
 
-    // std::cout << "\n"; // TEMP
-
-    return score;
+    return double(matches) / double(alignedLength);
 }
+
 
 // Given a list of sequences and qualities, this function fills out any missing qualities with '+'
 // (PHRED+33 for 10% chance of error).

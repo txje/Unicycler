@@ -6,29 +6,9 @@
 #include <algorithm>
 #include <cmath>
 
-
-// template <typename TScoreValue, typename TSequenceValue, typename TSpec>
-// void showScoringMatrix(Score<TScoreValue, ScoreMatrix<TSequenceValue, TSpec> > const & scoringScheme)
-// {
-//     // Print top row.
-//     for (unsigned i = 0; i < ValueSize<TSequenceValue>::VALUE; ++i)
-//         std::cout << "\t" << TSequenceValue(i);
-//     std::cout << std::endl;
-//     // Print each row.
-//     for (unsigned i = 0; i < ValueSize<TSequenceValue>::VALUE; ++i)
-//     {
-//         std::cout << TSequenceValue(i);
-//         for (unsigned j = 0; j < ValueSize<TSequenceValue>::VALUE; ++j)
-//         {
-//             std::cout << "\t" << score(scoringScheme, TSequenceValue(i), TSequenceValue(j));
-//         }
-//         std::cout << std::endl;
-//     }
-// }
-
-char * multipleSequenceAlignment(char * sequences[], char * qualities[], int sequenceCount,
+char * multipleSequenceAlignment(char * sequences[], char * qualities[], int sequenceCount, int bandwidth,
                                  int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore) {
-    // Convert the input C-string arrays to C++ string vectors.
+    // Convert the input C string arrays to C++ string vectors.
     std::vector<std::string> ungappedSequences;
     ungappedSequences.reserve(sequenceCount);
     for (int i = 0; i < sequenceCount; ++i)
@@ -45,7 +25,7 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
     gappedQualities.reserve(sequenceCount);
 
     // We want to use a scoring scheme which is almost like the simple scoring scheme we use for
-    // read alignment, but with the addition of free Ns in the middle.
+    // read alignment, but with the addition of free Ns.
     typedef Score<int, ScoreMatrix<Dna5, Default> > TScore;
     TScore scoringScheme(gapExtensionScore, gapOpenScore);
     for (int i = 0; i < 5; ++i) {
@@ -79,14 +59,10 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
 
     msaOpt.isDefaultPairwiseAlignment = false;
     msaOpt.pairwiseAlignmentMethod = 2;
-    msaOpt.bandWidth = 100;
+    msaOpt.bandWidth = bandwidth;
 
     globalMsaAlignment(gAlign, sequenceSet, sequenceNames, msaOpt);
     convertAlignment(gAlign, align);
-
-
-
-
 
     // std::cout << "\n" << align << "\n"; // TEMP
 
@@ -95,12 +71,6 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
         stream << row(align, i);
         gappedSequences.push_back(stream.str());
     }
-
-
-
-
-
-    // }
 
     // Add gaps to the quality scores so they match up with the bases.
     int alignmentLength = gappedSequences[0].length();

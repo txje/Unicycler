@@ -193,6 +193,7 @@ def simulate_depths(read_lengths, ref_length, iterations, threads):
 C_LIB.multipleSequenceAlignment.argtypes = [POINTER(c_char_p), # Sequences
                                             POINTER(c_char_p), # Qualities
                                             c_int,             # Sequence count
+                                            c_int,             # Bandwidth
                                             c_int,             # Match score
                                             c_int,             # Mismatch score
                                             c_int,             # Gap open score
@@ -202,7 +203,7 @@ C_LIB.multipleSequenceAlignment.restype = c_void_p
 def multiple_sequence_alignment(full_length_sequences, full_length_qualities,
                                 start_only_sequences, start_only_qualities,
                                 end_only_sequences, end_only_qualities,
-                                scoring_scheme):
+                                scoring_scheme, bandwidth=1000):
     '''
     Python wrapper for multipleSequenceAlignment C++ function.
     '''
@@ -230,6 +231,7 @@ def multiple_sequence_alignment(full_length_sequences, full_length_qualities,
     sequences = (c_char_p * len(full_length_sequences))(*full_length_sequences)
     qualities = (c_char_p * len(full_length_qualities))(*full_length_qualities)
     ptr = C_LIB.multipleSequenceAlignment(sequences, qualities, len(full_length_sequences),
+                                          bandwidth,
                                           scoring_scheme.match, scoring_scheme.mismatch,
                                           scoring_scheme.gap_open, scoring_scheme.gap_extend)
     result = c_string_to_python_string(ptr)

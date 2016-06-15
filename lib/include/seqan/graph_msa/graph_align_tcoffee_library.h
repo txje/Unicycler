@@ -506,6 +506,48 @@ selectPairs(StringSet<TString, TSpec> const& str,
     }
 }
 
+
+// I (Ryan Wick) made this function to make two separate groups of pairs.
+// The first group of pairs is only between the first group of sequences.
+// The second group of pairs is all pairs, excluding those where both are in the first group.
+template<typename TString, typename TSpec, typename TSize2, typename TSpec2>
+inline void
+selectPairs(StringSet<TString, TSpec> const& str,
+            String<TSize2, TSpec2>& pList1,
+            String<TSize2, TSpec2>& pList2,
+            int group1Size)
+{
+    typedef StringSet<TString, TSpec> TStringSet;
+    typedef typename Size<TStringSet>::Type TSize;
+    typedef typename Iterator<String<TSize2, TSpec2>, Standard>::Type TPairIter;
+
+    TSize nseqAll = length(str);
+    TSize nseq1 = group1Size;
+    TSize nseq2 = nseqAll - group1Size;
+
+    resize(pList1, nseq1 * (nseq1 - 1));
+    TPairIter itPair = begin(pList1, Standard());
+    for(TSize i=0; i<nseq1-1; ++i) {
+        for(TSize j=i+1; j<nseq1; ++j) {
+            *itPair = i; ++itPair;
+            *itPair = j; ++itPair;
+        }
+    }
+
+    if (nseq2 > 0) {
+        resize(pList2, nseqAll * (nseqAll - 1) - nseq1 * (nseq1 - 1));
+        itPair = begin(pList2, Standard());
+        for(TSize i=0; i<nseqAll-1; ++i) {
+            for(TSize j=i+1; j<nseqAll; ++j) {
+                if (i < nseq1 and j < nseq1)
+                    continue;
+                *itPair = i; ++itPair;
+                *itPair = j; ++itPair;
+            }
+        }
+    }
+}
+
 //////////////////////////////////////////////////////////////////////////////
 // Alignment statistics
 //////////////////////////////////////////////////////////////////////////////
@@ -978,8 +1020,12 @@ appendSegmentMatches(StringSet<TString, Dependent<TSpec> > const& str,
     TSize nseq = length(str);
     _resizeWithRespectToDistance(dist, nseq);
 
+
     // Pairwise alignments
     for (TPairIter itPair = begin(pList, Standard()), itPairEnd = end(pList, Standard()); itPair != itPairEnd; itPair += 2) {
+        
+        std::cout << "OVERLAP SEGMENT MATCHES: " << *itPair << ", " << *(itPair+1) << std::endl; //TEMP
+
         TStringSet pairSet = _makePairSet(str, itPair, itPair + 1);
 
         // Alignment
@@ -1022,6 +1068,9 @@ appendSegmentMatches(StringSet<TString, Dependent<TSpec> > const& str,
 
     // Pairwise alignments
     for (TPairIter itPair = begin(pList, Standard()), itPairEnd = end(pList, Standard()); itPair != itPairEnd; itPair += 2) {
+
+        std::cout << "GLOBAL SEGMENT MATCHES: " << *itPair << ", " << *(itPair+1) << std::endl; //TEMP
+
         TStringSet pairSet = _makePairSet(str, itPair, itPair + 1);
 
         Pair<int, int> bandBottomRight = assureBandedRestriction_(pairSet, bandWidth);

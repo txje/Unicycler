@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cmath>
 
-char * multipleSequenceAlignment(char * sequences[], char * qualities[], int sequenceCount, int bandwidth,
+char * multipleSequenceAlignment(char * sequences[], char * qualities[], int sequenceCount, int bandwidth, int fullLengthCount,
                                  int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore) {
     // Convert the input C string arrays to C++ string vectors.
     std::vector<std::string> ungappedSequences;
@@ -54,14 +54,16 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
     
     MsaOptions<AminoAcid, TScore> msaOpt;
     msaOpt.sc = scoringScheme;
-    appendValue(msaOpt.method, 0);  // Global pairwise
-    appendValue(msaOpt.method, 1);  // Local pairwise
 
     msaOpt.isDefaultPairwiseAlignment = false;
     msaOpt.pairwiseAlignmentMethod = 2;
     msaOpt.bandWidth = bandwidth;
 
-    globalMsaAlignment(gAlign, sequenceSet, sequenceNames, msaOpt);
+    // This calls my custom copy of the the globalMsaAlignment function. It does global alignments
+    // between pairs of full-span sequences (specified by fullLengthCount) and overlap alignments
+    // between all other pairs (full-span to partial pairs and partial to partial pairs).
+    globalMsaAlignment(gAlign, sequenceSet, sequenceNames, msaOpt, fullLengthCount);
+
     convertAlignment(gAlign, align);
 
     // std::cout << "\n" << align << "\n"; // TEMP

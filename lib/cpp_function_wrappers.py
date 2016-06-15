@@ -190,18 +190,23 @@ def simulate_depths(read_lengths, ref_length, iterations, threads):
 
 
 # This function gets the mean and standard deviation of alignments between random sequences.
-C_LIB.multipleSequenceAlignment.argtypes = [POINTER(c_char_p), # Sequences
-                                            POINTER(c_char_p), # Qualities
-                                            c_int,             # Sequence count
+C_LIB.multipleSequenceAlignment.argtypes = [POINTER(c_char_p), # Full-span sequences
+                                            POINTER(c_char_p), # Full-span qualities
+                                            c_int,             # Full-span count
+                                            POINTER(c_char_p), # Start-only sequences
+                                            POINTER(c_char_p), # Start-only qualities
+                                            c_int,             # Start-only count
+                                            POINTER(c_char_p), # End-only sequences
+                                            POINTER(c_char_p), # End-only qualities
+                                            c_int,             # End-only count
                                             c_int,             # Bandwidth
-                                            c_int,             # Full length count
                                             c_int,             # Match score
                                             c_int,             # Mismatch score
                                             c_int,             # Gap open score
                                             c_int]             # Gap extension score             
 C_LIB.multipleSequenceAlignment.restype = c_void_p
 
-def multiple_sequence_alignment(full_length_sequences, full_length_qualities,
+def multiple_sequence_alignment(full_length_sequences, full_length_qualities, 
                                 start_only_sequences, start_only_qualities,
                                 end_only_sequences, end_only_qualities,
                                 scoring_scheme, bandwidth=1000):
@@ -212,27 +217,24 @@ def multiple_sequence_alignment(full_length_sequences, full_length_qualities,
     start_count = len(start_only_sequences)
     end_count = len(end_only_sequences)
 
-    full_length_qualities = fill_out_qualities(full_length_sequences, full_length_qualities)
-    start_only_qualities = fill_out_qualities(start_only_sequences, start_only_qualities)
-    end_only_qualities = fill_out_qualities(end_only_sequences, end_only_qualities)
+    if len(full_length_qualities) < len(full_length_sequences):
+        full_length_qualities += [""] * (len(full_length_sequences) - len(full_length_qualities))
+    if len(start_only_qualities) < len(start_only_sequences):
+        start_only_qualities += [""] * (len(start_only_sequences) - len(start_only_qualities))
+    if len(end_only_qualities) < len(end_only_sequences):
+        end_only_qualities += [""] * (len(end_only_sequences) - len(end_only_qualities))
 
-    # Pad out start/end sequences/qualities with N/+.
-    mean_full_length = int(round(sum([len(x) for x in full_length_sequences]) / \
-                                 len(full_length_sequences)))
+    sequences_1 = (c_char_p * len(full_length_sequences))(*full_length_sequences)
+    qualities_1 = (c_char_p * len(full_length_qualities))(*full_length_qualities)
+    sequences_2 = (c_char_p * len(start_only_sequences))(*start_only_sequences)
+    qualities_2 = (c_char_p * len(start_only_qualities))(*start_only_qualities)
+    sequences_3 = (c_char_p * len(end_only_sequences))(*end_only_sequences)
+    qualities_3 = (c_char_p * len(end_only_qualities))(*end_only_qualities)
 
-    for i, start_only_sequence in enumerate(start_only_sequences):
-        missing_bases = mean_full_length - len(start_only_sequence)
-        full_length_sequences.append(start_only_sequence + ('N' * missing_bases))
-        full_length_qualities.append(start_only_qualities[i] + ('+' * missing_bases))
-    for i, end_only_sequence in enumerate(end_only_sequences):
-        missing_bases = mean_full_length - len(end_only_sequence)
-        full_length_sequences.append(('N' * missing_bases) + end_only_sequence)
-        full_length_qualities.append(('+' * missing_bases) + end_only_qualities[i])
-
-    sequences = (c_char_p * len(full_length_sequences))(*full_length_sequences)
-    qualities = (c_char_p * len(full_length_qualities))(*full_length_qualities)
-    ptr = C_LIB.multipleSequenceAlignment(sequences, qualities, len(full_length_sequences),
-                                          bandwidth, full_count,
+    ptr = C_LIB.multipleSequenceAlignment(sequences_1, qualities_1, full_count,
+                                          sequences_2, qualities_2, start_count,
+                                          sequences_3, qualities_3, end_count,
+                                          bandwidth,
                                           scoring_scheme.match, scoring_scheme.mismatch,
                                           scoring_scheme.gap_open, scoring_scheme.gap_extend)
     result = c_string_to_python_string(ptr)
@@ -244,16 +246,4 @@ def multiple_sequence_alignment(full_length_sequences, full_length_qualities,
     end_only_scores = all_scores[-end_count:]
     return consensus, full_length_scores, start_only_scores, end_only_scores
 
-
-def fill_out_qualities(sequences, qualities):
-    '''
-    Given a list of sequences and qualities, this function fills out any missing qualities with '+'
-    (PHRED+33 for 10% chance of error).
-    '''
-    while len(qualities) < len(sequences):
-        qualities.append('')
-    for i, seq in enumerate(sequences):
-        qualities[i] += '+' * (len(seq) - len(qualities[i]))
-        qualities[i] = qualities[i][:len(seq)]
-    return qualities
 

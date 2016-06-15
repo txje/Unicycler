@@ -6,23 +6,47 @@
 #include <algorithm>
 #include <cmath>
 
-char * multipleSequenceAlignment(char * sequences[], char * qualities[], int sequenceCount, int bandwidth, int fullLengthCount,
-                                 int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore) {
-    // Convert the input C string arrays to C++ string vectors.
-    std::vector<std::string> ungappedSequences;
-    ungappedSequences.reserve(sequenceCount);
-    for (int i = 0; i < sequenceCount; ++i)
-        ungappedSequences.push_back(std::string(sequences[i]));
-    std::vector<std::string> ungappedQualities;
-    ungappedQualities.reserve(sequenceCount);
-    for (int i = 0; i < sequenceCount; ++i)
-        ungappedQualities.push_back(std::string(qualities[i]));
+char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQualities[], int fullSpanCount, 
+                                 char * startOnlySequences[], char * startOnlyQualities[], int startOnlyCount, 
+                                 char * endOnlySequences[], char * endOnlyQualities[], int endOnlyCount, 
+                                 int bandwidth, int matchScore, int mismatchScore,
+                                 int gapOpenScore, int gapExtensionScore) {
 
-    // These vectors will hold the aligned sequences and qualities.
-    std::vector<std::string> gappedSequences;
-    gappedSequences.reserve(sequenceCount);
-    std::vector<std::string> gappedQualities;
-    gappedQualities.reserve(sequenceCount);
+    // Convert the inputs (arrays of C strings) to C++ vectors, and ensure that the qualities have
+    // the same length as their corresponding sequences.
+    std::vector<std::string> fullSpanSeqs, fullSpanQuals, startOnlySeqs, startOnlyQuals, endOnlySeqs, endOnlyQuals;
+    cArrayToCppVector(fullSpanSequences, fullSpanQualities, fullSpanCount, fullSpanSeqs, fullSpanQuals);
+    cArrayToCppVector(startOnlySequences, startOnlyQualities, startOnlyCount, startOnlySeqs, startOnlyQuals);
+    cArrayToCppVector(endOnlySequences, endOnlyQualities, endOnlyCount, endOnlySeqs, endOnlyQuals);
+
+    // Pad out the start/end sequences/qualities with N/+
+    int totalFullSpanLength = 0;
+    for (int i = 0; i < fullSpanCount; ++i)
+        totalFullSpanLength += fullSpanSeqs[i].length();
+    int meanFullSpanLength = int(0.5 + (double(totalFullSpanLength) / fullSpanCount));
+    padToLength(startOnlySeqs, startOnlyQuals, meanFullSpanLength, false);
+    padToLength(endOnlySeqs, endOnlyQuals, meanFullSpanLength, true);
+
+    // Make vectors of all sequences/qualities together.
+    int totalSeqCount = fullSpanCount + startOnlyCount + endOnlyCount;
+    std::vector<std::string> ungappedSequences, ungappedQualities;
+    ungappedSequences.reserve(totalSeqCount);
+    ungappedQualities.reserve(totalSeqCount);
+    ungappedSequences.insert(ungappedSequences.end(), fullSpanSeqs.begin(), fullSpanSeqs.end());
+    ungappedQualities.insert(ungappedQualities.end(), fullSpanQuals.begin(), fullSpanQuals.end());
+    ungappedSequences.insert(ungappedSequences.end(), startOnlySeqs.begin(), startOnlySeqs.end());
+    ungappedQualities.insert(ungappedQualities.end(), startOnlyQuals.begin(), startOnlyQuals.end());
+    ungappedSequences.insert(ungappedSequences.end(), endOnlySeqs.begin(), endOnlySeqs.end());
+    ungappedQualities.insert(ungappedQualities.end(), endOnlyQuals.begin(), endOnlyQuals.end());
+
+    for (size_t i = 0; i < ungappedSequences.size(); ++i) { // TEMP
+        std::cout << ungappedSequences[i] << std::endl; //TEMP
+    } // TEMP
+
+    // These vectors will hold the final aligned sequences and qualities.
+    std::vector<std::string> gappedSequences, gappedQualities;
+    gappedSequences.reserve(totalSeqCount);
+    gappedQualities.reserve(totalSeqCount);
 
     // We want to use a scoring scheme which is almost like the simple scoring scheme we use for
     // read alignment, but with the addition of free Ns.
@@ -41,20 +65,18 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
         }
     }
 
+    // Prepare data structures for the alignment.
     Align<Dna5String> align;
-    resize(rows(align), sequenceCount);
-    for (int i = 0; i < sequenceCount; ++i)
+    resize(rows(align), totalSeqCount);
+    for (int i = 0; i < totalSeqCount; ++i)
         assignSource(row(align, i), ungappedSequences[i]);
-
     typedef StringSet<Dna5String, Dependent<> > TStringSet;
     TStringSet sequenceSet = stringSet(align);
     Graph<Alignment<TStringSet, void, WithoutEdgeId> > gAlign(sequenceSet);
     String<String<char> > sequenceNames;
     resize(sequenceNames, length(sequenceSet), String<char>("tmpName"));
-    
     MsaOptions<AminoAcid, TScore> msaOpt;
     msaOpt.sc = scoringScheme;
-
     msaOpt.isDefaultPairwiseAlignment = false;
     msaOpt.pairwiseAlignmentMethod = 2;
     msaOpt.bandWidth = bandwidth;
@@ -62,13 +84,13 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
     // This calls my custom copy of the the globalMsaAlignment function. It does global alignments
     // between pairs of full-span sequences (specified by fullLengthCount) and overlap alignments
     // between all other pairs (full-span to partial pairs and partial to partial pairs).
-    globalMsaAlignment(gAlign, sequenceSet, sequenceNames, msaOpt, fullLengthCount);
+    globalMsaAlignment(gAlign, sequenceSet, sequenceNames, msaOpt, fullSpanCount, startOnlyCount, endOnlyCount);
 
     convertAlignment(gAlign, align);
 
     // std::cout << "\n" << align << "\n"; // TEMP
 
-    for (int i = 0; i < sequenceCount; ++i) {
+    for (int i = 0; i < totalSeqCount; ++i) {
         std::ostringstream stream;
         stream << row(align, i);
         gappedSequences.push_back(stream.str());
@@ -76,7 +98,7 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
 
     // Add gaps to the quality scores so they match up with the bases.
     int alignmentLength = gappedSequences[0].length();
-    for (int i = 0; i < sequenceCount; ++i) {
+    for (int i = 0; i < totalSeqCount; ++i) {
         std::cout << gappedSequences[i] << "\n"; // TEMP
         std::string gappedQuality;
         gappedQuality.resize(gappedSequences[i].length(), ' ');
@@ -91,10 +113,10 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
     // For each gapped sequence, get the position of the first and last non-N base. This is useful
     // for sequences which don't span the whole alignment but are just at the start or end.
     std::vector<int> firstNonN;
-    firstNonN.reserve(sequenceCount);
+    firstNonN.reserve(totalSeqCount);
     std::vector<int> lastNonN;
-    lastNonN.reserve(sequenceCount);
-    for (int i = 0; i < sequenceCount; ++i) {
+    lastNonN.reserve(totalSeqCount);
+    for (int i = 0; i < totalSeqCount; ++i) {
         size_t firstNPos = gappedSequences[i].find_first_of('N');
         if (firstNPos == std::string::npos) {
             firstNonN.push_back(0);
@@ -123,12 +145,12 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
     for (int i = 0; i < alignmentLength; ++i) {
         std::vector<char> bases;
         std::vector<char> qualities;
-        bases.reserve(sequenceCount);
-        qualities.reserve(sequenceCount);
+        bases.reserve(totalSeqCount);
+        qualities.reserve(totalSeqCount);
 
         // std::cout << "Position:  " << i << "\n"; // TEMP
 
-        for (int j = 0; j < sequenceCount; ++j) {
+        for (int j = 0; j < totalSeqCount; ++j) {
             if (i < firstNonN[j] || i > lastNonN[j])
                 continue;
             char base = toupper(gappedSequences[j][i]);
@@ -150,8 +172,8 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
 
     // Score each sequence against the consensus.
     std::vector<double> scaledScores;
-    scaledScores.reserve(sequenceCount);
-    for (int i = 0; i < sequenceCount; ++i) {
+    scaledScores.reserve(totalSeqCount);
+    for (int i = 0; i < totalSeqCount; ++i) {
         int rawScore = scoreAlignment(gappedConsensus, gappedSequences[i], firstNonN[i], lastNonN[i],
                                       matchScore, mismatchScore, gapOpenScore, gapExtensionScore);
         int seqLength = ungappedSequences[i].length();
@@ -173,7 +195,7 @@ char * multipleSequenceAlignment(char * sequences[], char * qualities[], int seq
 
     std::string returnString = consensus;
     returnString += ';' + std::to_string(scaledScores[0]);
-    for (int i = 1; i < sequenceCount; ++i)
+    for (int i = 1; i < totalSeqCount; ++i)
         returnString += ',' + std::to_string(scaledScores[i]);
     return cppStringToCString(returnString);
 }
@@ -309,3 +331,39 @@ int scoreAlignment(std::string & seq1, std::string & seq2, int startPos, int end
     return score;
 }
 
+// Given a list of sequences and qualities, this function fills out any missing qualities with '+'
+// (PHRED+33 for 10% chance of error).
+void fillOutQualities(std::vector<std::string> & sequences, std::vector<std::string> & qualities) {
+    for (size_t i = 0; i < sequences.size(); ++i)
+        qualities[i].resize(sequences[i].length(), '+');
+}
+
+
+void padToLength(std::vector<std::string> & sequences, std::vector<std::string> & qualities, int length, bool putAtStart) {
+    for (size_t i = 0; i < sequences.size(); ++i) {
+        int missingBases = length - sequences[i].length();
+        if (missingBases > 0) {
+            std::string newBases(missingBases, 'N');
+            std::string newQualities(missingBases, '+');
+            if (putAtStart) {
+                sequences[i] = newBases + sequences[i];
+                qualities[i] = newQualities + qualities[i];
+            }
+            else {
+                sequences[i] = sequences[i] + newBases;
+                qualities[i] = qualities[i] + newQualities;
+            }
+        }
+    }
+}
+
+void cArrayToCppVector(char * seqArray[], char * qualArray[], int count,
+                       std::vector<std::string> & seqVector, std::vector<std::string> & qualVector) {
+    seqVector.reserve(count);
+    qualVector.reserve(count);
+    for (int i = 0; i < count; ++i)
+        seqVector.push_back(std::string(seqArray[i]));
+    for (int i = 0; i < count; ++i)
+        qualVector.push_back(std::string(qualArray[i]));
+    fillOutQualities(seqVector, qualVector);
+}

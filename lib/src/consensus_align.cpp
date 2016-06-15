@@ -39,10 +39,6 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
     ungappedSequences.insert(ungappedSequences.end(), endOnlySeqs.begin(), endOnlySeqs.end());
     ungappedQualities.insert(ungappedQualities.end(), endOnlyQuals.begin(), endOnlyQuals.end());
 
-    for (size_t i = 0; i < ungappedSequences.size(); ++i) { // TEMP
-        std::cout << ungappedSequences[i] << std::endl; //TEMP
-    } // TEMP
-
     // These vectors will hold the final aligned sequences and qualities.
     std::vector<std::string> gappedSequences, gappedQualities;
     gappedSequences.reserve(totalSeqCount);
@@ -84,7 +80,7 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
     // This calls my custom copy of the the globalMsaAlignment function. It does global alignments
     // between pairs of full-span sequences (specified by fullLengthCount) and overlap alignments
     // between all other pairs (full-span to partial pairs and partial to partial pairs).
-    globalMsaAlignment(gAlign, sequenceSet, sequenceNames, msaOpt, fullSpanCount, startOnlyCount, endOnlyCount);
+    globalMsaAlignment(gAlign, sequenceSet, sequenceNames, msaOpt, fullSpanCount);
 
     convertAlignment(gAlign, align);
 

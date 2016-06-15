@@ -561,7 +561,7 @@ void globalMsaAlignment(Graph<Alignment<TStringSet, TCargo, TSpec> > & gAlign,
                         TStringSet1 & sequenceSet,
                         TNames & sequenceNames,
                         MsaOptions<TAlphabet, TScore> const & msaOpt,
-                        int fullSpanCount, int startOnlyCount, int endOnlyCount)
+                        int fullSpanCount)
 {
     typedef typename Value<TScore>::Type TScoreValue;
     typedef typename Size<TStringSet>::Type TSize;
@@ -591,13 +591,11 @@ void globalMsaAlignment(Graph<Alignment<TStringSet, TCargo, TSpec> > & gAlign,
 
     // Select all possible pairs for global and local alignments
     String<TSize> pList1; // Just pairs between the full-span sequences.
-    String<TSize> pList2; // Start-only sequence pairs (to each other and to full-span, but not to end-only)
-    String<TSize> pList3; // End-only sequence pairs (to each other and to full-span, but not to start-only)
-    selectPairs(seqSet, pList1, pList2, pList3, fullSpanCount, startOnlyCount, endOnlyCount);
+    String<TSize> pList2; // All other pairs.
+    selectPairs(seqSet, pList1, pList2, fullSpanCount);
 
     std::cout << "GROUP ONE PAIRS:   " << length(pList1) << std::endl; //TEMP
     std::cout << "GROUP TWO PAIRS:   " << length(pList2) << std::endl; //TEMP
-    std::cout << "GROUP THREE PAIRS: " << length(pList3) << std::endl; //TEMP
 
     // Set-up a distance matrix
     typedef String<TDistanceValue> TDistanceMatrix;
@@ -628,7 +626,6 @@ void globalMsaAlignment(Graph<Alignment<TStringSet, TCargo, TSpec> > & gAlign,
 
     appendSegmentMatches(seqSet, pList1, msaOpt.sc, matches, scores, distanceMatrix, msaOpt.bandWidth, GlobalPairwiseLibrary(), Banded());
     appendSegmentMatches(seqSet, pList2, msaOpt.sc, matches, scores, noth, AlignConfig<true, true, true, true>(), GlobalPairwiseLibrary());
-    appendSegmentMatches(seqSet, pList3, msaOpt.sc, matches, scores, noth, AlignConfig<true, true, true, true>(), GlobalPairwiseLibrary());
 
 
 

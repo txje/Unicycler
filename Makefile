@@ -23,8 +23,8 @@ RELEASEFLAGS = -O3 -D NDEBUG
 
 TARGET       = lib/cpp_functions.so
 SHELL        = /bin/sh
-SOURCES      = $(shell echo lib/src/*.cpp)
-HEADERS      = $(shell echo lib/include/*.h)
+SOURCES      = $(shell find lib/src -name "*.cpp")
+HEADERS      = $(shell find lib/include -name "*.h")
 OBJECTS      = $(SOURCES:.cpp=.o)
 
 # Linux needs '-soname' while Mac needs '-install_name'

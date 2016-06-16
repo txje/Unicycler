@@ -1141,6 +1141,8 @@ class AssemblyGraph(object):
                (start < 0 and -start in left_bridged_segments) or \
                (end > 0 and end in left_bridged_segments) or \
                (end < 0 and -end in right_bridged_segments):
+                if verbosity > 1:
+                    print('Unused', bridge)
                 continue
 
             bridge_seg = self.apply_bridge(bridge, verbosity)

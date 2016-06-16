@@ -108,9 +108,8 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
 
     // For each gapped sequence, get the position of the first and last non-N base. This is useful
     // for sequences which don't span the whole alignment but are just at the start or end.
-    std::vector<int> firstNonN;
+    std::vector<int> firstNonN, lastNonN;
     firstNonN.reserve(totalSeqCount);
-    std::vector<int> lastNonN;
     lastNonN.reserve(totalSeqCount);
     for (int i = 0; i < totalSeqCount; ++i) {
         size_t firstNonNPos = gappedSequences[i].find_first_of("ACGTacgt");
@@ -126,11 +125,54 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
         // std::cout << firstNonN.back() << "  " << lastNonN.back() << "\n"; // TEMP
     }
 
+    // Before we build a consensus sequence, we may need to deal with one base vs one gap cases,
+    // e.g. 'A' vs '-' or '-' vs 'T'. We can't always keep the base, as this would lead to an
+    // inflated consensus. So we want a good base quality score threshold, above which we keep the
+    // base and below which we keep the gap. This is only necessary if there are places in the
+    // alignment with exactly two sequences.
+    char oneBaseVsOneGapQualityThreshold = '+';
+    if ((fullSpanCount == 2) ||
+        (fullSpanCount == 1 && (startOnlyCount > 0 || endOnlyCount > 0))) {
+        std::vector<char> oneBaseVsOneGapQualities;
+        for (int i = 0; i < alignmentLength; ++i) {
+            std::vector<char> bases;
+            std::vector<char> qualities;
+            for (int j = 0; j < totalSeqCount; ++j) {
+                if (i < firstNonN[j] || i > lastNonN[j])
+                    continue;
+                char base = toupper(gappedSequences[j][i]);
+                char quality = gappedQualities[j][i];
+                if (base != 'N') {
+                    bases.push_back(base);
+                    qualities.push_back(quality);
+                }
+            }
+            if (bases.size() == 2) {
+                bool base0IsGap = bases[0] == '-';
+                bool base1IsGap = bases[1] == '-';
+                if (base0IsGap && !base1IsGap)
+                    oneBaseVsOneGapQualities.push_back(qualities[1]);
+                else if (base1IsGap && !base0IsGap)
+                    oneBaseVsOneGapQualities.push_back(qualities[0]);
+            }
+        }
+
+        // Set the threshold to the median quality.
+        size_t size = oneBaseVsOneGapQualities.size();
+        if (size > 0) {
+            std::sort(oneBaseVsOneGapQualities.begin(), oneBaseVsOneGapQualities.end());
+            if (size % 2 == 0)
+                oneBaseVsOneGapQualityThreshold = (oneBaseVsOneGapQualities[size / 2 - 1] +
+                                                   oneBaseVsOneGapQualities[size / 2]) / 2;
+            else 
+                oneBaseVsOneGapQualityThreshold = oneBaseVsOneGapQualities[size / 2];
+        }
+    }
+
     // Build a consensus sequence. Sequences are ignored before their first non-N base was seen
     // (for end-only sequences) and after their last non-N base was seen (for start-only
     // sequences).
-    std::string consensus;
-    std::string gappedConsensus;
+    std::string consensus, gappedConsensus;
     for (int i = 0; i < alignmentLength; ++i) {
         std::vector<char> bases;
         std::vector<char> qualities;
@@ -150,7 +192,7 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
             }
         }
         if (bases.size() > 0) {
-            char mostCommonBase = getMostCommonBase(bases, qualities);
+            char mostCommonBase = getMostCommonBase(bases, qualities, oneBaseVsOneGapQualityThreshold);
             // std::cout << "Call:      " << mostCommonBase << "\n\n"; // TEMP
             if (mostCommonBase != '-')
                 consensus.push_back(mostCommonBase);
@@ -209,7 +251,7 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
     return cppStringToCString(returnString);
 }
 
-char getMostCommonBase(std::vector<char> & bases, std::vector<char> & qualities) {
+char getMostCommonBase(std::vector<char> & bases, std::vector<char> & qualities, char oneBaseVsOneGapQualityThreshold) {
     std::string baseValues = "ACGT-";
 
     // std::cout << "Bases:     "; // TEMP
@@ -221,6 +263,28 @@ char getMostCommonBase(std::vector<char> & bases, std::vector<char> & qualities)
     // for (size_t i = 0; i < qualities.size(); ++i) // TEMP
     //     std::cout << qualities[i]; // TEMP
     // std::cout << "\n"; // TEMP
+
+    // Check for the special case of one base vs one gap.
+    if (bases.size() == 2) {
+        bool base0IsGap = bases[0] == '-';
+        bool base1IsGap = bases[1] == '-';
+
+        // If there is one base and one gap and the base has a quality score equal to the
+        // threshold, then we choose based on position. I.e. if the quality equals the threshold
+        // and the base came first, we return the base, but if it came second, we return the gap.
+        if (!base0IsGap && base1IsGap) {
+            if (qualities[0] >= oneBaseVsOneGapQualityThreshold) // >= so ties go to the base
+                return bases[0]; // base
+            else
+                return bases[1]; // gap
+        }
+        else if (base0IsGap && !base1IsGap) {
+            if (qualities[1] > oneBaseVsOneGapQualityThreshold) // > so ties go to the gap
+                return bases[1]; // base
+            else
+                return bases[0]; // gap
+        }
+    }
 
     // Tally the count for each base.
     std::map<char, int> baseCounts;

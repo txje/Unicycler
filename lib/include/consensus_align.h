@@ -20,7 +20,7 @@ extern "C" {
 }
 
 
-char getMostCommonBase(std::vector<char> & bases, std::vector<char> & qualities);
+char getMostCommonBase(std::vector<char> & bases, std::vector<char> & qualities, char oneBaseVsOneGapQualityThreshold);
 
 double getAlignmentIdentity(std::string & seq1, std::string & seq2,
                             int seq1StartPos, int seq1EndPos, int seq2StartPos, int seq2EndPos);

@@ -5,4 +5,5 @@ build-*
 *.o
 *.pyc
 tests/*.fasta
+tests/*.fastq
 

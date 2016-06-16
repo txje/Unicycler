@@ -18,8 +18,9 @@ from multiprocessing import cpu_count
 SCIRPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(SCIRPT_DIR, 'lib'))
 from assembly_graph import AssemblyGraph
-from bridge import Bridge, create_spades_contig_bridges, find_contig_bridges, \
-                   create_long_read_bridges
+from bridge import SpadesContigBridge, LongReadBridge, LoopUnrollingBridge, \
+                   create_spades_contig_bridges, find_contig_bridges, \
+                   create_long_read_bridges, create_loop_unrolling_bridges
 from misc import int_to_str, float_to_str, quit_with_error, check_file_exists, check_graphmap
 
 sys.dont_write_bytecode = True
@@ -69,6 +70,7 @@ def main():
 
     # Make an initial set of bridges using the SPAdes contig paths.
     bridges = create_spades_contig_bridges(assembly_graph, single_copy_segments, verbosity)
+    bridges += create_loop_unrolling_bridges(assembly_graph, single_copy_segments, verbosity)
     bridged_graph = copy.deepcopy(assembly_graph)
     bridged_graph.apply_bridges(bridges, verbosity)
     bridged_graph.save_to_gfa(spades_bridged_graph_unmerged, verbosity, save_seg_type_info=True)

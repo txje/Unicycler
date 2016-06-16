@@ -3,6 +3,7 @@ from __future__ import division
 from collections import deque
 
 from misc import int_to_str, float_to_str
+from bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge
 
 class AssemblyGraph(object):
     '''
@@ -1127,7 +1128,7 @@ class AssemblyGraph(object):
         left_bridged_segments = set()
 
         # Sort bridges by quality so we apply the best bridges first.
-        sorted_bridges = sorted(bridges, key=lambda x: x.get_quality(), reverse=True)
+        sorted_bridges = sorted(bridges, key=lambda x: x.quality, reverse=True)
 
         applied_bridges = []
         seg_nums_used_in_bridges = set()
@@ -1206,13 +1207,12 @@ class AssemblyGraph(object):
         if verbosity > 1:
             print()
 
-
     def apply_bridge(self, bridge, verbosity):
         '''
         Applies one bridge to the graph.
         '''
         if verbosity > 1:
-            print('Applying bridge:', bridge)
+            print('Applying', bridge)
 
         start = bridge.start_segment
         end = bridge.end_segment
@@ -1234,7 +1234,7 @@ class AssemblyGraph(object):
         # Create a new bridge segment.
         new_seg_num = self.get_next_available_seg_number()
         new_seg_depth = ((start_depth * start_len) + (end_depth * end_len)) / (start_len + end_len)
-        new_seg = Segment(new_seg_num, new_seg_depth, bridge.get_bridge_sequence(), True, bridge)
+        new_seg = Segment(new_seg_num, new_seg_depth, bridge.bridge_sequence, True, bridge)
         self.segments[new_seg_num] = new_seg
 
         # Link the bridge segment in to the start/end segments.
@@ -1242,6 +1242,51 @@ class AssemblyGraph(object):
         self.add_link(new_seg_num, end)
 
         return new_seg
+
+    def find_all_simple_loops(self):
+        '''
+        This function finds all cases of a simple loop in the graph: A->B->C->B->D.
+        It returns them as a list of 4-tuples of segment numbers in this order:
+        (start, end, middle, repeat).
+        '''
+        simple_loops = []
+
+        # We'll search specifically for the middle segments as they should be easy to spot.
+        for middle in self.segments.iterkeys():
+
+            # A middle segment will always have exactly one connection on each end which connect
+            # to the same segment (the repeat segment).
+            if middle not in self.forward_links or middle not in self.reverse_links:
+                continue
+            if len(self.forward_links[middle]) != 1 or len(self.reverse_links[middle]) != 1:
+                continue
+            if self.forward_links[middle][0] != self.reverse_links[middle][0]:
+                continue
+            repeat = self.forward_links[middle][0]
+
+            # The repeat segment should have exactly two connections on each end. If less, then we
+            # have a simple path which can be merged. If more, it's a more complex loop.
+            if len(self.forward_links[repeat]) != 2 or len(self.reverse_links[repeat]) != 2:
+                continue
+
+            # Find the start and end segment numbers. It's okay if the start and the end are the
+            # same, but we exclude any other screwy cases where the start or end is the middle or
+            # repeat segment.
+            start = self.reverse_links[repeat][0]
+            if abs(start) == abs(middle):
+                start = self.reverse_links[repeat][1]
+            if abs(start) == abs(middle) or abs(start) == abs(repeat):
+                continue
+
+            end = self.forward_links[repeat][0]
+            if abs(end) == abs(middle):
+                end = self.forward_links[repeat][1]
+            if abs(end) == abs(middle) or abs(end) == abs(repeat):
+                continue
+
+            simple_loops.append((start, end, middle, repeat))
+        return simple_loops
+
 
 
 
@@ -1336,14 +1381,17 @@ class Segment(object):
         '''
         if self.bridge is None:
             return 'gray'
-        elif self.bridge.bridge_type == 'spades_contig_bridge':
+
+        if isinstance(self.bridge, SpadesContigBridge):
             return 'forestgreen'
-        elif self.bridge.bridge_type == 'long_read_bridge_through_graph':
+        if isinstance(self.bridge, LoopUnrollingBridge):
+            return 'pink'
+
+        # We can now assume the bridge is a LongReadBridge.
+        if self.bridge.graph_path: # Bridge is based on a graph path
             return 'blue'
-        elif self.bridge.bridge_type == 'long_read_bridge_not_through_graph':
+        else: # Bridge is just a read consensus
             return 'red'
-        else:
-            return 'black'
 
     def get_seg_type_label(self):
         '''
@@ -1351,15 +1399,19 @@ class Segment(object):
         '''
         if self.bridge is None:
             return ''
+
         graph_path_str = ', '.join([str(x) for x in self.bridge.graph_path])
-        if self.bridge.bridge_type == 'spades_contig_bridge':
+
+        if isinstance(self.bridge, SpadesContigBridge):
             return 'SPAdes contig bridge: ' + graph_path_str
-        elif self.bridge.bridge_type == 'long_read_bridge_through_graph':
+        if isinstance(self.bridge, LoopUnrollingBridge):
+            return 'Loop unrolling bridge: ' + graph_path_str
+
+        # We can now assume the bridge is a LongReadBridge.
+        if graph_path_str:
             return 'long read bridge: ' + graph_path_str
-        elif self.bridge.bridge_type == 'long_read_bridge_not_through_graph':
-            return 'long read sequence'
         else:
-            return ''
+            return 'long read sequence'
 
 def get_error(source, target):
     '''

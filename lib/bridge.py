@@ -1,101 +1,234 @@
+'''
+This module describes bridges - links between two single-copy segments in an assembly graph.
+Bridges can come from multiple sources, so there are a few different classes which all share
+the important members/methods (for duck-typing purposes).
+'''
+
 from __future__ import print_function
 from __future__ import division
 import sys
+from misc import float_to_str
 
-class Bridge(object):
+class SpadesContigBridge(object):
     '''
-    This class describes a bridge between two single-copy segments in an assembly graph.
+    This class describes a bridge created from the contigs.paths file made by SPAdes.
     '''
-    def __init__(self, spades_contig_path=None, graph=None):
+    def __init__(self, graph, spades_contig_path):
 
+        # The two single-copy segments which are being bridged.
         self.start_segment = None
         self.end_segment = None
 
-        # A string indicating where this bridge came from.
-        self.bridge_type = ''
+        # The path through the unbridged graph.
+        self.graph_path = []
 
-        # The individual read sequences contributing to the bridge, along with their FASTQ
-        # qualities.
-        self.read_sequences = []
-        self.read_sequence_qualities = []
+        # The bridge sequence, gotten from the graph path.
+        self.bridge_sequence = ''
 
-        # The lengths of the sequences in self.read_sequences. This is stored separately because
+        # A score used to determine the order of bridge application.
+        self.quality = 1.0
+
+
+        self.graph_path = spades_contig_path
+        self.start_segment = self.graph_path.pop(0)
+        self.end_segment = self.graph_path.pop()
+        self.bridge_sequence = graph.get_path_sequence(self.graph_path)
+
+        # TO DO: QUALITY CALCULATION
+        # TO DO: QUALITY CALCULATION
+        # TO DO: QUALITY CALCULATION
+        # TO DO: QUALITY CALCULATION
+        # TO DO: QUALITY CALCULATION
+        # TO DO: QUALITY CALCULATION
+
+    def __repr__(self):
+        return 'SPAdes contig bridge: ' + str(self.start_segment) + ' -> ' + \
+               ', '.join([str(x) for x in self.graph_path]) + ' -> ' + str(self.end_segment) + \
+               ' (quality = ' + float_to_str(self.quality, 2) + ')'
+
+
+class LongReadBridge(object):
+    '''
+    This class describes a bridge created from long read alignments.
+    '''
+    def __init__(self, spades_contig_path=None, graph=None):
+
+        # The two single-copy segments which are being bridged.
+        self.start_segment = None
+        self.end_segment = None
+
+        # The individual reads contributing to the bridge. The sequences/qualities are not for the
+        # entire read, just the part in the bridge. The lengths are stored separately because
         # negative bridge lengths are possible (when the start and end segment alignments overlap).
         # In these cases we don't have any read sequences but will still need to know the lengths
         # (which will be negative).
-        self.read_sequence_lengths = []
+        self.read_names = []
+        self.read_sequences = []
+        self.read_qualities = []
+        self.read_lengths = []
 
-        # The consensus of all read sequences, if applicable. If there is only one read, then this
-        # is the same as that read's sequence. If there are multiple reads, this is hopefully a
-        # more accurate sequence.
-        self.consensus_read_sequence = ''
+        # The bridge can also contain incomplete read sequences which don't bridge the entire span
+        # between the start and end segments. These are still useful as they can contribute to the
+        # consensus sequence.
+        self.start_partial_read_names = []
+        self.start_partial_sequences = []
+        self.start_partial_qualities = []
+        self.end_partial_read_names = []
+        self.end_partial_sequences = []
+        self.end_partial_qualities = []
 
-        # The consensus read sequence length. If self.consensus_read_sequence exists, this is just
-        # the length of that sequence. But if the read sequence lengths are negative, then this is
-        # the mean of those lengths
-        self.consensus_read_sequence_length = 0.0
+        # The consensus of all read sequences. If there is only one read, then this is the same as
+        # that read's sequence. If there are multiple reads, this is hopefully a more accurate
+        # sequence. If this is a case where the start and end segments overlap, then there will not
+        # be a consensus sequence and consensus_length will be the mean of read_lengths (a negative
+        # value).
+        self.consensus_sequence = ''
+        self.consensus_length = 0.0
 
-        # The score of the read sequence consensus. Only applies if there are two or more read
-        # sequences. Used in the calculation of the bridge quality (e.g. a bridge made from reads
-        # with a bad consensus score gets a lower quality).
-        self.consensus_score = 0.0
-
-        # The path through the unbridged graph, its sequence, and its alignment score (the score
-        # for the alignment between the path sequence and the read consensus).
+        # The path through the unbridged graph, if one was found.
         self.graph_path = []
-        self.graph_path_sequence = ''
-        self.graph_path_score = 0.0
 
-        # Construct a bridge using a SPAdes contig path.
-        if spades_contig_path and graph:
-            self.graph_path = spades_contig_path
-            self.start_segment = self.graph_path.pop(0)
-            self.end_segment = self.graph_path.pop()
-            self.graph_path_sequence = graph.get_path_sequence(self.graph_path)
-            self.bridge_type = 'spades_contig_bridge'
+        # The bridge sequence, gotten from the graph path if a good path was found. Otherwise it's
+        # from the consensus sequence.
+        self.bridge_sequence = ''
+
+        # A score used to determine the order of bridge application.
+        self.quality = 1.0
 
 
-        # self.bridge_type = 'loop_unrolling_bridge'
-        # self.bridge_type = 'long_read_bridge_through_graph'
-        # self.bridge_type = 'long_read_bridge_not_through_graph'
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+
 
 
     def __repr__(self):
-        return str(self.start_segment) + ' -> ' + ', '.join([str(x) for x in self.graph_path]) + \
-               ' -> ' + str(self.end_segment)
+        return 'long read bridge: ' + str(self.start_segment) + ' -> ' + \
+               ', '.join([str(x) for x in self.graph_path]) + ' -> ' + str(self.end_segment) + \
+               ' (quality = ' + float_to_str(self.quality, 2) + ')'
 
-    def get_bridge_sequence(self):
+
+
+
+class LoopUnrollingBridge(object):
+    '''
+    This class describes a bridge created from unrolling an assembly graph loop.
+    '''
+    def __init__(self, graph, start, end, middle, repeat):
         '''
-        Returns the best sequence for this bridges. This can be either a read consensus sequence or
-        a graph path sequence, depending on the bridge type.
+        This constructor assumes the the start, end, middle and repeat segments form a simple loop
+        in the graph supported by either a SPAdes contig or a long read alignment. It will use
+        segment depths to determine the loop count and score the bridge's quality.
         '''
-        if self.bridge_type == 'spades_contig_bridge' or \
-           self.bridge_type == 'loop_unrolling_bridge' or \
-           self.bridge_type == 'long_read_bridge_through_graph':
-            return self.graph_path_sequence
-        elif self.bridge_type == 'long_read_bridge_not_through_graph':
-            return self.consensus_read_sequence
-        assert False # Should never get here!
+        # The two single-copy segments which are being bridged.
+        self.start_segment = start
+        self.end_segment = end
 
-    def get_quality(self):
-        '''
-        This function gives a quality score to bridges. This is used to sort bridges so we can apply
-        the best ones first.
-        '''
-        # TO DO: Make this function more robust! When two bridges are of the same type, they should
-        #        give different quality scores.
+        # The path through the unbridged graph.
+        self.graph_path = []
+
+        # The bridge sequence, gotten from the graph path.
+        self.bridge_sequence = ''
+
+        # A score used to determine the order of bridge application. This value can only decrease
+        self.quality = 1.0
 
 
-        if self.bridge_type == 'long_read_bridge_not_through_graph':
-            return 1.0
+        # The start segment and end segment should agree in depth. If they don't, that's very bad,
+        # so depth_disagreement is applied to quality twice (squared effect).
+        start_depth = graph.segments[abs(start)].depth
+        end_depth = graph.segments[abs(end)].depth
+        depth_disagreement = min(start_depth, end_depth) / max(start_depth, end_depth)
+        self.quality *= (depth_disagreement * depth_disagreement) # has squared effect on quality
 
-        if self.bridge_type == 'spades_contig_bridge':
-            return 10.0
+        # The loop count as determined by the repeat segment should agree with the loop count as
+        # determined by the middle segment.
+        mean_start_end_depth = (start_depth + end_depth) / 2
+        loop_count_by_middle = graph.segments[abs(middle)].depth / mean_start_end_depth
+        loop_count_by_repeat = (graph.segments[abs(repeat)].depth - mean_start_end_depth) / \
+                                   mean_start_end_depth
+        count_disagreement = min(loop_count_by_middle, loop_count_by_repeat) / \
+                             max(loop_count_by_middle, loop_count_by_repeat)
+        self.quality *= count_disagreement
 
-        if self.bridge_type == 'long_read_bridge_through_graph':
-            return 100.0
+        # We'll use whichever segment is longer (repeat or middle) for our loop count going
+        # forward.
+        if graph.segments[abs(repeat)].get_length() > graph.segments[abs(middle)].get_length():
+            loop_count_float = loop_count_by_repeat
+        else:
+            loop_count_float = loop_count_by_middle
 
-        return 0.0
+        # If the average loop count is near a whole number, that's better. If it's near 0.5, that's
+        # very bad!
+        if loop_count_float < 1.0:
+            loop_count = 1
+            closeness_to_whole_num = loop_count_float
+        else:
+            loop_count = int(round(loop_count_float))
+            fractional_part = loop_count_float % 1
+            distance_from_whole_num = min(fractional_part, 1.0 - fractional_part)
+            closeness_to_whole_num = 1.0 - (2.0 * distance_from_whole_num)
+        self.quality *= closeness_to_whole_num
+
+        # Finally, we reduce the quality for higher loop counts, as those are harder to call.
+        loop_count_penalty = (1 / loop_count) ** 0.5
+        self.quality *= loop_count_penalty
+
+        self.graph_path = [repeat]
+        for _ in range(loop_count):
+            self.graph_path += [middle, repeat]
+        self.bridge_sequence = graph.get_path_sequence(self.graph_path)
+
+    def __repr__(self):
+        return 'loop unrolling bridge: ' + str(self.start_segment) + ' -> ' + \
+               ', '.join([str(x) for x in self.graph_path]) + ' -> ' + str(self.end_segment) + \
+               ' (quality = ' + float_to_str(self.quality, 2) + ')'
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -177,7 +310,7 @@ def create_spades_contig_bridges(graph, single_copy_segments, verbosity):
             print('none')
         print()
 
-    return [Bridge(spades_contig_path=x, graph=graph) for x in final_bridge_paths]
+    return [SpadesContigBridge(spades_contig_path=x, graph=graph) for x in final_bridge_paths]
 
 def find_contig_bridges(segment_num, path, single_copy_numbers):
     '''
@@ -197,6 +330,36 @@ def find_contig_bridges(segment_num, path, single_copy_numbers):
         if bridge_path:
             bridge_paths.append(bridge_path)
     return bridge_paths
+
+def create_loop_unrolling_bridges(graph, single_copy_segments, verbosity):
+    '''
+    This function creates loop unrolling bridges using the information in SPAdes paths.
+    '''
+    bridges = []
+    simple_loops = graph.find_all_simple_loops()
+
+    # A simple loop can either be caused by a repeat in one sequence (probably more typical) or by
+    # a separate circular sequence which has some common sequence (less typical, but still very
+    # possible: plasmids). We only want to unroll the former group, so we look for cases where the
+    # loop's start or end is in a SPAdes contig path along with the middle. That implies that they
+    # are on the same piece of DNA and can be unrolled.
+    for start, end, middle, repeat in simple_loops:
+        for path in graph.paths.itervalues():
+            joined = False
+            flipped_path = [-x for x in reversed(path)]
+            if (start in path and middle in path) or \
+               (end in path and middle in path) or \
+               (start in flipped_path and middle in flipped_path) or \
+               (end in flipped_path and middle in flipped_path):
+                joined = True
+                break
+        if not joined:
+            continue
+
+        # If the code got here, then things look good and we'll make a loop unrolling bridge!
+        bridges.append(LoopUnrollingBridge(graph, start, end, middle, repeat))
+
+    return bridges
 
 def create_long_read_bridges(graph, reads, single_copy_segments, verbosity):
     '''

@@ -1,7 +1,7 @@
 
 
 #include "alignmentline.h"
-#include "semiglobalalignment.h"
+#include "scoredalignment.h"
 #include <cmath>
 
 

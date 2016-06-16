@@ -2,7 +2,7 @@
 
 #include <iostream>
 #include <map>
-#include "seqan_align.h"
+#include "semi_global_align.h"
 #include <algorithm>
 #include <cmath>
 
@@ -195,7 +195,7 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
     returnString += std::to_string(percentIdentitiesWithConsensus[0]);
     for (int i = 1; i < totalSeqCount; ++i)
         returnString += ',' + std::to_string(percentIdentitiesWithConsensus[i]);
-    
+
     // returnString += ';';
     // for (int i = 0; i < totalSeqCount; ++i) {
     //     for (int j = 0; j < totalSeqCount; ++j) {

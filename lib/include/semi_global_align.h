@@ -1,5 +1,5 @@
-#ifndef SEQAN_ALIGN_H
-#define SEQAN_ALIGN_H
+#ifndef SEMI_GLOBAL_ALIGN_H
+#define SEMI_GLOBAL_ALIGN_H
 
 #include <seqan/sequence.h>
 #include <string>
@@ -7,7 +7,7 @@
 #include "kmers.h"
 #include "commonkmerset.h"
 #include "alignmentline.h"
-#include "semiglobalalignment.h"
+#include "scoredalignment.h"
 #include "random_alignments.h"
 
 using namespace seqan;
@@ -31,26 +31,26 @@ extern "C" {
     void freeCString(char * p);
 }
 
-SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readName, std::string & refName,
-                                                 std::string * readSeq, std::string * refSeq,
-                                                 AlignmentLine * line, int verbosity, std::string & output,
-                                                 Score<int, Simple> & scoringScheme);
+ScoredAlignment * semiGlobalAlignmentOneLine(std::string & readName, std::string & refName,
+                                             std::string * readSeq, std::string * refSeq,
+                                             AlignmentLine * line, int verbosity, std::string & output,
+                                             Score<int, Simple> & scoringScheme);
 
-SemiGlobalAlignment * semiGlobalAlignmentOneLineOneBand(std::string & readName, std::string & refName,
-                                                        Dna5String & readSeq, int readLen,
-                                                        Dna5String & refSeq, int refLen,
-                                                        AlignmentLine * line, int bandSize,
-                                                        int verbosity, std::string & output,
-                                                        Score<int, Simple> & scoringScheme);
+ScoredAlignment * semiGlobalAlignmentOneLineOneBand(std::string & readName, std::string & refName,
+                                                    Dna5String & readSeq, int readLen,
+                                                    Dna5String & refSeq, int refLen,
+                                                    AlignmentLine * line, int bandSize,
+                                                    int verbosity, std::string & output,
+                                                    Score<int, Simple> & scoringScheme);
 
 char * cppStringToCString(std::string cpp_string);
 
 std::string getReverseComplement(std::string sequence);
 
-double fractionOfReadAligned(std::vector<SemiGlobalAlignment *> & alignments);
+double fractionOfReadAligned(std::vector<ScoredAlignment *> & alignments);
 
 std::vector<std::pair<int, int> > simplifyRanges(std::vector<std::pair<int, int> > & ranges);
 
 CommonKmerSet * getHighestScoringSet(std::vector<CommonKmerSet *> & commonKmerSets);
 
-#endif // SEQAN_ALIGN_H
+#endif // SEMI_GLOBAL_ALIGN_H

@@ -5,7 +5,7 @@
 #include <seqan/sequence.h>
 #include <string>
 #include <vector>
-#include "semiglobalalignment.h"
+#include "scoredalignment.h"
 #include <mutex>
 
 using namespace seqan;
@@ -23,9 +23,6 @@ extern "C" {
 void simulateDepthsOneThread(int alignmentLengths[], int alignmentCount, int refLength, int iterations,
                              std::vector<int> * minDepthCounts, std::vector<int> * maxDepthCounts,
                              std::mutex * mut);
-
-SemiGlobalAlignment * fullyGlobalAlignment(std::string s1, std::string s2,
-                                           int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore);
 
 std::string getRandomSequence(int seqLength, std::mt19937 & gen, std::uniform_int_distribution<int> & dist);
 

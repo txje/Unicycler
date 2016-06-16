@@ -7,8 +7,10 @@
 #include <algorithm>
 #include <utility>
 #include <random>
-#include "seqan_align.h"
 #include <thread>
+
+#include "semi_global_align.h"
+#include "global_align.h"
 
 
 
@@ -25,7 +27,7 @@ char * getRandomSequenceAlignmentScores(int seqLength, int n,
     for (int i = 0; i < n; ++i) {
         std::string s1 = getRandomSequence(seqLength, gen, dist);
         std::string s2 = getRandomSequence(seqLength, gen, dist);
-        SemiGlobalAlignment * alignment = fullyGlobalAlignment(s1, s2, matchScore, mismatchScore, gapOpenScore, gapExtensionScore);
+        ScoredAlignment * alignment = fullyGlobalAlignment(s1, s2, matchScore, mismatchScore, gapOpenScore, gapExtensionScore);
 
         if (alignment != 0) {
             scores.push_back(alignment->m_scaledScore);
@@ -170,32 +172,6 @@ char getRandomBase(std::mt19937 & gen, std::uniform_int_distribution<int> & dist
     else // baseNum == 3
         return 'T';
 }
-
-// This function runs a global alignment (slow) between two sequences.
-SemiGlobalAlignment * fullyGlobalAlignment(std::string s1, std::string s2,
-                                           int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore) {
-    long long startTime = getTime();
-
-    Dna5String sequenceH(s1);
-    Dna5String sequenceV(s2);
-
-    Align<Dna5String, ArrayGaps> alignment;
-    resize(rows(alignment), 2);
-    assignSource(row(alignment, 0), sequenceH);
-    assignSource(row(alignment, 1), sequenceV);
-    Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
-
-    AlignConfig<false, false, false, false> alignConfig;
-    globalAlignment(alignment, scoringScheme, alignConfig);
-
-    std::string s1Name = "s1";
-    std::string s2Name = "s2";
-
-    return new SemiGlobalAlignment(alignment, s1Name, s2Name, s1.length(), s2.length(),
-                                   0, startTime, 0, true, true, scoringScheme);
-}
-
-
 
 void getMeanAndStDev(std::vector<double> & v, double & mean, double & stdDev) {
     mean = 0.0;

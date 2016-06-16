@@ -1,13 +1,13 @@
 
-#include "semiglobalalignment.h"
+#include "scoredalignment.h"
 
 #include <iostream>
 
-SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignment, 
-                                         std::string & readName, std::string & refName,
-                                         int readLength, int refLength,
-                                         int refOffset, long long startTime, int bandSize,
-                                         bool startImmediately, bool goToEnd, Score<int, Simple> & scoringScheme):
+ScoredAlignment::ScoredAlignment(Align<Dna5String, ArrayGaps> & alignment, 
+                                 std::string & readName, std::string & refName,
+                                 int readLength, int refLength,
+                                 int refOffset, long long startTime, int bandSize,
+                                 bool startImmediately, bool goToEnd, Score<int, Simple> & scoringScheme):
     m_readName(readName), m_refName(refName), m_readLength(readLength), m_refLength(refLength),
     m_readStartPos(-1), m_refStartPos(-1), m_rawScore(0), m_bandSize(bandSize)
 {
@@ -125,7 +125,7 @@ SemiGlobalAlignment::SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignmen
 }
 
 
-std::string SemiGlobalAlignment::getFullString() {
+std::string ScoredAlignment::getFullString() {
     std::string revCompStr;
     if (isRevComp())
         revCompStr = '-';
@@ -143,7 +143,7 @@ std::string SemiGlobalAlignment::getFullString() {
 }
 
 
-std::string SemiGlobalAlignment::getShortDisplayString() {
+std::string ScoredAlignment::getShortDisplayString() {
     std::stringstream ss;
     ss << std::fixed << std::setprecision(2) << m_scaledScore;
 
@@ -154,7 +154,7 @@ std::string SemiGlobalAlignment::getShortDisplayString() {
 
 
 
-CigarType SemiGlobalAlignment::getCigarType(char b1, char b2, bool alignmentStarted) {
+CigarType ScoredAlignment::getCigarType(char b1, char b2, bool alignmentStarted) {
     if (b1 == '-') {
         if (alignmentStarted)
             return DELETION;
@@ -171,7 +171,7 @@ CigarType SemiGlobalAlignment::getCigarType(char b1, char b2, bool alignmentStar
         return MATCH;
 }
 
-std::string SemiGlobalAlignment::getCigarPart(CigarType type, int length) {
+std::string ScoredAlignment::getCigarPart(CigarType type, int length) {
     std::string cigarPart = std::to_string(length);
     if (type == DELETION)
         cigarPart.append("D");
@@ -187,7 +187,7 @@ std::string SemiGlobalAlignment::getCigarPart(CigarType type, int length) {
 }
 
 
-int SemiGlobalAlignment::getCigarScore(CigarType type, int length, Score<int, Simple> & scoringScheme,
+int ScoredAlignment::getCigarScore(CigarType type, int length, Score<int, Simple> & scoringScheme,
                                        std::string & readAlignment, std::string & refAlignment,
                                        int alignmentPos) {
 
@@ -211,7 +211,7 @@ int SemiGlobalAlignment::getCigarScore(CigarType type, int length, Score<int, Si
     return 0;
 }
 
-bool SemiGlobalAlignment::isRevComp() {
+bool ScoredAlignment::isRevComp() {
     return m_readName.back() == '-';
 }
 

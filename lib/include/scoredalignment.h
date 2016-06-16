@@ -1,6 +1,6 @@
 
-#ifndef SEMIGLOBALALIGNMENT_H
-#define SEMIGLOBALALIGNMENT_H
+#ifndef ALIGNMENT_H
+#define ALIGNMENT_H
 
 
 #include <string>
@@ -12,13 +12,13 @@ using namespace seqan;
 enum CigarType {MATCH, INSERTION, DELETION, CLIP, NOTHING};
 
 
-class SemiGlobalAlignment {
+class ScoredAlignment {
 public:
-    SemiGlobalAlignment(Align<Dna5String, ArrayGaps> & alignment, 
-                        std::string & readName, std::string & refName,
-                        int readLength, int refLength,
-                        int refOffset, long long startTime, int bandSize,
-                        bool startImmediately, bool goToEnd, Score<int, Simple> & scoringScheme);
+    ScoredAlignment(Align<Dna5String, ArrayGaps> & alignment, 
+                    std::string & readName, std::string & refName,
+                    int readLength, int refLength,
+                    int refOffset, long long startTime, int bandSize,
+                    bool startImmediately, bool goToEnd, Score<int, Simple> & scoringScheme);
     std::string getFullString();
     std::string getShortDisplayString();
     bool isRevComp();
@@ -49,4 +49,4 @@ private:
 
 long long getTime();
 
-#endif // SEMIGLOBALALIGNMENT_H
+#endif // ALIGNMENT_H

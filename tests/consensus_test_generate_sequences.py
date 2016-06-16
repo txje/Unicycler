@@ -1,4 +1,7 @@
 
+from __future__ import print_function
+from __future__ import division
+
 import random
 import sys
 
@@ -8,7 +11,8 @@ def main():
     full_span_count = int(sys.argv[3])
     start_only_count = int(sys.argv[4])
     end_only_count = int(sys.argv[5])
-    base_filename = sys.argv[6]
+
+    base_filename = 'msa_test'
 
     original_sequence = get_random_sequence(length)
     base_file = open(base_filename + '_original.fasta', 'w')

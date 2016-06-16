@@ -1,4 +1,4 @@
-#include "seqan_align.h"
+#include "semi_global_align.h"
 
 #include <seqan/align.h>
 #include <iostream>
@@ -52,8 +52,8 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
     // We now extract alignment lines and perform alignments until we have had too many failures.
     Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
     std::vector<AlignmentLine *> alignmentLines;
-    std::vector<SemiGlobalAlignment *> allAlignments;
-    std::vector<SemiGlobalAlignment *> goodAlignments;
+    std::vector<ScoredAlignment *> allAlignments;
+    std::vector<ScoredAlignment *> goodAlignments;
     int badAlignmentCount = 0;
     bool oneAlignmentWholeRead = false;
     bool entireReadAligned = false;
@@ -87,8 +87,8 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
                 output += "  line: " + line->getDescriptiveString() + ", GOOD\n";
             std::string * readSeq = readKmerPositions.getSequence(readName);
             std::string * refSeq = refKmerPositions->getSequence(refName);
-            SemiGlobalAlignment * alignment = semiGlobalAlignmentOneLine(readName, refName, readSeq, refSeq,
-                                                                         line, verbosity, output, scoringScheme);
+            ScoredAlignment * alignment = semiGlobalAlignmentOneLine(readName, refName, readSeq, refSeq,
+                                                                     line, verbosity, output, scoringScheme);
             alignmentLines.push_back(line);
             allAlignments.push_back(alignment);
 
@@ -116,10 +116,10 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
             // Finally, we want to check whether this alignment line is near any of the previous
             // alignment lines.
             AlignmentLine * bestNearbyLine = 0;
-            SemiGlobalAlignment * bestNearbyLineAlignment = 0;
+            ScoredAlignment * bestNearbyLineAlignment = 0;
             for (size_t i = 0; i < alignmentLines.size() - 1; ++i) {
                 AlignmentLine * previousLine = alignmentLines[i];
-                SemiGlobalAlignment * previousLineAlignment = allAlignments[i];
+                ScoredAlignment * previousLineAlignment = allAlignments[i];
 
                 if (previousLine->isNear(line)) {
 
@@ -156,8 +156,8 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
                 else {
                     if (verbosity > 2)
                         output += "                 result: " + mergedLine->getDescriptiveString() + "\n";
-                    SemiGlobalAlignment * mergedLineAlignment = semiGlobalAlignmentOneLine(readName, refName, readSeq, refSeq,
-                                                                                           mergedLine, verbosity, output, scoringScheme);
+                    ScoredAlignment * mergedLineAlignment = semiGlobalAlignmentOneLine(readName, refName, readSeq, refSeq,
+                                                                                       mergedLine, verbosity, output, scoringScheme);
                     alignmentLines.push_back(mergedLine);
                     allAlignments.push_back(mergedLineAlignment);
                     if (mergedLineAlignment == 0) {
@@ -189,7 +189,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
     }
 
     // Either all alignments or only good alignments are returned, depending on a parameter.
-    std::vector<SemiGlobalAlignment *> * returnedAlignments;
+    std::vector<ScoredAlignment *> * returnedAlignments;
     if (returnBad)
         returnedAlignments = &allAlignments;
     else
@@ -199,7 +199,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
     // other parts are alignment description strings.
     std::string returnString;
     for (size_t i = 0; i < returnedAlignments->size(); ++i) {
-        SemiGlobalAlignment * alignment = (*returnedAlignments)[i];
+        ScoredAlignment * alignment = (*returnedAlignments)[i];
         if (alignment != 0)
             returnString += alignment->getFullString() + ";";
     }
@@ -221,10 +221,10 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
  // Runs an alignment using Seqan between one read and one reference along one line.
  // It starts with a smallish band size (fast) and works up to larger ones to see if they improve
  // the alignment.
-SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readName, std::string & refName,
-                                                 std::string * readSeq, std::string * refSeq,
-                                                 AlignmentLine * line, int verbosity, std::string & output,
-                                                 Score<int, Simple> & scoringScheme) {
+ScoredAlignment * semiGlobalAlignmentOneLine(std::string & readName, std::string & refName,
+                                             std::string * readSeq, std::string * refSeq,
+                                             AlignmentLine * line, int verbosity, std::string & output,
+                                             Score<int, Simple> & scoringScheme) {
     long long startTime = getTime();
 
     int trimmedRefLength = line->m_trimmedRefEnd - line->m_trimmedRefStart;
@@ -235,17 +235,17 @@ SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readName, std::st
     int readLength = readSeq->length();
 
     int bandSize = STARTING_BAND_SIZE;
-    SemiGlobalAlignment * bestAlignment = 0;
+    ScoredAlignment * bestAlignment = 0;
     double bestAlignmentScore = std::numeric_limits<double>::min();
 
     // We perform the alignment with increasing band sizes until the score stops improving or we
     // reach the max band size.
     while (true) {
-        SemiGlobalAlignment * alignment = semiGlobalAlignmentOneLineOneBand(readName, refName,
-                                                                            readSeqSeqan, readLength,
-                                                                            refSeqSeqan, trimmedRefLength,
-                                                                            line, bandSize, verbosity,
-                                                                            output, scoringScheme);
+        ScoredAlignment * alignment = semiGlobalAlignmentOneLineOneBand(readName, refName,
+                                                                        readSeqSeqan, readLength,
+                                                                        refSeqSeqan, trimmedRefLength,
+                                                                        line, bandSize, verbosity,
+                                                                        output, scoringScheme);
         if (alignment != 0) {
             double alignmentScore = alignment->m_scaledScore;
             bool badScore = (alignmentScore <= bestAlignmentScore);
@@ -280,7 +280,7 @@ SemiGlobalAlignment * semiGlobalAlignmentOneLine(std::string & readName, std::st
 
 // This function, given a line, will search for semi-global alignments around that line. The
 // bandSize parameter specifies how far of an area around the line is searched.
-SemiGlobalAlignment * semiGlobalAlignmentOneLineOneBand(std::string & readName, std::string & refName,
+ScoredAlignment * semiGlobalAlignmentOneLineOneBand(std::string & readName, std::string & refName,
                                                         Dna5String & readSeq, int readLen,
                                                         Dna5String & refSeq, int refLen,
                                                         AlignmentLine * line, int bandSize,
@@ -304,12 +304,12 @@ SemiGlobalAlignment * semiGlobalAlignmentOneLineOneBand(std::string & readName, 
     assignSource(row(alignment, 1), refSeq);
     AlignConfig<true, true, true, true> alignConfig;
 
-    SemiGlobalAlignment * sgAlignment;
+    ScoredAlignment * sgAlignment;
     try {
         bandedChainAlignment(alignment, line->m_bridgedSeedChain, scoringScheme, alignConfig,
                              bandSize);
-        sgAlignment = new SemiGlobalAlignment(alignment, readName, refName, readLen, refLen,
-                                              line->m_trimmedRefStart, startTime, bandSize, false, false, scoringScheme);
+        sgAlignment = new ScoredAlignment(alignment, readName, refName, readLen, refLen,
+                                          line->m_trimmedRefStart, startTime, bandSize, false, false, scoringScheme);
     }
     catch (...) {
         if (verbosity > 2)
@@ -346,8 +346,8 @@ char * startExtensionAlignment(char * read, char * ref,
     AlignConfig<false, true, false, false> alignConfig;
     globalAlignment(alignment, scoringScheme, alignConfig);
 
-    SemiGlobalAlignment startAlignment(alignment, readName, refName, length(read), length(ref),
-                                       0, startTime, 0, false, true, scoringScheme);
+    ScoredAlignment startAlignment(alignment, readName, refName, length(read), length(ref),
+                                   0, startTime, 0, false, true, scoringScheme);
     return cppStringToCString(startAlignment.getFullString());
 }
 
@@ -376,8 +376,8 @@ char * endExtensionAlignment(char * read, char * ref,
     AlignConfig<false, false, true, false> alignConfig;
     globalAlignment(alignment, scoringScheme, alignConfig);
 
-    SemiGlobalAlignment endAlignment(alignment, readName, refName, length(read), length(ref),
-                                     0, startTime, 0, true, false, scoringScheme);
+    ScoredAlignment endAlignment(alignment, readName, refName, length(read), length(ref),
+                                 0, startTime, 0, true, false, scoringScheme);
     return cppStringToCString(endAlignment.getFullString());
 }
 
@@ -429,12 +429,12 @@ std::string getReverseComplement(std::string sequence) {
 }
 
 
-double fractionOfReadAligned(std::vector<SemiGlobalAlignment *> & alignments) {
+double fractionOfReadAligned(std::vector<ScoredAlignment *> & alignments) {
     if (alignments.size() == 0)
         return true;
     std::vector<std::pair<int, int> > ranges;
     for (size_t i = 0; i < alignments.size(); ++i) {
-        SemiGlobalAlignment * alignment = alignments[i];
+        ScoredAlignment * alignment = alignments[i];
         int start, end;
         if (alignment->isRevComp()) {
             start = alignment->m_readLength - alignment->m_readEndPos;

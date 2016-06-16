@@ -40,6 +40,33 @@ def semi_global_alignment(read_name, read_sequence, verbosity, expected_slop, km
 
 
 
+
+# This is the global alignment function mainly used to compare read consensus sequences to assembly
+# graph paths.
+C_LIB.fullyGlobalAlignment.argtypes = [c_char_p, # Sequence 1
+                                       c_char_p, # Sequence 2
+                                       c_int,    # Match score
+                                       c_int,    # Mismatch score
+                                       c_int,    # Gap open score
+                                       c_int,    # Gap extension score
+                                       c_bool,   # Use banding
+                                       c_int]    # Band size
+C_LIB.fullyGlobalAlignment.restype = c_void_p     # String describing alignment
+
+def fully_global_alignment(sequence_1, sequence_2, scoring_scheme,
+                           use_banding, band_size):
+    '''
+    Python wrapper for fullyGlobalAlignment C++ function.
+    '''
+    ptr = C_LIB.fullyGlobalAlignment(sequence_1, sequence_2,
+                                     scoring_scheme.match, scoring_scheme.mismatch,
+                                     scoring_scheme.gap_open, scoring_scheme.gap_extend,
+                                     use_banding, band_size)
+    return c_string_to_python_string(ptr)
+
+
+
+
 # These functions are used to conduct short alignments for the sake of extending the start and end
 # of a GraphMap alignment.
 C_LIB.startExtensionAlignment.argtypes = [c_char_p, # Read sequence

@@ -17,16 +17,14 @@ import argparse
 
 SCIRPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(SCIRPT_DIR, 'lib'))
-from misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap
-from cpp_function_wrappers import simulate_depths
+from misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
+                 get_nice_header, reverse_complement, print_progress_line
+from read_ref import Read, Reference, load_references, load_long_reads
+from alignment import AlignmentScoringScheme
+from cpp_function_wrappers import simulate_depths, get_random_sequence_alignment_error_rates
 
 sys.dont_write_bytecode = True
-from semi_global_aligner import AlignmentScoringScheme, Read, Reference, load_references, \
-                                load_long_reads, get_nice_header, \
-                                get_random_sequence_alignment_error_rates, reverse_complement, \
-                                print_progress_line, \
-                                get_depth_min_and_max_distributions, \
-                                semi_global_align_long_reads, add_aligning_arguments, \
+from semi_global_aligner import semi_global_align_long_reads, add_aligning_arguments, \
                                 fix_up_arguments
 
 VERBOSITY = 0 # Controls how much the script prints to the screen
@@ -1443,9 +1441,6 @@ def get_ref_shift_from_cigar_part(cigar_type, cigar_count):
         return 0
 
 def get_depth_min_and_max_distributions(read_lengths, reference_length, iterations, threads):
-    '''
-    Python wrapper for getRandomSequenceAlignmentErrorRate C++ function.
-    '''
     distribution_str = simulate_depths(read_lengths, reference_length, iterations, threads)
     min_distribution_str, max_distribution_str = distribution_str.split(';')
 

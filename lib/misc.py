@@ -1,3 +1,10 @@
+'''
+Miscellaneous function used by various scripts.
+
+Author: Ryan Wick
+email: rrwick@gmail.com
+'''
+
 from __future__ import print_function
 from __future__ import division
 import sys
@@ -62,3 +69,83 @@ def check_graphmap(graphmap_path):
     if not found_graphmap:
         quit_with_error('could not find GraphMap at ' + graphmap_path + 
                         ', either fix path or run with --no_graphmap')
+
+def get_mean_and_st_dev(num_list):
+    '''
+    This function returns the mean and standard deviation of the given list of numbers.
+    '''
+    num = len(num_list)
+    if num == 0:
+        return None, None
+    mean = sum(num_list) / num
+    if num == 1:
+        return mean, None
+    sum_squares = sum((x - mean) ** 2 for x in num_list)
+    st_dev = (sum_squares / (num - 1)) ** 0.5
+    return mean, st_dev
+
+def print_progress_line(completed, total, base_pairs=None, prefix=None):
+    '''
+    Prints a progress line to the screen using a carriage return to overwrite the previous progress
+    line.
+    '''
+    progress_str = ''
+    if prefix:
+        progress_str += prefix
+    progress_str += int_to_str(completed) + ' / ' + int_to_str(total)
+    progress_str += ' (' + '%.1f' % (100.0 * completed / total) + '%)'
+    if base_pairs is not None:
+        progress_str += ' - ' + int_to_str(base_pairs) + ' bp'
+    print('\r' + progress_str, end='')
+    sys.stdout.flush()
+
+def get_nice_header(header):
+    '''
+    For a header with a SPAdes/Velvet format, this function returns a simplified string that is
+    just NODE_XX where XX is the contig number.
+    For any other format, this function trims off everything following the first whitespace.
+    '''
+    if is_header_spades_format(header):
+        return 'NODE_' + header.split('_')[1]
+    else:
+        return header.split()[0]
+
+def is_header_spades_format(contig_name):
+    '''
+    Returns whether or not the header appears to be in the SPAdes/Velvet format.
+    Example: NODE_5_length_150905_cov_4.42519
+    '''
+    contig_name_parts = contig_name.split('_')
+    return len(contig_name_parts) > 5 and \
+           (contig_name_parts[0] == 'NODE' or contig_name_parts[0] == 'EDGE') and \
+           contig_name_parts[2] == 'length' and contig_name_parts[4] == 'cov'
+
+def reverse_complement(seq):
+    '''Given a DNA sequences, this function returns the reverse complement sequence.'''
+    return ''.join([complement_base(seq[i]) for i in xrange(len(seq) - 1, -1, -1)])
+
+def complement_base(base):
+    '''Given a DNA base, this returns the complement.'''
+    if base == 'A':
+        return 'T'
+    if base == 'T':
+        return 'A'
+    if base == 'G':
+        return 'C'
+    if base == 'C':
+        return 'G'
+    if base == 'a':
+        return 't'
+    if base == 't':
+        return 'a'
+    if base == 'g':
+        return 'c'
+    if base == 'c':
+        return 'g'
+    forward = 'RYSWKMryswkmBDHVbdhvNn.-?'
+    reverse = 'YRSWMKyrswmkVHDBvhdbNn.-?N'
+    return reverse[forward.find(base)]
+
+
+
+

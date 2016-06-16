@@ -1,9 +1,20 @@
+#!/usr/bin/env python
+'''
+This script prepares random sequences for the consensus_test.py script.
+
+Author: Ryan Wick
+email: rrwick@gmail.com
+'''
 
 from __future__ import print_function
 from __future__ import division
 
 import random
+import os
 import sys
+sys.dont_write_bytecode = True
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'lib'))
+from misc import get_random_sequence, get_random_base
 
 def main():
     length = int(sys.argv[1])
@@ -44,23 +55,6 @@ def main():
         end_only_file.write('>end_only_' + str(i+1) + '\n')
         end_only_file.write(mutated_sequence + '\n')
     end_only_file.close()
-
-def get_random_base():
-    rand_int = random.randint(0, 3)
-    if rand_int == 0:
-        return 'A'
-    elif rand_int == 1:
-        return 'C'
-    elif rand_int == 2:
-        return 'G'
-    elif rand_int == 3:
-        return 'T'
-
-def get_random_sequence(length):
-    sequence = ''
-    for _ in range(length):
-        sequence += get_random_base()
-    return sequence
 
 def mutate_sequence(sequence, mutation_count):
     for _ in range(int(round(mutation_count))):

@@ -10,6 +10,7 @@ from __future__ import division
 import sys
 import os
 import subprocess
+import random
 
 
 def float_to_str(num, decimals, max_num=0):
@@ -121,11 +122,15 @@ def is_header_spades_format(contig_name):
            contig_name_parts[2] == 'length' and contig_name_parts[4] == 'cov'
 
 def reverse_complement(seq):
-    '''Given a DNA sequences, this function returns the reverse complement sequence.'''
+    '''
+    Given a DNA sequences, this function returns the reverse complement sequence.
+    '''
     return ''.join([complement_base(seq[i]) for i in xrange(len(seq) - 1, -1, -1)])
 
 def complement_base(base):
-    '''Given a DNA base, this returns the complement.'''
+    '''
+    Given a DNA base, this returns the complement.
+    '''
     if base == 'A':
         return 'T'
     if base == 'T':
@@ -146,6 +151,25 @@ def complement_base(base):
     reverse = 'YRSWMKyrswmkVHDBvhdbNn.-?N'
     return reverse[forward.find(base)]
 
+def get_random_base():
+    '''
+    Returns a random base with 25% probability of each.
+    '''
+    rand_int = random.randint(0, 3)
+    if rand_int == 0:
+        return 'A'
+    elif rand_int == 1:
+        return 'C'
+    elif rand_int == 2:
+        return 'G'
+    elif rand_int == 3:
+        return 'T'
 
-
-
+def get_random_sequence(length):
+    '''
+    Returns a random sequence of the given length.
+    '''
+    sequence = ''
+    for _ in range(length):
+        sequence += get_random_base()
+    return sequence

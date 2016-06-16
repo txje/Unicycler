@@ -26,7 +26,7 @@ class SpadesContigBridge(object):
         self.bridge_sequence = ''
 
         # A score used to determine the order of bridge application.
-        self.quality = 1.0
+        self.quality = 20.0
 
 
         self.graph_path = spades_contig_path
@@ -166,42 +166,46 @@ class LoopUnrollingBridge(object):
         # The bridge sequence, gotten from the graph path.
         self.bridge_sequence = ''
 
-        # A score used to determine the order of bridge application. This value can only decrease
-        self.quality = 1.0
-
+        # A score used to determine the order of bridge application. This value starts at the
+        # maximum for a loop unrolling bridge and can only decrease as the constructor continues.
+        self.quality = 10.0
 
         # The start segment and end segment should agree in depth. If they don't, that's very bad,
         # so depth_disagreement is applied to quality twice (squared effect).
-        start_depth = graph.segments[abs(start)].depth
-        end_depth = graph.segments[abs(end)].depth
+        start_seg = graph.segments[abs(start)]
+        end_seg = graph.segments[abs(end)]
+        middle_seg = graph.segments[abs(middle)]
+        repeat_seg = graph.segments[abs(repeat)]
+        start_depth = start_seg.depth
+        end_depth = end_seg.depth
         depth_disagreement = min(start_depth, end_depth) / max(start_depth, end_depth)
         self.quality *= (depth_disagreement * depth_disagreement) # has squared effect on quality
 
         # The loop count as determined by the repeat segment should agree with the loop count as
         # determined by the middle segment.
         mean_start_end_depth = (start_depth + end_depth) / 2
-        loop_count_by_middle = graph.segments[abs(middle)].depth / mean_start_end_depth
-        loop_count_by_repeat = (graph.segments[abs(repeat)].depth - mean_start_end_depth) / \
+        loop_count_by_middle = middle_seg.depth / mean_start_end_depth
+        loop_count_by_repeat = (repeat_seg.depth - mean_start_end_depth) / \
                                    mean_start_end_depth
         count_disagreement = min(loop_count_by_middle, loop_count_by_repeat) / \
                              max(loop_count_by_middle, loop_count_by_repeat)
         self.quality *= count_disagreement
 
-        # We'll use whichever segment is longer (repeat or middle) for our loop count going
-        # forward.
-        if graph.segments[abs(repeat)].get_length() > graph.segments[abs(middle)].get_length():
-            loop_count_float = loop_count_by_repeat
-        else:
-            loop_count_float = loop_count_by_middle
+        # We'll use a mean loop count that's weighted by the middle and repeat segment lengths.
+        middle_length = middle_seg.get_length_no_overlap(graph.overlap)
+        repeat_length = repeat_seg.get_length_no_overlap(graph.overlap)
+        length_sum = middle_length + repeat_length
+        mean_loop_count = loop_count_by_middle * (middle_length / length_sum) + \
+                          loop_count_by_repeat * (repeat_length / length_sum)
 
         # If the average loop count is near a whole number, that's better. If it's near 0.5, that's
         # very bad!
-        if loop_count_float < 1.0:
+        if mean_loop_count < 1.0:
             loop_count = 1
-            closeness_to_whole_num = loop_count_float
+            closeness_to_whole_num = mean_loop_count
         else:
-            loop_count = int(round(loop_count_float))
-            fractional_part = loop_count_float % 1
+            loop_count = int(round(mean_loop_count))
+            fractional_part = mean_loop_count % 1
             distance_from_whole_num = min(fractional_part, 1.0 - fractional_part)
             closeness_to_whole_num = 1.0 - (2.0 * distance_from_whole_num)
         self.quality *= closeness_to_whole_num

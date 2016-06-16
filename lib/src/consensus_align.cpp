@@ -172,38 +172,40 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
         percentIdentitiesWithConsensus.push_back(identity);
     }
 
-    // Score each sequence against each other.
-    std::vector< std::vector<double> > percentIdentitiesBetweenReads;
-    for (int i = 0; i < totalSeqCount; ++i)
-        percentIdentitiesBetweenReads.push_back(std::vector<double>(totalSeqCount, 0.0));
-    for (int i = 0; i < totalSeqCount; ++i) {
-        for (int j = i; j < totalSeqCount; ++j) {
-            if (i == j)
-                percentIdentitiesBetweenReads[i][j] = 1.0;
-            else {
-                double identity = getAlignmentIdentity(gappedSequences[i], gappedSequences[j],
-                                                       firstNonN[i], lastNonN[i], firstNonN[j], lastNonN[j]);
-                percentIdentitiesBetweenReads[i][j] = identity;
-                percentIdentitiesBetweenReads[j][i] = identity;
-            }
-        }
-    }
+    // // Score each sequence against each other.
+    // std::vector< std::vector<double> > percentIdentitiesBetweenReads;
+    // for (int i = 0; i < totalSeqCount; ++i)
+    //     percentIdentitiesBetweenReads.push_back(std::vector<double>(totalSeqCount, 0.0));
+    // for (int i = 0; i < totalSeqCount; ++i) {
+    //     for (int j = i; j < totalSeqCount; ++j) {
+    //         if (i == j)
+    //             percentIdentitiesBetweenReads[i][j] = 1.0;
+    //         else {
+    //             double identity = getAlignmentIdentity(gappedSequences[i], gappedSequences[j],
+    //                                                    firstNonN[i], lastNonN[i], firstNonN[j], lastNonN[j]);
+    //             percentIdentitiesBetweenReads[i][j] = identity;
+    //             percentIdentitiesBetweenReads[j][i] = identity;
+    //         }
+    //     }
+    // }
 
     std::string returnString = consensus;
+
     returnString += ';';
     returnString += std::to_string(percentIdentitiesWithConsensus[0]);
     for (int i = 1; i < totalSeqCount; ++i)
         returnString += ',' + std::to_string(percentIdentitiesWithConsensus[i]);
-    returnString += ';';
-    for (int i = 0; i < totalSeqCount; ++i) {
-        for (int j = 0; j < totalSeqCount; ++j) {
-            returnString += std::to_string(percentIdentitiesBetweenReads[i][j]);
-            if (j != totalSeqCount - 1)
-                returnString += ',';
-        }
-        if (i != totalSeqCount - 1)
-            returnString += ';';
-    }
+    
+    // returnString += ';';
+    // for (int i = 0; i < totalSeqCount; ++i) {
+    //     for (int j = 0; j < totalSeqCount; ++j) {
+    //         returnString += std::to_string(percentIdentitiesBetweenReads[i][j]);
+    //         if (j != totalSeqCount - 1)
+    //             returnString += ',';
+    //     }
+    //     if (i != totalSeqCount - 1)
+    //         returnString += ';';
+    // }
     return cppStringToCString(returnString);
 }
 

@@ -26,34 +26,40 @@ def main():
     base_filename = 'msa_test'
 
     original_sequence = get_random_sequence(length)
-    base_file = open(base_filename + '_original.fasta', 'w')
+    base_file = open(base_filename + '_original.fastq', 'w')
     base_file.write('>original\n')
     base_file.write(original_sequence + '\n')
     base_file.close()
 
-    full_span_file = open(base_filename + '_full_span.fasta', 'w')
+    full_span_file = open(base_filename + '_full_span.fastq', 'w')
     for i in range(full_span_count):
         mutated_sequence = mutate_sequence(original_sequence, length * mutation_rate)
-        full_span_file.write('>full_span_' + str(i+1) + '\n')
+        full_span_file.write('@full_span_' + str(i+1) + '\n')
         full_span_file.write(mutated_sequence + '\n')
+        full_span_file.write('+\n')
+        full_span_file.write(get_random_qualities(len(mutated_sequence)) + '\n')
     full_span_file.close()
 
-    start_only_file = open(base_filename + '_start_only.fasta', 'w')
+    start_only_file = open(base_filename + '_start_only.fastq', 'w')
     for i in range(start_only_count):
         mutated_sequence = mutate_sequence(original_sequence, length * mutation_rate)
         seq_length = random.randint(200, length)
         mutated_sequence = mutated_sequence[:seq_length]
         start_only_file.write('>start_only_' + str(i+1) + '\n')
         start_only_file.write(mutated_sequence + '\n')
+        start_only_file.write('+\n')
+        start_only_file.write(get_random_qualities(len(mutated_sequence)) + '\n')
     start_only_file.close()
 
-    end_only_file = open(base_filename + '_end_only.fasta', 'w')
+    end_only_file = open(base_filename + '_end_only.fastq', 'w')
     for i in range(end_only_count):
         mutated_sequence = mutate_sequence(original_sequence, length * mutation_rate)
         seq_length = random.randint(200, length)
         mutated_sequence = mutated_sequence[-seq_length:]
         end_only_file.write('>end_only_' + str(i+1) + '\n')
         end_only_file.write(mutated_sequence + '\n')
+        end_only_file.write('+\n')
+        end_only_file.write(get_random_qualities(len(mutated_sequence)) + '\n')
     end_only_file.close()
 
 def mutate_sequence(sequence, mutation_count):
@@ -67,6 +73,16 @@ def mutate_sequence(sequence, mutation_count):
         elif mut_type == 2:
             sequence = sequence[:pos] + get_random_base() + sequence[pos:]
     return sequence
+
+def get_random_qualities(length):
+    qualities = ''
+    for _ in range(length):
+        qualities += get_random_quality()
+    return qualities
+
+def get_random_quality():
+    qual = random.randint(1, 20)
+    return str(unichr(qual+33))
 
 if __name__ == '__main__':
     main()

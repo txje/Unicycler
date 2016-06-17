@@ -20,21 +20,21 @@ from alignment import AlignmentScoringScheme
 from cpp_function_wrappers import multiple_sequence_alignment
 
 
-references = load_references('msa_test_full_span.fasta', 0)
-full_sequences = [x.sequence for x in references]
-full_sequence_qualities = []
+read_dict, read_names = load_long_reads('msa_test_full_span.fastq', 0)
+full_span_sequences = [read_dict[x].sequence for x in read_names]
+full_span_qualities = [read_dict[x].qualities for x in read_names]
 
-references = load_references('msa_test_start_only.fasta', 0)
-start_sequences = [x.sequence for x in references]
-start_sequence_qualities = []
+read_dict, read_names = load_long_reads('msa_test_start_only.fastq', 0)
+start_only_sequences = [read_dict[x].sequence for x in read_names]
+start_only_qualities = [read_dict[x].qualities for x in read_names]
 
-references = load_references('msa_test_end_only.fasta', 0)
-end_sequences = [x.sequence for x in references]
-end_sequence_qualities = []
+read_dict, read_names = load_long_reads('msa_test_end_only.fastq', 0)
+end_only_sequences = [read_dict[x].sequence for x in read_names]
+end_only_qualities = [read_dict[x].qualities for x in read_names]
 
 scoring_scheme = AlignmentScoringScheme('3,-6,-5,-2')
 
-print(multiple_sequence_alignment(full_sequences, full_sequence_qualities,
-                                  start_sequences, start_sequence_qualities,
-                                  end_sequences, end_sequence_qualities,
+print(multiple_sequence_alignment(full_span_sequences, full_span_qualities,
+                                  start_only_sequences, start_only_qualities,
+                                  end_only_sequences, end_only_qualities,
                                   scoring_scheme, 1000))

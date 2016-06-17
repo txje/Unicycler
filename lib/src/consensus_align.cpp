@@ -104,6 +104,7 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
                 gappedQuality[j] = ungappedQualities[i][pos++];
         }
         gappedQualities.push_back(gappedQuality);
+        // std::cout << gappedQualities[i] << "\n"; // TEMP
     }
 
     // For each gapped sequence, get the position of the first and last non-N base. This is useful
@@ -167,6 +168,7 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
             else 
                 oneBaseVsOneGapQualityThreshold = oneBaseVsOneGapQualities[size / 2];
         }
+        // std::cout << "oneBaseVsOneGapQualityThreshold: " << oneBaseVsOneGapQualityThreshold << "\n"; // TEMP
     }
 
     // Build a consensus sequence. Sequences are ignored before their first non-N base was seen

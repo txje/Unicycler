@@ -199,6 +199,9 @@ class AssemblyGraph(object):
         return sum([x.get_length_no_overlap(self.overlap) for x in self.segments.itervalues()])
 
     def save_to_fasta(self, filename):
+        '''
+        Saves whole graph (only forward sequences) to a FASTA file.
+        '''
         fasta = open(filename, 'w')
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
         for segment in sorted_segments:
@@ -206,6 +209,9 @@ class AssemblyGraph(object):
             fasta.write(add_line_breaks_to_sequence(segment.forward_sequence, 60))
 
     def save_to_fastg(self, filename):
+        '''
+        Saves whole graph to a SPAdes-style FASTG file.
+        '''
         fastg = open(filename, 'w')
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
         for segment in sorted_segments:
@@ -216,6 +222,9 @@ class AssemblyGraph(object):
 
     def save_to_gfa(self, filename, verbosity, save_copy_depth_info=False,
                     save_seg_type_info=False):
+        '''
+        Saves whole graph to a GFA file.
+        '''
         gfa = open(filename, 'w')
         if verbosity > 0:
             print('Saving', filename)
@@ -246,6 +255,9 @@ class AssemblyGraph(object):
         gfa.close()
 
     def get_all_gfa_link_lines(self):
+        '''
+        Returns a string of the link component of the GFA file for this graph.
+        '''
         gfa_link_lines = ''
         for start, ends in self.forward_links.iteritems():
             for end in ends:
@@ -1235,8 +1247,7 @@ class AssemblyGraph(object):
 
         # Create a new bridge segment.
         new_seg_num = self.get_next_available_seg_number()
-        new_seg_depth = ((start_depth * start_len) + (end_depth * end_len)) / (start_len + end_len)
-        new_seg = Segment(new_seg_num, new_seg_depth, bridge.bridge_sequence, True, bridge)
+        new_seg = Segment(new_seg_num, bridge.depth, bridge.bridge_sequence, True, bridge)
         self.segments[new_seg_num] = new_seg
 
         # Link the bridge segment in to the start/end segments.

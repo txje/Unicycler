@@ -12,6 +12,11 @@ from misc import float_to_str
 class SpadesContigBridge(object):
     '''
     This class describes a bridge created from the contigs.paths file made by SPAdes.
+
+    Quality is affected by:
+      * How well the start and end segments' depths agree.
+      * The depth consistency within the path (only applies to bridges where the path segments
+        exclusively lead to the start/end segments).
     '''
     def __init__(self, graph, spades_contig_path):
 
@@ -25,21 +30,39 @@ class SpadesContigBridge(object):
         # The bridge sequence, gotten from the graph path.
         self.bridge_sequence = ''
 
+        # The bridge depth, a weighted mean of the start and end depths.
+        self.depth = 0.0
+
         # A score used to determine the order of bridge application.
         self.quality = 20.0
 
-
+        # The first and last values in spades_contig_path are the start and end segments. The
+        # values in between are the path.
         self.graph_path = spades_contig_path
         self.start_segment = self.graph_path.pop(0)
         self.end_segment = self.graph_path.pop()
         self.bridge_sequence = graph.get_path_sequence(self.graph_path)
+        start_seg = graph.segments[abs(self.start_segment)]
+        end_seg = graph.segments[abs(self.end_segment)]
 
-        # TO DO: QUALITY CALCULATION
-        # TO DO: QUALITY CALCULATION
-        # TO DO: QUALITY CALCULATION
-        # TO DO: QUALITY CALCULATION
-        # TO DO: QUALITY CALCULATION
-        # TO DO: QUALITY CALCULATION
+        # The start segment and end segment should agree in depth. If they don't, that's very bad,
+        # so depth_disagreement is applied to quality twice (squared effect).
+        depth_agreement = get_num_agreement(start_seg.depth, end_seg.depth)
+        self.quality *= (depth_agreement * depth_agreement) # has squared effect on quality
+        self.depth = get_mean_depth(start_seg, end_seg, graph)
+
+        # If the segments in the path exclusively lead to the start and end segments (i.e they
+        # cannot lead to any another segment), then we can also scale the quality based on the
+        # depth consistency of the path. E.g. if a bridge path contains a segment 3 times and that
+        # segment's depth also suggests about 3 times, that's good. If they don't agree, that's
+        # bad.
+        if path_is_self_contained(self.graph_path, self.start_segment, self.end_segment, graph):
+            graph_path_pos_nums = list(set([abs(x) for x in self.graph_path]))
+            for path_segment in graph_path_pos_nums:
+                actual_depth = graph.segments[path_segment].depth
+                expected_depth = graph_path_pos_nums.count(path_segment) * self.depth
+                agreement = get_num_agreement(actual_depth, expected_depth)
+                self.quality *= agreement
 
     def __repr__(self):
         return 'SPAdes contig bridge: ' + str(self.start_segment) + ' -> ' + \
@@ -91,6 +114,9 @@ class LongReadBridge(object):
         # The bridge sequence, gotten from the graph path if a good path was found. Otherwise it's
         # from the consensus sequence.
         self.bridge_sequence = ''
+
+        # The bridge depth, a weighted mean of the start and end depths.
+        self.depth = 0.0
 
         # A score used to determine the order of bridge application.
         self.quality = 1.0
@@ -149,6 +175,11 @@ class LongReadBridge(object):
 class LoopUnrollingBridge(object):
     '''
     This class describes a bridge created from unrolling an assembly graph loop.
+
+    Quality is affected by:
+      * How well the start and end segments' depths agree.
+      * How close the determined loop count is to a whole number.
+      * The final loop count (higher counts get lower quality).
     '''
     def __init__(self, graph, start, end, middle, repeat):
         '''
@@ -156,7 +187,7 @@ class LoopUnrollingBridge(object):
         in the graph supported by either a SPAdes contig or a long read alignment. It will use
         segment depths to determine the loop count and score the bridge's quality.
         '''
-        # The two single-copy segments which are being bridged.
+        # The numbers of the two single-copy segments which are being bridged.
         self.start_segment = start
         self.end_segment = end
 
@@ -166,37 +197,32 @@ class LoopUnrollingBridge(object):
         # The bridge sequence, gotten from the graph path.
         self.bridge_sequence = ''
 
+        # The bridge depth, a weighted mean of the start and end depths.
+        self.depth = 0.0
+
         # A score used to determine the order of bridge application. This value starts at the
         # maximum for a loop unrolling bridge and can only decrease as the constructor continues.
         self.quality = 10.0
 
-        # The start segment and end segment should agree in depth. If they don't, that's very bad,
-        # so depth_disagreement is applied to quality twice (squared effect).
+        # Get the actual segments from the numbers. Since we are assuming they do form a simple
+        # loop, we don't care about directionality.
         start_seg = graph.segments[abs(start)]
         end_seg = graph.segments[abs(end)]
         middle_seg = graph.segments[abs(middle)]
         repeat_seg = graph.segments[abs(repeat)]
-        start_depth = start_seg.depth
-        end_depth = end_seg.depth
-        depth_disagreement = min(start_depth, end_depth) / max(start_depth, end_depth)
-        self.quality *= (depth_disagreement * depth_disagreement) # has squared effect on quality
 
-        # The loop count as determined by the repeat segment should agree with the loop count as
-        # determined by the middle segment.
-        mean_start_end_depth = (start_depth + end_depth) / 2
-        loop_count_by_middle = middle_seg.depth / mean_start_end_depth
-        loop_count_by_repeat = (repeat_seg.depth - mean_start_end_depth) / \
-                                   mean_start_end_depth
-        count_disagreement = min(loop_count_by_middle, loop_count_by_repeat) / \
-                             max(loop_count_by_middle, loop_count_by_repeat)
-        self.quality *= count_disagreement
+        # The start segment and end segment should agree in depth. If they don't, that's very bad,
+        # so depth_disagreement is applied to quality twice (squared effect).
+        depth_agreement = get_num_agreement(start_seg.depth, end_seg.depth)
+        self.quality *= (depth_agreement * depth_agreement) # has squared effect on quality
 
         # We'll use a mean loop count that's weighted by the middle and repeat segment lengths.
-        middle_length = middle_seg.get_length_no_overlap(graph.overlap)
-        repeat_length = repeat_seg.get_length_no_overlap(graph.overlap)
-        length_sum = middle_length + repeat_length
-        mean_loop_count = loop_count_by_middle * (middle_length / length_sum) + \
-                          loop_count_by_repeat * (repeat_length / length_sum)
+        self.depth = get_mean_depth(start_seg, end_seg, graph)
+        loop_count_by_middle = middle_seg.depth / self.depth
+        loop_count_by_repeat = (repeat_seg.depth - self.depth) / self.depth
+        mean_loop_count = weighted_average(loop_count_by_middle, loop_count_by_repeat,
+                                           middle_seg.get_length_no_overlap(graph.overlap),
+                                           repeat_seg.get_length_no_overlap(graph.overlap))
 
         # If the average loop count is near a whole number, that's better. If it's near 0.5, that's
         # very bad!
@@ -388,5 +414,52 @@ def create_long_read_bridges(graph, reads, single_copy_segments, verbosity):
     # TO DO
 
     return [] # TEMP
+
+def get_num_agreement(num_1, num_2):
+    '''
+    Returns a value between 0.0 and 1.0 describing how well the numbers agree.
+    1.0 is perfect agreement and 0.0 is the worst.
+    '''
+    if num_1 == 0.0 and num_2 == 0.0:
+        return 1.0
+    if num_1 < 0.0 and num_2 < 0.0:
+        num_1 = -num_1
+        num_2 = -num_2
+    if num_1 * num_2 < 0.0:
+        return 0.0
+    return min(num_1, num_2) / max(num_1, num_2)
+
+def get_mean_depth(seg_1, seg_2, graph):
+    '''
+    Returns the mean depth of the two segments, weighted by their length.
+    '''
+    return weighted_average(seg_1.depth, seg_2.depth,
+                            seg_1.get_length_no_overlap(graph.overlap),
+                            seg_2.get_length_no_overlap(graph.overlap))
+
+def weighted_average(num_1, num_2, weight_1, weight_2):
+    '''
+    A simple weighted mean of two numbers.
+    '''
+    weight_sum = weight_1 + weight_2
+    return num_1 * (weight_1 / weight_sum) + num_2 * (weight_2 / weight_sum)
+
+
+def path_is_self_contained(path, start, end, graph):
+    '''
+    Returns True if the path segments are only connected to each other and the start/end segments.
+    If they are connected to anything else, it returns False.
+    '''
+    all_numbers_in_path = set()
+    all_numbers_in_path.add(abs(start))
+    all_numbers_in_path.add(abs(end))
+    for segment in path:
+        all_numbers_in_path.add(abs(segment))
+    for segment in path:
+        connected_segments = graph.get_connected_segments(segment)
+        for connected_segment in connected_segments:
+            if connected_segment not in all_numbers_in_path:
+                return False
+    return True
 
 

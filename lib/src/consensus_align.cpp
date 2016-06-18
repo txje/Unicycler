@@ -95,7 +95,7 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
     // Add gaps to the quality scores so they match up with the bases.
     int alignmentLength = gappedSequences[0].length();
     for (int i = 0; i < totalSeqCount; ++i) {
-        // std::cout << gappedSequences[i] << "\n"; // TEMP
+        std::cout << gappedSequences[i] << "\n"; // TEMP
         std::string gappedQuality;
         gappedQuality.resize(gappedSequences[i].length(), ' ');
         int pos = 0;
@@ -125,6 +125,19 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
         }
         // std::cout << firstNonN.back() << "  " << lastNonN.back() << "\n"; // TEMP
     }
+
+    // The final consensus alignment should begin at the point where the majority of full-span
+    // sequences start/end.
+    std::vector<int> fullSpanStarts, fullSpanEnds;
+    for (int i = 0; i < fullSpanCount; ++i) {
+        fullSpanStarts.push_back(firstNonN[i]);
+        fullSpanEnds.push_back(lastNonN[i]);
+    }
+    std::sort(fullSpanStarts.begin(), fullSpanStarts.end());
+    int consensusStart = fullSpanStarts[fullSpanCount / 2];
+    std::sort(fullSpanEnds.begin(), fullSpanEnds.end(), std::greater<int>());
+    int consensusEnd = fullSpanEnds[fullSpanCount / 2];
+
 
     // Before we build a consensus sequence, we may need to deal with one base vs one gap cases,
     // e.g. 'A' vs '-' or '-' vs 'T'. We can't always keep the base, as this would lead to an
@@ -193,7 +206,7 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
                 qualities.push_back(quality);
             }
         }
-        if (bases.size() > 0) {
+        if (bases.size() > 0 && i >= consensusStart && i <= consensusEnd) {
             char mostCommonBase = getMostCommonBase(bases, qualities, oneBaseVsOneGapQualityThreshold);
             // std::cout << "Call:      " << mostCommonBase << "\n\n"; // TEMP
             if (mostCommonBase != '-')
@@ -203,7 +216,7 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
         else
             gappedConsensus.push_back('-');
     }
-    // std::cout << "\n" << gappedConsensus << "\n"; // TEMP
+    std::cout << "\n" << gappedConsensus << "\n"; // TEMP
 
     // Score each sequence against the consensus.
     size_t consensusFirstNonNPos = gappedConsensus.find_first_of("ACGTacgt");

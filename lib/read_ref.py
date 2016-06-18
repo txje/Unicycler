@@ -152,12 +152,17 @@ class Reference(object):
         self.name = name
         self.sequence = sequence.upper()
 
+        # If the reference name also happens to be a number, store it as an int.
+        try:
+            self.number = int(name)
+        except ValueError:
+            self.number = 0
+
     def get_length(self):
         '''
         Returns the sequence length.
         '''
         return len(self.sequence)
-
 
 
 class Read(object):
@@ -192,17 +197,6 @@ class Read(object):
         only_alignment = self.alignments[0]
         return (not only_alignment.is_whole_read() or
                 only_alignment.scaled_score < low_score_threshold)
-
-    def needs_more_sensitive_alignment(self, low_score_threshold):
-        '''
-        This function returns False if for every part of the read there is at least one alignment
-        that exceeds the score threshold.
-        ''' 
-        read_ranges = [x.read_start_end_positive_strand() \
-                       for x in self.alignments if x.scaled_score >= low_score_threshold]
-        read_ranges = simplify_ranges(read_ranges)
-        well_aligned_length = sum([x[1] - x[0] for x in read_ranges])
-        return well_aligned_length < len(self.sequence)
 
     def remove_conflicting_alignments(self, allowed_overlap):
         '''
@@ -302,4 +296,9 @@ class Read(object):
         '''
         return sum([x.get_aligned_ref_length() for x in self.alignments])
 
+    def get_alignments_to_seg_nums(self, seg_num_set):
+        '''
+        Returns a list of alignments which have numbers in the given set.
+        '''
+        return [x for x in self.alignments if x.ref.number in seg_num_set]
 

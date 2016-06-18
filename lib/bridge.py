@@ -7,7 +7,7 @@ the important members/methods (for duck-typing purposes).
 from __future__ import print_function
 from __future__ import division
 import sys
-from misc import float_to_str
+from misc import float_to_str, reverse_complement
 
 class SpadesContigBridge(object):
     '''
@@ -391,10 +391,81 @@ def create_loop_unrolling_bridges(graph, single_copy_segments, verbosity):
 
     return bridges
 
-def create_long_read_bridges(graph, reads, single_copy_segments, verbosity):
+def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments, verbosity,
+                             existing_bridges):
     '''
     Makes bridges between single-copy segments using the alignments in the long reads.
     '''
+
+    single_copy_seg_num_set = set()
+    for seg in single_copy_segments:
+        single_copy_seg_num_set.add(seg.number)
+
+    overlapping_read_seqs = [] # List of tuples: (Segment number, sequence)
+    spanning_read_seqs = [] # List of tuples: (Segment number 1, segment number 2, sequence)
+
+
+    print('\n\n\n\n\n\n') # TEMP
+
+    for read_name in read_names:
+        read = read_dict[read_name]
+        alignments = read.get_alignments_to_seg_nums(single_copy_seg_num_set)
+
+        if not alignments:
+            continue
+
+        print('READ:', read) # TEMP
+        print('  SEQUENCE:', read.sequence)
+        print('  SINGLE-COPY SEGMENT ALIGNMENTS:') # TEMP 
+        for alignment in alignments: # TEMP
+            print('    ', alignment) # TEMP
+        if len(alignments) > 1: # TEMP
+            print('  BRIDGING SEQUENCES:') # TEMP
+
+        # If the code got here, then we have some alignments to single-copy segments. We grab
+        # neighbouring pairs of alignments, starting with the highest scoring ones and work our
+        # way down. This means that we should have a pair for each neighbouring alignment, but
+        # potentially also more distant pairs if the alignments are strong.
+        sorted_alignments = sorted(alignments, key=lambda x: x.raw_score, reverse=True)
+        available_alignments = []
+        for alignment in sorted_alignments:
+            available_alignments.append(alignment)
+            available_alignments = sorted(available_alignments,
+                                          key=lambda x: x.read_start_positive_strand())
+            for i in range(len(available_alignments) - 1):
+                alignment_1 = available_alignments[i]
+                alignment_2 = available_alignments[i+1]
+                bridge_start = alignment_1.read_end_positive_strand()
+                bridge_end = alignment_2.read_start_positive_strand()
+                if bridge_end > bridge_start:
+                    bridge_seq = read.sequence[bridge_start:bridge_end]
+                else:
+                    bridge_seq = bridge_end - bridge_start # 0 or a negative number
+                spanning_read_seq = (alignment_1.get_signed_ref_num(),
+                                     alignment_2.get_signed_ref_num(),
+                                     bridge_seq)
+                spanning_read_seqs.append(spanning_read_seq)
+                print('    ', spanning_read_seq) # TEMP
+
+        # At this point all of the alignments have been added and we are interested in the first
+        # and last alignments (which may be the same if there's only one). If the read extends
+        # past these alignments, then the overlapping part might be useful for consensus sequences.
+        first_alignment = available_alignments[0]
+        start_overlap = first_alignment.get_start_overlapping_read_seq()
+        if start_overlap:
+            print('  START OVERLAPPING SEQUENCE:') # TEMP
+            overlapping_read_seqs.append((-alignment.get_signed_ref_num(),
+                                          reverse_complement(start_overlap)))
+            print((-alignment.get_signed_ref_num(), reverse_complement(start_overlap))) # TEMP
+        last_alignment = available_alignments[-1]
+        end_overlap = last_alignment.get_end_overlapping_read_seq()
+        if end_overlap:
+            print('  END OVERLAPPING SEQUENCE:') # TEMP
+            overlapping_read_seqs.append((alignment.get_signed_ref_num(), end_overlap))
+            print((alignment.get_signed_ref_num(), end_overlap)) # TEMP
+
+
+
     # TO DO
     # TO DO
     # TO DO

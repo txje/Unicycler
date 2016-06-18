@@ -403,9 +403,17 @@ class Alignment(object):
         return return_str
 
     def get_aligned_ref_length(self):
+        '''
+        Returns the length of the reference used in this alignment. Could be the whole reference
+        length or just a part of it.
+        '''
         return self.ref_end_pos - self.ref_start_pos
 
     def get_aligned_read_length(self):
+        '''
+        Returns the length of the read used in this alignment. Could be the whole read length or
+        just a part of it.
+        '''
         return self.read_end_pos - self.read_start_pos
 
     def get_ref_to_read_ratio(self):
@@ -426,12 +434,25 @@ class Alignment(object):
         For alignments on the positive strand, this is just the normal start/end. But for
         alignments on the negative strand, the coordinates are flipped to the other side.
         '''
-        if not self.rev_comp:
-            return self.read_start_pos, self.read_end_pos
+        return self.read_start_positive_strand(), self.read_end_positive_strand()
+
+    def read_start_positive_strand(self):
+        '''
+        This function returns the read start coordinates for the positive strand of the read.
+        '''
+        if self.rev_comp:
+            return self.read.get_length() - self.read_end_pos
         else:
-            start = self.read.get_length() - self.read_end_pos
-            end = self.read.get_length() - self.read_start_pos
-            return start, end
+            return self.read_start_pos
+
+    def read_end_positive_strand(self):
+        '''
+        This function returns the read start coordinates for the positive strand of the read.
+        '''
+        if self.rev_comp:
+            return self.read.get_length() - self.read_start_pos
+        else:
+            return self.read_end_pos
 
     def get_start_soft_clips(self):
         '''
@@ -545,6 +566,33 @@ class Alignment(object):
         if smaller_alignment_length == 0:
             return False
         return overlap_size / smaller_alignment_length >= 0.9
+
+    def get_signed_ref_num(self):
+        '''
+        If the reference is in SPAdes contig format, then this function returns the number of the
+        contig with the sign from the alignment.
+        '''
+        if self.rev_comp:
+            return -self.ref.number
+        else:
+            return self.ref.number
+
+    def get_start_overlapping_read_seq(self):
+        '''
+        If the read extends past the start of the reference, this function will return the
+        overlapping read sequence(s).
+        '''
+        start, _ = self.read_start_end_positive_strand()
+        return self.read.sequence[:start]
+
+    def get_end_overlapping_read_seq(self):
+        '''
+        If the read extends past the end of the reference, this function will return the
+        overlapping read sequence(s).
+        '''
+        _, end = self.read_start_end_positive_strand()
+        return self.read.sequence[end:]
+
 
 def get_ref_shift_from_cigar_part(cigar_part):
     '''

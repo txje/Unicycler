@@ -608,6 +608,7 @@ def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme)
             sam_alignments.append(Alignment(sam_line=line, read_dict=read_dict,
                                             reference_dict=reference_dict,
                                             scoring_scheme=scoring_scheme))
+    sam_file.close()
     return sam_alignments
 
 def seqan_alignment_one_arg(all_args):

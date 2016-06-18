@@ -94,12 +94,11 @@ def main():
         reference_dict = {x.name: x for x in references}
         read_dict, read_names = load_long_reads(args.long, 1)
         scoring_scheme = AlignmentScoringScheme(args.scores)
-        min_alignment_length = assembly_graph.overlap * 2 # TO DO: make this a parameter?
 
         # Load existing alignments if available.
         if os.path.isfile(alignments_sam) and sam_references_match(alignments_sam, assembly_graph):
-            print('SAM file already exists. Will use these alignments instead of running new '
-                  'alignments:')
+            print('SAM file already exists. Will use these alignments instead of conducting a new '
+                  'alignment:')
             print('  ' + alignments_sam)
             alignments = load_sam_alignments(alignments_sam, read_dict, reference_dict,
                                              scoring_scheme)
@@ -109,18 +108,29 @@ def main():
         # Conduct alignment if existing alignments are not available.
         else:
             alignments_sam_in_progress = alignments_sam + '.incomplete'
+            min_alignment_length = assembly_graph.overlap * 2 # TO DO: make this a parameter?
+            allowed_overlap = int(round(assembly_graph.overlap * 1.1)) # TO DO: adjust?
 
             semi_global_align_long_reads(references, graph_fasta, read_dict, read_names,
                                          args.long, temp_alignment_dir, args.graphmap_path,
                                          args.threads, scoring_scheme, args.low_score,
                                          not args.no_graphmap, False, args.kmer,
                                          min_alignment_length, alignments_sam_in_progress,
-                                         full_command, min_alignment_length, verbosity)
+                                         full_command, allowed_overlap, verbosity)
             shutil.move(alignments_sam_in_progress, alignments_sam)
 
-        # Make the long read bridges and apply them!
-        bridges += create_long_read_bridges(assembly_graph, read_dict, single_copy_segments,
-                                            verbosity)
+        # Make the long read bridges and apply them - this is the good part!
+        bridges += create_long_read_bridges(assembly_graph, read_dict, read_names,
+                                            single_copy_segments, verbosity, bridges)
+
+
+
+
+        quit() # TEMP
+
+
+
+
         bridged_graph = copy.deepcopy(assembly_graph)
         bridged_graph.apply_bridges(bridges, verbosity, args.min_bridge_qual)
         bridged_graph.save_to_gfa(os.path.join(args.out, '006_long_read_bridges_unmerged.gfa'),

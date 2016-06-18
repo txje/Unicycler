@@ -1130,7 +1130,7 @@ class AssemblyGraph(object):
             prev_segment_number = seg_num
         return path_sequence
 
-    def apply_bridges(self, bridges, verbosity):
+    def apply_bridges(self, bridges, verbosity, min_bridge_qual):
         '''
         Uses the supplied bridges to simplify the graph.
         '''
@@ -1144,7 +1144,15 @@ class AssemblyGraph(object):
 
         applied_bridges = []
         seg_nums_used_in_bridges = set()
+
         for bridge in sorted_bridges:
+
+            # If the bridge's quality is too low, we don't use it.
+            if bridge.quality < min_bridge_qual:
+                if verbosity > 1:
+                    print('Rejected', bridge)
+                continue
+
             start = bridge.start_segment
             end = bridge.end_segment
 

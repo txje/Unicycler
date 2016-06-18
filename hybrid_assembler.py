@@ -72,7 +72,7 @@ def main():
     bridges = create_spades_contig_bridges(assembly_graph, single_copy_segments, verbosity)
     bridges += create_loop_unrolling_bridges(assembly_graph, single_copy_segments, verbosity)
     bridged_graph = copy.deepcopy(assembly_graph)
-    bridged_graph.apply_bridges(bridges, verbosity)
+    bridged_graph.apply_bridges(bridges, verbosity, args.min_bridge_qual)
     bridged_graph.save_to_gfa(spades_bridged_graph_unmerged, verbosity, save_seg_type_info=True)
     bridged_graph.merge_all_possible()
     bridged_graph.save_to_gfa(spades_bridged_graph_merged, verbosity)
@@ -122,7 +122,7 @@ def main():
         bridges += create_long_read_bridges(assembly_graph, read_dict, single_copy_segments,
                                             verbosity)
         bridged_graph = copy.deepcopy(assembly_graph)
-        bridged_graph.apply_bridges(bridges, verbosity)
+        bridged_graph.apply_bridges(bridges, verbosity, args.min_bridge_qual)
         bridged_graph.save_to_gfa(os.path.join(args.out, '006_long_read_bridges_unmerged.gfa'),
                                   verbosity, save_seg_type_info=True)
         bridged_graph.merge_all_possible()
@@ -166,6 +166,8 @@ def get_arguments():
     parser.add_argument('--keep_temp', action='store_true', default=argparse.SUPPRESS,
                         help='Keep all temporary files in output directory (default: delete most '
                              'temporary files to save space)')
+    parser.add_argument('--min_bridge_qual', type=float, default=0.0,
+                        help='Bridges with a quality below this value will not be applied)')
     parser.add_argument('--verbosity', type=int, required=False, default=1,
                         help='Level of stdout information (0 to 2)')
 

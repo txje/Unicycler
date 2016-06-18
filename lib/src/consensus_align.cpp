@@ -95,7 +95,7 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
     // Add gaps to the quality scores so they match up with the bases.
     int alignmentLength = gappedSequences[0].length();
     for (int i = 0; i < totalSeqCount; ++i) {
-        std::cout << gappedSequences[i] << "\n"; // TEMP
+        // std::cout << gappedSequences[i] << "\n"; // TEMP
         std::string gappedQuality;
         gappedQuality.resize(gappedSequences[i].length(), ' ');
         int pos = 0;
@@ -216,7 +216,7 @@ char * multipleSequenceAlignment(char * fullSpanSequences[], char * fullSpanQual
         else
             gappedConsensus.push_back('-');
     }
-    std::cout << "\n" << gappedConsensus << "\n"; // TEMP
+    // std::cout << "\n" << gappedConsensus << "\n"; // TEMP
 
     // Score each sequence against the consensus.
     size_t consensusFirstNonNPos = gappedConsensus.find_first_of("ACGTacgt");
@@ -400,6 +400,8 @@ void fillOutQualities(std::vector<std::string> & sequences, std::vector<std::str
 }
 
 
+// If the input string is less than the given length, this function will add Ns to fill it out. If
+// it is longer, this function will trim it down.
 void padToLength(std::vector<std::string> & sequences, std::vector<std::string> & qualities, int length, bool putAtStart) {
     for (size_t i = 0; i < sequences.size(); ++i) {
         int missingBases = length - sequences[i].length();
@@ -413,6 +415,17 @@ void padToLength(std::vector<std::string> & sequences, std::vector<std::string> 
             else {
                 sequences[i] = sequences[i] + newBases;
                 qualities[i] = qualities[i] + newQualities;
+            }
+        }
+        else if (missingBases < 0) {
+            if (putAtStart) {
+                int charsToRemove = -missingBases;
+                sequences[i] = sequences[i].substr(charsToRemove);
+                qualities[i] = qualities[i].substr(charsToRemove);
+            }
+            else {
+                sequences[i] = sequences[i].substr(0, length);
+                qualities[i] = qualities[i].substr(0, length);
             }
         }
     }

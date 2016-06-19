@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 '''
 Semi-global long read aligner
 
@@ -25,8 +25,6 @@ Output: SAM file of alignments
 Author: Ryan Wick
 email: rrwick@gmail.com
 '''
-from __future__ import print_function
-from __future__ import division
 
 import subprocess
 import sys
@@ -418,7 +416,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     # Output a summary of the reads' alignments.
     fully_aligned, partially_aligned, unaligned = group_reads_by_fraction_aligned(read_dict)
     ref_bases_aligned = 0
-    for read in read_dict.itervalues():
+    for read in read_dict.values():
         ref_bases_aligned += read.get_reference_bases_aligned()
     if VERBOSITY > 0:
         print('Read alignment summary')
@@ -643,8 +641,7 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
         else:
             output += '  None\n'
 
-    # print(read, EXPECTED_SLOPE) # TEMP
-    # sys.stdout.flush() # TEMP
+    # print(read, EXPECTED_SLOPE, flush=True) # TEMP
 
     results = semi_global_alignment(read.name, read.sequence, VERBOSITY,
                                     EXPECTED_SLOPE, kmer_positions_ptr,
@@ -709,7 +706,7 @@ def group_reads_by_fraction_aligned(read_dict):
     fully_aligned_reads = []
     partially_aligned_reads = []
     unaligned_reads = []
-    for read in read_dict.itervalues():
+    for read in read_dict.values():
         fraction_aligned = read.get_fraction_aligned()
         if fraction_aligned == 1.0:
             fully_aligned_reads.append(read)

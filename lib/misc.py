@@ -5,8 +5,6 @@ Author: Ryan Wick
 email: rrwick@gmail.com
 '''
 
-from __future__ import print_function
-from __future__ import division
 import sys
 import os
 import subprocess
@@ -98,8 +96,7 @@ def print_progress_line(completed, total, base_pairs=None, prefix=None):
     progress_str += ' (' + '%.1f' % (100.0 * completed / total) + '%)'
     if base_pairs is not None:
         progress_str += ' - ' + int_to_str(base_pairs) + ' bp'
-    print('\r' + progress_str, end='')
-    sys.stdout.flush()
+    print('\r' + progress_str, end='', flush=True)
 
 def get_nice_header(header):
     '''
@@ -126,7 +123,7 @@ def reverse_complement(seq):
     '''
     Given a DNA sequences, this function returns the reverse complement sequence.
     '''
-    return ''.join([complement_base(seq[i]) for i in xrange(len(seq) - 1, -1, -1)])
+    return ''.join([complement_base(seq[i]) for i in range(len(seq) - 1, -1, -1)])
 
 def complement_base(base):
     '''

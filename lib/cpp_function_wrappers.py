@@ -2,8 +2,7 @@
 This script makes use of several C++ functions which are in cpp_functions.so. They are wrapped in
 similarly named Python functions.
 '''
-from __future__ import print_function
-from __future__ import division
+
 import os
 from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p, c_bool, POINTER
 
@@ -26,16 +25,16 @@ C_LIB.semiGlobalAlignment.argtypes = [c_char_p, # Read name
                                       c_int]    # K-mer size
 C_LIB.semiGlobalAlignment.restype = c_void_p    # String describing alignments
 
-def semi_global_alignment(read_name, read_sequence, verbosity, expected_slop, kmer_positions_ptr,
+def semi_global_alignment(read_name, read_sequence, verbosity, expected_slope, kmer_positions_ptr,
                           match_score, mismatch_score, gap_open_score, gap_extend_score,
                           low_score_threshold, keep_bad, kmer_size):
     '''
     Python wrapper for semiGlobalAlignment C++ function.
     '''
-    ptr = C_LIB.semiGlobalAlignment(read_name, read_sequence, verbosity, expected_slop,
-                                    kmer_positions_ptr, match_score, mismatch_score,
-                                    gap_open_score, gap_extend_score, low_score_threshold,
-                                    keep_bad, kmer_size)
+    ptr = C_LIB.semiGlobalAlignment(read_name.encode('utf-8'), read_sequence.encode('utf-8'),
+                                    verbosity, expected_slope, kmer_positions_ptr,
+                                    match_score, mismatch_score, gap_open_score, gap_extend_score,
+                                    low_score_threshold, keep_bad, kmer_size)
     return c_string_to_python_string(ptr)
 
 
@@ -58,7 +57,7 @@ def fully_global_alignment(sequence_1, sequence_2, scoring_scheme,
     '''
     Python wrapper for fullyGlobalAlignment C++ function.
     '''
-    ptr = C_LIB.fullyGlobalAlignment(sequence_1, sequence_2,
+    ptr = C_LIB.fullyGlobalAlignment(sequence_1.encode('utf-8'), sequence_2.encode('utf-8'),
                                      scoring_scheme.match, scoring_scheme.mismatch,
                                      scoring_scheme.gap_open, scoring_scheme.gap_extend,
                                      use_banding, band_size)
@@ -81,7 +80,8 @@ def start_extension_alignment(realigned_read_seq, realigned_ref_seq, scoring_sch
     '''
     Python wrapper for startExtensionAlignment C++ function.
     '''
-    ptr = C_LIB.startExtensionAlignment(realigned_read_seq, realigned_ref_seq,
+    ptr = C_LIB.startExtensionAlignment(realigned_read_seq.encode('utf-8'),
+                                        realigned_ref_seq.encode('utf-8'),
                                         scoring_scheme.match, scoring_scheme.mismatch,
                                         scoring_scheme.gap_open, scoring_scheme.gap_extend)
     return c_string_to_python_string(ptr)
@@ -98,7 +98,8 @@ def end_extension_alignment(realigned_read_seq, realigned_ref_seq, scoring_schem
     '''
     Python wrapper for endExtensionAlignment C++ function.
     '''
-    ptr = C_LIB.endExtensionAlignment(realigned_read_seq, realigned_ref_seq,
+    ptr = C_LIB.endExtensionAlignment(realigned_read_seq.encode('utf-8'),
+                                      realigned_ref_seq.encode('utf-8'),
                                       scoring_scheme.match, scoring_scheme.mismatch,
                                       scoring_scheme.gap_open, scoring_scheme.gap_extend)
     return c_string_to_python_string(ptr)
@@ -115,7 +116,7 @@ def c_string_to_python_string(c_string):
     This function casts a C string to a Python string and then calls a function to delete the C
     string from the heap.
     '''
-    python_string = cast(c_string, c_char_p).value
+    python_string = cast(c_string, c_char_p).value.decode('utf-8')
     C_LIB.freeCString(c_string)
     return python_string
 
@@ -141,7 +142,8 @@ def add_kmer_positions(kmer_positions_ptr, name, sequence, kmer_size):
     '''
     Python wrapper for addKmerPositions C++ function.
     '''
-    C_LIB.addKmerPositions(kmer_positions_ptr, name, sequence, kmer_size)
+    C_LIB.addKmerPositions(kmer_positions_ptr, name.encode('utf-8'), sequence.encode('utf-8'),
+                           kmer_size)
 
 C_LIB.deleteAllKmerPositions.argtypes = [c_void_p]
 C_LIB.deleteAllKmerPositions.restype = None
@@ -254,6 +256,13 @@ def multiple_sequence_alignment(full_length_sequences, full_length_qualities,
         start_only_qualities += [""] * (len(start_only_sequences) - len(start_only_qualities))
     if len(end_only_qualities) < len(end_only_sequences):
         end_only_qualities += [""] * (len(end_only_sequences) - len(end_only_qualities))
+
+    full_length_sequences = [x.encode('utf-8') for x in full_length_sequences]
+    full_length_qualities = [x.encode('utf-8') for x in full_length_qualities]
+    start_only_sequences = [x.encode('utf-8') for x in start_only_sequences]
+    start_only_qualities = [x.encode('utf-8') for x in start_only_qualities]
+    end_only_sequences = [x.encode('utf-8') for x in end_only_sequences]
+    end_only_qualities = [x.encode('utf-8') for x in end_only_qualities]
 
     sequences_1 = (c_char_p * len(full_length_sequences))(*full_length_sequences)
     qualities_1 = (c_char_p * len(full_length_qualities))(*full_length_qualities)

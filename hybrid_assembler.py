@@ -1,10 +1,11 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 '''
 My totally awesome hybrid assembler.
+
+Author: Ryan Wick
+email: rrwick@gmail.com
 '''
 
-from __future__ import print_function
-from __future__ import division
 import argparse
 import subprocess
 import os
@@ -122,7 +123,7 @@ def main():
 
         # Use the long reads which aligned entirely within contigs (which are most likely correct)
         # to determine a minimum score
-        contained_reads = [x for x in read_dict.itervalues() if x.has_one_contained_alignment()]
+        contained_reads = [x for x in read_dict.values() if x.has_one_contained_alignment()]
         contained_scores = []
         for read in contained_reads:
             contained_scores += [x.scaled_score for x in read.alignments]
@@ -356,8 +357,7 @@ def spades_read_correction(short1, short2, spades_dir, verbosity, threads):
     '''
     if verbosity > 0:
         print('SPAdes read error correction')
-        print('----------------------------')
-        sys.stdout.flush()
+        print('----------------------------', flush=True)
 
     # If the corrected reads already exist, then we just use them and proceed.
     corrected_1 = os.path.join(spades_dir, 'corrected_1.fastq.gz')
@@ -390,8 +390,7 @@ def spades_read_correction(short1, short2, spades_dir, verbosity, threads):
                 spades_output = ' '.join(spades_output.split())
                 print_line = True
         if spades_output and print_line:
-            print(spades_output)
-            sys.stdout.flush()
+            print(spades_output, flush=True)
 
     spades_error = process.stderr.readline().strip()
     if spades_error:
@@ -449,8 +448,7 @@ def spades_assembly(read_files, outdir, kmers, verbosity, threads):
     while process.poll() is None:
         spades_output = process.stdout.readline().rstrip()
         if spades_output and verbosity > 1:
-            print(spades_output)
-            sys.stdout.flush()
+            print(spades_output, flush=True)
 
     spades_error = process.stderr.readline().strip()
     if spades_error:
@@ -486,8 +484,7 @@ def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity):
     '''
     if verbosity > 0:
         print('Choosing k-mer range for assembly')
-        print('---------------------------------')
-        sys.stdout.flush()
+        print('---------------------------------', flush=True)
 
     # If the k-mer range file already exists, we use its values and proceed.
     kmer_range_filename = os.path.join(spades_dir, 'kmer_range')
@@ -544,8 +541,7 @@ def get_single_copy_segments(graph, verbosity, min_single_copy_length):
     '''
     if verbosity > 0:
         print('Finding single-copy segments')
-        print('----------------------------')
-        sys.stdout.flush()
+        print('----------------------------', flush=True)
 
     graph.determine_copy_depth(verbosity)
     single_copy_segments = [x for x in graph.get_single_copy_segments() \
@@ -558,8 +554,7 @@ def get_single_copy_segments(graph, verbosity, min_single_copy_length):
         print(int_to_str(len(single_copy_segments)),
               'single copy segments (' + int_to_str(total_single_copy_length) + ' bp) out of',
               int_to_str(len(graph.segments)),
-              'total segments (' + int_to_str(graph.get_total_length()) + ' bp)')
-        sys.stdout.flush()
+              'total segments (' + int_to_str(graph.get_total_length()) + ' bp)', flush=True)
 
     return single_copy_segments
 

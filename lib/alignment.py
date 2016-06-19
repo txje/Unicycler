@@ -5,9 +5,6 @@ Author: Ryan Wick
 email: rrwick@gmail.com
 '''
 
-from __future__ import print_function
-from __future__ import division
-
 import re
 from misc import get_nice_header, reverse_complement
 from cpp_function_wrappers import start_extension_alignment, end_extension_alignment
@@ -210,7 +207,7 @@ class Alignment(object):
                 ref_i += cigar_count
             else: # match/mismatch
                 cigar_score = 0
-                for _ in xrange(cigar_count):
+                for _ in range(cigar_count):
                     # If all is good with the CIGAR, then we should never end up with a sequence
                     # index out of the sequence range. But a CIGAR error (which has occurred in
                     # GraphMap) can cause this, so check here.

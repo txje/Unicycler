@@ -7,9 +7,6 @@ Author: Ryan Wick
 email: rrwick@gmail.com
 '''
 
-from __future__ import print_function
-from __future__ import division
-
 import os
 import sys
 sys.dont_write_bytecode = True

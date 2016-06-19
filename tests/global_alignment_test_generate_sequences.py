@@ -6,9 +6,6 @@ Author: Ryan Wick
 email: rrwick@gmail.com
 '''
 
-from __future__ import print_function
-from __future__ import division
-
 import random
 import os
 import sys

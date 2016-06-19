@@ -6,9 +6,6 @@ Author: Ryan Wick
 email: rrwick@gmail.com
 '''
 
-from __future__ import print_function
-from __future__ import division
-
 import random
 import os
 import sys
@@ -82,7 +79,7 @@ def get_random_qualities(length):
 
 def get_random_quality():
     qual = random.randint(1, 20)
-    return str(unichr(qual+33))
+    return chr(qual+33)
 
 if __name__ == '__main__':
     main()

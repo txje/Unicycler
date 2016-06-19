@@ -1,5 +1,3 @@
-from __future__ import print_function
-from __future__ import division
 from collections import deque
 
 from misc import int_to_str, float_to_str, get_median
@@ -47,7 +45,7 @@ class AssemblyGraph(object):
                 self.segments[num] = segment
 
         # Make sure that every segment has both a forward and reverse sequence.
-        for segment in self.segments.itervalues():
+        for segment in self.segments.values():
             segment.build_other_sequence_if_necessary()
 
         # Load in the links.
@@ -182,21 +180,21 @@ class AssemblyGraph(object):
         than 1.
         '''
         median_depth = self.get_median_read_depth()
-        for segment in self.segments.itervalues():
+        for segment in self.segments.values():
             segment.divide_depth(median_depth)
 
     def get_total_length(self):
         '''
         Returns the sum of all segment sequence lengths.
         '''
-        return sum([x.get_length() for x in self.segments.itervalues()])
+        return sum([x.get_length() for x in self.segments.values()])
 
     def get_total_length_no_overlaps(self):
         '''
         Returns the sum of all segment sequence lengths, subtracting the overlap size from each
         segment.
         '''
-        return sum([x.get_length_no_overlap(self.overlap) for x in self.segments.itervalues()])
+        return sum([x.get_length_no_overlap(self.overlap) for x in self.segments.values()])
 
     def save_to_fasta(self, filename):
         '''
@@ -259,7 +257,7 @@ class AssemblyGraph(object):
         Returns a string of the link component of the GFA file for this graph.
         '''
         gfa_link_lines = ''
-        for start, ends in self.forward_links.iteritems():
+        for start, ends in self.forward_links.items():
             for end in ends:
                 if is_link_positive(start, end):
                     gfa_link_lines += self.gfa_link_line(start, end)
@@ -294,7 +292,7 @@ class AssemblyGraph(object):
         Returns the total number of dead ends in the assembly graph.
         '''
         dead_ends = 0
-        for segment in self.segments.itervalues():
+        for segment in self.segments.values():
             dead_ends += self.dead_end_count(segment)
         return dead_ends
 
@@ -356,7 +354,7 @@ class AssemblyGraph(object):
         segments.
         '''
         new_segments = {}
-        for num, segment in self.segments.iteritems():
+        for num, segment in self.segments.items():
             if num not in nums_to_remove:
                 new_segments[num] = segment
         self.segments = new_segments
@@ -370,7 +368,7 @@ class AssemblyGraph(object):
 
         paths_to_delete = set()
         neg_nums_to_remove = [-x for x in nums_to_remove]
-        for path_name, path_nums in self.paths.iteritems():
+        for path_name, path_nums in self.paths.items():
             if len(list(set(nums_to_remove) & set(path_nums))) > 0:
                 paths_to_delete.add(path_name)
             if len(list(set(neg_nums_to_remove) & set(path_nums))) > 0:
@@ -385,7 +383,7 @@ class AssemblyGraph(object):
         try_to_merge = True
         while try_to_merge:
             try_to_merge = False
-            for num, _ in self.segments.iteritems():
+            for num, _ in self.segments.items():
                 if num in self.forward_links and len(self.forward_links[num]) == 1:
                     merged = self.try_to_merge_two_segments(num, self.forward_links[num][0])
                     if merged:
@@ -467,7 +465,7 @@ class AssemblyGraph(object):
             self.add_link(link, new_seg_num)
 
         # Merge the segments in any paths.
-        for path_name in paths_copy.iterkeys():
+        for path_name in paths_copy:
             paths_copy[path_name] = find_replace_in_list(paths_copy[path_name],
                                                          [seg_num_1, seg_num_2], [new_seg_num])
             paths_copy[path_name] = find_replace_in_list(paths_copy[path_name],
@@ -476,7 +474,7 @@ class AssemblyGraph(object):
         # If any paths still contain the original segments, then split those paths into pieces,
         # removing the original segments.
         new_paths = {}
-        for path_name, path_segments in paths_copy.iteritems():
+        for path_name, path_segments in paths_copy.items():
             split_paths = split_path_multiple(path_segments, [seg_num_1, seg_num_2,
                                                               -seg_num_1, -seg_num_2])
             if len(split_paths) == 1:
@@ -544,7 +542,7 @@ class AssemblyGraph(object):
         '''
         visited = set()
         components = []
-        for v in self.segments.iterkeys():
+        for v in self.segments:
             if v not in visited:
                 component = []
                 q = deque()
@@ -746,7 +744,7 @@ class AssemblyGraph(object):
 
             # Finally, we need to check to see if there were any paths through the junction. If so,
             # they need to be adjusted to contain the new segment.
-            for name, segs in self.paths.iteritems():
+            for name, segs in self.paths.items():
                 self.paths[name] = insert_num_in_list(segs, start_num_1, end_num_1, bridge_num)
                 self.paths[name] = insert_num_in_list(segs, start_num_1, end_num_2, bridge_num)
                 self.paths[name] = insert_num_in_list(segs, start_num_2, end_num_1, bridge_num)
@@ -760,7 +758,7 @@ class AssemblyGraph(object):
         '''
         This function finds the largest used segment number and returns the next 
         '''
-        current_largest = max(self.segments.iterkeys())
+        current_largest = max(self.segments)
         return current_largest + 1
 
     def get_depth_string(self, segment):
@@ -828,7 +826,7 @@ class AssemblyGraph(object):
         # Assign single-copy status to segments within the tolerance of the single-copy depth.
         max_depth = single_copy_depth + initial_tolerance
         initial_single_copy_segments = []
-        for seg_num, segment in self.segments.iteritems():
+        for seg_num, segment in self.segments.items():
             if segment.depth <= max_depth and \
                self.at_most_one_link_per_end(segment):
                 self.copy_depths[segment.number] = [segment.depth]
@@ -1093,7 +1091,7 @@ class AssemblyGraph(object):
         Returns the total number of bases in the graph in the given depth range.
         '''
         total_bases = 0
-        for segment in self.segments.itervalues():
+        for segment in self.segments.values():
             if segment.depth >= min_depth and segment.depth <= max_depth:
                 total_bases += segment.get_length()
         return total_bases
@@ -1103,7 +1101,7 @@ class AssemblyGraph(object):
         Returns a list of the graph segments with a copy number of 1.
         '''
         single_copy_segments = []
-        for num, segment in self.segments.iteritems():
+        for num, segment in self.segments.items():
             if num in self.copy_depths and len(self.copy_depths[num]) == 1:
                 single_copy_segments.append(segment)
         return single_copy_segments
@@ -1204,7 +1202,7 @@ class AssemblyGraph(object):
         # the first bridge without connections. A bridge is considered orphaned if it's missing a
         # connection on either side.
         segment_nums_to_remove = []
-        for seg_num, segment in self.segments.iteritems():
+        for seg_num, segment in self.segments.items():
             if segment.bridge is not None:
                 missing_forward = seg_num not in self.forward_links or \
                                   not self.forward_links[seg_num]
@@ -1273,7 +1271,7 @@ class AssemblyGraph(object):
         simple_loops = []
 
         # We'll search specifically for the middle segments as they should be easy to spot.
-        for middle in self.segments.iterkeys():
+        for middle in self.segments:
 
             # A middle segment will always have exactly one connection on each end which connect
             # to the same segment (the repeat segment).
@@ -1587,7 +1585,7 @@ def build_rc_links_if_necessary(links):
     link from 5+ to 7-, there should also be a link from 7+ to 5-.
     '''
     new_links = links.copy()
-    for start, ends in links.iteritems():
+    for start, ends in links.items():
         rc_start = -start
         for end in ends:
             rc_end = -end
@@ -1603,7 +1601,7 @@ def build_reverse_links(links):
     of start to end links, it will return a dictionary of end to start links.
     '''
     reverse_links = {}
-    for start, ends in links.iteritems():
+    for start, ends in links.items():
         for end in ends:
             if end not in reverse_links:
                 reverse_links[end] = []
@@ -1629,7 +1627,7 @@ def remove_nums_from_links(links, nums_to_remove):
     nums_to_remove is expected to be a list of positive (unsigned) segment numbers.
     '''
     new_links = {}
-    for n_1, n_2 in links.iteritems():
+    for n_1, n_2 in links.items():
         if abs(n_1) not in nums_to_remove:
             new_links[n_1] = [x for x in n_2 if abs(x) not in nums_to_remove]
             if new_links[n_1] == []:

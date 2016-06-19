@@ -1,12 +1,10 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 '''
 Long read assembly checker
 
 Author: Ryan Wick
 email: rrwick@gmail.com
 '''
-from __future__ import print_function
-from __future__ import division
 
 import sys
 import re
@@ -318,7 +316,7 @@ def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme,
 #     http://stackoverflow.com/questions/2130016/
 #     splitting-a-list-of-arbitrary-size-into-only-roughly-n-equal-parts
 #     '''
-#     return [full_list[i::pieces] for i in xrange(pieces)]
+#     return [full_list[i::pieces] for i in range(pieces)]
 
 # def make_alignments(sam_lines, read_dict, reference_dict, scoring_scheme, alignments):
 #     '''
@@ -403,7 +401,7 @@ def count_depth_and_errors_per_window(references, er_window_size, depth_window_s
         ref.high_error_regions = []
         current_high_error_region = None
 
-        for i in xrange(er_window_count):
+        for i in range(er_window_count):
             window_start = int(round(ref.er_window_size * i))
             window_end = int(round(ref.er_window_size * (i + 1)))
             ref.er_window_starts.append(window_start)
@@ -411,7 +409,7 @@ def count_depth_and_errors_per_window(references, er_window_size, depth_window_s
             this_window_pos_with_error_rate = 0
 
             total_window_error_rate = None
-            for j in xrange(window_start, window_end):
+            for j in range(window_start, window_end):
                 if ref.error_rates[j] is not None:
                     this_window_pos_with_error_rate += 1
                     if total_window_error_rate is None:
@@ -447,13 +445,13 @@ def count_depth_and_errors_per_window(references, er_window_size, depth_window_s
         current_low_depth_region = None
         current_high_depth_region = None
 
-        for i in xrange(depth_window_count):
+        for i in range(depth_window_count):
             window_start = int(round(ref.depth_window_size * i))
             window_end = int(round(ref.depth_window_size * (i + 1)))
             ref.depth_window_starts.append(window_start)
             this_window_size = window_end - window_start
             total_window_depth = 0
-            for j in xrange(window_start, window_end):
+            for j in range(window_start, window_end):
                 total_window_depth += ref.depths[j]
 
             # Check for low depth regions.
@@ -729,7 +727,7 @@ def produce_window_tables(references, window_tables_prefix):
                                'Mean depth',
                                'Mean error rate']) + '\n')
         window_count = len(ref.window_starts)
-        for i in xrange(window_count):
+        for i in range(window_count):
             if i + 1 == window_count:
                 window_end = ref.get_length()
             else:
@@ -759,7 +757,7 @@ def produce_base_tables(references, base_tables_prefix):
                                'Mismatches',
                                'Deletions',
                                'Insertions']) + '\n')
-        for i in xrange(ref.get_length()):
+        for i in range(ref.get_length()):
             table.write('\t'.join([str(i+1),
                                    str(ref.depths[i]),
                                    str(ref.mismatch_counts[i]),
@@ -1328,7 +1326,7 @@ class Alignment(object):
         ref_len = self.ref.get_length()
         self.ref_start_pos = int(sam_parts[3]) - 1
         self.ref_end_pos = self.ref_start_pos
-        for i in xrange(len(cigar_types)):
+        for i in range(len(cigar_types)):
             self.ref_end_pos += get_ref_shift_from_cigar_part(cigar_types[i], cigar_counts[i])
         if self.ref_end_pos > ref_len:
             self.ref_end_pos = ref_len
@@ -1356,7 +1354,7 @@ class Alignment(object):
         read_i = self.read_start_pos
         ref_i = self.ref_start_pos
 
-        for i in xrange(len(cigar_types)):
+        for i in range(len(cigar_types)):
             cigar_count = cigar_counts[i]
             cigar_type = cigar_types[i]
 
@@ -1365,11 +1363,11 @@ class Alignment(object):
                 self.ref_insertion_positions += [ref_i] 
                 read_i += cigar_count
             elif cigar_type == 'D':
-                for i in xrange(cigar_count):
+                for i in range(cigar_count):
                     self.ref_deletion_positions.append(ref_i + i)
                 ref_i += cigar_count
             else: # match/mismatch
-                for _ in xrange(cigar_count):
+                for _ in range(cigar_count):
                     # If all is good with the CIGAR, then we should never end up with a sequence
                     # index out of the sequence range. But a CIGAR error (which has occurred in
                     # GraphMap) can cause this, so check here.

@@ -4,8 +4,6 @@ Bridges can come from multiple sources, so there are a few different classes whi
 the important members/methods (for duck-typing purposes).
 '''
 
-from __future__ import print_function
-from __future__ import division
 from multiprocessing.dummy import Pool as ThreadPool
 import sys
 
@@ -266,13 +264,12 @@ def create_spades_contig_bridges(graph, single_copy_segments, verbosity):
     if verbosity > 0:
         print()
         print('Bridging graph with SPAdes contig paths')
-        print('---------------------------------------')
-        sys.stdout.flush()
+        print('---------------------------------------', flush=True)
 
     bridge_path_set = set()
     single_copy_numbers = [x.number for x in single_copy_segments]
     for segment in single_copy_segments:
-        for path in graph.paths.itervalues():
+        for path in graph.paths.values():
             flipped_path = [-x for x in reversed(path)]
             contig_bridges = find_contig_bridges(segment.number, path, single_copy_numbers)
             contig_bridges += find_contig_bridges(segment.number, flipped_path, single_copy_numbers)
@@ -309,10 +306,10 @@ def create_spades_contig_bridges(graph, single_copy_segments, verbosity):
         bridge_paths_by_start[-end].append(path)
         bridge_paths_by_end[-start].append(path)
     conflicting_paths = []
-    for grouped_paths in bridge_paths_by_start.itervalues():
+    for grouped_paths in bridge_paths_by_start.values():
         if len(grouped_paths) > 1:
             conflicting_paths += grouped_paths
-    for grouped_paths in bridge_paths_by_end.itervalues():
+    for grouped_paths in bridge_paths_by_end.values():
         if len(grouped_paths) > 1:
             conflicting_paths += grouped_paths
     conflicting_paths_no_dups = []
@@ -371,7 +368,7 @@ def create_loop_unrolling_bridges(graph, single_copy_segments, verbosity):
     # loop's start or end is in a SPAdes contig path along with the middle. That implies that they
     # are on the same piece of DNA and can be unrolled.
     for start, end, middle, repeat in simple_loops:
-        for path in graph.paths.itervalues():
+        for path in graph.paths.values():
             joined = False
             flipped_path = [-x for x in reversed(path)]
             if (start in path and middle in path) or \
@@ -496,7 +493,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     # If an bridge already exists for a spanning sequence, we add the sequence to the bridge. If
     # not, we create a new bridge and add it.
     new_bridges = []
-    for seg_nums, span in spanning_read_seqs.iteritems():
+    for seg_nums, span in spanning_read_seqs.items():
         start, end = seg_nums
         for existing_bridge in existing_bridges:
             if isinstance(existing_bridge, LongReadBridge) and \
@@ -511,7 +508,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     all_bridges = existing_bridges + new_bridges
 
     # Add overlapping sequences to appropriate bridges.
-    for seg_num, overlaps in overlapping_read_seqs.iteritems():
+    for seg_num, overlaps in overlapping_read_seqs.items():
         for bridge in all_bridges:
             if not isinstance(bridge, LongReadBridge):
                 continue
@@ -523,7 +520,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
                         bridge.start_only_reads.append(overlap)
                     elif end_overlap:
                         overlap_seq, alignment = overlap
-                        if isinstance(overlap_seq, (int, long)):
+                        if isinstance(overlap_seq, int):
                             flipped_seq = overlap_seq
                         else:
                             flipped_seq = reverse_complement(overlap_seq)
@@ -646,7 +643,7 @@ def get_single_copy_alignments(read, single_copy_num_set, allowed_overlap, min_s
     # should only include the higher scoring one. Unless, however, the two alignments to the same
     # segment overlap opposite ends of the read, in which case they may both be valid.
     final_alignments = []
-    for alignments in sc_alignments.itervalues():
+    for alignments in sc_alignments.values():
 
         # In most cases, there will be only one alignment per reference number, so this part is
         # simple.

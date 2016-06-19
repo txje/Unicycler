@@ -136,10 +136,10 @@ def main():
                   '% percentile of full read alignments:', float_to_str(min_scaled_score, 2))
             print()
 
-        # Make the long read bridges and apply them - this is the good part!
-        bridges += create_long_read_bridges(assembly_graph, read_dict, read_names,
-                                            single_copy_segments, verbosity, bridges,
-                                            min_scaled_score)
+        # Do the long read bridging - this is the good part!
+        bridges = create_long_read_bridges(assembly_graph, read_dict, read_names,
+                                           single_copy_segments, verbosity, bridges,
+                                           min_scaled_score, args.threads)
 
 
 

@@ -6,8 +6,10 @@ the important members/methods (for duck-typing purposes).
 
 from __future__ import print_function
 from __future__ import division
+from multiprocessing.dummy import Pool as ThreadPool
 import sys
-from misc import float_to_str, reverse_complement
+
+from misc import float_to_str, reverse_complement, print_progress_line
 
 class SpadesContigBridge(object):
     '''
@@ -20,7 +22,7 @@ class SpadesContigBridge(object):
     '''
     def __init__(self, graph, spades_contig_path):
 
-        # The two single-copy segments which are being bridged.
+        # The numbers of the two single-copy segments which are being bridged.
         self.start_segment = None
         self.end_segment = None
 
@@ -74,31 +76,24 @@ class LongReadBridge(object):
     '''
     This class describes a bridge created from long read alignments.
     '''
-    def __init__(self, spades_contig_path=None, graph=None):
+    def __init__(self, graph, start, end):
 
-        # The two single-copy segments which are being bridged.
-        self.start_segment = None
-        self.end_segment = None
+        # The numbers of the two single-copy segments which are being bridged.
+        self.start_segment = start
+        self.end_segment = end
 
         # The individual reads contributing to the bridge. The sequences/qualities are not for the
         # entire read, just the part in the bridge. The lengths are stored separately because
         # negative bridge lengths are possible (when the start and end segment alignments overlap).
         # In these cases we don't have any read sequences but will still need to know the lengths
         # (which will be negative).
-        self.read_names = []
-        self.read_sequences = []
-        self.read_qualities = []
-        self.read_lengths = []
+        self.full_span_reads = []
 
         # The bridge can also contain incomplete read sequences which don't bridge the entire span
         # between the start and end segments. These are still useful as they can contribute to the
         # consensus sequence.
-        self.start_partial_read_names = []
-        self.start_partial_sequences = []
-        self.start_partial_qualities = []
-        self.end_partial_read_names = []
-        self.end_partial_sequences = []
-        self.end_partial_qualities = []
+        self.start_only_reads = []
+        self.end_only_reads = []
 
         # The consensus of all read sequences. If there is only one read, then this is the same as
         # that read's sequence. If there are multiple reads, this is hopefully a more accurate
@@ -121,53 +116,55 @@ class LongReadBridge(object):
         # A score used to determine the order of bridge application.
         self.quality = 1.0
 
-
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-
-
+        self.graph = graph
 
     def __repr__(self):
         return 'long read bridge: ' + str(self.start_segment) + ' -> ' + \
                ', '.join([str(x) for x in self.graph_path]) + ' -> ' + str(self.end_segment) + \
                ' (quality = ' + float_to_str(self.quality, 2) + ')'
+
+    def finalise(self):
+        '''
+        Determines the consensus sequence for the bridge, attempts to find it in the graph and
+        assigns a quality score to the bridge. This is the performance-intensive step of long read
+        bridging.
+        '''
+        output = '\n' # TEMP
+        output += 'FINALISING BRIDGE\n' # TEMP
+        output += '-----------------\n' # TEMP
+        output += 'start: ' + str(self.start_segment) + '\n' # TEMP
+        output += 'end:   ' + str(self.end_segment) + '\n' # TEMP
+        output += 'start overlaps:\n' # TEMP
+        for start_only_read in self.start_only_reads:
+            output += '  ' + str(start_only_read) + '\n' # TEMP
+        output += 'end overlaps:\n' # TEMP
+        for end_only_read in self.end_only_reads:
+            output += '  ' + str(end_only_read) + '\n' # TEMP
+        output += 'full spans:\n' # TEMP
+        for full_span_read in self.full_span_reads:
+            output += '  ' + str(full_span_read) + '\n' # TEMP
+        output += '\n' # TEMP
+
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+
+
+        return output
 
 
 
@@ -392,7 +389,7 @@ def create_loop_unrolling_bridges(graph, single_copy_segments, verbosity):
     return bridges
 
 def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments, verbosity,
-                             existing_bridges, min_scaled_score):
+                             existing_bridges, min_scaled_score, threads):
     '''
     Makes bridges between single-copy segments using the alignments in the long reads.
     '''
@@ -412,7 +409,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     # This dictionary will collect all of the read sequences which don't manage to span between
     # two single-copy segments, but they do overlap one single-copy segment and can therefore be
     # useful for generating consensus sequences in a bridge.
-    # Key = signed segment number, Value = list of sequences
+    # Key = signed segment number, Value = list of tuples containing the sequence and alignment
     overlapping_read_seqs = {}
 
     print('\n\n\n\n\n\n') # TEMP
@@ -421,11 +418,10 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
         read = read_dict[read_name]
         alignments = get_single_copy_alignments(read, single_copy_seg_num_set, allowed_overlap,
                                                 min_scaled_score)
-
         if not alignments:
             continue
 
-        print('\n\n') # TEMP
+        print('\n') # TEMP
         print('READ:', read) # TEMP
         print('  SEQUENCE:', read.sequence)
         print('  SINGLE-COPY SEGMENT ALIGNMENTS:') # TEMP 
@@ -483,7 +479,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
             seq = reverse_complement(start_overlap)
             if seg_num not in overlapping_read_seqs:
                 overlapping_read_seqs[seg_num] = []
-            overlapping_read_seqs[seg_num].append(seq)
+            overlapping_read_seqs[seg_num].append((seq, first_alignment))
             print('  START OVERLAPPING SEQUENCE:') # TEMP
             print('    ', seg_num, seq) # TEMP
         last_alignment = available_alignments[-1]
@@ -492,31 +488,77 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
             seg_num = alignment.get_signed_ref_num()
             if seg_num not in overlapping_read_seqs:
                 overlapping_read_seqs[seg_num] = []
-            overlapping_read_seqs[seg_num].append(end_overlap)
+            overlapping_read_seqs[seg_num].append((end_overlap, last_alignment))
             print('  END OVERLAPPING SEQUENCE:') # TEMP
             print('    ', seg_num, end_overlap) # TEMP
+        print('\n') # TEMP
 
+    # If an bridge already exists for a spanning sequence, we add the sequence to the bridge. If
+    # not, we create a new bridge and add it.
+    new_bridges = []
+    for seg_nums, span in spanning_read_seqs.iteritems():
+        start, end = seg_nums
+        for existing_bridge in existing_bridges:
+            if isinstance(existing_bridge, LongReadBridge) and \
+               existing_bridge.start_segment == start and existing_bridge.end_segment == end:
+                matching_bridge = existing_bridge
+                break
+        else:
+            new_bridge = LongReadBridge(graph, start, end)
+            new_bridges.append(new_bridge)
+            matching_bridge = new_bridge
+        matching_bridge.full_span_reads.append(span)
+    all_bridges = existing_bridges + new_bridges
 
+    # Add overlapping sequences to appropriate bridges.
+    for seg_num, overlaps in overlapping_read_seqs.iteritems():
+        for bridge in all_bridges:
+            if not isinstance(bridge, LongReadBridge):
+                continue
+            start_overlap = (bridge.start_segment == seg_num)
+            end_overlap = (bridge.end_segment == -seg_num)
+            if start_overlap or end_overlap:
+                for overlap in overlaps:
+                    if start_overlap:
+                        bridge.start_only_reads.append(overlap)
+                    elif end_overlap:
+                        overlap_seq, alignment = overlap
+                        if isinstance(overlap_seq, (int, long)):
+                            flipped_seq = overlap_seq
+                        else:
+                            flipped_seq = reverse_complement(overlap_seq)
+                        bridge.start_only_reads.append((flipped_seq, alignment))
 
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
+    # Now we need to finalise the reads. This is the intensive step, as it involves creating a
+    # consensus sequence, finding graph paths and doing alignments between the consensus and the
+    # graph paths. We therefore use available threads to make this faster.
+    long_read_bridges = [x for x in all_bridges if isinstance(x, LongReadBridge)]
+    num_long_read_bridges = len(long_read_bridges)
+    completed_count = 0
+    if verbosity == 1:
+        print_progress_line(0, num_long_read_bridges, prefix='Bridge: ')
+    completed_count = 0
+    if threads == 1:
+        for bridge in long_read_bridges:
+            output = bridge.finalise()
+            completed_count += 1
+            if verbosity == 1:
+                print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')
+            if verbosity > 1:
+                print(output, end='')
+    else:
+        pool = ThreadPool(threads)
+        for output in pool.imap(finalise_bridge, long_read_bridges, 1):
+            completed_count += 1
+            if verbosity == 1:
+                print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')
+            if verbosity > 1:
+                print(output, end='')
 
-    return [] # TEMP
+    if verbosity == 1:
+        print('\n')
+
+    return all_bridges
 
 def get_num_agreement(num_1, num_2):
     '''
@@ -627,4 +669,5 @@ def get_single_copy_alignments(read, single_copy_num_set, allowed_overlap, min_s
                     final_alignments.append(second_best_alignment)
     return final_alignments
 
-
+def finalise_bridge(bridge):
+    return bridge.finalise()

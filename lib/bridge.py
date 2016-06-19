@@ -392,7 +392,7 @@ def create_loop_unrolling_bridges(graph, single_copy_segments, verbosity):
     return bridges
 
 def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments, verbosity,
-                             existing_bridges):
+                             existing_bridges, min_scaled_score):
     '''
     Makes bridges between single-copy segments using the alignments in the long reads.
     '''
@@ -401,19 +401,31 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     for seg in single_copy_segments:
         single_copy_seg_num_set.add(seg.number)
 
-    overlapping_read_seqs = [] # List of tuples: (Segment number, sequence)
-    spanning_read_seqs = [] # List of tuples: (Segment number 1, segment number 2, sequence)
+    # This dictionary will collect the read sequences which span between two single-copy segments.
+    # These are the most useful sequences and will be used to either create a new bridge or enhance
+    # an existing bridge.
+    # Key = tuple of signed segment numbers (the segments being bridged)
+    # Value = list of tuples containing the bridging sequence and the single-copy segment
+    #         alignments.
+    spanning_read_seqs = {}
 
+    # This dictionary will collect all of the read sequences which don't manage to span between
+    # two single-copy segments, but they do overlap one single-copy segment and can therefore be
+    # useful for generating consensus sequences in a bridge.
+    # Key = signed segment number, Value = list of sequences
+    overlapping_read_seqs = {}
 
     print('\n\n\n\n\n\n') # TEMP
-
+    allowed_overlap = round(int(1.1 * graph.overlap))
     for read_name in read_names:
         read = read_dict[read_name]
-        alignments = read.get_alignments_to_seg_nums(single_copy_seg_num_set)
+        alignments = get_single_copy_alignments(read, single_copy_seg_num_set, allowed_overlap,
+                                                min_scaled_score)
 
         if not alignments:
             continue
 
+        print('\n\n') # TEMP
         print('READ:', read) # TEMP
         print('  SEQUENCE:', read.sequence)
         print('  SINGLE-COPY SEGMENT ALIGNMENTS:') # TEMP 
@@ -426,6 +438,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
         # neighbouring pairs of alignments, starting with the highest scoring ones and work our
         # way down. This means that we should have a pair for each neighbouring alignment, but
         # potentially also more distant pairs if the alignments are strong.
+        already_added = set()
         sorted_alignments = sorted(alignments, key=lambda x: x.raw_score, reverse=True)
         available_alignments = []
         for alignment in sorted_alignments:
@@ -435,17 +448,30 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
             for i in range(len(available_alignments) - 1):
                 alignment_1 = available_alignments[i]
                 alignment_2 = available_alignments[i+1]
-                bridge_start = alignment_1.read_end_positive_strand()
-                bridge_end = alignment_2.read_start_positive_strand()
-                if bridge_end > bridge_start:
-                    bridge_seq = read.sequence[bridge_start:bridge_end]
-                else:
-                    bridge_seq = bridge_end - bridge_start # 0 or a negative number
-                spanning_read_seq = (alignment_1.get_signed_ref_num(),
-                                     alignment_2.get_signed_ref_num(),
-                                     bridge_seq)
-                spanning_read_seqs.append(spanning_read_seq)
-                print('    ', spanning_read_seq) # TEMP
+
+                # Standardise the order so we don't end up with both directions (e.g. 5 to -6 and
+                # 6 to -5) in spanning_read_seqs.
+                seg_nums, flipped = flip_segment_order(alignment_1.get_signed_ref_num(),
+                                                       alignment_2.get_signed_ref_num())
+
+                if seg_nums not in already_added:
+                    bridge_start = alignment_1.read_end_positive_strand()
+                    bridge_end = alignment_2.read_start_positive_strand()
+
+                    if bridge_end > bridge_start:
+                        bridge_seq = read.sequence[bridge_start:bridge_end]
+                        if flipped:
+                            bridge_seq = reverse_complement(bridge_seq)
+                    else:
+                        bridge_seq = bridge_end - bridge_start # 0 or a negative number
+
+                    if seg_nums not in spanning_read_seqs:
+                        spanning_read_seqs[seg_nums] = []
+
+                    spanning_read_seqs[seg_nums].append((bridge_seq, alignment_1, alignment_2))
+                    already_added.add(seg_nums)
+
+                    print('    ', seg_nums[0], seg_nums[1], bridge_seq) # TEMP
 
         # At this point all of the alignments have been added and we are interested in the first
         # and last alignments (which may be the same if there's only one). If the read extends
@@ -453,16 +479,22 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
         first_alignment = available_alignments[0]
         start_overlap = first_alignment.get_start_overlapping_read_seq()
         if start_overlap:
+            seg_num = -alignment.get_signed_ref_num()
+            seq = reverse_complement(start_overlap)
+            if seg_num not in overlapping_read_seqs:
+                overlapping_read_seqs[seg_num] = []
+            overlapping_read_seqs[seg_num].append(seq)
             print('  START OVERLAPPING SEQUENCE:') # TEMP
-            overlapping_read_seqs.append((-alignment.get_signed_ref_num(),
-                                          reverse_complement(start_overlap)))
-            print((-alignment.get_signed_ref_num(), reverse_complement(start_overlap))) # TEMP
+            print('    ', seg_num, seq) # TEMP
         last_alignment = available_alignments[-1]
         end_overlap = last_alignment.get_end_overlapping_read_seq()
         if end_overlap:
+            seg_num = alignment.get_signed_ref_num()
+            if seg_num not in overlapping_read_seqs:
+                overlapping_read_seqs[seg_num] = []
+            overlapping_read_seqs[seg_num].append(end_overlap)
             print('  END OVERLAPPING SEQUENCE:') # TEMP
-            overlapping_read_seqs.append((alignment.get_signed_ref_num(), end_overlap))
-            print((alignment.get_signed_ref_num(), end_overlap)) # TEMP
+            print('    ', seg_num, end_overlap) # TEMP
 
 
 
@@ -532,5 +564,67 @@ def path_is_self_contained(path, start, end, graph):
             if connected_segment not in all_numbers_in_path:
                 return False
     return True
+
+def flip_segment_order(seg_num_1, seg_num_2):
+    '''
+    Given two segment numbers, this function possibly flips them around. It returns the new numbers
+    (either unchanged or flipped) and whether or not a flip took place. The decision is somewhat
+    arbitrary, but it needs to be consistent so when we collect bridging read sequences they are
+    always in the same direction.
+    '''
+    if seg_num_1 > 0 and seg_num_2 > 0:
+        flip = False
+    elif seg_num_1 < 0 and seg_num_2 < 0:
+        flip = True
+    elif seg_num_1 < 0: # only seg_num_1 is negative
+        flip = abs(seg_num_1) > abs(seg_num_2)
+    else: # only seg_num_2 is negative
+        flip = abs(seg_num_2) > abs(seg_num_1)
+    if flip:
+        return (-seg_num_2, -seg_num_1), True
+    else:
+        return (seg_num_1, seg_num_2), False
+
+def get_single_copy_alignments(read, single_copy_num_set, allowed_overlap, min_scaled_score):
+    '''
+    Returns a list of single-copy segment alignments for the read.
+    '''
+    sc_alignments = {}
+    for alignment in read.alignments:
+        ref_num = alignment.ref.number
+        if ref_num not in single_copy_num_set:
+            continue
+        if alignment.scaled_score < min_scaled_score:
+            continue
+        if ref_num not in sc_alignments:
+            sc_alignments[ref_num] = []
+        sc_alignments[ref_num].append(alignment)
+
+    # If any two alignments are to the same segment, that implies that one is bogus and so we
+    # should only include the higher scoring one. Unless, however, the two alignments to the same
+    # segment overlap opposite ends of the read, in which case they may both be valid.
+    final_alignments = []
+    for alignments in sc_alignments.itervalues():
+
+        # In most cases, there will be only one alignment per reference number, so this part is
+        # simple.
+        alignments = sorted(alignments, key=lambda x: x.scaled_score, reverse=True)
+        best_alignment = alignments[0]
+        final_alignments.append(best_alignment)
+
+        # However, multiple alignments are possible. In some cases, this means alignments other
+        # than the best should be thrown out (because the segment is supposed to be single-copy).
+        # But there are cases where two alignments to the same single-copy reference can be valid.
+        # This is when the start and end of the single-copy segment are close to each other in a
+        # circular piece of DNA and the read overlaps with both ends.
+        if len(alignments) > 1:
+            second_best_alignment = alignments[1]
+            combined_len = best_alignment.get_aligned_ref_length() + \
+                           second_best_alignment.get_aligned_ref_length()
+            if combined_len <= best_alignment.ref.get_length() + allowed_overlap:
+                if (best_alignment.ref_start_pos > 0 and second_best_alignment.ref_end_gap > 0) or \
+                   (best_alignment.ref_end_gap > 0 and second_best_alignment.ref_start_pos > 0):
+                    final_alignments.append(second_best_alignment)
+    return final_alignments
 
 

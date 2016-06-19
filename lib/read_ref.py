@@ -246,7 +246,6 @@ class Read(object):
         self.alignments = [x for x in self.alignments \
                            if x.get_aligned_ref_length() >= min_align_length]
 
-
     def get_fastq(self):
         '''
         Returns a string for the read in FASTQ format. It contains four lines and ends in a line
@@ -296,9 +295,13 @@ class Read(object):
         '''
         return sum([x.get_aligned_ref_length() for x in self.alignments])
 
-    def get_alignments_to_seg_nums(self, seg_num_set):
+    def has_one_contained_alignment(self):
         '''
-        Returns a list of alignments which have numbers in the given set.
+        Returns true if this read aligned entirely within a reference (i.e. no read end gaps).
         '''
-        return [x for x in self.alignments if x.ref.number in seg_num_set]
+        return len(self.alignments) == 1 and \
+               self.alignments[0].read_start_pos == 0 and \
+               self.alignments[0].read_end_gap == 0
+
+
 

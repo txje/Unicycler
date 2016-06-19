@@ -2,7 +2,7 @@ from __future__ import print_function
 from __future__ import division
 from collections import deque
 
-from misc import int_to_str, float_to_str
+from misc import int_to_str, float_to_str, get_median
 from bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge
 
 class AssemblyGraph(object):
@@ -1476,14 +1476,6 @@ def shuffle_into_bins(items, bins, targets):
             arrangements.append(bins)
 
     return arrangements
-
-def get_median(sorted_list):
-    count = len(sorted_list)
-    index = (count - 1) // 2
-    if (count % 2):
-        return sorted_list[index]
-    else:
-        return (sorted_list[index] + sorted_list[index + 1]) / 2.0
 
 def get_headers_and_sequences(filename):
     '''

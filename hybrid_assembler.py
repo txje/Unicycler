@@ -21,7 +21,8 @@ from assembly_graph import AssemblyGraph
 from bridge import SpadesContigBridge, LongReadBridge, LoopUnrollingBridge, \
                    create_spades_contig_bridges, find_contig_bridges, \
                    create_long_read_bridges, create_loop_unrolling_bridges
-from misc import int_to_str, float_to_str, quit_with_error, check_file_exists, check_graphmap
+from misc import int_to_str, float_to_str, quit_with_error, check_file_exists, check_graphmap, \
+                 get_percentile
 
 sys.dont_write_bytecode = True
 from semi_global_aligner import add_aligning_arguments, fix_up_arguments, \
@@ -119,9 +120,26 @@ def main():
                                          full_command, allowed_overlap, verbosity)
             shutil.move(alignments_sam_in_progress, alignments_sam)
 
+        # Use the long reads which aligned entirely within contigs (which are most likely correct)
+        # to determine a minimum score
+        contained_reads = [x for x in read_dict.itervalues() if x.has_one_contained_alignment()]
+        contained_scores = []
+        for read in contained_reads:
+            contained_scores += [x.scaled_score for x in read.alignments]
+        min_scaled_score_percentile = 5.0 # TO DO: make this a parameter?
+        min_scaled_score = get_percentile(contained_scores, min_scaled_score_percentile)
+
+        if verbosity > 1:
+            print()
+            print('Setting the minimum scaled score to the ' +
+                  float_to_str(min_scaled_score_percentile, 1) +
+                  '% percentile of full read alignments:', float_to_str(min_scaled_score, 2))
+            print()
+
         # Make the long read bridges and apply them - this is the good part!
         bridges += create_long_read_bridges(assembly_graph, read_dict, read_names,
-                                            single_copy_segments, verbosity, bridges)
+                                            single_copy_segments, verbosity, bridges,
+                                            min_scaled_score)
 
 
 

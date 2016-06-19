@@ -11,6 +11,7 @@ import sys
 import os
 import subprocess
 import random
+import math
 
 
 def float_to_str(num, decimals, max_num=0):
@@ -173,3 +174,29 @@ def get_random_sequence(length):
     for _ in range(length):
         sequence += get_random_base()
     return sequence
+
+def get_median(sorted_list):
+    '''
+    Returns the median of a list of numbers. Assumes the list has already been sorted.
+    '''
+    count = len(sorted_list)
+    index = (count - 1) // 2
+    if count % 2:
+        return sorted_list[index]
+    else:
+        return (sorted_list[index] + sorted_list[index + 1]) / 2.0
+
+def get_percentile(unsorted_list, percentile):
+    '''
+    Returns a percentile of a list of numbers. Doesn't assume the list has already been sorted.
+    Implements the nearest rank method:
+    https://en.wikipedia.org/wiki/Percentile#The_Nearest_Rank_method
+    '''
+    sorted_list = sorted(unsorted_list)
+    fraction = percentile / 100.0
+    rank = int(math.ceil(fraction * len(unsorted_list)))
+    if rank == 0:
+        return sorted_list[0]
+    return sorted_list[rank-1]
+
+

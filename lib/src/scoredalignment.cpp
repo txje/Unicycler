@@ -138,6 +138,8 @@ std::string ScoredAlignment::getFullString() {
            std::to_string(m_readEndPos) + "," + 
            std::to_string(m_refStartPos) + "," + 
            std::to_string(m_refEndPos) + "," + 
+           std::to_string(m_rawScore) + "," +
+           std::to_string(m_scaledScore) + "," +
            std::to_string(m_milliseconds) + "," +
            m_cigar;
 }

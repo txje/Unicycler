@@ -196,4 +196,9 @@ def get_percentile(unsorted_list, percentile):
         return sorted_list[0]
     return sorted_list[rank-1]
 
-
+def weighted_average(num_1, num_2, weight_1, weight_2):
+    '''
+    A simple weighted mean of two numbers.
+    '''
+    weight_sum = weight_1 + weight_2
+    return num_1 * (weight_1 / weight_sum) + num_2 * (weight_2 / weight_sum)

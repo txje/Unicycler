@@ -1,6 +1,6 @@
 from collections import deque
 
-from misc import int_to_str, float_to_str, get_median
+from misc import int_to_str, float_to_str, get_median, weighted_average
 from bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge
 
 class AssemblyGraph(object):
@@ -1306,6 +1306,71 @@ class AssemblyGraph(object):
             simple_loops.append((start, end, middle, repeat))
         return simple_loops
 
+    def all_paths(self, start, end, min_length, max_length):
+        '''
+        Returns a list of all paths which connect the starting segment to the ending segment and
+        are within the length bounds. The start and end segments are not themselves included in the
+        paths. Returns an empty list if no paths exist.
+        Loops in the graph (especially loops of short segments which don't add much to the path
+        length) can result in very large numbers of potential paths in complex areas. To somewhat
+        manage this, we exclude paths which include too many copies of a segment. 'Too many copies'
+        is defined as double the copy depth count or the depth to start/end count.
+        '''
+        if start not in self.forward_links:
+            return []
+
+        start_seg = self.segments[abs(start)]
+        end_seg = self.segments[abs(end)]
+        start_end_depth = weighted_average(start_seg.depth, end_seg.depth,
+                                           start_seg.get_length_no_overlap(self.overlap),
+                                           end_seg.get_length_no_overlap(self.overlap))
+        max_allowed_counts = {}
+
+        working_paths = [[x] for x in self.forward_links[start]]
+        final_paths = []
+        while working_paths:
+            new_working_paths = []
+            for working_path in working_paths:
+                last_seg = working_path[-1]
+                if last_seg == end:
+                    potential_result = working_path[:-1]
+                    if self.get_path_length(potential_result) >= min_length:
+                        final_paths.append(potential_result)
+                elif self.get_path_length(working_path) <= max_length and \
+                     last_seg in self.forward_links:
+                    for next_seg in self.forward_links[last_seg]:
+                        if abs(next_seg) not in max_allowed_counts:
+                            if abs(next_seg) in self.copy_depths:
+                                count_by_copies = len(self.copy_depths[abs(next_seg)])
+                            else:
+                                count_by_copies = 1
+                            depth = self.segments[abs(next_seg)].depth
+                            count_by_depth = max(1, int(round(depth / start_end_depth)))
+                            max_allowed_count = 2 * max(count_by_copies, count_by_depth)
+                            max_allowed_counts[abs(next_seg)] = max_allowed_count
+                        else:
+                            max_allowed_count = max_allowed_counts[abs(next_seg)]
+                        count_so_far = working_path.count(next_seg) + working_path.count(-next_seg)
+                        if count_so_far < max_allowed_count:
+                            new_working_paths.append(working_path + [next_seg])
+            working_paths = new_working_paths
+        return final_paths
+
+    def get_path_length(self, path):
+        '''
+        Returns the length of the given path.
+        '''
+        try:
+            path_length = 0
+            for seg in path:
+                path_length += self.segments[abs(seg)].get_length()
+            overlap_count = len(path) - 1
+            path_length -= overlap_count * self.overlap
+            return path_length
+        except KeyError:
+            return 0
+
+        
 
 
 

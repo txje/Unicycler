@@ -112,13 +112,13 @@ class Alignment(object):
         complete details about the alignment.
         '''
         self.alignment_type = 'Seqan'
-        seqan_parts = seqan_output.split(',', 7)
-        assert len(seqan_parts) >= 8
+        seqan_parts = seqan_output.split(',', 9)
+        assert len(seqan_parts) >= 10
 
         self.rev_comp = (seqan_parts[1] == '-')
-        self.cigar = seqan_parts[7]
+        self.cigar = seqan_parts[9]
         self.cigar_parts = re.findall(r'\d+\w', self.cigar)
-        self.milliseconds = int(seqan_parts[6])
+        self.milliseconds = int(seqan_parts[8])
 
         self.read = read
         self.read_start_pos = int(seqan_parts[2])
@@ -268,8 +268,8 @@ class Alignment(object):
             # Call the C++ function to do the actual alignment.
             alignment_result = start_extension_alignment(realigned_read_seq, realigned_ref_seq,
                                                          scoring_scheme)
-            seqan_parts = alignment_result.split(',', 7)
-            assert len(seqan_parts) >= 8
+            seqan_parts = alignment_result.split(',', 9)
+            assert len(seqan_parts) >= 10
 
             # If the extended alignment has taken us far enough (should usually be the case), then
             # use it. In rare cases, the margin size won't have been enough, so we try again with a
@@ -286,7 +286,7 @@ class Alignment(object):
         # Replace the S part at the beginning the alignment's CIGAR with the CIGAR just made. If
         # the last part of the new CIGAR is of the same type as the first part of the existing
         # CIGAR, they will need to be merged.
-        new_cigar_parts = re.findall(r'\d+\w', seqan_parts[7])
+        new_cigar_parts = re.findall(r'\d+\w', seqan_parts[9])
         old_cigar_parts = self.cigar_parts[1:]
         if new_cigar_parts[-1][-1] == old_cigar_parts[0][-1]:
             part_sum = int(new_cigar_parts[-1][:-1]) + int(old_cigar_parts[0][:-1])
@@ -341,8 +341,8 @@ class Alignment(object):
             # Call the C++ function to do the actual alignment.
             alignment_result = end_extension_alignment(realigned_read_seq, realigned_ref_seq,
                                                        scoring_scheme)
-            seqan_parts = alignment_result.split(',', 7)
-            assert len(seqan_parts) >= 8
+            seqan_parts = alignment_result.split(',', 9)
+            assert len(seqan_parts) >= 10
 
             # If the extended alignment has taken us far enough (should usually be the case), then
             # use it. In rare cases, the margin size won't have been enough, so we try again with a
@@ -362,7 +362,7 @@ class Alignment(object):
         # the first part of the new CIGAR is of the same type as the last part of the existing
         # CIGAR, they will need to be merged.
         old_cigar_parts = self.cigar_parts[:-1]
-        new_cigar_parts = re.findall(r'\d+\w', seqan_parts[7])
+        new_cigar_parts = re.findall(r'\d+\w', seqan_parts[9])
         if old_cigar_parts[-1][-1] == new_cigar_parts[0][-1]:
             part_sum = int(old_cigar_parts[-1][:-1]) + int(new_cigar_parts[0][:-1])
             merged_part = str(part_sum) + new_cigar_parts[0][-1]

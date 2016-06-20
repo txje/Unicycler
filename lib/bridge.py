@@ -7,8 +7,8 @@ the important members/methods (for duck-typing purposes).
 from multiprocessing.dummy import Pool as ThreadPool
 import sys
 
-from misc import float_to_str, reverse_complement, print_progress_line
-from cpp_function_wrappers import multiple_sequence_alignment
+from misc import float_to_str, reverse_complement, print_progress_line, weighted_average
+from cpp_function_wrappers import multiple_sequence_alignment, fully_global_alignment
 
 class SpadesContigBridge(object):
     '''
@@ -181,19 +181,118 @@ class LongReadBridge(object):
                 output += 'start-only consensus scores: ' + str(start_only_scores) + '\n' # TEMP
             if end_only_scores: # TEMP
                 output += 'end-only consensus scores: ' + str(end_only_scores) + '\n' # TEMP
-            target_graph_path_length = len(consensus) + (2 * self.graph.overlap)
+            target_path_length = len(consensus) + (2 * self.graph.overlap)
+
 
         # For full spans without sequence, we simply need a mean distance.
         elif full_spans_without_seq:
+            consensus = ''
             mean_overlap = int(round(sum(x[0] for x in full_spans_without_seq) / \
                                      len(full_spans_without_seq)))
             output += 'mean overlap: ' + str(mean_overlap) + '\n' # TEMP
-            target_graph_path_length = mean_overlap + (2 * self.graph.overlap)
+            target_path_length = mean_overlap + (2 * self.graph.overlap)
 
-        output += 'target graph path length: ' + str(target_graph_path_length) + '\n' # TEMP
+        output += 'target graph path length: ' + str(target_path_length) + '\n' # TEMP
+
+        # Limit the path search to lengths near the target.
+        # TO DO: adjust these or make them parameters?
+        min_path_length = int(round(target_path_length * 0.5))
+        max_path_length = int(round(target_path_length * 1.5))
+
+        output += 'min graph path length: ' + str(min_path_length) + '\n' # TEMP
+        output += 'max graph path length: ' + str(max_path_length) + '\n' # TEMP
+
+        potential_paths = self.graph.all_paths(self.start_segment, self.end_segment,
+                                               min_path_length, max_path_length)
+
+        output += 'potential paths:\n' # TEMP
+        if not potential_paths: # TEMP
+            output += '  NONE\n' # TEMP
+
+        best_path = []
+
+        # If we have a consensus to align to, then we use that do choose the best path.
+        if consensus:
+            best_score = None
+            for path in potential_paths:
+                path_seq = self.graph.get_path_sequence(path)
+
+                output += '  ' + str(path) # TEMP
+                output += ' (' + str(len(path_seq)) + '), ' # TEMP
+
+                alignment_result = fully_global_alignment(consensus, path_seq,
+                                                          scoring_scheme, True, 1000)
+                seqan_parts = alignment_result.split(',', 9)
+                raw_score = int(seqan_parts[6])
+                scaled_score = float(seqan_parts[7])
+                output += str(raw_score) + ', ' + str(scaled_score) + '\n' # TEMP
+
+                if best_score is None or raw_score > best_score:
+                    best_score = raw_score
+                    best_path = path
+
+                # In case of a tie, go with the simpler path.
+                elif raw_score == best_score and len(path) < len(best_path):
+                    best_path = path
+
+        # If there isn't a consensus (i.e. the start and end overlap), then we choose the best path
+        # based on its length.
+        else:
+            smallest_length_diff = None
+            for path in potential_paths:
+                path_len = self.graph.get_path_length(path)
+
+                output += '  ' + str(path) # TEMP
+                output += ' (' + str(path_len) + ')\n' # TEMP
+
+                length_diff = abs(path_len - target_path_length)
+                if smallest_length_diff is None or length_diff < smallest_length_diff:
+                    smallest_length_diff = length_diff
+                    best_path = path
+                elif smallest_length_diff == length_diff and len(path) < len(best_path):
+                    best_path = path
+
+        # If a path was found, use its sequence for the bridge.
+        if best_path:
+            output += 'best path: ' + str(best_path) + '\n' # TEMP
+            self.bridge_sequence = self.graph.get_path_sequence(best_path)
+
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
 
 
 
+
+        # If a path wasn't found, the consensus sequence is the bridge.
+        else:
+            output += 'best path: ' + str(best_path) + '\n' # TEMP
+            self.bridge_sequence = consensus
+
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
 
 
 
@@ -659,14 +758,6 @@ def get_mean_depth(seg_1, seg_2, graph):
     return weighted_average(seg_1.depth, seg_2.depth,
                             seg_1.get_length_no_overlap(graph.overlap),
                             seg_2.get_length_no_overlap(graph.overlap))
-
-def weighted_average(num_1, num_2, weight_1, weight_2):
-    '''
-    A simple weighted mean of two numbers.
-    '''
-    weight_sum = weight_1 + weight_2
-    return num_1 * (weight_1 / weight_sum) + num_2 * (weight_2 / weight_sum)
-
 
 def path_is_self_contained(path, start, end, graph):
     '''

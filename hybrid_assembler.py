@@ -89,13 +89,13 @@ def main():
     alignments_sam = os.path.join(alignment_dir, 'long_read_alignments.sam')
     temp_alignment_dir = os.path.join(alignment_dir, 'temp')
     assembly_graph.save_to_fasta(graph_fasta)
+    scoring_scheme = AlignmentScoringScheme(args.scores)
 
     # If all long reads are available now, then we do the entire process in one pass.
     if args.long:
         references = load_references(graph_fasta, 0)
         reference_dict = {x.name: x for x in references}
         read_dict, read_names = load_long_reads(args.long, 1)
-        scoring_scheme = AlignmentScoringScheme(args.scores)
 
         # Load existing alignments if available.
         if os.path.isfile(alignments_sam) and sam_references_match(alignments_sam, assembly_graph):
@@ -140,7 +140,7 @@ def main():
         # Do the long read bridging - this is the good part!
         bridges = create_long_read_bridges(assembly_graph, read_dict, read_names,
                                            single_copy_segments, verbosity, bridges,
-                                           min_scaled_score, args.threads)
+                                           min_scaled_score, args.threads, scoring_scheme)
 
 
 

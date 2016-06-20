@@ -580,7 +580,7 @@ class Alignment(object):
         overlapping read sequence(s).
         '''
         start, _ = self.read_start_end_positive_strand()
-        return self.read.sequence[:start]
+        return self.read.sequence[:start], self.read.qualities[:start]
 
     def get_end_overlapping_read_seq(self):
         '''
@@ -588,7 +588,7 @@ class Alignment(object):
         overlapping read sequence(s).
         '''
         _, end = self.read_start_end_positive_strand()
-        return self.read.sequence[end:]
+        return self.read.sequence[end:], self.read.qualities[end:]
 
 
 def get_ref_shift_from_cigar_part(cigar_part):

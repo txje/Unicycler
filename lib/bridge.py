@@ -8,6 +8,7 @@ from multiprocessing.dummy import Pool as ThreadPool
 import sys
 
 from misc import float_to_str, reverse_complement, print_progress_line
+from cpp_function_wrappers import multiple_sequence_alignment
 
 class SpadesContigBridge(object):
     '''
@@ -121,12 +122,12 @@ class LongReadBridge(object):
                ', '.join([str(x) for x in self.graph_path]) + ' -> ' + str(self.end_segment) + \
                ' (quality = ' + float_to_str(self.quality, 2) + ')'
 
-    def finalise(self):
+    def finalise(self, scoring_scheme):
         '''
         Determines the consensus sequence for the bridge, attempts to find it in the graph and
         assigns a quality score to the bridge. This is the performance-intensive step of long read
         bridging.
-        '''
+        ''' 
         output = '\n' # TEMP
         output += 'FINALISING BRIDGE\n' # TEMP
         output += '-----------------\n' # TEMP
@@ -141,29 +142,101 @@ class LongReadBridge(object):
         output += 'full spans:\n' # TEMP
         for full_span_read in self.full_span_reads:
             output += '  ' + str(full_span_read) + '\n' # TEMP
+
+        # Parition the full span reads into two groups: those with negative numbers (implying that
+        # the two segments overlap) and those with actual sequences.
+        full_spans_without_seq = []
+        full_spans_with_seq = []
+        for full_span in self.full_span_reads:
+            if isinstance(full_span[0], int):
+                full_spans_without_seq.append(full_span)
+            else:
+                full_spans_with_seq.append(full_span)
+
+        # There shouldn't usually be both full spans with sequence and without. If there are some
+        # of each, we'll throw out the minority group.
+        if full_spans_with_seq and full_spans_without_seq:
+            if len(full_spans_without_seq) > len(full_spans_with_seq):
+                full_spans_with_seq = []
+            else:
+                full_spans_without_seq = []
+
+        # For full spans with sequence, we perform a MSA and get a consensus sequence.
+        if full_spans_with_seq:
+            full_span_seqs = [x[0] for x in full_spans_with_seq]
+            full_span_quals = [x[1] for x in full_spans_with_seq]
+            start_only_seqs = [x[0] for x in self.start_only_reads]
+            start_only_quals = [x[1] for x in self.start_only_reads]
+            end_only_seqs = [x[0] for x in self.end_only_reads]
+            end_only_quals = [x[1] for x in self.end_only_reads]
+
+            consensus, full_span_scores, start_only_scores, end_only_scores = \
+                                    multiple_sequence_alignment(full_span_seqs, full_span_quals,
+                                                                start_only_seqs, start_only_quals,
+                                                                end_only_seqs, end_only_quals,
+                                                                scoring_scheme)
+            output += 'consensus: ' + str(consensus) + '\n' # TEMP
+            output += 'full span consensus scores: ' + str(full_span_scores) + '\n' # TEMP
+            if start_only_scores: # TEMP
+                output += 'start-only consensus scores: ' + str(start_only_scores) + '\n' # TEMP
+            if end_only_scores: # TEMP
+                output += 'end-only consensus scores: ' + str(end_only_scores) + '\n' # TEMP
+            target_graph_path_length = len(consensus) + (2 * self.graph.overlap)
+
+        # For full spans without sequence, we simply need a mean distance.
+        elif full_spans_without_seq:
+            mean_overlap = int(round(sum(x[0] for x in full_spans_without_seq) / \
+                                     len(full_spans_without_seq)))
+            output += 'mean overlap: ' + str(mean_overlap) + '\n' # TEMP
+            target_graph_path_length = mean_overlap + (2 * self.graph.overlap)
+
+        output += 'target graph path length: ' + str(target_graph_path_length) + '\n' # TEMP
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         output += '\n' # TEMP
 
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
-        # TO DO
 
 
         return output
 
+    def contains_full_span_sequence(self):
+        '''
+        Some LongReadBridge objects bridge two close segments, and therefore do not actually have
+        any bridging read sequence (just a negative number implying overlap). This function returns
+        True if any full span read sequences exist and False if they are just negative numbers.
+        '''
+        for full_span_read in self.full_span_reads:
+            seq_or_num = full_span_read[0]
+            if not isinstance(seq_or_num, int):
+                return True
+        return False
 
 
 
@@ -386,7 +459,7 @@ def create_loop_unrolling_bridges(graph, single_copy_segments, verbosity):
     return bridges
 
 def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments, verbosity,
-                             existing_bridges, min_scaled_score, threads):
+                             existing_bridges, min_scaled_score, threads, scoring_scheme):
     '''
     Makes bridges between single-copy segments using the alignments in the long reads.
     '''
@@ -446,48 +519,54 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
                 # 6 to -5) in spanning_read_seqs.
                 seg_nums, flipped = flip_segment_order(alignment_1.get_signed_ref_num(),
                                                        alignment_2.get_signed_ref_num())
-
                 if seg_nums not in already_added:
                     bridge_start = alignment_1.read_end_positive_strand()
                     bridge_end = alignment_2.read_start_positive_strand()
 
                     if bridge_end > bridge_start:
                         bridge_seq = read.sequence[bridge_start:bridge_end]
+                        bridge_qual = read.qualities[bridge_start:bridge_end]
                         if flipped:
                             bridge_seq = reverse_complement(bridge_seq)
+                            bridge_qual = bridge_qual[::-1]
                     else:
                         bridge_seq = bridge_end - bridge_start # 0 or a negative number
+                        bridge_qual = ''
 
                     if seg_nums not in spanning_read_seqs:
                         spanning_read_seqs[seg_nums] = []
 
-                    spanning_read_seqs[seg_nums].append((bridge_seq, alignment_1, alignment_2))
+                    spanning_read_seqs[seg_nums].append((bridge_seq, bridge_qual, alignment_1, alignment_2))
                     already_added.add(seg_nums)
 
                     print('    ', seg_nums[0], seg_nums[1], bridge_seq) # TEMP
+                    print('    ', seg_nums[0], seg_nums[1], bridge_qual) # TEMP
 
         # At this point all of the alignments have been added and we are interested in the first
         # and last alignments (which may be the same if there's only one). If the read extends
         # past these alignments, then the overlapping part might be useful for consensus sequences.
         first_alignment = available_alignments[0]
-        start_overlap = first_alignment.get_start_overlapping_read_seq()
+        start_overlap, start_qual = first_alignment.get_start_overlapping_read_seq()
         if start_overlap:
             seg_num = -alignment.get_signed_ref_num()
             seq = reverse_complement(start_overlap)
+            qual = start_qual[::-1]
             if seg_num not in overlapping_read_seqs:
                 overlapping_read_seqs[seg_num] = []
-            overlapping_read_seqs[seg_num].append((seq, first_alignment))
+            overlapping_read_seqs[seg_num].append((seq, qual, first_alignment))
             print('  START OVERLAPPING SEQUENCE:') # TEMP
             print('    ', seg_num, seq) # TEMP
+            print('    ', seg_num, qual) # TEMP
         last_alignment = available_alignments[-1]
-        end_overlap = last_alignment.get_end_overlapping_read_seq()
+        end_overlap, end_qual = last_alignment.get_end_overlapping_read_seq()
         if end_overlap:
             seg_num = alignment.get_signed_ref_num()
             if seg_num not in overlapping_read_seqs:
                 overlapping_read_seqs[seg_num] = []
-            overlapping_read_seqs[seg_num].append((end_overlap, last_alignment))
+            overlapping_read_seqs[seg_num].append((end_overlap, end_qual, last_alignment))
             print('  END OVERLAPPING SEQUENCE:') # TEMP
             print('    ', seg_num, end_overlap) # TEMP
+            print('    ', seg_num, end_qual) # TEMP
         print('\n') # TEMP
 
     # If an bridge already exists for a spanning sequence, we add the sequence to the bridge. If
@@ -504,13 +583,15 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
             new_bridge = LongReadBridge(graph, start, end)
             new_bridges.append(new_bridge)
             matching_bridge = new_bridge
-        matching_bridge.full_span_reads.append(span)
+        matching_bridge.full_span_reads += span
     all_bridges = existing_bridges + new_bridges
 
-    # Add overlapping sequences to appropriate bridges.
+    # Add overlapping sequences to appropriate bridges, but only if they have some full span
+    # sequence (if their full span reads only have overlap-indicating negative numbers, then we
+    # won't be doing a consensus sequence and don't need overlapping sequences).
     for seg_num, overlaps in overlapping_read_seqs.items():
         for bridge in all_bridges:
-            if not isinstance(bridge, LongReadBridge):
+            if not isinstance(bridge, LongReadBridge) or not bridge.contains_full_span_sequence():
                 continue
             start_overlap = (bridge.start_segment == seg_num)
             end_overlap = (bridge.end_segment == -seg_num)
@@ -519,12 +600,9 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
                     if start_overlap:
                         bridge.start_only_reads.append(overlap)
                     elif end_overlap:
-                        overlap_seq, alignment = overlap
-                        if isinstance(overlap_seq, int):
-                            flipped_seq = overlap_seq
-                        else:
-                            flipped_seq = reverse_complement(overlap_seq)
-                        bridge.start_only_reads.append((flipped_seq, alignment))
+                        overlap_seq, overlap_qual, alignment = overlap
+                        bridge.start_only_reads.append((reverse_complement(overlap_seq),
+                                                        overlap_qual[::-1], alignment))
 
     # Now we need to finalise the reads. This is the intensive step, as it involves creating a
     # consensus sequence, finding graph paths and doing alignments between the consensus and the
@@ -537,7 +615,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     completed_count = 0
     if threads == 1:
         for bridge in long_read_bridges:
-            output = bridge.finalise()
+            output = bridge.finalise(scoring_scheme)
             completed_count += 1
             if verbosity == 1:
                 print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')
@@ -545,7 +623,10 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
                 print(output, end='')
     else:
         pool = ThreadPool(threads)
-        for output in pool.imap(finalise_bridge, long_read_bridges, 1):
+        arg_list = []
+        for bridge in long_read_bridges:
+            arg_list.append((bridge, scoring_scheme))
+        for output in pool.imap(finalise_bridge, arg_list, 1):
             completed_count += 1
             if verbosity == 1:
                 print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')
@@ -666,5 +747,5 @@ def get_single_copy_alignments(read, single_copy_num_set, allowed_overlap, min_s
                     final_alignments.append(second_best_alignment)
     return final_alignments
 
-def finalise_bridge(bridge):
-    return bridge.finalise()
+def finalise_bridge(bridge, scoring_scheme):
+    return bridge.finalise(scoring_scheme)

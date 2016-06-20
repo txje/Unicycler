@@ -747,5 +747,6 @@ def get_single_copy_alignments(read, single_copy_num_set, allowed_overlap, min_s
                     final_alignments.append(second_best_alignment)
     return final_alignments
 
-def finalise_bridge(bridge, scoring_scheme):
+def finalise_bridge(both_args):
+    bridge, scoring_scheme = both_args
     return bridge.finalise(scoring_scheme)

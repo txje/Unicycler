@@ -110,6 +110,7 @@ def main():
                 print('SAM file already exists. Will use these alignments instead of conducting a new '
                       'alignment:')
                 print('  ' + alignments_sam)
+                print()
             alignments = load_sam_alignments(alignments_sam, read_dict, reference_dict,
                                              scoring_scheme)
             for alignment in alignments:
@@ -138,14 +139,13 @@ def main():
         min_scaled_score = get_percentile(contained_scores, min_scaled_score_percentile)
 
         if verbosity > 1:
-            print()
             print('Setting the minimum scaled score to the ' +
                   float_to_str(min_scaled_score_percentile, 1) +
                   '% percentile of full read alignments:', float_to_str(min_scaled_score, 2))
+            print()
 
         # Do the long read bridging - this is the good part!
         if verbosity > 0:
-            print()
             print('Building long read bridges')
             print('--------------------------', flush=True)
         bridges = create_long_read_bridges(assembly_graph, read_dict, read_names,

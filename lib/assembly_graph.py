@@ -700,8 +700,8 @@ class AssemblyGraph(object):
         overlap size) to bridge the connection.
         For example: A->B,C and D->B,C becomes A->E and D->E and E->B and E->C
         '''
-        seg_nums = self.segments.keys()
-        seg_nums += [-x for x in self.segments.keys()]
+        seg_nums = list(self.segments)
+        seg_nums += [-x for x in self.segments]
         for seg_num in seg_nums:
             if seg_num not in self.forward_links:
                 continue
@@ -727,7 +727,7 @@ class AssemblyGraph(object):
             start_2 = self.segments[abs(start_num_2)]
             end_1 = self.segments[abs(end_num_1)]
             end_2 = self.segments[abs(end_num_2)]
-            if end_1 > 0:
+            if end_num_1 > 0:
                 bridge_seq = end_1.forward_sequence[:self.overlap]
             else:
                 bridge_seq = end_1.reverse_sequence[:self.overlap]

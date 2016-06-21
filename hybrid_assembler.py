@@ -75,7 +75,8 @@ def main():
     bridges += create_loop_unrolling_bridges(assembly_graph, single_copy_segments, verbosity)
     bridged_graph = copy.deepcopy(assembly_graph)
     bridged_graph.apply_bridges(bridges, verbosity, args.min_bridge_qual)
-    bridged_graph.save_to_gfa(spades_bridged_graph_unmerged, verbosity, save_seg_type_info=True)
+    bridged_graph.save_to_gfa(spades_bridged_graph_unmerged, verbosity, save_seg_type_info=True,
+                              single_copy_segments=single_copy_segments)
     bridged_graph.merge_all_possible()
     bridged_graph.save_to_gfa(spades_bridged_graph_merged, verbosity)
     if verbosity > 0:
@@ -143,19 +144,11 @@ def main():
                                            single_copy_segments, verbosity, bridges,
                                            min_scaled_score, args.threads, scoring_scheme,
                                            min_alignment_length)
-
-
-
-
-        quit() # TEMP
-
-
-
-
         bridged_graph = copy.deepcopy(assembly_graph)
         bridged_graph.apply_bridges(bridges, verbosity, args.min_bridge_qual)
         bridged_graph.save_to_gfa(os.path.join(args.out, '006_long_read_bridges_unmerged.gfa'),
-                                  verbosity, save_seg_type_info=True)
+                                  verbosity, save_seg_type_info=True,
+                                  single_copy_segments=single_copy_segments)
         bridged_graph.merge_all_possible()
         bridged_graph.save_to_gfa(os.path.join(args.out, '007_long_read_bridges_merged.gfa'),
                                   verbosity)

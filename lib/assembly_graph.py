@@ -219,7 +219,7 @@ class AssemblyGraph(object):
             fastg.write(add_line_breaks_to_sequence(segment.reverse_sequence, 60))
 
     def save_to_gfa(self, filename, verbosity, save_copy_depth_info=False,
-                    save_seg_type_info=False):
+                    save_seg_type_info=False, single_copy_segments=None):
         '''
         Saves whole graph to a GFA file.
         '''
@@ -227,6 +227,8 @@ class AssemblyGraph(object):
         if verbosity > 0:
             print('Saving', filename)
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
+        if single_copy_segments is not None:
+            single_copy_segments = set([x.number for x in single_copy_segments])
         for segment in sorted_segments:
             segment_line = segment.gfa_segment_line()
             if save_copy_depth_info and segment.number in self.copy_depths:
@@ -237,7 +239,13 @@ class AssemblyGraph(object):
             if save_seg_type_info:
                 segment_line = segment_line[:-1] # Remove newline
                 segment_line += '\tLB:z:' + segment.get_seg_type_label()
-                segment_line += '\tCL:z:' + segment.get_seg_type_colour()
+                if segment.number in single_copy_segments:
+                    colour = 'forestgreen'
+                elif segment.bridge is None:
+                    colour = 'grey'
+                else:
+                    colour = 'pink'
+                segment_line += '\tCL:z:' + colour
                 segment_line += '\n'
 
             gfa.write(segment_line)
@@ -394,6 +402,7 @@ class AssemblyGraph(object):
                     if merged:
                         try_to_merge = True
                         break
+        self.renumber_segments()
 
     def try_to_merge_two_segments(self, seg_num_1, seg_num_2):
         '''
@@ -1082,9 +1091,7 @@ class AssemblyGraph(object):
         if not self.copy_depths[seg_num]:
             return
         closest_depth = min(self.copy_depths[seg_num], key=lambda x: abs(x - depth_to_remove))
-        new_copy_depths = [x for x in self.copy_depths[seg_num] if x != closest_depth]
-        assert len(new_copy_depths) == len(self.copy_depths[seg_num]) - 1
-        self.copy_depths[seg_num] = new_copy_depths
+        del self.copy_depths[seg_num][self.copy_depths[seg_num].index(closest_depth)]
 
     def get_base_count_in_depth_range(self, min_depth, max_depth):
         '''
@@ -1370,7 +1377,40 @@ class AssemblyGraph(object):
         except KeyError:
             return 0
 
-        
+    def renumber_segments(self):
+        '''
+        This function gives the longest segment the number 1, the second-longest the number 2, etc.
+        '''
+        old_nums = [x.number for x in sorted(self.segments.values(), reverse=True,
+                                             key=lambda x: x.get_length())]
+        new_nums = list(range(1, len(old_nums) + 1))
+        old_nums += [-x for x in old_nums]
+        new_nums += [-x for x in new_nums]
+        changes = dict(zip(old_nums, new_nums))
+
+        new_segments = {}
+        for seg_num, seg in self.segments.items():
+            new_num = changes[seg_num]
+            seg.number = new_num
+            new_segments[new_num] = seg
+        self.segments = new_segments
+
+        new_forward_links = {}
+        for seg_num, link_nums in self.forward_links.items():
+            new_forward_links[changes[seg_num]] = [changes[x] for x in link_nums]
+        self.forward_links = new_forward_links
+
+        new_reverse_links = {}
+        for seg_num, link_nums in self.reverse_links.items():
+            new_reverse_links[changes[seg_num]] = [changes[x] for x in link_nums]
+        self.reverse_links = new_reverse_links
+
+        self.copy_depths = {changes[x]: y for x, y in self.copy_depths.items()}
+
+        new_paths = {}
+        for name, path_nums in self.paths.items():
+            new_paths[name] = [changes[x] for x in path_nums]
+        self.paths = new_paths
 
 
 
@@ -1459,24 +1499,6 @@ class Segment(object):
         fasta.write(add_line_breaks_to_sequence(self.forward_sequence, 60))
         fasta.close()
 
-    def get_seg_type_colour(self):
-        '''
-        Given a particular segment, this function returns a colour string based its type.
-        '''
-        if self.bridge is None:
-            return 'gray'
-
-        if isinstance(self.bridge, SpadesContigBridge):
-            return 'forestgreen'
-        if isinstance(self.bridge, LoopUnrollingBridge):
-            return 'pink'
-
-        # We can now assume the bridge is a LongReadBridge.
-        if self.bridge.graph_path: # Bridge is based on a graph path
-            return 'blue'
-        else: # Bridge is just a read consensus
-            return 'red'
-
     def get_seg_type_label(self):
         '''
         Given a particular segment, this function returns a label string based its type.
@@ -1493,9 +1515,9 @@ class Segment(object):
 
         # We can now assume the bridge is a LongReadBridge.
         if graph_path_str:
-            return 'long read bridge: ' + graph_path_str
+            return 'Long read bridge: ' + graph_path_str
         else:
-            return 'long read sequence'
+            return 'Long read sequence'
 
 def get_error(source, target):
     '''
@@ -1536,8 +1558,7 @@ def shuffle_into_bins(items, bins, targets):
     # the appropriate amount, then add the arrangement to the results.
     elif all(x for x in bins) and \
          all([not target or target == len(bins[i]) for i, target in enumerate(targets)]):
-            arrangements.append(bins)
-
+        arrangements.append(bins)
     return arrangements
 
 def get_headers_and_sequences(filename):

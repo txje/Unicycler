@@ -89,7 +89,9 @@ def main():
     alignments_sam = os.path.join(alignment_dir, 'long_read_alignments.sam')
     temp_alignment_dir = os.path.join(alignment_dir, 'temp')
     assembly_graph.save_to_fasta(graph_fasta)
+
     scoring_scheme = AlignmentScoringScheme(args.scores)
+    min_alignment_length = assembly_graph.overlap * 2 # TO DO: make this a parameter?
 
     # If all long reads are available now, then we do the entire process in one pass.
     if args.long:
@@ -110,7 +112,6 @@ def main():
         # Conduct alignment if existing alignments are not available.
         else:
             alignments_sam_in_progress = alignments_sam + '.incomplete'
-            min_alignment_length = assembly_graph.overlap * 2 # TO DO: make this a parameter?
             allowed_overlap = int(round(assembly_graph.overlap * 1.1)) # TO DO: adjust?
 
             semi_global_align_long_reads(references, graph_fasta, read_dict, read_names,
@@ -140,7 +141,8 @@ def main():
         # Do the long read bridging - this is the good part!
         bridges = create_long_read_bridges(assembly_graph, read_dict, read_names,
                                            single_copy_segments, verbosity, bridges,
-                                           min_scaled_score, args.threads, scoring_scheme)
+                                           min_scaled_score, args.threads, scoring_scheme,
+                                           min_alignment_length)
 
 
 

@@ -35,7 +35,7 @@ class SpadesContigBridge(object):
         self.depth = 0.0
 
         # A score used to determine the order of bridge application.
-        self.quality = 20.0
+        self.quality = 40.0
 
         # The first and last values in spades_contig_path are the start and end segments. The
         # values in between are the path.
@@ -122,12 +122,15 @@ class LongReadBridge(object):
                ', '.join([str(x) for x in self.graph_path]) + ' -> ' + str(self.end_segment) + \
                ' (quality = ' + float_to_str(self.quality, 2) + ')'
 
-    def finalise(self, scoring_scheme):
+    def finalise(self, scoring_scheme, min_alignment_length):
         '''
         Determines the consensus sequence for the bridge, attempts to find it in the graph and
         assigns a quality score to the bridge. This is the performance-intensive step of long read
         bridging.
-        ''' 
+        '''
+        start_seg = self.graph.segments[abs(self.start_segment)]
+        end_seg = self.graph.segments[abs(self.end_segment)]
+
         output = '\n' # TEMP
         output += 'FINALISING BRIDGE\n' # TEMP
         output += '-----------------\n' # TEMP
@@ -213,7 +216,8 @@ class LongReadBridge(object):
 
         # If we have a consensus to align to, then we use that do choose the best path.
         if consensus:
-            best_score = None
+            best_raw_score = None
+            best_scaled_score = None
             for path in potential_paths:
                 path_seq = self.graph.get_path_sequence(path)
 
@@ -227,12 +231,14 @@ class LongReadBridge(object):
                 scaled_score = float(seqan_parts[7])
                 output += str(raw_score) + ', ' + str(scaled_score) + '\n' # TEMP
 
-                if best_score is None or raw_score > best_score:
-                    best_score = raw_score
+                if best_raw_score is None or raw_score > best_raw_score:
+                    best_raw_score = raw_score
+                    best_scaled_score = scaled_score
                     best_path = path
 
                 # In case of a tie, go with the simpler path.
-                elif raw_score == best_score and len(path) < len(best_path):
+                elif raw_score == best_raw_score and len(path) < len(best_path):
+                    best_scaled_score = scaled_score
                     best_path = path
 
         # If there isn't a consensus (i.e. the start and end overlap), then we choose the best path
@@ -251,67 +257,64 @@ class LongReadBridge(object):
                     best_path = path
                 elif smallest_length_diff == length_diff and len(path) < len(best_path):
                     best_path = path
+            if best_path:
+                best_scaled_score = get_num_agreement(self.graph.get_path_length(best_path),
+                                                      target_path_length) * 100.0
 
         # If a path was found, use its sequence for the bridge.
         if best_path:
             output += 'best path: ' + str(best_path) + '\n' # TEMP
             self.bridge_sequence = self.graph.get_path_sequence(best_path)
 
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-
-
-
+            # Now we adjust the quality. It starts on the scaled score of the path alignment (which
+            # maxes out at 100.0).
+            self.quality = best_scaled_score
 
         # If a path wasn't found, the consensus sequence is the bridge.
         else:
             output += 'best path: ' + str(best_path) + '\n' # TEMP
             self.bridge_sequence = consensus
 
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
-            # LOTS OF QUALITY ADJUSTMENTS TO BE DONE HERE
+            # Non-graph-path-supported bridges are much lower quality than graph-path-supported bridges.
+            self.quality = 20.0
 
+        # Now we adjust the quality downward based on a number of factors.
+        output += 'starting quality:        ' + float_to_str(self.quality, 2) + '\n' # TEMP
 
+        # The start segment and end segment should agree in depth. If they don't, that's very bad,
+        # as it implies that they aren't actually single-copy or on the same piece of DNA.
+        depth_agreement_factor = get_num_agreement(start_seg.depth, end_seg.depth)
 
+        # The total length of alignments to the start/end segments is positively correlated with
+        # quality. This rewards bridges with long alignment and also bridges with many alignments.
+        total_alignment_length = sum(x[2].get_aligned_ref_length() + x[3].get_aligned_ref_length() \
+                                     for x in self.full_span_reads)
+        alignment_length_factor = score_function(total_alignment_length, min_alignment_length * 4)
 
+        # The mean alignment score to the start/end segments is positively correlated with quality,
+        # so bridges with high quality alignments are rewarded.
+        scaled_score_total = sum(x[2].scaled_score + x[3].scaled_score \
+                                 for x in self.full_span_reads)
+        mean_scaled_score = scaled_score_total / (2.0 * len(self.full_span_reads))
+        alignment_score_factor = mean_scaled_score / 100.0
 
+        # Bridges between long start/end segments are rewarded, as they are more likely to actually
+        # be single-copy.
+        start_length_factor = score_function(start_seg.get_length(), 1000)
+        end_length_factor = score_function(end_seg.get_length(), 1000)
 
+        self.quality *= depth_agreement_factor * depth_agreement_factor
+        self.quality *= alignment_length_factor
+        self.quality *= alignment_score_factor
+        self.quality *= start_length_factor
+        self.quality *= end_length_factor
 
-
-
-
-
-
-
-
-
-
-
-
-
+        output += 'depth agreement factor:  ' + float_to_str(depth_agreement_factor, 2) + '\n' # TEMP
+        output += 'alignment length factor: ' + float_to_str(alignment_length_factor, 2) + '\n' # TEMP
+        output += 'alignment score factor:  ' + float_to_str(alignment_score_factor, 2) + '\n' # TEMP
+        output += 'start length factor:     ' + float_to_str(start_length_factor, 2) + '\n' # TEMP
+        output += 'end length factor:       ' + float_to_str(end_length_factor, 2) + '\n' # TEMP
+        output += 'final quality:           ' + float_to_str(self.quality, 2) + '\n' # TEMP
 
 
 
@@ -369,7 +372,7 @@ class LoopUnrollingBridge(object):
 
         # A score used to determine the order of bridge application. This value starts at the
         # maximum for a loop unrolling bridge and can only decrease as the constructor continues.
-        self.quality = 10.0
+        self.quality = 30.0
 
         # Get the actual segments from the numbers. Since we are assuming they do form a simple
         # loop, we don't care about directionality.
@@ -558,7 +561,8 @@ def create_loop_unrolling_bridges(graph, single_copy_segments, verbosity):
     return bridges
 
 def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments, verbosity,
-                             existing_bridges, min_scaled_score, threads, scoring_scheme):
+                             existing_bridges, min_scaled_score, threads, scoring_scheme,
+                             min_alignment_length):
     '''
     Makes bridges between single-copy segments using the alignments in the long reads.
     '''
@@ -714,7 +718,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     completed_count = 0
     if threads == 1:
         for bridge in long_read_bridges:
-            output = bridge.finalise(scoring_scheme)
+            output = bridge.finalise(scoring_scheme, min_alignment_length)
             completed_count += 1
             if verbosity == 1:
                 print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')
@@ -724,7 +728,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
         pool = ThreadPool(threads)
         arg_list = []
         for bridge in long_read_bridges:
-            arg_list.append((bridge, scoring_scheme))
+            arg_list.append((bridge, scoring_scheme, min_alignment_length))
         for output in pool.imap(finalise_bridge, arg_list, 1):
             completed_count += 1
             if verbosity == 1:
@@ -838,6 +842,18 @@ def get_single_copy_alignments(read, single_copy_num_set, allowed_overlap, min_s
                     final_alignments.append(second_best_alignment)
     return final_alignments
 
-def finalise_bridge(both_args):
-    bridge, scoring_scheme = both_args
-    return bridge.finalise(scoring_scheme)
+def finalise_bridge(all_args):
+    bridge, scoring_scheme, min_alignment_length = all_args
+    return bridge.finalise(scoring_scheme, min_alignment_length)
+
+def score_function(val, half_score_val):
+    '''
+    For inputs of 0.0 and greater, this function returns a value between 0.0 and 1.0, approaching
+    1.0 with large values. The half_score_val argument is the point at which the function returns
+    0.5. If it's large the function approaches 1.0 more slowly, if it's small the function
+    approaches 1.0 more quickly.
+    '''
+    return 1.0 - (half_score_val / (half_score_val + val))
+
+
+

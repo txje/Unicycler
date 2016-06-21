@@ -517,7 +517,7 @@ def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity):
         max_kmer = 127
     interval = 2
     while True:
-        kmer_range = range(starting_kmer, max_kmer, interval) + [max_kmer]
+        kmer_range = list(range(starting_kmer, max_kmer, interval)) + [max_kmer]
         if len(kmer_range) <= kmer_count:
             break
         interval += 2

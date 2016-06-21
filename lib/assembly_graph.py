@@ -1414,6 +1414,98 @@ class AssemblyGraph(object):
             new_paths[name] = [changes[x] for x in path_nums]
         self.paths = new_paths
 
+    def get_summary(self, title, file=None, score=None):
+        '''
+        Returns a nice table describing the graph.
+        '''
+        total_length = self.get_total_length()
+        max_v = total_length
+        summary = title + '\n'
+        summary += '-' * len(title) + '\n'
+        if file:
+            summary += file + '\n'
+        summary += 'segments:              ' + int_to_str(len(self.segments), max_v) + '\n'
+        summary += 'links:                 ' + int_to_str(self.get_total_link_count(), max_v) + '\n'
+        summary += 'total length (bp):     ' + int_to_str(self.get_total_length(), max_v) + '\n'
+
+        n50, shortest, lower_quartile, median, upper_quartile, longest = self.get_contig_stats()
+        summary += 'N50:                   ' + int_to_str(n50, max_v) + '\n'
+        summary += 'shortest segment (bp): ' + int_to_str(shortest, max_v) + '\n'
+        summary += 'lower quartile (bp):   ' + int_to_str(lower_quartile, max_v) + '\n'
+        summary += 'median segment (bp):   ' + int_to_str(median, max_v) + '\n'
+        summary += 'upper quartile (bp):   ' + int_to_str(upper_quartile, max_v) + '\n'
+        summary += 'longest segment (bp):  ' + int_to_str(longest, max_v) + '\n'
+
+        summary += 'dead ends:             ' + int_to_str(self.total_dead_end_count(), max_v) + '\n'
+        summary += 'connected components:  ' + \
+                   int_to_str(len(self.get_connected_components()), max_v) + '\n'
+        summary += 'completed components:  ' + \
+                   int_to_str(self.completed_circular_count(), max_v) + '\n'
+        if score:
+            pad_size = len(int_to_str(max_v))
+            summary += 'score:                 ' + '{:.2e}'.format(score).rjust(pad_size) + '\n'
+        return summary
+
+    def get_total_link_count(self):
+        '''
+        Returns the total number of forward links in the graph, not counting rev comp duplicates.
+        '''
+        links = set()
+        for start, ends in self.forward_links.items():
+            for end in ends:
+                if (start, end) not in links and (-end, -start) not in links:
+                    links.add((start, end))
+        return len(links)
+
+    def get_contig_stats(self):
+        '''
+        Returns various contig length metrics.
+        '''
+        segment_lengths = sorted([x.get_length() for x in self.segments.values()])
+        if not segment_lengths:
+            return 0, 0, 0, 0, 0, 0
+
+        shortest = segment_lengths[0]
+        longest = segment_lengths[-1]
+
+        first_quartile_index = (len(segment_lengths) - 1) / 4
+        median_index = (len(segment_lengths) - 1) / 2
+        third_quartile_index = (len(segment_lengths) - 1) * 3 / 4
+
+        first_quartile = int(round(value_from_fractional_index(segment_lengths,
+                                                               first_quartile_index)))
+        median = int(round(value_from_fractional_index(segment_lengths, median_index)))
+        third_quartile = int(round(value_from_fractional_index(segment_lengths,
+                                                               third_quartile_index)))
+
+        half_total_length = sum(segment_lengths) / 2
+        total_so_far = 0
+        segment_lengths = segment_lengths[::-1]
+        for length in segment_lengths:
+            total_so_far += length
+            if total_so_far >= half_total_length:
+                n50 = length
+                break
+        else:
+            n50 = 0
+
+        return n50, shortest, first_quartile, median, third_quartile, longest
+
+    def completed_circular_count(self):
+        '''
+        Returns the number of graph components which are simple loops: one node connected to itself
+        to make a circular piece of DNA.
+        '''
+        single_segment_components = [x for x in self.get_connected_components() if len(x) == 1]
+        completed_count = 0
+        for component in single_segment_components:
+            only_segment = component[0]
+            if only_segment in self.forward_links and \
+               self.forward_links[only_segment] == [only_segment] and \
+               only_segment in self.reverse_links and \
+               self.reverse_links[only_segment] == [only_segment]:
+                completed_count += 1
+        return completed_count
 
 
 
@@ -1855,5 +1947,25 @@ def split_path_multiple(path, segs):
         path_parts = new_path_parts
     return path_parts
 
+def value_from_fractional_index(lst, index):
+    '''
+    Given a list of numbers and a fractional index, this function will interpolate between the
+    values.
+    '''
+    if not lst:
+        return 0
+    if len(lst) == 1:
+        return lst[0]
+    
+    whole_part = int(index)
+    if whole_part < 0:
+        return lst[0]
+    if whole_part >= len(lst) - 1:
+        return lst[-1]
+
+    fractional_part = index - float(whole_part)
+    piece_1 = lst[whole_part]
+    piece_2 = lst[whole_part+1]
+    return piece_1 * (1.0 - fractional_part) + piece_2 * fractional_part
 
 

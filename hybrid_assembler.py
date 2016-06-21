@@ -164,6 +164,9 @@ def main():
         bridged_graph.merge_all_possible()
         bridged_graph.save_to_gfa(os.path.join(args.out, '007_long_read_bridges_merged.gfa'),
                                   verbosity)
+        if verbosity > 0:
+            print()
+            print(bridged_graph.get_summary('Final assembly graph'))
 
     # If we are getting long reads incrementally, then we do the process iteratively.
     elif args.long_dir:
@@ -176,9 +179,6 @@ def main():
             # TO DO: SAVE THE RESULTS
             # TO DO: ASSESS WHETHER THE PROCESS IS COMPLETE
             finished = True # TEMP
-
-    if verbosity > 0:
-        print()
 
 def get_arguments():
     '''
@@ -314,7 +314,11 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
             if not keep_temp:
                 os.remove(graph_file)
                 os.remove(paths_file)
-        dead_ends, connected_components, segment_count = get_graph_info(assembly_graph)
+
+        dead_ends = assembly_graph.total_dead_end_count()
+        connected_components = len(assembly_graph.get_connected_components())
+        segment_count = len(assembly_graph.segments)
+
         if segment_count == 0:
             score = 0.0
         else:
@@ -324,14 +328,7 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
                   int_to_str(dead_ends).rjust(12) + '{:.2e}'.format(score).rjust(14))
         if verbosity > 1:
             title = 'SPAdes k=' + int_to_str(kmer) + ' assembly graph summary'
-            print(title)
-            print('-' * len(title))
-            print('segments:            ', int_to_str(segment_count))
-            print('total length:        ', int_to_str(assembly_graph.get_total_length()), 'bp')
-            print('dead ends:           ', int_to_str(dead_ends))
-            print('connected components:', int_to_str(connected_components))
-            print('score:               ', '{:.2e}'.format(score))
-            print()
+            print(assembly_graph.get_summary(title, file=clean_graph_filename, score=score))
         if score >= best_score:
             best_kmer = kmer
             best_score = score
@@ -352,16 +349,6 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
         print()
 
     return best_assembly_graph
-
-def get_graph_info(assembly_graph):
-    '''
-    This function returns some graph information that will be useful for determining which kmer is
-    best.
-    '''
-    dead_ends = assembly_graph.total_dead_end_count()
-    connected_components = len(assembly_graph.get_connected_components())
-    segment_count = len(assembly_graph.segments)
-    return dead_ends, connected_components, segment_count
 
 def spades_read_correction(short1, short2, spades_dir, verbosity, threads):
     '''

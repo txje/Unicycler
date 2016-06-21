@@ -381,7 +381,7 @@ def spades_read_correction(short1, short2, spades_dir, verbosity, threads):
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     while process.poll() is None:
-        spades_output = process.stdout.readline().rstrip()
+        spades_output = process.stdout.readline().rstrip().decode('utf-8')
         print_line = False
         if verbosity > 1:
             print_line = True
@@ -392,7 +392,7 @@ def spades_read_correction(short1, short2, spades_dir, verbosity, threads):
         if spades_output and print_line:
             print(spades_output, flush=True)
 
-    spades_error = process.stderr.readline().strip()
+    spades_error = process.stderr.readline().strip().decode('utf-8')
     if spades_error:
         quit_with_error('SPAdes encountered an error: ' + spades_error)
 
@@ -446,11 +446,11 @@ def spades_assembly(read_files, outdir, kmers, verbosity, threads):
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     while process.poll() is None:
-        spades_output = process.stdout.readline().rstrip()
+        spades_output = process.stdout.readline().rstrip().decode('utf-8')
         if spades_output and verbosity > 1:
             print(spades_output, flush=True)
 
-    spades_error = process.stderr.readline().strip()
+    spades_error = process.stderr.readline().strip().decode('utf-8')
     if spades_error:
         quit_with_error('SPAdes encountered an error: ' + spades_error)
 

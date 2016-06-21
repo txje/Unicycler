@@ -71,6 +71,10 @@ def main():
     assembly_graph.save_to_gfa(unbridged_graph, verbosity, save_copy_depth_info=True)
 
     # Make an initial set of bridges using the SPAdes contig paths.
+    if verbosity > 0:
+        print()
+        print('Bridging graph with SPAdes contig paths')
+        print('---------------------------------------', flush=True)
     bridges = create_spades_contig_bridges(assembly_graph, single_copy_segments, verbosity)
     bridges += create_loop_unrolling_bridges(assembly_graph, single_copy_segments, verbosity)
     bridged_graph = copy.deepcopy(assembly_graph)
@@ -137,14 +141,22 @@ def main():
             print('Setting the minimum scaled score to the ' +
                   float_to_str(min_scaled_score_percentile, 1) +
                   '% percentile of full read alignments:', float_to_str(min_scaled_score, 2))
-            print()
 
         # Do the long read bridging - this is the good part!
+        if verbosity > 0:
+            print()
+            print('Building long read bridges')
+            print('--------------------------', flush=True)
         bridges = create_long_read_bridges(assembly_graph, read_dict, read_names,
                                            single_copy_segments, verbosity, bridges,
                                            min_scaled_score, args.threads, scoring_scheme,
                                            min_alignment_length)
         bridged_graph = copy.deepcopy(assembly_graph)
+        if verbosity == 1:
+            print()
+        if verbosity > 0:
+            print('Bridging graph with long reads')
+            print('------------------------------', flush=True)
         bridged_graph.apply_bridges(bridges, verbosity, args.min_bridge_qual)
         bridged_graph.save_to_gfa(os.path.join(args.out, '006_long_read_bridges_unmerged.gfa'),
                                   verbosity, save_seg_type_info=True,
@@ -164,6 +176,9 @@ def main():
             # TO DO: SAVE THE RESULTS
             # TO DO: ASSESS WHETHER THE PROCESS IS COMPLETE
             finished = True # TEMP
+
+    if verbosity > 0:
+        print()
 
 def get_arguments():
     '''
@@ -308,7 +323,9 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
             print(int_to_str(kmer).rjust(7) + int_to_str(segment_count).rjust(11) +
                   int_to_str(dead_ends).rjust(12) + '{:.2e}'.format(score).rjust(14))
         if verbosity > 1:
-            print('Summary for k' + int_to_str(kmer) + ':')
+            title = 'SPAdes k=' + int_to_str(kmer) + ' assembly graph summary'
+            print(title)
+            print('-' * len(title))
             print('segments:            ', int_to_str(segment_count))
             print('total length:        ', int_to_str(assembly_graph.get_total_length()), 'bp')
             print('dead ends:           ', int_to_str(dead_ends))

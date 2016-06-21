@@ -7,7 +7,8 @@ the important members/methods (for duck-typing purposes).
 from multiprocessing.dummy import Pool as ThreadPool
 import sys
 
-from misc import float_to_str, reverse_complement, print_progress_line, weighted_average
+from misc import int_to_str, float_to_str, reverse_complement, print_progress_line, \
+                 weighted_average
 from cpp_function_wrappers import multiple_sequence_alignment, fully_global_alignment
 
 class SpadesContigBridge(object):
@@ -135,20 +136,25 @@ class LongReadBridge(object):
         end_seg = self.graph.segments[abs(self.end_segment)]
         self.depth = get_mean_depth(start_seg, end_seg, self.graph)
 
-        output = '\n' # TEMP
-        output += 'FINALISING BRIDGE\n' # TEMP
-        output += '-----------------\n' # TEMP
-        output += 'start: ' + str(self.start_segment) + '\n' # TEMP
-        output += 'end:   ' + str(self.end_segment) + '\n' # TEMP
-        output += 'start overlaps:\n' # TEMP
-        for start_only_read in self.start_only_reads:
-            output += '  ' + str(start_only_read) + '\n' # TEMP
-        output += 'end overlaps:\n' # TEMP
-        for end_only_read in self.end_only_reads:
-            output += '  ' + str(end_only_read) + '\n' # TEMP
-        output += 'full spans:\n' # TEMP
-        for full_span_read in self.full_span_reads:
-            output += '  ' + str(full_span_read) + '\n' # TEMP
+        output = ''
+
+        # output += 'FINALISING BRIDGE\n' # TEMP
+        # output += '-----------------\n' # TEMP
+        # output += 'start: ' + str(self.start_segment) + '\n' # TEMP
+        # output += 'end:   ' + str(self.end_segment) + '\n' # TEMP
+        # output += 'start overlaps:\n' # TEMP
+        # for start_only_read in self.start_only_reads:
+        #     output += '  ' + str(start_only_read) + '\n' # TEMP
+        # output += 'end overlaps:\n' # TEMP
+        # for end_only_read in self.end_only_reads:
+        #     output += '  ' + str(end_only_read) + '\n' # TEMP
+        # output += 'full spans:\n' # TEMP
+        # for full_span_read in self.full_span_reads:
+        #     output += '  ' + str(full_span_read) + '\n' # TEMP
+
+        output += str(self.start_segment) + ' to ' + str(self.end_segment) + ':\n'
+        output += '  bridging reads:     ' + int_to_str(len(self.full_span_reads)) + '\n'
+
 
         # Parition the full span reads into two groups: those with negative numbers (implying that
         # the two segments overlap) and those with actual sequences.
@@ -182,12 +188,15 @@ class LongReadBridge(object):
                                                                 start_only_seqs, start_only_quals,
                                                                 end_only_seqs, end_only_quals,
                                                                 scoring_scheme)
-            output += 'consensus: ' + str(self.consensus_sequence) + '\n' # TEMP
-            output += 'full span consensus scores: ' + str(full_span_scores) + '\n' # TEMP
-            if start_only_scores: # TEMP
-                output += 'start-only consensus scores: ' + str(start_only_scores) + '\n' # TEMP
-            if end_only_scores: # TEMP
-                output += 'end-only consensus scores: ' + str(end_only_scores) + '\n' # TEMP
+            # output += 'consensus: ' + str(self.consensus_sequence) + '\n' # TEMP
+            # output += 'full span consensus scores: ' + str(full_span_scores) + '\n' # TEMP
+            # if start_only_scores: # TEMP
+            #     output += 'start-only consensus scores: ' + str(start_only_scores) + '\n' # TEMP
+            # if end_only_scores: # TEMP
+            #     output += 'end-only consensus scores: ' + str(end_only_scores) + '\n' # TEMP
+
+            output += '  consensus sequence: ' + int_to_str(len(self.consensus_sequence)) + ' bp\n'
+
             target_path_length = len(self.consensus_sequence) + (2 * self.graph.overlap)
 
 
@@ -196,25 +205,25 @@ class LongReadBridge(object):
             self.consensus_sequence = ''
             mean_overlap = int(round(sum(x[0] for x in full_spans_without_seq) / \
                                      len(full_spans_without_seq)))
-            output += 'mean overlap: ' + str(mean_overlap) + '\n' # TEMP
+            output += '  mean overlap:       ' + int_to_str(abs(mean_overlap)) + '\n'
             target_path_length = mean_overlap + (2 * self.graph.overlap)
 
-        output += 'target graph path length: ' + str(target_path_length) + '\n' # TEMP
+        output += '  target path length: ' + str(target_path_length) + '\n'
 
         # Limit the path search to lengths near the target.
         # TO DO: adjust these or make them parameters?
         min_path_length = int(round(target_path_length * 0.5))
         max_path_length = int(round(target_path_length * 1.5))
 
-        output += 'min graph path length: ' + str(min_path_length) + '\n' # TEMP
-        output += 'max graph path length: ' + str(max_path_length) + '\n' # TEMP
+        # output += 'min graph path length: ' + str(min_path_length) + '\n' # TEMP
+        # output += 'max graph path length: ' + str(max_path_length) + '\n' # TEMP
 
         potential_paths = self.graph.all_paths(self.start_segment, self.end_segment,
                                                min_path_length, max_path_length)
 
-        output += 'potential paths:\n' # TEMP
-        if not potential_paths: # TEMP
-            output += '  NONE\n' # TEMP
+        # output += 'potential paths:\n' # TEMP
+        # if not potential_paths: # TEMP
+        #     output += '  NONE\n' # TEMP
 
         self.graph_path = []
 
@@ -225,15 +234,15 @@ class LongReadBridge(object):
             for path in potential_paths:
                 path_seq = self.graph.get_path_sequence(path)
 
-                output += '  ' + str(path) # TEMP
-                output += ' (' + str(len(path_seq)) + '), ' # TEMP
+                # output += '  ' + str(path) # TEMP
+                # output += ' (' + str(len(path_seq)) + '), ' # TEMP
 
                 alignment_result = fully_global_alignment(self.consensus_sequence, path_seq,
                                                           scoring_scheme, True, 1000)
                 seqan_parts = alignment_result.split(',', 9)
                 raw_score = int(seqan_parts[6])
                 scaled_score = float(seqan_parts[7])
-                output += str(raw_score) + ', ' + str(scaled_score) + '\n' # TEMP
+                # output += str(raw_score) + ', ' + str(scaled_score) + '\n' # TEMP
 
                 if best_raw_score is None or raw_score > best_raw_score:
                     best_raw_score = raw_score
@@ -252,8 +261,8 @@ class LongReadBridge(object):
             for path in potential_paths:
                 path_len = self.graph.get_path_length(path)
 
-                output += '  ' + str(path) # TEMP
-                output += ' (' + str(path_len) + ')\n' # TEMP
+                # output += '  ' + str(path) # TEMP
+                # output += ' (' + str(path_len) + ')\n' # TEMP
 
                 length_diff = abs(path_len - target_path_length)
                 if smallest_length_diff is None or length_diff < smallest_length_diff:
@@ -267,7 +276,8 @@ class LongReadBridge(object):
 
         # If a path was found, use its sequence for the bridge.
         if self.graph_path:
-            output += 'best path: ' + str(self.graph_path) + '\n' # TEMP
+            output += '  best path:          ' + \
+                      ', '.join(int_to_str(x) for x in self.graph_path) + '\n'
             self.bridge_sequence = self.graph.get_path_sequence(self.graph_path)
             self.path_support = True
 
@@ -277,7 +287,7 @@ class LongReadBridge(object):
 
         # If a path wasn't found, the consensus sequence is the bridge.
         else:
-            output += 'no path\n' # TEMP
+            output += '  best path:          none found\n'
             self.bridge_sequence = self.consensus_sequence
             self.path_support = False
 
@@ -285,7 +295,7 @@ class LongReadBridge(object):
             self.quality = 20.0
 
         # Now we adjust the quality downward based on a number of factors.
-        output += 'starting quality:        ' + float_to_str(self.quality, 2) + '\n' # TEMP
+        # output += 'starting quality:        ' + float_to_str(self.quality, 2) + '\n' # TEMP
 
         # The start segment and end segment should agree in depth. If they don't, that's very bad,
         # as it implies that they aren't actually single-copy or on the same piece of DNA.
@@ -315,14 +325,14 @@ class LongReadBridge(object):
         self.quality *= start_length_factor
         self.quality *= end_length_factor
 
-        output += 'depth agreement factor:  ' + float_to_str(depth_agreement_factor, 2) + '\n' # TEMP
-        output += 'alignment length factor: ' + float_to_str(alignment_length_factor, 2) + '\n' # TEMP
-        output += 'alignment score factor:  ' + float_to_str(alignment_score_factor, 2) + '\n' # TEMP
-        output += 'start length factor:     ' + float_to_str(start_length_factor, 2) + '\n' # TEMP
-        output += 'end length factor:       ' + float_to_str(end_length_factor, 2) + '\n' # TEMP
-        output += 'final quality:           ' + float_to_str(self.quality, 2) + '\n' # TEMP
-        output += '\n' # TEMP
+        # output += 'depth agreement factor:  ' + float_to_str(depth_agreement_factor, 2) + '\n' # TEMP
+        # output += 'alignment length factor: ' + float_to_str(alignment_length_factor, 2) + '\n' # TEMP
+        # output += 'alignment score factor:  ' + float_to_str(alignment_score_factor, 2) + '\n' # TEMP
+        # output += 'start length factor:     ' + float_to_str(start_length_factor, 2) + '\n' # TEMP
+        # output += 'end length factor:       ' + float_to_str(end_length_factor, 2) + '\n' # TEMP
+        # output += 'final quality:           ' + float_to_str(self.quality, 2) + '\n' # TEMP
 
+        output += '\n'
         return output
 
     def contains_full_span_sequence(self):
@@ -433,11 +443,6 @@ def create_spades_contig_bridges(graph, single_copy_segments, verbosity):
     '''
     Builds graph bridges using the SPAdes contig paths.
     '''
-    if verbosity > 0:
-        print()
-        print('Bridging graph with SPAdes contig paths')
-        print('---------------------------------------', flush=True)
-
     bridge_path_set = set()
     single_copy_numbers = [x.number for x in single_copy_segments]
     for segment in single_copy_segments:
@@ -489,22 +494,22 @@ def create_spades_contig_bridges(graph, single_copy_segments, verbosity):
         if path not in conflicting_paths_no_dups:
             conflicting_paths_no_dups.append(path)
     conflicting_paths = conflicting_paths_no_dups
-    if verbosity > 1:
-        print('Bridge paths in conflict with single-copy segments: ', end='')
-        if conflicting_paths:
-            print(', '.join([str(x) for x in conflicting_paths]))
-        else:
-            print('none')
-        print()
+    # if verbosity > 1:
+    #     print('Bridge paths in conflict with single-copy segments: ', end='')
+    #     if conflicting_paths:
+    #         print(', '.join([str(x) for x in conflicting_paths]))
+    #     else:
+    #         print('none')
+    #     print()
 
     final_bridge_paths = [x for x in bridge_path_list if x not in conflicting_paths]
-    if verbosity > 1:
-        print('Final SPAdes contig bridge paths: ', end='')
-        if final_bridge_paths:
-            print(', '.join([str(x) for x in final_bridge_paths]))
-        else:
-            print('none')
-        print()
+    # if verbosity > 1:
+    #     print('Final SPAdes contig bridge paths: ', end='')
+    #     if final_bridge_paths:
+    #         print(', '.join([str(x) for x in final_bridge_paths]))
+    #     else:
+    #         print('none')
+    #     print()
 
     return [SpadesContigBridge(spades_contig_path=x, graph=graph) for x in final_bridge_paths]
 
@@ -563,7 +568,6 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     '''
     Makes bridges between single-copy segments using the alignments in the long reads.
     '''
-
     single_copy_seg_num_set = set()
     for seg in single_copy_segments:
         single_copy_seg_num_set.add(seg.number)
@@ -582,7 +586,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     # Key = signed segment number, Value = list of tuples containing the sequence and alignment
     overlapping_read_seqs = {}
 
-    print('\n\n\n\n\n\n') # TEMP
+    # print('\n\n\n\n\n\n') # TEMP
     allowed_overlap = round(int(1.1 * graph.overlap))
     for read_name in read_names:
         read = read_dict[read_name]
@@ -639,8 +643,8 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
                     spanning_read_seqs[seg_nums].append((bridge_seq, bridge_qual, alignment_1, alignment_2))
                     already_added.add(seg_nums)
 
-                    print('    ', seg_nums[0], seg_nums[1], bridge_seq) # TEMP
-                    print('    ', seg_nums[0], seg_nums[1], bridge_qual) # TEMP
+                    # print('    ', seg_nums[0], seg_nums[1], bridge_seq) # TEMP
+                    # print('    ', seg_nums[0], seg_nums[1], bridge_qual) # TEMP
 
         # At this point all of the alignments have been added and we are interested in the first
         # and last alignments (which may be the same if there's only one). If the read extends
@@ -734,7 +738,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
                 print(output, end='')
 
     if verbosity == 1:
-        print('\n')
+        print()
 
     return all_bridges
 

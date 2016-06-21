@@ -848,6 +848,8 @@ class AssemblyGraph(object):
             else:
                 print('Initial single copy segments: none')
             print()
+            print('Propogating copy numbers')
+            print('------------------------', flush=True)
 
         # Propogate copy depth as possible using those initial assignments.
         self.determine_copy_depth_part_2(propogation_tolerance, verbosity)

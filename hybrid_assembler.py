@@ -102,13 +102,14 @@ def main():
     if args.long:
         references = load_references(graph_fasta, 0)
         reference_dict = {x.name: x for x in references}
-        read_dict, read_names = load_long_reads(args.long, 1)
+        read_dict, read_names = load_long_reads(args.long, verbosity)
 
         # Load existing alignments if available.
         if os.path.isfile(alignments_sam) and sam_references_match(alignments_sam, assembly_graph):
-            print('SAM file already exists. Will use these alignments instead of conducting a new '
-                  'alignment:')
-            print('  ' + alignments_sam)
+            if verbosity > 0:
+                print('SAM file already exists. Will use these alignments instead of conducting a new '
+                      'alignment:')
+                print('  ' + alignments_sam)
             alignments = load_sam_alignments(alignments_sam, read_dict, reference_dict,
                                              scoring_scheme)
             for alignment in alignments:

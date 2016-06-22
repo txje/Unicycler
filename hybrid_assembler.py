@@ -81,6 +81,7 @@ def main():
     bridged_graph.apply_bridges(bridges, verbosity, args.min_bridge_qual)
     bridged_graph.save_to_gfa(spades_bridged_graph_unmerged, verbosity, save_seg_type_info=True,
                               single_copy_segments=single_copy_segments)
+    bridged_graph.remove_small_components(args.min_component_size)
     bridged_graph.merge_all_possible()
     bridged_graph.save_to_gfa(spades_bridged_graph_merged, verbosity)
     if verbosity > 0:
@@ -162,6 +163,7 @@ def main():
         bridged_graph.save_to_gfa(os.path.join(args.out, '006_long_read_bridges_unmerged.gfa'),
                                   verbosity, save_seg_type_info=True,
                                   single_copy_segments=single_copy_segments)
+        bridged_graph.remove_small_components(args.min_component_size)
         bridged_graph.merge_all_possible()
         bridged_graph.save_to_gfa(os.path.join(args.out, '007_long_read_bridges_merged.gfa'),
                                   verbosity)
@@ -207,6 +209,8 @@ def get_arguments():
                         help='Keep all temporary files in output directory (default: delete most '
                              'temporary files to save space)')
     parser.add_argument('--min_bridge_qual', type=float, default=0.0,
+                        help='Bridges with a quality below this value will not be applied)')
+    parser.add_argument('--min_component_size', type=int, default=1000,
                         help='Bridges with a quality below this value will not be applied)')
     parser.add_argument('--verbosity', type=int, required=False, default=1,
                         help='Level of stdout information (0 to 2)')

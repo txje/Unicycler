@@ -781,7 +781,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
         arg_list = []
         for bridge in long_read_bridges:
             arg_list.append((bridge, scoring_scheme, min_alignment_length))
-        for output in pool.imap(finalise_bridge, arg_list, 1):
+        for output in pool.imap_unordered(finalise_bridge, arg_list, 1):
             completed_count += 1
             if verbosity == 1:
                 print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')

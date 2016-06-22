@@ -385,6 +385,24 @@ class AssemblyGraph(object):
         for path_to_delete in paths_to_delete:
             del self.paths[path_to_delete]
 
+    def remove_small_components(self, min_component_size):
+        '''
+        Remove small graph components, but only if they do not contain any bridges. The idea is
+        to clean up parts of the graph that were orphaned by the bridging process. But if they
+        contain a bridge, then they are more likely to be genuine and we keep them.
+        '''
+        segment_nums_to_remove = []
+        connected_components = self.get_connected_components()
+        for component_nums in connected_components:
+            component_segments = [self.segments[x] for x in component_nums]
+            component_length = sum(x.get_length() for x in component_segments)
+            if component_length >= min_component_size:
+                continue
+            if any(x.bridge is not None for x in component_segments):
+                continue
+            segment_nums_to_remove += component_nums
+        self.remove_segments(segment_nums_to_remove)
+
     def merge_all_possible(self):
         '''
         This function merges segments which are in a simple, unbranching path.
@@ -1469,7 +1487,7 @@ class AssemblyGraph(object):
             completed_length += sum(self.segments[x].get_length() for x in component)
         summary += 'completed length (bp): ' + int_to_str(completed_length, max_v) + '\n'
         completed_fraction = completed_length / total_length
-        completed_fraction_str = float_to_str(completed_fraction, 3) + '%'
+        completed_fraction_str = float_to_str(100.0 * completed_fraction, 2) + '%'
         summary += 'completed proportion:  ' + completed_fraction_str.rjust(max_v_len) + '\n'
 
         if score:

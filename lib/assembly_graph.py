@@ -1315,7 +1315,7 @@ class AssemblyGraph(object):
             simple_loops.append((start, end, middle, repeat))
         return simple_loops
 
-    def all_paths(self, start, end, min_length, max_length):
+    def all_paths(self, start, end, min_length, target_length, max_length, max_path_count=None):
         '''
         Returns a list of all paths which connect the starting segment to the ending segment and
         are within the length bounds. The start and end segments are not themselves included in the
@@ -1363,6 +1363,15 @@ class AssemblyGraph(object):
                         if count_so_far < max_allowed_count:
                             new_working_paths.append(working_path + [next_seg])
             working_paths = new_working_paths
+
+        # Sort by length discrepancy from the target so the closest length matches come first.
+        final_paths = sorted(final_paths,
+                             key=lambda x: abs(target_length - self.get_path_length(x)))
+
+        # Trim to the max desired count.
+        if max_path_count:
+            final_paths = final_paths[:max_path_count]
+
         return final_paths
 
     def get_path_length(self, path):
@@ -1419,14 +1428,18 @@ class AssemblyGraph(object):
         Returns a nice table describing the graph.
         '''
         total_length = self.get_total_length()
-        max_v = total_length
+        max_v = max(total_length, 1000000)
+        max_v_len = len(int_to_str(max_v))
+
         summary = title + '\n'
         summary += '-' * len(title) + '\n'
         if file:
             summary += file + '\n'
         summary += 'segments:              ' + int_to_str(len(self.segments), max_v) + '\n'
         summary += 'links:                 ' + int_to_str(self.get_total_link_count(), max_v) + '\n'
-        summary += 'total length (bp):     ' + int_to_str(self.get_total_length(), max_v) + '\n'
+
+        total_length = self.get_total_length()
+        summary += 'total length (bp):     ' + int_to_str(total_length, max_v) + '\n'
 
         n50, shortest, lower_quartile, median, upper_quartile, longest = self.get_contig_stats()
         summary += 'N50:                   ' + int_to_str(n50, max_v) + '\n'
@@ -1439,8 +1452,17 @@ class AssemblyGraph(object):
         summary += 'dead ends:             ' + int_to_str(self.total_dead_end_count(), max_v) + '\n'
         summary += 'connected components:  ' + \
                    int_to_str(len(self.get_connected_components()), max_v) + '\n'
-        summary += 'completed components:  ' + \
-                   int_to_str(self.completed_circular_count(), max_v) + '\n'
+
+        completed_components = self.completed_circular_components()
+        summary += 'completed components:  ' + int_to_str(len(completed_components), max_v) + '\n'
+        completed_length = 0
+        for component in completed_components:
+            completed_length += sum(self.segments[x].get_length() for x in component)
+        summary += 'completed length (bp): ' + int_to_str(completed_length, max_v) + '\n'
+        completed_fraction = completed_length / total_length
+        completed_fraction_str = float_to_str(completed_fraction, 3) + '%'
+        summary += 'completed proportion:  ' + completed_fraction_str.rjust(max_v_len) + '\n'
+
         if score:
             pad_size = len(int_to_str(max_v))
             summary += 'score:                 ' + '{:.2e}'.format(score).rjust(pad_size) + '\n'
@@ -1491,21 +1513,21 @@ class AssemblyGraph(object):
 
         return n50, shortest, first_quartile, median, third_quartile, longest
 
-    def completed_circular_count(self):
+    def completed_circular_components(self):
         '''
         Returns the number of graph components which are simple loops: one node connected to itself
         to make a circular piece of DNA.
         '''
         single_segment_components = [x for x in self.get_connected_components() if len(x) == 1]
-        completed_count = 0
+        completed_components = []
         for component in single_segment_components:
             only_segment = component[0]
             if only_segment in self.forward_links and \
                self.forward_links[only_segment] == [only_segment] and \
                only_segment in self.reverse_links and \
                self.reverse_links[only_segment] == [only_segment]:
-                completed_count += 1
-        return completed_count
+                completed_components.append(component)
+        return completed_components
 
 
 

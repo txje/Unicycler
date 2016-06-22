@@ -1,5 +1,6 @@
 from collections import deque
 
+import random
 from misc import int_to_str, float_to_str, get_median, weighted_average
 from bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge
 
@@ -1335,6 +1336,8 @@ class AssemblyGraph(object):
                                            end_seg.get_length_no_overlap(self.overlap))
         max_allowed_counts = {}
 
+        max_working_paths = 10000 # TO DO: make this a parameter?
+
         working_paths = [[x] for x in self.forward_links[start]]
         final_paths = []
         while working_paths:
@@ -1363,6 +1366,12 @@ class AssemblyGraph(object):
                         if count_so_far < max_allowed_count:
                             new_working_paths.append(working_path + [next_seg])
             working_paths = new_working_paths
+
+            # If the number of working paths is too crazily high, we randomly cut it down here.
+            # This isn't ideal, but may be necessary in pathogenic cases where the number could
+            # grow exponentially.
+            if len(working_paths) > max_working_paths:
+                working_paths = random.sample(working_paths, max_working_paths)
 
         # Sort by length discrepancy from the target so the closest length matches come first.
         final_paths = sorted(final_paths,

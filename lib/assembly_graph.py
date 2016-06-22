@@ -1218,6 +1218,11 @@ class AssemblyGraph(object):
         for bridge, bridge_seg in applied_bridges:
             bridge_depth = bridge_seg.depth
             for seg_in_bridge_path in bridge.graph_path:
+                # if seg_in_bridge_path in right_bridged_segments or \
+                #    -seg_in_bridge_path in right_bridged_segments or \
+                #    seg_in_bridge_path in left_bridged_segments or \
+                #    -seg_in_bridge_path in left_bridged_segments:
+                #     continue
                 seg_in_bridge_path_abs = abs(seg_in_bridge_path)
                 self.remove_closest_copy_depth(seg_in_bridge_path_abs, bridge_depth)
                 if seg_in_bridge_path_abs in self.copy_depths and \

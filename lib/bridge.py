@@ -111,7 +111,8 @@ class LongReadBridge(object):
         self.bridge_sequence = ''
 
         # The bridge depth, a weighted mean of the start and end depths.
-        self.depth = 0.0
+        self.depth = get_mean_depth(graph.segments[abs(self.start_segment)],
+                                    graph.segments[abs(self.end_segment)], graph)
 
         # A score used to determine the order of bridge application.
         self.quality = 1.0
@@ -127,7 +128,7 @@ class LongReadBridge(object):
                ', '.join([str(x) for x in self.graph_path]) + ' -> ' + str(self.end_segment) + \
                ' (quality = ' + float_to_str(self.quality, 2) + ')'
 
-    def finalise(self, scoring_scheme, min_alignment_length):
+    def finalise(self, scoring_scheme, min_alignment_length, mean_spans_per_bridge, verbosity):
         '''
         Determines the consensus sequence for the bridge, attempts to find it in the graph and
         assigns a quality score to the bridge. This is the performance-intensive step of long read
@@ -135,7 +136,6 @@ class LongReadBridge(object):
         '''
         start_seg = self.graph.segments[abs(self.start_segment)]
         end_seg = self.graph.segments[abs(self.end_segment)]
-        self.depth = get_mean_depth(start_seg, end_seg, self.graph)
 
         output = ''
 
@@ -347,17 +347,26 @@ class LongReadBridge(object):
             # Non-graph-path-supported bridges are much lower quality than graph-path-supported bridges.
             self.quality = 20.0
 
-        # output += 'starting quality:        ' + float_to_str(self.quality, 2) + '\n'
+        if verbosity > 2:
+            output += '  starting quality:        ' + float_to_str(self.quality, 2) + '\n'
 
         # The start segment and end segment should agree in depth. If they don't, that's very bad,
         # as it implies that they aren't actually single-copy or on the same piece of DNA.
         depth_agreement_factor = get_num_agreement(start_seg.depth, end_seg.depth)
 
-        # The total length of alignments to the start/end segments is positively correlated with
-        # quality. This rewards bridges with long alignment and also bridges with many alignments.
+        # The number of reads which contribute to a bridge is a big deal, so the read count factor
+        # scales linearly. This is adjustes to the bridge's depth, so higher depth bridges need a
+        # larger read count to get the same effect. However, the depth used here can't go below 1,
+        # as that could give an unfair advantage to bridges between very low depth segments (which
+        # we probably don't really care about anyways because they are low depth).
+        read_count_factor = len(self.full_span_reads) / mean_spans_per_bridge / max(self.depth, 1)
+
+        # The length of alignments to the start/end segments is positively correlated with quality
+        # to reward bridges with long alignments.
         total_alignment_length = sum(x[2].get_aligned_ref_length() + x[3].get_aligned_ref_length() \
                                      for x in self.full_span_reads)
-        alignment_length_factor = score_function(total_alignment_length, min_alignment_length * 4)
+        mean_alignment_length = total_alignment_length / (2.0 * len(self.full_span_reads))
+        alignment_length_factor = score_function(mean_alignment_length, min_alignment_length * 4)
 
         # The mean alignment score to the start/end segments is positively correlated with quality,
         # so bridges with high quality alignments are rewarded.
@@ -372,17 +381,20 @@ class LongReadBridge(object):
         end_length_factor = score_function(end_seg.get_length(), min_alignment_length)
 
         self.quality *= depth_agreement_factor * depth_agreement_factor
+        self.quality *= read_count_factor
         self.quality *= alignment_length_factor
         self.quality *= alignment_score_factor
         self.quality *= start_length_factor
         self.quality *= end_length_factor
 
-        # output += 'depth agreement factor:  ' + float_to_str(depth_agreement_factor, 2) + '\n'
-        # output += 'alignment length factor: ' + float_to_str(alignment_length_factor, 2) + '\n'
-        # output += 'alignment score factor:  ' + float_to_str(alignment_score_factor, 2) + '\n'
-        # output += 'start length factor:     ' + float_to_str(start_length_factor, 2) + '\n'
-        # output += 'end length factor:       ' + float_to_str(end_length_factor, 2) + '\n'
-        # output += 'final quality:           ' + float_to_str(self.quality, 2) + '\n'
+        if verbosity > 2:
+            output += '  depth agreement factor:  ' + float_to_str(depth_agreement_factor, 2) + '\n'
+            output += '  read count factor:       ' + float_to_str(read_count_factor, 2) + '\n'
+            output += '  alignment length factor: ' + float_to_str(alignment_length_factor, 2) + '\n'
+            output += '  alignment score factor:  ' + float_to_str(alignment_score_factor, 2) + '\n'
+            output += '  start length factor:     ' + float_to_str(start_length_factor, 2) + '\n'
+            output += '  end length factor:       ' + float_to_str(end_length_factor, 2) + '\n'
+            output += '  final quality:           ' + float_to_str(self.quality, 2) + '\n'
 
         output += '\n'
         return output
@@ -724,7 +736,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
         #     print('    ', seg_num, end_qual)
         # print('\n')
 
-    # If an bridge already exists for a spanning sequence, we add the sequence to the bridge. If
+    # If a bridge already exists for a spanning sequence, we add the sequence to the bridge. If
     # not, we create a new bridge and add it.
     new_bridges = []
     for seg_nums, span in spanning_read_seqs.items():
@@ -759,6 +771,16 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
                         bridge.start_only_reads.append((reverse_complement(overlap_seq),
                                                         overlap_qual[::-1], alignment))
 
+    # Figure out the average number of spanning reads per bridge, normalised to the bridge's depth.
+    total_normalised_reads = 0.0
+    long_read_bridge_count = 0
+    for bridge in all_bridges:
+        if not isinstance(bridge, LongReadBridge) or not bridge.contains_full_span_sequence():
+            continue
+        long_read_bridge_count += 1
+        total_normalised_reads += len(bridge.full_span_reads) / bridge.depth
+    mean_spans_per_bridge = total_normalised_reads / long_read_bridge_count
+
     # Now we need to finalise the reads. This is the intensive step, as it involves creating a
     # consensus sequence, finding graph paths and doing alignments between the consensus and the
     # graph paths. We therefore use available threads to make this faster.
@@ -770,7 +792,8 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     completed_count = 0
     if threads == 1:
         for bridge in long_read_bridges:
-            output = bridge.finalise(scoring_scheme, min_alignment_length)
+            output = bridge.finalise(scoring_scheme, min_alignment_length, mean_spans_per_bridge,
+                                     verbosity)
             completed_count += 1
             if verbosity == 1:
                 print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')
@@ -780,7 +803,8 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
         pool = ThreadPool(threads)
         arg_list = []
         for bridge in long_read_bridges:
-            arg_list.append((bridge, scoring_scheme, min_alignment_length))
+            arg_list.append((bridge, scoring_scheme, min_alignment_length, mean_spans_per_bridge,
+                             verbosity))
         for output in pool.imap_unordered(finalise_bridge, arg_list, 1):
             completed_count += 1
             if verbosity == 1:
@@ -856,47 +880,54 @@ def get_single_copy_alignments(read, single_copy_num_set, allowed_overlap, min_s
     '''
     Returns a list of single-copy segment alignments for the read.
     '''
-    sc_alignments = {}
+    # sc_alignments = {}
+    # for alignment in read.alignments:
+    #     ref_num = alignment.ref.number
+    #     if ref_num not in single_copy_num_set:
+    #         continue
+    #     if alignment.scaled_score < min_scaled_score:
+    #         continue
+    #     if ref_num not in sc_alignments:
+    #         sc_alignments[ref_num] = []
+    #     sc_alignments[ref_num].append(alignment)
+
+    # # If any two alignments are to the same segment, that implies that one is bogus and so we
+    # # should only include the higher scoring one. Unless, however, the two alignments to the same
+    # # segment overlap opposite ends of the read, in which case they may both be valid.
+    # final_alignments = []
+    # for alignments in sc_alignments.values():
+
+    #     # In most cases, there will be only one alignment per reference number, so this part is
+    #     # simple.
+    #     alignments = sorted(alignments, key=lambda x: x.scaled_score, reverse=True)
+    #     best_alignment = alignments[0]
+    #     final_alignments.append(best_alignment)
+
+    #     # However, multiple alignments are possible. In some cases, this means alignments other
+    #     # than the best should be thrown out (because the segment is supposed to be single-copy).
+    #     # But there are cases where two alignments to the same single-copy reference can be valid.
+    #     # This is when the start and end of the single-copy segment are close to each other in a
+    #     # circular piece of DNA and the read overlaps with both ends.
+    #     if len(alignments) > 1:
+    #         second_best_alignment = alignments[1]
+    #         combined_len = best_alignment.get_aligned_ref_length() + \
+    #                        second_best_alignment.get_aligned_ref_length()
+    #         if combined_len <= best_alignment.ref.get_length() + allowed_overlap:
+    #             if (best_alignment.ref_start_pos > 0 and second_best_alignment.ref_end_gap > 0) or \
+    #                (best_alignment.ref_end_gap > 0 and second_best_alignment.ref_start_pos > 0):
+    #                 final_alignments.append(second_best_alignment)
+    # return final_alignments
+
+    sc_alignments = []
     for alignment in read.alignments:
-        ref_num = alignment.ref.number
-        if ref_num not in single_copy_num_set:
-            continue
-        if alignment.scaled_score < min_scaled_score:
-            continue
-        if ref_num not in sc_alignments:
-            sc_alignments[ref_num] = []
-        sc_alignments[ref_num].append(alignment)
-
-    # If any two alignments are to the same segment, that implies that one is bogus and so we
-    # should only include the higher scoring one. Unless, however, the two alignments to the same
-    # segment overlap opposite ends of the read, in which case they may both be valid.
-    final_alignments = []
-    for alignments in sc_alignments.values():
-
-        # In most cases, there will be only one alignment per reference number, so this part is
-        # simple.
-        alignments = sorted(alignments, key=lambda x: x.scaled_score, reverse=True)
-        best_alignment = alignments[0]
-        final_alignments.append(best_alignment)
-
-        # However, multiple alignments are possible. In some cases, this means alignments other
-        # than the best should be thrown out (because the segment is supposed to be single-copy).
-        # But there are cases where two alignments to the same single-copy reference can be valid.
-        # This is when the start and end of the single-copy segment are close to each other in a
-        # circular piece of DNA and the read overlaps with both ends.
-        if len(alignments) > 1:
-            second_best_alignment = alignments[1]
-            combined_len = best_alignment.get_aligned_ref_length() + \
-                           second_best_alignment.get_aligned_ref_length()
-            if combined_len <= best_alignment.ref.get_length() + allowed_overlap:
-                if (best_alignment.ref_start_pos > 0 and second_best_alignment.ref_end_gap > 0) or \
-                   (best_alignment.ref_end_gap > 0 and second_best_alignment.ref_start_pos > 0):
-                    final_alignments.append(second_best_alignment)
-    return final_alignments
+        if alignment.ref.number in single_copy_num_set and \
+           alignment.scaled_score >= min_scaled_score:
+            sc_alignments.append(alignment)
+    return sc_alignments
 
 def finalise_bridge(all_args):
-    bridge, scoring_scheme, min_alignment_length = all_args
-    return bridge.finalise(scoring_scheme, min_alignment_length)
+    bridge, scoring_scheme, min_alignment_length, mean_spans_per_bridge, verbosity = all_args
+    return bridge.finalise(scoring_scheme, min_alignment_length, mean_spans_per_bridge, verbosity)
 
 def score_function(val, half_score_val):
     '''

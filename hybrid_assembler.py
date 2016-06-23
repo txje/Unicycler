@@ -78,7 +78,7 @@ def main():
     bridges = create_spades_contig_bridges(assembly_graph, single_copy_segments, verbosity)
     bridges += create_loop_unrolling_bridges(assembly_graph, single_copy_segments, verbosity)
     bridged_graph = copy.deepcopy(assembly_graph)
-    bridged_graph.apply_bridges(bridges, verbosity, args.min_bridge_qual)
+    bridged_graph.apply_bridges(bridges, verbosity, args.min_bridge_qual, single_copy_segments)
     bridged_graph.save_to_gfa(spades_bridged_graph_unmerged, verbosity, save_seg_type_info=True,
                               single_copy_segments=single_copy_segments)
     bridged_graph.remove_small_components(args.min_component_size)
@@ -159,7 +159,7 @@ def main():
         if verbosity > 0:
             print('Bridging graph with long reads')
             print('------------------------------', flush=True)
-        bridged_graph.apply_bridges(bridges, verbosity, args.min_bridge_qual)
+        bridged_graph.apply_bridges(bridges, verbosity, args.min_bridge_qual, single_copy_segments)
         bridged_graph.save_to_gfa(os.path.join(args.out, '006_long_read_bridges_unmerged.gfa'),
                                   verbosity, save_seg_type_info=True,
                                   single_copy_segments=single_copy_segments)

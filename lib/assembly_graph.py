@@ -2,7 +2,9 @@ from collections import deque
 
 import random
 from misc import int_to_str, float_to_str, get_median, weighted_average
-from bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge
+from bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge, \
+                   get_applicable_bridge_pieces, get_bridge_str
+
 
 class AssemblyGraph(object):
     '''
@@ -1101,18 +1103,21 @@ class AssemblyGraph(object):
                     success = True
         return success
 
-    def remove_closest_copy_depth(self, seg_num, depth_to_remove):
+    def remove_segment_depth(self, seg_num, depth_to_remove):
         '''
-        This function removes a copy depth from the specified segment. It chooses to remove the
-        one closest to the given depth.
+        This function removes the depth from the specified segment. If the segment has copy depths,
+        it will also removes the copy depth closest to the given depth.
         '''
         seg_num = abs(seg_num)
-        if seg_num not in self.copy_depths:
+        if seg_num not in self.segments:
             return
-        if not self.copy_depths[seg_num]:
+        seg = self.segments[seg_num]
+        seg.depth = max(0.0, seg.depth - depth_to_remove)
+        if seg_num not in self.copy_depths or not self.copy_depths[seg_num]:
             return
         closest_depth = min(self.copy_depths[seg_num], key=lambda x: abs(x - depth_to_remove))
         del self.copy_depths[seg_num][self.copy_depths[seg_num].index(closest_depth)]
+
 
     def get_base_count_in_depth_range(self, min_depth, max_depth):
         '''
@@ -1156,20 +1161,21 @@ class AssemblyGraph(object):
             prev_segment_number = seg_num
         return path_sequence
 
-    def apply_bridges(self, bridges, verbosity, min_bridge_qual):
+    def apply_bridges(self, bridges, verbosity, min_bridge_qual, single_copy_segments):
         '''
         Uses the supplied bridges to simplify the graph.
         '''
         # Each segment can have only one bridge per side, so we will track which segments have had
         # a bridge applied off one side or the other.
-        right_bridged_segments = set()
-        left_bridged_segments = set()
+        right_bridged = set()
+        left_bridged = set()
 
         # Sort bridges by quality so we apply the best bridges first.
         sorted_bridges = sorted(bridges, key=lambda x: x.quality, reverse=True)
 
-        applied_bridges = []
+        bridge_segs = []
         seg_nums_used_in_bridges = set()
+        single_copy_nums = set(x.number for x in single_copy_segments)
 
         for bridge in sorted_bridges:
 
@@ -1179,71 +1185,64 @@ class AssemblyGraph(object):
                     print('Rejected', bridge)
                 continue
 
-            start = bridge.start_segment
-            end = bridge.end_segment
+            # Get the pieces of the bridge which can be applied.
+            pieces = get_applicable_bridge_pieces(bridge, single_copy_nums, right_bridged,
+                                                  left_bridged, seg_nums_used_in_bridges)
 
-            # If either of the segments has already been bridged, then we can't use this bridge.
-            if (start > 0 and start in right_bridged_segments) or \
-               (start < 0 and -start in left_bridged_segments) or \
-               (end > 0 and end in left_bridged_segments) or \
-               (end < 0 and -end in right_bridged_segments):
+            # If no parts of the bridge can be applied, then there's nothing to bridge.
+            if not pieces:
                 if verbosity > 1:
                     print('Unused', bridge)
                 continue
 
-            bridge_seg = self.apply_bridge(bridge, verbosity)
-            applied_bridges.append((bridge, bridge_seg))
-            for seg_num in bridge.graph_path:
-                seg_nums_used_in_bridges.add(abs(seg_num))
+            if len(pieces) == 1 and \
+               pieces[0] == [bridge.start_segment] + bridge.graph_path + [bridge.end_segment]:
+                bridge = self.apply_entire_bridge(bridge, verbosity, right_bridged, left_bridged,
+                                                  seg_nums_used_in_bridges, single_copy_nums)
+                bridge_segs.append(bridge)
 
-            # Remember that these segments have been bridged in this direction so no more
-            # bridges can be applied to them in the same direction.
-            if start > 0:
-                right_bridged_segments.add(start)
-            else:
-                left_bridged_segments.add(-start)
-            if end > 0:
-                left_bridged_segments.add(end)
-            else:
-                right_bridged_segments.add(-end)
+            else: # Either multiple pieces or a single piece which isn't the whole bridge.
+                bridges = self.apply_bridge_in_pieces(bridge, pieces, verbosity, right_bridged,
+                                                      left_bridged, seg_nums_used_in_bridges,
+                                                      single_copy_nums)
+                bridge_segs += bridges
 
-            # Also, any segments within the bridge are now unavailable for bridging in either
-            # direction.
-            for bridge_path_seg in bridge.graph_path:
-                right_bridged_segments.add(abs(bridge_path_seg))
-                left_bridged_segments.add(abs(bridge_path_seg))
+        # Remove segments used in bridges, as appropriate.
+        while True:
+            segment_nums_to_remove = []
+            for seg_num in seg_nums_used_in_bridges:
+                if seg_num not in self.segments:
+                    continue
 
-        # Clean up segments which have been used in the bridges.
-        segment_nums_to_remove = []
-        for bridge, bridge_seg in applied_bridges:
-            bridge_depth = bridge_seg.depth
-            for seg_in_bridge_path in bridge.graph_path:
-                # if seg_in_bridge_path in right_bridged_segments or \
-                #    -seg_in_bridge_path in right_bridged_segments or \
-                #    seg_in_bridge_path in left_bridged_segments or \
-                #    -seg_in_bridge_path in left_bridged_segments:
-                #     continue
-                seg_in_bridge_path_abs = abs(seg_in_bridge_path)
-                self.remove_closest_copy_depth(seg_in_bridge_path_abs, bridge_depth)
-                if seg_in_bridge_path_abs in self.copy_depths and \
-                   not self.copy_depths[seg_in_bridge_path_abs]:
-                    segment_nums_to_remove.append(seg_in_bridge_path_abs)
-        self.remove_segments(segment_nums_to_remove)
-
-        # Clean up any orphaned bridges. This can happen when a smaller bridges is applied first
-        # and then a larger bridge is applied which encompasses the smaller bridge. This can leave
-        # the first bridge without connections. A bridge is considered orphaned if it's missing a
-        # connection on either side.
-        segment_nums_to_remove = []
-        for seg_num, segment in self.segments.items():
-            if segment.bridge is not None:
-                missing_forward = seg_num not in self.forward_links or \
-                                  not self.forward_links[seg_num]
-                missing_reverse = seg_num not in self.reverse_links or \
-                                  not self.reverse_links[seg_num]
-                if missing_forward or missing_reverse:
+                # If the segment used a dead-end on either side, there's no reason to keep it.
+                if seg_num not in self.forward_links or not self.forward_links[seg_num] or \
+                   seg_num not in self.reverse_links or not self.reverse_links[seg_num]:
                     segment_nums_to_remove.append(seg_num)
-        self.remove_segments(segment_nums_to_remove)
+
+                # If the segment doesn't have dead-ends but its copy depths have been used up or
+                # its depth has bottomed out, we don't keep it
+                elif (seg_num in self.copy_depths and not self.copy_depths[seg_num]) or \
+                     self.segments[seg_num].depth <= 0.0:
+                    segment_nums_to_remove.append(seg_num)
+            if segment_nums_to_remove:
+                self.remove_segments(segment_nums_to_remove)
+            else:
+                break
+
+        # # Clean up any orphaned bridges. This can happen when a smaller bridge is applied first
+        # # and then a larger bridge is applied which encompasses the smaller bridge. This can leave
+        # # the first bridge without connections. A bridge is considered orphaned if it's missing a
+        # # connection on either side.
+        # segment_nums_to_remove = []
+        # for seg_num, segment in self.segments.items():
+        #     if segment.bridge is not None:
+        #         missing_forward = seg_num not in self.forward_links or \
+        #                           not self.forward_links[seg_num]
+        #         missing_reverse = seg_num not in self.reverse_links or \
+        #                           not self.reverse_links[seg_num]
+        #         if missing_forward or missing_reverse:
+        #             segment_nums_to_remove.append(seg_num)
+        # self.remove_segments(segment_nums_to_remove)
 
         # Clean up connected components which have been entirely used in bridges.
         segment_nums_to_remove = []
@@ -1260,21 +1259,57 @@ class AssemblyGraph(object):
         if verbosity > 1:
             print()
 
-    def apply_bridge(self, bridge, verbosity):
+    def apply_entire_bridge(self, bridge, verbosity, right_bridged, left_bridged,
+                            seg_nums_used_in_bridges, single_copy_nums):
         '''
-        Applies one bridge to the graph.
+        Applies a whole bridge, start to end.
         '''
         if verbosity > 1:
             print('Applying', bridge)
+        new_seg = self.apply_bridge(bridge, bridge.start_segment, bridge.end_segment,
+                                    bridge.bridge_sequence, bridge.graph_path, verbosity)
+        for seg_num in bridge.graph_path:
+            single_copy_nums.discard(abs(seg_num))
+        add_to_bridged_sets(bridge.start_segment, bridge.end_segment, right_bridged, left_bridged)
+        seg_nums_used_in_bridges.update([abs(x) for x in bridge.graph_path])
+        return new_seg
 
-        start = bridge.start_segment
-        end = bridge.end_segment
+    def apply_bridge_in_pieces(self, bridge, pieces, verbosity, right_bridged, left_bridged,
+                               seg_nums_used_in_bridges, single_copy_nums):
+        '''
+        Applies a bridge in chunks, as appropriate. Used for bridges which can't be applied in
+        their entirety.
+        '''
+        new_segs = []
+        if verbosity > 1:
+            if len(pieces) == 1:
+                print('Applying 1 piece of', bridge)
+            else:
+                print('Applying ' + str(len(pieces)) + ' pieces of', bridge)
+
+        for piece in pieces:
+            piece_start = piece[0]
+            piece_middle = piece[1:-1]
+            piece_end = piece[-1]
+            piece_seq = self.get_path_sequence(piece_middle)
+            if verbosity > 1:
+                print('        ' + get_bridge_str(piece_start, piece_middle, piece_end))
+            new_seg = self.apply_bridge(bridge, piece_start, piece_end, piece_seq, piece_middle,
+                                        verbosity)
+            new_segs.append(new_seg)
+            for seg_num in piece_middle:
+                single_copy_nums.discard(abs(seg_num))
+            add_to_bridged_sets(piece_start, piece_end, right_bridged, left_bridged)
+            seg_nums_used_in_bridges.update([abs(x) for x in piece_middle])
+        return new_segs
+
+    def apply_bridge(self, bridge, start, end, sequence, graph_path, verbosity):
+        '''
+        Applies one bridge to the graph, from the start segment to the end and with the given
+        sequence. This may be the entire bridge, or possibly just a piece of the bridge.
+        '''
         start_seg = self.segments[abs(start)]
         end_seg = self.segments[abs(end)]
-        start_depth = start_seg.depth
-        end_depth = end_seg.depth
-        start_len = start_seg.get_length()
-        end_len = end_seg.get_length()
 
         # Remove all existing links for the segments being bridged.
         if start in self.forward_links:
@@ -1286,12 +1321,16 @@ class AssemblyGraph(object):
 
         # Create a new bridge segment.
         new_seg_num = self.get_next_available_seg_number()
-        new_seg = Segment(new_seg_num, bridge.depth, bridge.bridge_sequence, True, bridge)
+        new_seg = Segment(new_seg_num, bridge.depth, sequence, True, bridge, graph_path)
         self.segments[new_seg_num] = new_seg
 
         # Link the bridge segment in to the start/end segments.
         self.add_link(start, new_seg_num)
         self.add_link(new_seg_num, end)
+
+        # Subtract the bridge depth from the segments in the bridge.
+        for seg in graph_path:
+            self.remove_segment_depth(seg, bridge.depth)
 
         return new_seg
 
@@ -1567,12 +1606,13 @@ class Segment(object):
     '''
     This hold a graph segment with a number, depth, direction and sequence.
     '''
-    def __init__(self, number, depth, sequence, positive, bridge=None):
+    def __init__(self, number, depth, sequence, positive, bridge=None, graph_path=None):
         self.number = number
         self.depth = depth
         self.forward_sequence = ''
         self.reverse_sequence = ''
         self.bridge = bridge
+        self.graph_path = graph_path
         if positive:
             self.forward_sequence = sequence
         else:
@@ -1653,19 +1693,17 @@ class Segment(object):
         '''
         if self.bridge is None:
             return ''
-
-        graph_path_str = ', '.join([str(x) for x in self.bridge.graph_path])
-
+        label = ''
         if isinstance(self.bridge, SpadesContigBridge):
-            return 'SPAdes contig bridge: ' + graph_path_str
-        if isinstance(self.bridge, LoopUnrollingBridge):
-            return 'Loop unrolling bridge: ' + graph_path_str
-
-        # We can now assume the bridge is a LongReadBridge.
-        if graph_path_str:
-            return 'Long read bridge: ' + graph_path_str
-        else:
-            return 'Long read sequence'
+            label = 'SPAdes contig bridge'
+        elif isinstance(self.bridge, LoopUnrollingBridge):
+            label = 'Loop unrolling bridge'
+        else: # LongReadBridge
+            label = 'Long read bridge'
+        if self.graph_path:
+            graph_path_str = ', '.join([str(x) for x in self.graph_path])
+            label += ': ' + graph_path_str
+        return label
 
 def get_error(source, target):
     '''
@@ -2021,5 +2059,19 @@ def value_from_fractional_index(lst, index):
     piece_1 = lst[whole_part]
     piece_2 = lst[whole_part+1]
     return piece_1 * (1.0 - fractional_part) + piece_2 * fractional_part
+
+def add_to_bridged_sets(start, end, right_bridged, left_bridged):
+    '''
+    Adds the start and end segments to the sets which track bridging direction,
+    based on their sign.
+    '''
+    if start > 0:
+        right_bridged.add(start)
+    else:
+        left_bridged.add(-start)
+    if end > 0:
+        left_bridged.add(end)
+    else:
+        right_bridged.add(-end)
 
 

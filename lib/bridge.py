@@ -68,8 +68,8 @@ class SpadesContigBridge(object):
                 self.quality *= agreement
 
     def __repr__(self):
-        return 'SPAdes contig bridge: ' + str(self.start_segment) + ' -> ' + \
-               ', '.join([str(x) for x in self.graph_path]) + ' -> ' + str(self.end_segment) + \
+        return 'SPAdes bridge: ' + get_bridge_str(self.start_segment, self.graph_path,
+                                                         self.end_segment) + \
                ' (quality = ' + float_to_str(self.quality, 2) + ')'
 
 
@@ -124,8 +124,8 @@ class LongReadBridge(object):
         self.graph = graph
 
     def __repr__(self):
-        return 'long read bridge: ' + str(self.start_segment) + ' -> ' + \
-               ', '.join([str(x) for x in self.graph_path]) + ' -> ' + str(self.end_segment) + \
+        return 'long read bridge: ' + get_bridge_str(self.start_segment, self.graph_path,
+                                                     self.end_segment) + \
                ' (quality = ' + float_to_str(self.quality, 2) + ')'
 
     def finalise(self, scoring_scheme, min_alignment_length, mean_spans_per_bridge, verbosity):
@@ -487,8 +487,8 @@ class LoopUnrollingBridge(object):
         self.bridge_sequence = graph.get_path_sequence(self.graph_path)
 
     def __repr__(self):
-        return 'loop unrolling bridge: ' + str(self.start_segment) + ' -> ' + \
-               ', '.join([str(x) for x in self.graph_path]) + ' -> ' + str(self.end_segment) + \
+        return 'loop bridge: ' + get_bridge_str(self.start_segment, self.graph_path,
+                                                          self.end_segment) + \
                ' (quality = ' + float_to_str(self.quality, 2) + ')'
 
 
@@ -880,6 +880,13 @@ def get_single_copy_alignments(read, single_copy_num_set, allowed_overlap, min_s
     '''
     Returns a list of single-copy segment alignments for the read.
     '''
+    sc_alignments = []
+    for alignment in read.alignments:
+        if alignment.ref.number in single_copy_num_set and \
+           alignment.scaled_score >= min_scaled_score:
+            sc_alignments.append(alignment)
+    return sc_alignments
+
     # sc_alignments = {}
     # for alignment in read.alignments:
     #     ref_num = alignment.ref.number
@@ -918,12 +925,6 @@ def get_single_copy_alignments(read, single_copy_num_set, allowed_overlap, min_s
     #                 final_alignments.append(second_best_alignment)
     # return final_alignments
 
-    sc_alignments = []
-    for alignment in read.alignments:
-        if alignment.ref.number in single_copy_num_set and \
-           alignment.scaled_score >= min_scaled_score:
-            sc_alignments.append(alignment)
-    return sc_alignments
 
 def finalise_bridge(all_args):
     bridge, scoring_scheme, min_alignment_length, mean_spans_per_bridge, verbosity = all_args
@@ -938,5 +939,73 @@ def score_function(val, half_score_val):
     '''
     return 1.0 - (half_score_val / (half_score_val + val))
 
+def get_applicable_bridge_pieces(bridge, single_copy_nums, right_bridged, left_bridged,
+                                 seg_nums_used_in_bridges):
+    '''
+    Using the given sets, this function returns a list of bridge pieces which can be applied to the
+    graph.
+    '''
+    # Break the bridge into pieces based on single-copy segments in the bridge path. Each piece is
+    # grouped with its index which make it easier to combine the adjacent pieces later.
+    bridge_pieces = []
+    current_piece = [(bridge.start_segment, 0)]
+    for i, seg in enumerate(bridge.graph_path):
+        if seg in single_copy_nums:
+            bridge_pieces.append(current_piece + [(seg, i+1)])
+            current_piece = [(seg, i+1)]
+        else:
+            current_piece.append((seg, i+1))
+    bridge_pieces.append(current_piece + [(bridge.end_segment, len(bridge.graph_path) + 1)])
+
+    # A piece can only be applied if its start/end haven't already been bridged or used in a
+    # previous bridge.
+    pieces_to_apply = []
+    for piece in bridge_pieces:
+        if start_end_available_to_bridge(piece[0][0], piece[-1][0], right_bridged,
+                                          left_bridged, seg_nums_used_in_bridges):
+            pieces_to_apply.append(piece)
+    if not pieces_to_apply:
+        return []
+
+    # Merge adjacent pieces together again so they can be applied at once.
+    merged_pieces_to_apply = [pieces_to_apply[0]]
+    for piece in pieces_to_apply[1:]:
+        if piece[0] == merged_pieces_to_apply[-1][-1]:
+            merged_pieces_to_apply[-1] = merged_pieces_to_apply[-1] + piece[1:]
+        else:
+            merged_pieces_to_apply.append(piece)
+
+    # We no longer need those indicies, so simplify the list to just segment numbers.
+    return [[y[0] for y in x] for x in merged_pieces_to_apply]
+
+def get_bridge_str(start, middle, end):
+    '''
+    Returns a bridge sequence in human-readable form.
+    '''
+    bridge_str =  str(start) + ' -> '
+    if middle:
+        bridge_str += ', '.join([str(x) for x in middle]) + ' -> '
+    bridge_str += str(end)
+    return bridge_str
+
+def start_end_available_to_bridge(start, end, right_bridged, left_bridged,
+                                   seg_nums_used_in_bridges):
+    '''
+    Checks whether the start and end segments can be bridged together (i.e. that they are both
+    unbridged on the relevant sides).
+    '''
+    if start > 0 and start in right_bridged:
+        return False
+    if start < 0 and -start in left_bridged:
+        return False
+    if end > 0 and end in left_bridged:
+        return False
+    if end < 0 and -end in right_bridged:
+        return False
+    if abs(start) in seg_nums_used_in_bridges:
+        return False
+    if abs(end) in seg_nums_used_in_bridges:
+        return False
+    return True
 
 

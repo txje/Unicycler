@@ -303,19 +303,18 @@ class AssemblyGraph(object):
         Returns the total number of dead ends in the assembly graph.
         '''
         dead_ends = 0
-        for segment in self.segments.values():
-            dead_ends += self.dead_end_count(segment)
+        for seg_num in self.segments:
+            dead_ends += self.dead_end_count(seg_num)
         return dead_ends
 
-    def dead_end_count(self, segment):
+    def dead_end_count(self, seg_num):
         '''
         Returns the number of dead ends for one segment: 0, 1 or 2.
         '''
-        segment_num = segment.number
         dead_ends = 0
-        if segment_num not in self.forward_links:
+        if seg_num not in self.forward_links or not self.forward_links[seg_num]:
             dead_ends += 1
-        if segment_num not in self.reverse_links:
+        if seg_num not in self.reverse_links or not self.reverse_links[seg_num]:
             dead_ends += 1
         return dead_ends
 
@@ -336,13 +335,13 @@ class AssemblyGraph(object):
         for component in connected_components:
             component_segs = [self.segments[x] for x in component]
             component_cutoff = self.get_median_read_depth(component_segs) * relative_depth_cutoff
-            for num in component:
-                segment = self.segments[num]
+            for seg_num in component:
+                segment = self.segments[seg_num]
                 if segment.depth < whole_graph_cutoff or segment.depth < component_cutoff:
-                    if self.dead_end_count(segment) > 0 or \
+                    if self.dead_end_count(seg_num) > 0 or \
                        self.all_segments_below_depth(component, whole_graph_cutoff) or \
-                       not self.deleting_would_create_dead_end(segment):
-                        segment_nums_to_remove.append(num)
+                       not self.deleting_would_create_dead_end(seg_num):
+                        segment_nums_to_remove.append(seg_num)
         self.remove_segments(segment_nums_to_remove)
 
     def filter_homopolymer_loops(self):
@@ -387,7 +386,7 @@ class AssemblyGraph(object):
         for path_to_delete in paths_to_delete:
             del self.paths[path_to_delete]
 
-    def remove_small_components(self, min_component_size):
+    def remove_small_components(self, min_component_size, verbosity):
         '''
         Remove small graph components, but only if they do not contain any bridges. The idea is
         to clean up parts of the graph that were orphaned by the bridging process. But if they
@@ -404,6 +403,28 @@ class AssemblyGraph(object):
                 continue
             segment_nums_to_remove += component_nums
         self.remove_segments(segment_nums_to_remove)
+        if verbosity > 1 and segment_nums_to_remove:
+            print('Removed small components:', ', '.join(str(x) for x in segment_nums_to_remove))
+
+
+    def remove_small_dead_ends(self, min_dead_end_size, verbosity):
+        '''
+        Remove small segments which are graph dead-ends. This is just to tidy things up a bit
+        before the final merge.
+        '''
+        removed_segments = []
+        while True:
+            for seg_num, segment in self.segments.items():
+                if segment.get_length() >= min_dead_end_size:
+                    continue
+                if self.dead_end_count(seg_num) > 0:
+                    self.remove_segments([seg_num])
+                    removed_segments.append(seg_num)
+                    break
+            else:
+                break
+        if verbosity > 1 and removed_segments:
+            print('Removed small dead ends: ', ', '.join(str(x) for x in removed_segments))
 
     def merge_all_possible(self):
         '''
@@ -689,19 +710,60 @@ class AssemblyGraph(object):
             return False
         return self.reverse_links[segment_num_1] == [segment_num_2]
 
-    def deleting_would_create_dead_end(self, segment):
+    def deleting_would_create_dead_end(self, seg_num):
         '''
         If deleting the given segment would create a dead end, this function returns True.
         '''
-        downstream_segments = self.forward_links[segment.number]
+        potential_dead_ends = 0
+        if seg_num in self.forward_links:
+            downstream_segments = self.forward_links[seg_num]
+        else:
+            downstream_segments = []
         for downstream_segment in downstream_segments:
             if len(self.reverse_links[downstream_segment]) == 1:
-                return True
-        upstream_segments = self.reverse_links[segment.number]
+                potential_dead_ends += 1
+
+        if seg_num in self.reverse_links:
+            upstream_segments = self.reverse_links[seg_num]
+        else:
+            upstream_segments = []
         for upstream_segment in upstream_segments:
             if len(self.forward_links[upstream_segment]) == 1:
-                return True
-        return False
+                potential_dead_ends += 1
+
+        return self.dead_end_count(seg_num) < potential_dead_ends
+
+    def deleting_path_would_create_dead_end(self, path_segments):
+        '''
+        If deleting the given path would create a dead end, this function returns True. It assumes
+        that the path is simple and unbranching (i.e. could be merged into a single segment).
+        '''
+        start = path_segments[0]
+        end = path_segments[1]
+
+        potential_dead_ends = 0
+        if end in self.forward_links:
+            downstream_segments = self.forward_links[end]
+        else:
+            downstream_segments = []
+        for downstream_segment in downstream_segments:
+            if len(self.reverse_links[downstream_segment]) == 1:
+                potential_dead_ends += 1
+
+        if start in self.reverse_links:
+            upstream_segments = self.reverse_links[start]
+        else:
+            upstream_segments = []
+        for upstream_segment in upstream_segments:
+            if len(self.forward_links[upstream_segment]) == 1:
+                potential_dead_ends += 1
+
+        dead_ends = 0
+        if downstream_segments == 0:
+            dead_ends += 1
+        if upstream_segments == 0:
+            dead_ends += 1
+        return dead_ends < potential_dead_ends
 
     def clean(self, read_depth_filter):
         '''
@@ -1174,7 +1236,7 @@ class AssemblyGraph(object):
         sorted_bridges = sorted(bridges, key=lambda x: x.quality, reverse=True)
 
         bridge_segs = []
-        seg_nums_used_in_bridges = set()
+        seg_nums_used_in_bridges = []
         single_copy_nums = set(x.number for x in single_copy_segments)
 
         for bridge in sorted_bridges:
@@ -1207,42 +1269,47 @@ class AssemblyGraph(object):
                                                       single_copy_nums)
                 bridge_segs += bridges
 
-        # Remove segments used in bridges, as appropriate.
+            # Remove duplicates, while preserving order.
+            seen = set()
+            seg_nums_used_in_bridges = [x for x in seg_nums_used_in_bridges \
+                                        if not (x in seen or seen.add(x))]
+
+        # Remove segments used in bridges, if doing do would not break up the graph.
+        if verbosity > 1:
+            print()
+            print('Cleaning up redundant segments')
+            print('------------------------------', flush=True)
+        removed_segments = []
         while True:
-            segment_nums_to_remove = []
             for seg_num in seg_nums_used_in_bridges:
                 if seg_num not in self.segments:
                     continue
 
-                # If the segment used a dead-end on either side, there's no reason to keep it.
-                if seg_num not in self.forward_links or not self.forward_links[seg_num] or \
-                   seg_num not in self.reverse_links or not self.reverse_links[seg_num]:
-                    segment_nums_to_remove.append(seg_num)
+                # If the segment already has a dead end, just go ahead and delete it.
+                if self.dead_end_count(seg_num) > 0:
+                    self.remove_segments([seg_num])
+                    removed_segments.append(seg_num)
+                    break
 
-                # If the segment doesn't have dead-ends but its copy depths have been used up or
-                # its depth has bottomed out, we don't keep it
-                elif (seg_num in self.copy_depths and not self.copy_depths[seg_num]) or \
-                     self.segments[seg_num].depth <= 0.0:
-                    segment_nums_to_remove.append(seg_num)
-            if segment_nums_to_remove:
-                self.remove_segments(segment_nums_to_remove)
+                # If deleting the segment would not lead to an increase in dead ends, go ahead and
+                # delete it.
+                elif not self.deleting_would_create_dead_end(seg_num):
+                    self.remove_segments([seg_num])
+                    removed_segments.append(seg_num)
+                    break
+
+                # It's possible that multiple segments are all in seg_nums_used_in_bridges, and
+                # deleting them together would not create a new dead end, but deleting any one
+                # would. For this case, we expand seg_num to a maximum simple path. If all segments
+                # in this path are also in seg_nums_used_in_bridges, then we can delete them all.
+                else:
+                    path = [abs(x) for x in self.get_simple_path(seg_num)]
+                    if len(path) > 1 and all(x in seg_nums_used_in_bridges for x in path):
+                        self.remove_segments(path)
+                        removed_segments += path
+                        break
             else:
                 break
-
-        # # Clean up any orphaned bridges. This can happen when a smaller bridge is applied first
-        # # and then a larger bridge is applied which encompasses the smaller bridge. This can leave
-        # # the first bridge without connections. A bridge is considered orphaned if it's missing a
-        # # connection on either side.
-        # segment_nums_to_remove = []
-        # for seg_num, segment in self.segments.items():
-        #     if segment.bridge is not None:
-        #         missing_forward = seg_num not in self.forward_links or \
-        #                           not self.forward_links[seg_num]
-        #         missing_reverse = seg_num not in self.reverse_links or \
-        #                           not self.reverse_links[seg_num]
-        #         if missing_forward or missing_reverse:
-        #             segment_nums_to_remove.append(seg_num)
-        # self.remove_segments(segment_nums_to_remove)
 
         # Clean up connected components which have been entirely used in bridges.
         segment_nums_to_remove = []
@@ -1255,8 +1322,9 @@ class AssemblyGraph(object):
             else:
                 segment_nums_to_remove += component_seg_nums
         self.remove_segments(segment_nums_to_remove)
-
+        removed_segments += segment_nums_to_remove
         if verbosity > 1:
+            print('Removed:', ', '.join(str(x) for x in removed_segments))
             print()
 
     def apply_entire_bridge(self, bridge, verbosity, right_bridged, left_bridged,
@@ -1271,7 +1339,7 @@ class AssemblyGraph(object):
         for seg_num in bridge.graph_path:
             single_copy_nums.discard(abs(seg_num))
         add_to_bridged_sets(bridge.start_segment, bridge.end_segment, right_bridged, left_bridged)
-        seg_nums_used_in_bridges.update([abs(x) for x in bridge.graph_path])
+        seg_nums_used_in_bridges.extend([abs(x) for x in bridge.graph_path])
         return new_seg
 
     def apply_bridge_in_pieces(self, bridge, pieces, verbosity, right_bridged, left_bridged,
@@ -1300,7 +1368,7 @@ class AssemblyGraph(object):
             for seg_num in piece_middle:
                 single_copy_nums.discard(abs(seg_num))
             add_to_bridged_sets(piece_start, piece_end, right_bridged, left_bridged)
-            seg_nums_used_in_bridges.update([abs(x) for x in piece_middle])
+            seg_nums_used_in_bridges.extend([abs(x) for x in piece_middle])
         return new_segs
 
     def apply_bridge(self, bridge, start, end, sequence, graph_path, verbosity):
@@ -1586,8 +1654,8 @@ class AssemblyGraph(object):
 
     def completed_circular_components(self):
         '''
-        Returns the number of graph components which are simple loops: one node connected to itself
-        to make a circular piece of DNA.
+        Returns the number of graph components which are simple loops: one segment connected to
+        itself to make a circular piece of DNA.
         '''
         single_segment_components = [x for x in self.get_connected_components() if len(x) == 1]
         completed_components = []
@@ -1599,6 +1667,37 @@ class AssemblyGraph(object):
                self.reverse_links[only_segment] == [only_segment]:
                 completed_components.append(component)
         return completed_components
+
+    def get_simple_path(self, starting_seg):
+        '''
+        Starting with the given segment, this function tries to expand outward as far as possible
+        while maintaining a simple (i.e. mergeable) path. If it can't expand at all, it will just
+        return a list of the starting segment.
+        '''
+        simple_path = [starting_seg]
+
+        # Expand forward as much as possible.
+        while True:
+            if simple_path[-1] not in self.forward_links or \
+               self.forward_links[simple_path[-1]] != 1:
+                break
+            potential = self.forward_links[simple_path[-1]][0]
+            if len(self.reverse_links[potential]) == 1 and \
+               self.reverse_links[potential][0] == simple_path[-1]:
+                simple_path.append(potential)
+
+        # Expand backward as much as possible.
+        while True:
+            if simple_path[0] not in self.reverse_links or \
+               self.reverse_links[simple_path[0]] != 1:
+                break
+            potential = self.reverse_links[simple_path[0]][0]
+            if len(self.forward_links[potential]) == 1 and \
+               self.forward_links[potential][0] == simple_path[0]:
+                simple_path.insert(0, potential)
+
+        return simple_path
+
 
 
 

@@ -154,8 +154,7 @@ class LongReadBridge(object):
         #     output += '  ' + str(full_span_read) + '\n'
 
         output += str(self.start_segment) + ' to ' + str(self.end_segment) + ':\n'
-        output += '  bridging reads:     ' + int_to_str(len(self.full_span_reads)) + '\n'
-
+        output += '  bridging reads:          ' + int_to_str(len(self.full_span_reads)) + '\n'
 
         # Parition the full span reads into two groups: those with negative numbers (implying that
         # the two segments overlap) and those with actual sequences.
@@ -229,7 +228,7 @@ class LongReadBridge(object):
             #     output += 'end-only consensus scores: ' + str(end_only_scores) + '\n'
 
             consensus_time = time.time() - consensus_start_time
-            output += '  consensus sequence: ' + int_to_str(len(self.consensus_sequence)) + ' bp '
+            output += '  consensus sequence:      ' + int_to_str(len(self.consensus_sequence)) + ' bp '
             output += '(' + float_to_str(consensus_time, 2) + ' sec)\n'
 
             target_path_length = len(self.consensus_sequence) + (2 * self.graph.overlap)
@@ -240,10 +239,10 @@ class LongReadBridge(object):
             self.consensus_sequence = ''
             mean_overlap = int(round(sum(x[0] for x in full_spans_without_seq) / \
                                      len(full_spans_without_seq)))
-            output += '  mean overlap:       ' + int_to_str(abs(mean_overlap)) + '\n'
+            output += '  mean overlap:            ' + int_to_str(abs(mean_overlap)) + '\n'
             target_path_length = mean_overlap + (2 * self.graph.overlap)
 
-        output += '  target path length: ' + int_to_str(target_path_length) + ' bp\n'
+        output += '  target path length:      ' + int_to_str(target_path_length) + ' bp\n'
 
         # Limit the path search to lengths near the target.
         # TO DO: adjust these or make them parameters?
@@ -260,7 +259,7 @@ class LongReadBridge(object):
                                                max_path_length, max_path_count)
         path_time = time.time() - path_start_time
 
-        output += '  path count:         ' + int_to_str(len(potential_paths)) + ' '
+        output += '  path count:              ' + int_to_str(len(potential_paths)) + ' '
         output += '(' + float_to_str(path_time, 2) + ' sec)\n'
 
         # output += 'potential paths:\n'
@@ -323,7 +322,7 @@ class LongReadBridge(object):
 
         # If a path was found, use its sequence for the bridge.
         if self.graph_path:
-            output += '  best path:          ' + \
+            output += '  best path:               ' + \
                       ', '.join(int_to_str(x) for x in self.graph_path) + ' '
             output += '(' + int_to_str(self.graph.get_path_length(self.graph_path)) + ' bp'
             if alignment_time:
@@ -340,7 +339,7 @@ class LongReadBridge(object):
 
         # If a path wasn't found, the consensus sequence is the bridge.
         else:
-            output += '  best path:          none found\n'
+            output += '  best path:               none found\n'
             self.bridge_sequence = self.consensus_sequence
             self.path_support = False
 

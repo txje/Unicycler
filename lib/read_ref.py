@@ -6,7 +6,9 @@ email: rrwick@gmail.com
 '''
 
 import random
-from misc import quit_with_error, print_progress_line, get_nice_header
+import gzip
+from misc import quit_with_error, print_progress_line, get_nice_header, get_compression_type, \
+                 print_section_header
 
 def load_references(fasta_filename, verbosity):
     '''
@@ -14,15 +16,20 @@ def load_references(fasta_filename, verbosity):
     '''
     references = []
     total_bases = 0
+    print_section_header('Loading references', verbosity)
+
+    if get_compression_type(fasta_filename) == 'gz':
+        open_func = gzip.open
+    else: # plain text
+        open_func = open
+
     if verbosity > 0:
-        print()
-        print('Loading references')
-        print('------------------')
-        num_refs = sum(1 for line in open(fasta_filename) if line.startswith('>'))
+        num_refs = sum(1 for line in open_func(fasta_filename) if line.startswith('>'))
         if not num_refs:
             quit_with_error('There are no references sequences in ' + fasta_filename)
         print_progress_line(0, num_refs)
-    fasta_file = open(fasta_filename, 'r')
+
+    fasta_file = open_func(fasta_filename, 'r')
     name = ''
     sequence = ''
     last_progress = 0.0
@@ -64,12 +71,17 @@ def load_long_reads(fastq_filename, verbosity):
     read_names = []
     total_bases = 0
     last_progress = 0.0
+
+    if get_compression_type(fastq_filename) == 'gz':
+        open_func = gzip.open
+    else: # plain text
+        open_func = open
+
+    print_section_header('Loading reads', verbosity)
     if verbosity > 0:
-        print('Loading reads')
-        print('-------------')
-        num_reads = sum(1 for line in open(fastq_filename)) // 4
+        num_reads = sum(1 for line in open_func(fastq_filename)) // 4
         print_progress_line(0, num_reads)
-    fastq = open(fastq_filename, 'r')
+    fastq = open_func(fastq_filename, 'r')
     for line in fastq:
         name = line.strip()[1:].split()[0]
         sequence = next(fastq).strip()

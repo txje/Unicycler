@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 '''
-Long read assembly checker
+Roadworthy - a long read assembly checker
 
 Author: Ryan Wick
 email: rrwick@gmail.com
@@ -16,7 +16,7 @@ import argparse
 SCIRPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(SCIRPT_DIR, 'lib'))
 from misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
-                 get_nice_header, reverse_complement, print_progress_line
+                 get_nice_header, reverse_complement, print_progress_line, print_section_header
 from read_ref import Read, Reference, load_references, load_long_reads
 from alignment import AlignmentScoringScheme
 from cpp_function_wrappers import simulate_depths, get_random_sequence_alignment_error_rates
@@ -256,9 +256,7 @@ def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme,
     '''
     This function returns a list of Alignment objects from the given SAM file.
     '''
-    if VERBOSITY > 0:
-        print('Loading alignments')
-        print('------------------')
+    print_section_header('Loading alignments', VERBOSITY)
 
     # Load the SAM lines into a list.
     sam_lines = []
@@ -307,7 +305,7 @@ def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme,
     if VERBOSITY > 0:
         if len(sam_alignments) < num_alignments:
             print_progress_line(len(sam_alignments), len(sam_alignments))
-        print('\n')
+        print()
 
     return sam_alignments
 
@@ -330,9 +328,8 @@ def count_depth_and_errors_per_base(references, reference_dict, alignments):
     Counts up the depth and errors for each base of each reference and stores the counts in the
     Reference objects.
     '''
+    print_section_header('Counting depth and errors', VERBOSITY)
     if VERBOSITY > 0:
-        print('Counting depth and errors')
-        print('-------------------------')
         print_progress_line(0, len(alignments))
 
     for ref in references:
@@ -361,11 +358,10 @@ def count_depth_and_errors_per_base(references, reference_dict, alignments):
             print_progress_line(i+1, len(alignments))
 
     if VERBOSITY > 0:
-        print('\n')
+        print()
         base_sum = sum([x.get_length() for x in references])
         finished_bases = 0
-        print('Totalling depth and errors')
-        print('--------------------------')
+        print_section_header('Totalling depth and errors', VERBOSITY)
         print_progress_line(finished_bases, base_sum)
 
     for ref in references:
@@ -382,7 +378,7 @@ def count_depth_and_errors_per_base(references, reference_dict, alignments):
 
     if VERBOSITY > 0:
         print_progress_line(base_sum, base_sum)
-        print('\n')
+        print()
 
 
 def count_depth_and_errors_per_window(references, er_window_size, depth_window_size,
@@ -507,9 +503,7 @@ def determine_thresholds(scoring_scheme, references, alignments, threads, depth_
     This function sets thresholds for error rate and depth. Error rate thresholds are set once for
     all references, while depth thresholds are per-reference.
     '''
-    if VERBOSITY > 0:
-        print('Setting error and depth thresholds')
-        print('----------------------------------')
+    print_section_header('Setting error and depth thresholds', VERBOSITY)
 
     # Find the mean of all error rates.
     all_error_rates = []
@@ -715,9 +709,7 @@ def produce_window_tables(references, window_tables_prefix):
     '''
     Write tables of depth and error rates per reference window.
     '''
-    if VERBOSITY > 0:
-        print('Saving window tables')
-        print('--------------------')
+    print_section_header('Saving window tables', VERBOSITY)
 
     for ref in references:
         window_table_filename = add_ref_name_to_output_prefix(ref, window_tables_prefix, '.txt')
@@ -738,17 +730,12 @@ def produce_window_tables(references, window_tables_prefix):
                                    str(ref.window_error_rates[i])]) + '\n')
         if VERBOSITY > 0:
             print(window_table_filename)
-    if VERBOSITY > 0:
-        print()
 
 def produce_base_tables(references, base_tables_prefix):
     '''
     Write tables of depth and error counts per reference base.
     '''
-    if VERBOSITY > 0:
-        print('Saving base tables')
-        print('------------------')
-
+    print_section_header('Saving base tables', VERBOSITY)
     for ref in references:
         base_table_filename = add_ref_name_to_output_prefix(ref, base_tables_prefix, '.txt')
         table = open(base_table_filename, 'w')
@@ -765,9 +752,6 @@ def produce_base_tables(references, base_tables_prefix):
                                    str(ref.insertion_counts[i])]) + '\n')
         if VERBOSITY > 0:
             print(base_table_filename)
-    if VERBOSITY > 0:
-        print()
-
 
 def produce_html_report(references, html_filename, high_error_rate, very_high_error_rate,
                         random_seq_error_rate, full_command, ref_filename, sam_filename,
@@ -776,10 +760,7 @@ def produce_html_report(references, html_filename, high_error_rate, very_high_er
     '''
     Write html files containing plots of results.
     '''
-    if VERBOSITY > 0:
-        print('Saving html plots')
-        print('-----------------')
-
+    print_section_header('Saving html plots', VERBOSITY)
     import plotly.offline as py
     import plotly.graph_objs as go
 

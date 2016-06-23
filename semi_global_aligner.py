@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 '''
-Semi-global long read aligner
+Bikepath - a sensitive semi-global long read aligner
 
 This is a script to align error-prone long reads (e.g. PacBio or Nanopore) to one or more
 references in a semi-global manner. Semi-global alignment allows for unpenalised end gaps, but the
@@ -227,9 +227,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         
     # If the user supplied a low score threshold, we use that. Otherwise, we'll use the median
     # score minus three times the MAD.
-    if VERBOSITY > 0:
-        print('Determining low-score threshold')
-        print('-------------------------------')
+    print_section_header('Determining low-score threshold', VERBOSITY)
     if low_score_threshold:
         if VERBOSITY > 0:
             print('Using user-supplied low score threshold: ' +
@@ -295,8 +293,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
                 os.rmdir(temp_dir)
 
         if VERBOSITY > 3 and graphmap_alignments:
-            print('GraphMap alignments before extension')
-            print('------------------------------------')
+            print_section_header('GraphMap alignments before extension', VERBOSITY)
             for alignment in graphmap_alignments:
                 print(alignment)
                 if VERBOSITY > 4:
@@ -307,8 +304,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         # process, some alignments will be discarded (those too far from being semi-global).
         semi_global_graphmap_alignments = extend_to_semi_global(graphmap_alignments, scoring_scheme)
         if VERBOSITY > 3 and semi_global_graphmap_alignments:
-            print('GraphMap alignments after extension')
-            print('-----------------------------------')
+            print_section_header('GraphMap alignments after extension', VERBOSITY)
             for alignment in semi_global_graphmap_alignments:
                 print(alignment)
                 if VERBOSITY > 4:
@@ -363,8 +359,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
 
     if VERBOSITY > 0:
         if VERBOSITY < 3:
-            print('Aligning reads')
-            print('--------------')
+            print_section_header('Aligning reads', VERBOSITY)
         num_realignments = len(reads_to_align)
         max_v = len(read_dict)
         if use_graphmap:
@@ -418,9 +413,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     ref_bases_aligned = 0
     for read in read_dict.values():
         ref_bases_aligned += read.get_reference_bases_aligned()
+    print_section_header('Read alignment summary', VERBOSITY)
     if VERBOSITY > 0:
-        print('Read alignment summary')
-        print('----------------------')
         max_v = max(len(read_dict), ref_bases_aligned)
         print('Total read count:       ', int_to_str(len(read_dict), max_v))
         print('Fully aligned reads:    ', int_to_str(len(fully_aligned), max_v))
@@ -440,8 +434,7 @@ def print_graphmap_summary_table(graphmap_alignments, percent_id_mean, percent_i
     '''
     Prints a small table showing some details about the GraphMap alignments.
     '''
-    print('Graphmap alignment summary')
-    print('--------------------------')
+    print_section_header('Graphmap alignment summary', VERBOSITY)
     print('Total alignments:', int_to_str(len(graphmap_alignments)))
     print()
 
@@ -478,8 +471,7 @@ def extend_to_semi_global(alignments, scoring_scheme):
     This function returns truly semi-global alignments made from the input alignments.
     '''
     if VERBOSITY > 3 and alignments:
-        print('Extending alignments')
-        print('-------------------')
+        print_section_header('Extending alignments', VERBOSITY)
 
     allowed_missing_bases = 100 # TO DO: MAKE THIS A PARAMETER
     semi_global_alignments = []
@@ -526,9 +518,8 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
                 '-a', 'anchorgotoh']
     command += scoring_scheme.get_graphmap_parameters()
 
+    print_section_header('Aligning with GraphMap', VERBOSITY)
     if VERBOSITY > 0:
-        print('Aligning with GraphMap')
-        print('----------------------')
         print(' '.join(command))
 
     # Print the GraphMap output as it comes. I gather up and display lines so I can display fewer

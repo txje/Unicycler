@@ -1,6 +1,9 @@
 '''
 This script makes use of several C++ functions which are in cpp_functions.so. They are wrapped in
 similarly named Python functions.
+
+Author: Ryan Wick
+email: rrwick@gmail.com
 '''
 
 import os

@@ -1,9 +1,16 @@
-from collections import deque
+'''
+This module describes an assembly graph and many related functions.
 
+Author: Ryan Wick
+email: rrwick@gmail.com
+'''
+
+from collections import deque
 import random
-from misc import int_to_str, float_to_str, get_median, weighted_average, weighted_average_list
-from bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge, \
-                   get_applicable_bridge_pieces, get_bridge_str
+from misc import int_to_str, float_to_str, weighted_average, weighted_average_list, \
+                 print_section_header
+from bridge import SpadesContigBridge, LoopUnrollingBridge, get_applicable_bridge_pieces, \
+                   get_bridge_str
 
 
 class AssemblyGraph(object):
@@ -22,6 +29,8 @@ class AssemblyGraph(object):
             self.load_from_fastg(filename)
         else:
             self.load_from_gfa(filename)
+            if not overlap:
+                self.overlap = get_overlap_from_gfa_link(filename)
 
         if paths_file:
             self.load_spades_paths(paths_file)
@@ -468,7 +477,7 @@ class AssemblyGraph(object):
 
         new_seg_num = self.get_next_available_seg_number()
         new_seg = Segment(new_seg_num, mean_depth, merged_forward_seq, True)
-        new_seg.reverse_sequence = merged_reverse_seq
+        new_seg.build_other_sequence_if_necessary()
 
         # Save some info that we'll need, and then delete the old segments.
         paths_copy = self.paths.copy()
@@ -906,9 +915,7 @@ class AssemblyGraph(object):
                       ', '.join([str(x) for x in initial_single_copy_segments]))
             else:
                 print('Initial single copy segments: none')
-            print()
-            print('Propogating copy numbers')
-            print('------------------------', flush=True)
+            print_section_header('Propogating copy numbers', verbosity)
 
         # Propogate copy depth as possible using those initial assignments.
         self.determine_copy_depth_part_2(propogation_tolerance, verbosity)
@@ -1252,9 +1259,7 @@ class AssemblyGraph(object):
 
         # Remove segments used in bridges, if doing do would not break up the graph.
         if verbosity > 1:
-            print()
-            print('Cleaning up redundant segments')
-            print('------------------------------', flush=True)
+            print_section_header('Cleaning up redundant segments', verbosity)
         removed_segments = []
         while True:
             for seg_num in seg_nums_used_in_bridges:
@@ -1352,9 +1357,6 @@ class AssemblyGraph(object):
         Applies one bridge to the graph, from the start segment to the end and with the given
         sequence. This may be the entire bridge, or possibly just a piece of the bridge.
         '''
-        start_seg = self.segments[abs(start)]
-        end_seg = self.segments[abs(end)]
-
         # Remove all existing links for the segments being bridged.
         if start in self.forward_links:
             for link in self.forward_links[start]:
@@ -1366,7 +1368,7 @@ class AssemblyGraph(object):
         # Create a new bridge segment.
         new_seg_num = self.get_next_available_seg_number()
         new_seg = Segment(new_seg_num, bridge.depth, sequence, True, bridge, graph_path)
-        new_seg.reverse_sequence = reverse_complement(sequence)
+        new_seg.build_other_sequence_if_necessary()
         self.segments[new_seg_num] = new_seg
 
         # Link the bridge segment in to the start/end segments.
@@ -2157,5 +2159,19 @@ def add_to_bridged_sets(start, end, right_bridged, left_bridged):
         left_bridged.add(end)
     else:
         right_bridged.add(-end)
+
+def get_overlap_from_gfa_link(filename):
+    '''
+    Looks for the first link line and gets the overlap. Assumes that all overlaps in the graph are
+    the same.
+    '''
+    gfa_file = open(filename, 'r')
+    for line in gfa_file:
+        if line.startswith('L'):
+            line_parts = line.strip().split('\t')
+            if len(line_parts) > 5:
+                cigar = line_parts[5]
+                return int(cigar[:-1])
+    return 0
 
 

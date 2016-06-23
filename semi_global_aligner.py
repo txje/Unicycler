@@ -406,7 +406,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     delete_all_kmer_positions(kmer_positions_ptr)
     
     if VERBOSITY == 1:
-        print('\n')
+        print()
 
     # Output a summary of the reads' alignments.
     fully_aligned, partially_aligned, unaligned = group_reads_by_fraction_aligned(read_dict)
@@ -425,7 +425,6 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         if VERBOSITY > 2 and unaligned:
             print('    ' + ', '.join([x.name for x in unaligned]))
         print('Total bases aligned:    ', int_to_str(ref_bases_aligned, max_v) + ' bp')
-        print()
 
     return read_dict
 

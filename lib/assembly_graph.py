@@ -237,7 +237,7 @@ class AssemblyGraph(object):
         '''
         gfa = open(filename, 'w')
         if verbosity > 0:
-            print('Saving', filename)
+            print('\nSaving', filename)
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
         if single_copy_segments is not None:
             single_copy_segments = set([x.number for x in single_copy_segments])
@@ -349,7 +349,7 @@ class AssemblyGraph(object):
                 if segment.depth < whole_graph_cutoff or segment.depth < component_cutoff:
                     if self.dead_end_count(seg_num) > 0 or \
                        self.all_segments_below_depth(component, whole_graph_cutoff) or \
-                       not self.deleting_would_create_dead_end(seg_num):
+                       self.dead_end_change_if_deleted(seg_num) <= 0:
                         segment_nums_to_remove.append(seg_num)
         self.remove_segments(segment_nums_to_remove)
 
@@ -413,7 +413,7 @@ class AssemblyGraph(object):
             segment_nums_to_remove += component_nums
         self.remove_segments(segment_nums_to_remove)
         if verbosity > 1 and segment_nums_to_remove:
-            print('Removed small components:', ', '.join(str(x) for x in segment_nums_to_remove))
+            print('\nRemoved small components:', ', '.join(str(x) for x in segment_nums_to_remove))
 
 
     def remove_small_dead_ends(self, min_dead_end_size, verbosity):
@@ -426,14 +426,14 @@ class AssemblyGraph(object):
             for seg_num, segment in self.segments.items():
                 if segment.get_length() >= min_dead_end_size:
                     continue
-                if self.dead_end_count(seg_num) > 0:
+                if self.dead_end_change_if_deleted(seg_num) < 0:
                     self.remove_segments([seg_num])
                     removed_segments.append(seg_num)
                     break
             else:
                 break
         if verbosity > 1 and removed_segments:
-            print('Removed small dead ends: ', ', '.join(str(x) for x in removed_segments))
+            print('\nRemoved small dead ends: ', ', '.join(str(x) for x in removed_segments))
 
     def merge_all_possible(self):
         '''
@@ -695,9 +695,10 @@ class AssemblyGraph(object):
             return False
         return self.reverse_links[segment_num_1] == [segment_num_2]
 
-    def deleting_would_create_dead_end(self, seg_num):
+    def dead_end_change_if_deleted(self, seg_num):
         '''
-        If deleting the given segment would create a dead end, this function returns True.
+        Returns the change in graph dead end count if this segment was deleted. 0 means no change,
+        positive values mean an increase in dead ends, negative values mean a decrease.
         '''
         potential_dead_ends = 0
         if seg_num in self.forward_links:
@@ -716,7 +717,7 @@ class AssemblyGraph(object):
             if len(self.forward_links[upstream_segment]) == 1:
                 potential_dead_ends += 1
 
-        return self.dead_end_count(seg_num) < potential_dead_ends
+        return potential_dead_ends - self.dead_end_count(seg_num) 
 
     def deleting_path_would_create_dead_end(self, path_segments):
         '''
@@ -1282,7 +1283,7 @@ class AssemblyGraph(object):
 
                 # If deleting the segment would not lead to an increase in dead ends, go ahead and
                 # delete it.
-                elif not self.deleting_would_create_dead_end(seg_num):
+                elif self.dead_end_change_if_deleted(seg_num) <= 0:
                     self.remove_segments([seg_num])
                     removed_segments.append(seg_num)
                     break
@@ -1314,7 +1315,6 @@ class AssemblyGraph(object):
         removed_segments += segment_nums_to_remove
         if verbosity > 1:
             print('Removed:', ', '.join(str(x) for x in removed_segments))
-            print()
 
     def apply_entire_bridge(self, bridge, verbosity, right_bridged, left_bridged,
                             seg_nums_used_in_bridges, single_copy_nums):
@@ -1585,9 +1585,6 @@ class AssemblyGraph(object):
         for component in completed_components:
             completed_length += sum(self.segments[x].get_length() for x in component)
         summary += 'completed length (bp): ' + int_to_str(completed_length, max_v) + '\n'
-        completed_fraction = completed_length / total_length
-        completed_fraction_str = float_to_str(100.0 * completed_fraction, 2) + '%'
-        summary += 'completed proportion:  ' + completed_fraction_str.rjust(max_v_len) + '\n'
 
         if score:
             pad_size = len(int_to_str(max_v))

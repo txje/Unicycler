@@ -1,7 +1,7 @@
 from collections import deque
 
 import random
-from misc import int_to_str, float_to_str, get_median, weighted_average
+from misc import int_to_str, float_to_str, get_median, weighted_average, weighted_average_list
 from bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge, \
                    get_applicable_bridge_pieces, get_bridge_str
 
@@ -430,66 +430,42 @@ class AssemblyGraph(object):
         '''
         This function merges segments which are in a simple, unbranching path.
         '''
-        try_to_merge = True
-        while try_to_merge:
-            try_to_merge = False
-            for num, _ in self.segments.items():
-                if num in self.forward_links and len(self.forward_links[num]) == 1:
-                    merged = self.try_to_merge_two_segments(num, self.forward_links[num][0])
-                    if merged:
-                        try_to_merge = True
-                        break
-                if -num in self.forward_links and len(self.forward_links[-num]) == 1:
-                    merged = self.try_to_merge_two_segments(-num, self.forward_links[-num][0])
-                    if merged:
-                        try_to_merge = True
-                        break
+        while True:
+            # Sort the segment numbers first so we apply the merging in a consistent order.
+            seg_nums = sorted(list(self.segments.keys()))
+            for num in seg_nums:
+                path = self.get_simple_path(num)
+                if len(path) <= 1:
+                    continue
+                else:
+                    self.merge_simple_path(path)
+                    break
+            else:
+                break
         self.renumber_segments()
 
-    def try_to_merge_two_segments(self, seg_num_1, seg_num_2):
+    def merge_simple_path(self, merge_path):
         '''
-        If seg_1 and seg_2 can be merged, this function does so and returns True. Otherwise it
-        returns False.
+        Merges the path into a single segment and adjusts any graph paths as necessary. Assumes
+        that the path is a simple, unbranching path and can be merged.
         '''
-        if seg_num_1 == seg_num_2:
-            return False
-        if seg_num_1 not in self.forward_links or seg_num_2 not in self.reverse_links:
-            return False
-        if len(self.forward_links[seg_num_1]) != 1 or len(self.reverse_links[seg_num_2]) != 1:
-            return False
-        if self.forward_links[seg_num_1][0] != seg_num_2 or \
-           self.reverse_links[seg_num_2][0] != seg_num_1:
-            return False
-        self.merge_two_segments(seg_num_1, seg_num_2)
-        return True
+        start = merge_path[0]
+        end = merge_path[-1]
 
-    def merge_two_segments(self, seg_num_1, seg_num_2):
-        '''
-        Merges seg_1 and seg_2 into a single segment and adjusts any paths as necessary. Assumes
-        that seg_1 and seg_2 form a simple, unbranching path and can be merged.
-        '''
-        seg_1 = self.segments[abs(seg_num_1)]
-        seg_2 = self.segments[abs(seg_num_2)]
+        start_seg = self.segments[abs(start)]
+        end_seg = self.segments[abs(end)]
 
-        seg_1_len = seg_1.get_length()
-        seg_2_len = seg_2.get_length()
-
-        # Create the merged sequence by removing overlap and concatenating
-        seg_1_seq = self.get_seq_from_signed_seg_num(seg_num_1)
-        seg_2_seq = self.get_seq_from_signed_seg_num(seg_num_2)
-        merged_forward_seq = seg_1_seq[:-self.overlap] + seg_2_seq
+        merged_forward_seq = self.get_path_sequence(merge_path)
         merged_reverse_seq = reverse_complement(merged_forward_seq)
 
-        # The merged sequence depth is the weighted mean of the two components.
-        seg_1_len = seg_1.get_length() - self.overlap
-        seg_2_len = seg_2.get_length() - self.overlap
-        len_sum = seg_1_len + seg_2_len
-        if len_sum > 0.0:
-            mean_depth = seg_1.depth * (seg_1_len / len_sum) + seg_2.depth * (seg_2_len / len_sum)
+        # The merged sequence depth is the weighted mean of the components.
+        depths = [self.segments[abs(x)].depth for x in merge_path]
+        lengths = [self.segments[abs(x)].get_length() - self.overlap for x in merge_path]
+        if sum(lengths) > 0.0:
+            mean_depth = weighted_average_list(depths, lengths)
         else:
             mean_depth = 1.0
 
-        # Create a new merged segment using the number of whichever component segment is larger.
         new_seg_num = self.get_next_available_seg_number()
         new_seg = Segment(new_seg_num, mean_depth, merged_forward_seq, True)
         new_seg.reverse_sequence = merged_reverse_seq
@@ -497,16 +473,16 @@ class AssemblyGraph(object):
         # Save some info that we'll need, and then delete the old segments.
         paths_copy = self.paths.copy()
         outgoing_links = []
-        if seg_num_2 in self.forward_links:
-            outgoing_links = self.forward_links[seg_num_2]
+        if end in self.forward_links:
+            outgoing_links = self.forward_links[end]
         incoming_links = []
-        if seg_num_1 in self.reverse_links:
-            incoming_links = self.reverse_links[seg_num_1]
-        outgoing_links = find_replace_one_val_in_list(outgoing_links, seg_num_1, new_seg_num)
-        outgoing_links = find_replace_one_val_in_list(outgoing_links, -seg_num_2, -new_seg_num)
-        incoming_links = find_replace_one_val_in_list(incoming_links, seg_num_2, new_seg_num)
-        incoming_links = find_replace_one_val_in_list(incoming_links, -seg_num_1, -new_seg_num)
-        self.remove_segments([abs(seg_num_1), abs(seg_num_2)])
+        if start in self.reverse_links:
+            incoming_links = self.reverse_links[start]
+        outgoing_links = find_replace_one_val_in_list(outgoing_links, start, new_seg_num)
+        outgoing_links = find_replace_one_val_in_list(outgoing_links, -end, -new_seg_num)
+        incoming_links = find_replace_one_val_in_list(incoming_links, end, new_seg_num)
+        incoming_links = find_replace_one_val_in_list(incoming_links, -start, -new_seg_num)
+        self.remove_segments([abs(x) for x in merge_path])
 
         # Add the new segment to the graph and give it the links from its source segments.
         self.segments[new_seg_num] = new_seg
@@ -516,18 +492,18 @@ class AssemblyGraph(object):
             self.add_link(link, new_seg_num)
 
         # Merge the segments in any paths.
+        flipped_merge_path = [-x for x in reversed(merge_path)]
         for path_name in paths_copy:
-            paths_copy[path_name] = find_replace_in_list(paths_copy[path_name],
-                                                         [seg_num_1, seg_num_2], [new_seg_num])
-            paths_copy[path_name] = find_replace_in_list(paths_copy[path_name],
-                                                         [-seg_num_2, -seg_num_1], [-new_seg_num])
+            paths_copy[path_name] = find_replace_in_list(paths_copy[path_name], merge_path,
+                                                         [new_seg_num])
+            paths_copy[path_name] = find_replace_in_list(paths_copy[path_name], flipped_merge_path,
+                                                         [-new_seg_num])
 
         # If any paths still contain the original segments, then split those paths into pieces,
         # removing the original segments.
         new_paths = {}
         for path_name, path_segments in paths_copy.items():
-            split_paths = split_path_multiple(path_segments, [seg_num_1, seg_num_2,
-                                                              -seg_num_1, -seg_num_2])
+            split_paths = split_path_multiple(path_segments, merge_path + flipped_merge_path)
             if len(split_paths) == 1:
                 new_paths[path_name] = split_paths[0]
             elif len(split_paths) > 1:
@@ -1390,6 +1366,7 @@ class AssemblyGraph(object):
         # Create a new bridge segment.
         new_seg_num = self.get_next_available_seg_number()
         new_seg = Segment(new_seg_num, bridge.depth, sequence, True, bridge, graph_path)
+        new_seg.reverse_sequence = reverse_complement(sequence)
         self.segments[new_seg_num] = new_seg
 
         # Link the bridge segment in to the start/end segments.
@@ -1679,22 +1656,30 @@ class AssemblyGraph(object):
         # Expand forward as much as possible.
         while True:
             if simple_path[-1] not in self.forward_links or \
-               self.forward_links[simple_path[-1]] != 1:
+               len(self.forward_links[simple_path[-1]]) != 1:
                 break
             potential = self.forward_links[simple_path[-1]][0]
+            if potential in simple_path or -potential in simple_path:
+                break
             if len(self.reverse_links[potential]) == 1 and \
                self.reverse_links[potential][0] == simple_path[-1]:
                 simple_path.append(potential)
+            else:
+                break
 
         # Expand backward as much as possible.
         while True:
             if simple_path[0] not in self.reverse_links or \
-               self.reverse_links[simple_path[0]] != 1:
+               len(self.reverse_links[simple_path[0]]) != 1:
                 break
             potential = self.reverse_links[simple_path[0]][0]
+            if potential in simple_path or -potential in simple_path:
+                break
             if len(self.forward_links[potential]) == 1 and \
                self.forward_links[potential][0] == simple_path[0]:
                 simple_path.insert(0, potential)
+            else:
+                break
 
         return simple_path
 

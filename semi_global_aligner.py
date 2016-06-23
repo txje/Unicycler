@@ -38,7 +38,8 @@ import threading
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(SCRIPT_DIR, 'lib'))
 from misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
-                 get_mean_and_st_dev, print_progress_line, reverse_complement
+                 get_mean_and_st_dev, print_progress_line, reverse_complement, \
+                 print_section_header
 from cpp_function_wrappers import semi_global_alignment, new_kmer_positions, add_kmer_positions, \
                                   delete_all_kmer_positions, start_extension_alignment, \
                                   end_extension_alignment, \
@@ -245,7 +246,6 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
             print('Low score threshold = ' + float_to_str(rand_mean, 2) + ' + ' + \
                   str(std_devs_over_mean) + ' x ' +  float_to_str(rand_std_dev, 2) + ' = ' + \
                   float_to_str(low_score_threshold, 2))
-            print()
 
     reference_dict = {x.name: x for x in references}
 

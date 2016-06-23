@@ -98,7 +98,7 @@ def load_long_reads(fastq_filename, verbosity):
                 last_progress = progress_rounded_down    
     fastq.close()
     if verbosity > 0:
-        print('\n')
+        print()
     return read_dict, read_names
 
 def simplify_ranges(ranges):

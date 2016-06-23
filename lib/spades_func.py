@@ -59,9 +59,6 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
             assembly_graph = AssemblyGraph(graph_file, kmer, paths_file=paths_file)
             assembly_graph.clean(read_depth_filter)
             assembly_graph.save_to_gfa(os.path.join(spades_dir, clean_graph_filename), 0)
-            if not keep_temp:
-                os.remove(graph_file)
-                os.remove(paths_file)
 
         dead_ends = assembly_graph.total_dead_end_count()
         segment_count = len(assembly_graph.segments)

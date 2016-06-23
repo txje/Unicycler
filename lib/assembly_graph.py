@@ -821,15 +821,23 @@ class AssemblyGraph(object):
 
             # Finally, we need to check to see if there were any paths through the junction. If so,
             # they need to be adjusted to contain the new segment.
-            for name, segs in self.paths.items():
-                self.paths[name] = insert_num_in_list(segs, start_num_1, end_num_1, bridge_num)
-                self.paths[name] = insert_num_in_list(segs, start_num_1, end_num_2, bridge_num)
-                self.paths[name] = insert_num_in_list(segs, start_num_2, end_num_1, bridge_num)
-                self.paths[name] = insert_num_in_list(segs, start_num_2, end_num_2, bridge_num)
-                self.paths[name] = insert_num_in_list(segs, -end_num_1, -start_num_1, -bridge_num)
-                self.paths[name] = insert_num_in_list(segs, -end_num_1, -start_num_2, -bridge_num)
-                self.paths[name] = insert_num_in_list(segs, -end_num_2, -start_num_1, -bridge_num)
-                self.paths[name] = insert_num_in_list(segs, -end_num_2, -start_num_2, -bridge_num)
+            for name in self.paths:
+                self.paths[name] = insert_num_in_list(self.paths[name], start_num_1, end_num_1,
+                                                      bridge_num)
+                self.paths[name] = insert_num_in_list(self.paths[name], start_num_1, end_num_2,
+                                                      bridge_num)
+                self.paths[name] = insert_num_in_list(self.paths[name], start_num_2, end_num_1,
+                                                      bridge_num)
+                self.paths[name] = insert_num_in_list(self.paths[name], start_num_2, end_num_2,
+                                                      bridge_num)
+                self.paths[name] = insert_num_in_list(self.paths[name], -end_num_1, -start_num_1,
+                                                      -bridge_num)
+                self.paths[name] = insert_num_in_list(self.paths[name], -end_num_1, -start_num_2,
+                                                      -bridge_num)
+                self.paths[name] = insert_num_in_list(self.paths[name], -end_num_2, -start_num_1,
+                                                      -bridge_num)
+                self.paths[name] = insert_num_in_list(self.paths[name], -end_num_2, -start_num_2,
+                                                      -bridge_num)
 
     def get_next_available_seg_number(self):
         '''
@@ -2070,7 +2078,7 @@ def insert_num_in_list(lst, val_1, val_2, insert_val):
         if val == val_1 and next_val == val_2:
             new_list.append(insert_val)
     new_list.append(lst[-1])
-    return new_list 
+    return new_list
 
 def find_replace_in_list(lst, pattern, replacement):
     '''

@@ -1233,12 +1233,6 @@ class AssemblyGraph(object):
 
         for bridge in sorted_bridges:
 
-            # If the bridge's quality is too low, we don't use it.
-            if bridge.quality < min_bridge_qual:
-                if verbosity > 1:
-                    print('Rejected', bridge)
-                continue
-
             # Get the pieces of the bridge which can be applied.
             pieces = get_applicable_bridge_pieces(bridge, single_copy_nums, right_bridged,
                                                   left_bridged, seg_nums_used_in_bridges)
@@ -1247,6 +1241,12 @@ class AssemblyGraph(object):
             if not pieces:
                 if verbosity > 1:
                     print('Unused', bridge)
+                continue
+
+            # If the bridge's quality is too low, we don't use it.
+            if bridge.quality < min_bridge_qual:
+                if verbosity > 1:
+                    print('Rejected', bridge)
                 continue
 
             if len(pieces) == 1 and \

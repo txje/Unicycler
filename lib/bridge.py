@@ -340,10 +340,12 @@ class LongReadBridge(object):
             # maxes out at 100.0).
             self.quality = best_scaled_score
 
-        # If a path wasn't found, the consensus sequence is the bridge.
+        # If a path wasn't found, the consensus sequence is the bridge (with the overlaps added).
         else:
             output += '  best path:               none found\n'
-            self.bridge_sequence = self.consensus_sequence
+            start_overlap = self.graph.get_path_sequence([self.start_segment])[-self.graph.overlap:]
+            end_overlap = self.graph.get_path_sequence([self.end_segment])[:self.graph.overlap]
+            self.bridge_sequence = start_overlap + self.consensus_sequence + end_overlap
             self.path_support = False
 
             # Non-graph-path-supported bridges are much lower quality than graph-path-supported

@@ -1268,7 +1268,7 @@ class AssemblyGraph(object):
 
         # Remove segments used in bridges, if doing do would not break up the graph.
         if verbosity > 1:
-            print_section_header('Cleaning up redundant segments', verbosity)
+            print_section_header('Cleaning up leftover segments', verbosity)
         removed_segments = []
         while True:
             for seg_num in seg_nums_used_in_bridges:

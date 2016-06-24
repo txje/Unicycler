@@ -461,12 +461,6 @@ class AssemblyGraph(object):
         start = merge_path[0]
         end = merge_path[-1]
 
-        start_seg = self.segments[abs(start)]
-        end_seg = self.segments[abs(end)]
-
-        merged_forward_seq = self.get_path_sequence(merge_path)
-        merged_reverse_seq = reverse_complement(merged_forward_seq)
-
         # The merged sequence depth is the weighted mean of the components.
         depths = [self.segments[abs(x)].depth for x in merge_path]
         lengths = [self.segments[abs(x)].get_length() - self.overlap for x in merge_path]
@@ -476,6 +470,7 @@ class AssemblyGraph(object):
             mean_depth = 1.0
 
         new_seg_num = self.get_next_available_seg_number()
+        merged_forward_seq = self.get_path_sequence(merge_path)
         new_seg = Segment(new_seg_num, mean_depth, merged_forward_seq, True)
         new_seg.build_other_sequence_if_necessary()
 
@@ -1295,11 +1290,13 @@ class AssemblyGraph(object):
                 # would. For this case, we expand seg_num to a maximum simple path. If all segments
                 # in this path are also in seg_nums_used_in_bridges, then we can delete them all.
                 else:
-                    path = [abs(x) for x in self.get_simple_path(seg_num)]
-                    if len(path) > 1 and all(x in seg_nums_used_in_bridges for x in path) and \
+                    path = self.get_simple_path(seg_num)
+                    unsigned_path = [abs(x) for x in path]
+                    if len(path) > 1 and \
+                       all(x in seg_nums_used_in_bridges for x in unsigned_path) and \
                        self.dead_end_change_if_path_deleted(path) <= 0:
-                        self.remove_segments(path)
-                        removed_segments += path
+                        self.remove_segments(unsigned_path)
+                        removed_segments += unsigned_path
                         break
             else:
                 break

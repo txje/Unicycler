@@ -756,89 +756,91 @@ class AssemblyGraph(object):
         This function does various graph repairs, filters and normalisations to make it a bit
         nicer.
         '''
-        self.repair_four_way_junctions()
+        self.repair_multi_way_junctions()
         self.filter_by_read_depth(read_depth_filter)
         self.filter_homopolymer_loops()
         self.merge_all_possible()
         self.normalise_read_depths()
 
-    def repair_four_way_junctions(self):
+    def repair_multi_way_junctions(self):
         '''
-        This function finds and fixes four-way junctions in the graph, as these can mess up copy
+        This function finds and fixes multi-way junctions in the graph, as these can mess up copy
         number determination. It fixes them by creating a new segment with no length (i.e with the
         overlap size) to bridge the connection.
         For example: A->B,C and D->B,C becomes A->E and D->E and E->B and E->C
         '''
-        seg_nums = list(self.segments)
-        seg_nums += [-x for x in self.segments]
-        for seg_num in seg_nums:
-            if seg_num not in self.forward_links:
-                continue
-            ending_segs = self.forward_links[seg_num]
-            if len(ending_segs) != 2:
-                continue
-            end_num_1 = ending_segs[0]
-            end_num_2 = ending_segs[1]
-            if len(self.reverse_links[end_num_1]) != 2 or \
-               len(self.reverse_links[end_num_2]) != 2:
-                continue
-            starting_segs = set(self.reverse_links[end_num_1])
-            starting_segs.union(set(self.reverse_links[end_num_2]))
-            starting_segs = list(starting_segs)
-            if len(starting_segs) != 2:
-                continue
+        while True:
+            seg_nums = list(self.segments) + [-x for x in self.segments]
+            for seg_num in seg_nums:
 
-            # If the code got here, then we've found a four-way junction! Create a new segment
-            # to bridge the starting and ending segments.
-            start_num_1 = starting_segs[0]
-            start_num_2 = starting_segs[1]
-            start_1 = self.segments[abs(start_num_1)]
-            start_2 = self.segments[abs(start_num_2)]
-            end_1 = self.segments[abs(end_num_1)]
-            end_2 = self.segments[abs(end_num_2)]
-            if end_num_1 > 0:
-                bridge_seq = end_1.forward_sequence[:self.overlap]
+                # For the segment, get all of its downstream segments.
+                if seg_num not in self.forward_links:
+                    continue
+                ending_segs = set(self.forward_links[seg_num])
+                if len(ending_segs) < 2:
+                    continue
+
+                # Now for all of the downstream segments, get their upstream segments.
+                starting_segs = set()
+                for ending_seg in ending_segs:
+                    if ending_seg in self.reverse_links and self.reverse_links[ending_seg]:
+                        starting_segs.update(self.reverse_links[ending_seg])
+                if len(starting_segs) < 2:
+                    continue
+
+                # Now for all of the upstream (starting) segments, get their downstream segments.
+                # If this set is the same as the downstream segments of the first segment, then
+                # we have ourselves a multi-way junction!
+                ending_segs_2 = set()
+                for starting_seg in starting_segs:
+                    if starting_seg in self.forward_links and self.forward_links[starting_seg]:
+                        ending_segs_2.update(self.forward_links[starting_seg])
+                if ending_segs_2 != ending_segs:
+                    continue
+
+                # If the code got here, then we've found a four-way junction! Double-check that all
+                # of the overlaps agree.
+                starting_segs = list(starting_segs)
+                ending_segs = list(ending_segs)
+                bridge_seq = self.get_seq_from_signed_seg_num(ending_segs[0])[:self.overlap]
+                for seg_num in starting_segs:
+                    assert bridge_seq == self.get_seq_from_signed_seg_num(seg_num)[-self.overlap:]
+                for seg_num in ending_segs:
+                    assert bridge_seq == self.get_seq_from_signed_seg_num(seg_num)[:self.overlap]
+
+                # Create a new segment to bridge the starting and ending segments.
+                bridge_num = self.get_next_available_seg_number()
+                start_seg_depth_sum = sum(self.segments[abs(x)].depth for x in starting_segs)
+                end_seg_depth_sum = sum(self.segments[abs(x)].depth for x in ending_segs)
+                bridge_depth = (start_seg_depth_sum + end_seg_depth_sum) / 2.0
+                bridge_seg = Segment(bridge_num, bridge_depth, bridge_seq, True)
+                bridge_seg.build_other_sequence_if_necessary()
+                self.segments[bridge_num] = bridge_seg
+
+                # Now rebuild the links around the junction.
+                for seg_num in starting_segs:
+                    self.forward_links[seg_num] = [bridge_num]
+                    self.reverse_links[-seg_num] = [-bridge_num]
+                for seg_num in ending_segs:
+                    self.reverse_links[seg_num] = [bridge_num]
+                    self.forward_links[-seg_num] = [-bridge_num]
+                self.forward_links[bridge_num] = ending_segs
+                self.reverse_links[bridge_num] = starting_segs
+                self.reverse_links[-bridge_num] = [-x for x in ending_segs]
+                self.forward_links[-bridge_num] = [-x for x in starting_segs]
+
+                # Finally, we need to check to see if there were any paths through the junction. If
+                # so, they need to be adjusted to contain the new segment.
+                for name in self.paths:
+                    for start_num in starting_segs:
+                        for end_num in ending_segs:
+                            self.paths[name] = insert_num_in_list(self.paths[name], start_num,
+                                                                  end_num, bridge_num)
+                            self.paths[name] = insert_num_in_list(self.paths[name], -end_num,
+                                                                  -start_num, -bridge_num)
+                break
             else:
-                bridge_seq = end_1.reverse_sequence[:self.overlap]
-            bridge_depth = (start_1.depth + start_2.depth + end_1.depth + end_2.depth) / 2.0
-            bridge_num = self.get_next_available_seg_number()
-            bridge_seg = Segment(bridge_num, bridge_depth, bridge_seq, True)
-            bridge_seg.build_other_sequence_if_necessary()
-            self.segments[bridge_num] = bridge_seg
-
-            # Now rebuild the links around the junction.
-            self.forward_links[start_num_1] = [bridge_num]
-            self.forward_links[start_num_2] = [bridge_num]
-            self.forward_links[bridge_num] = [end_num_1, end_num_2]
-            self.reverse_links[bridge_num] = [start_num_1, start_num_2]
-            self.reverse_links[end_num_1] = [bridge_num]
-            self.reverse_links[end_num_2] = [bridge_num]
-            self.reverse_links[-start_num_1] = [-bridge_num]
-            self.reverse_links[-start_num_2] = [-bridge_num]
-            self.reverse_links[-bridge_num] = [-end_num_1, -end_num_2]
-            self.forward_links[-bridge_num] = [-start_num_1, -start_num_2]
-            self.forward_links[-end_num_1] = [-bridge_num]
-            self.forward_links[-end_num_2] = [-bridge_num]
-
-            # Finally, we need to check to see if there were any paths through the junction. If so,
-            # they need to be adjusted to contain the new segment.
-            for name in self.paths:
-                self.paths[name] = insert_num_in_list(self.paths[name], start_num_1, end_num_1,
-                                                      bridge_num)
-                self.paths[name] = insert_num_in_list(self.paths[name], start_num_1, end_num_2,
-                                                      bridge_num)
-                self.paths[name] = insert_num_in_list(self.paths[name], start_num_2, end_num_1,
-                                                      bridge_num)
-                self.paths[name] = insert_num_in_list(self.paths[name], start_num_2, end_num_2,
-                                                      bridge_num)
-                self.paths[name] = insert_num_in_list(self.paths[name], -end_num_1, -start_num_1,
-                                                      -bridge_num)
-                self.paths[name] = insert_num_in_list(self.paths[name], -end_num_1, -start_num_2,
-                                                      -bridge_num)
-                self.paths[name] = insert_num_in_list(self.paths[name], -end_num_2, -start_num_1,
-                                                      -bridge_num)
-                self.paths[name] = insert_num_in_list(self.paths[name], -end_num_2, -start_num_2,
-                                                      -bridge_num)
+                break
 
     def get_next_available_seg_number(self):
         '''
@@ -1796,6 +1798,8 @@ class Segment(object):
             graph_path_str = ', '.join([str(x) for x in self.graph_path])
             label += ': ' + graph_path_str
         return label
+
+
 
 def get_error(source, target):
     '''

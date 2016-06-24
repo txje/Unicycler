@@ -343,8 +343,10 @@ class LongReadBridge(object):
         # If a path wasn't found, the consensus sequence is the bridge (with the overlaps added).
         else:
             output += '  best path:               none found\n'
-            start_overlap = self.graph.get_path_sequence([self.start_segment])[-self.graph.overlap:]
-            end_overlap = self.graph.get_path_sequence([self.end_segment])[:self.graph.overlap]
+            start_overlap = \
+                self.graph.get_seq_from_signed_seg_num(self.start_segment)[-self.graph.overlap:]
+            end_overlap = \
+                self.graph.get_seq_from_signed_seg_num(self.end_segment)[:self.graph.overlap]
             self.bridge_sequence = start_overlap + self.consensus_sequence + end_overlap
             self.path_support = False
 

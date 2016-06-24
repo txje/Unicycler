@@ -717,12 +717,12 @@ class AssemblyGraph(object):
             if len(self.forward_links[upstream_segment]) == 1:
                 potential_dead_ends += 1
 
-        return potential_dead_ends - self.dead_end_count(seg_num) 
+        return potential_dead_ends - self.dead_end_count(seg_num)
 
-    def deleting_path_would_create_dead_end(self, path_segments):
+    def dead_end_change_if_path_deleted(self, path_segments):
         '''
-        If deleting the given path would create a dead end, this function returns True. It assumes
-        that the path is simple and unbranching (i.e. could be merged into a single segment).
+        Like the above function, but considered the whole path at once. It assumes that the path is
+        simple and unbranching (i.e. could be merged into a single segment).
         '''
         start = path_segments[0]
         end = path_segments[1]
@@ -749,7 +749,7 @@ class AssemblyGraph(object):
             dead_ends += 1
         if upstream_segments == 0:
             dead_ends += 1
-        return dead_ends < potential_dead_ends
+        return potential_dead_ends - dead_ends
 
     def clean(self, read_depth_filter):
         '''
@@ -1294,7 +1294,8 @@ class AssemblyGraph(object):
                 # in this path are also in seg_nums_used_in_bridges, then we can delete them all.
                 else:
                     path = [abs(x) for x in self.get_simple_path(seg_num)]
-                    if len(path) > 1 and all(x in seg_nums_used_in_bridges for x in path):
+                    if len(path) > 1 and all(x in seg_nums_used_in_bridges for x in path) and \
+                       self.dead_end_change_if_path_deleted(path) <= 0:
                         self.remove_segments(path)
                         removed_segments += path
                         break

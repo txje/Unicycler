@@ -666,6 +666,17 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
         sorted_alignments = sorted(alignments, key=lambda x: x.raw_score, reverse=True)
         available_alignments = []
         for alignment in sorted_alignments:
+
+            # If the alignment being added is to a reference that has already been added but in the
+            # opposite direction, then we don't include it. E.g. we don't add an alignment for 10
+            # if we already have an alignment for -10. This is because there's no legitimate way
+            # for a single-copy segment to appear in the same read in two different directions. The
+            # same direction is okay, as that can happen with a circular piece of DNA, but opposite
+            # directions implies multi-copy.
+            opposite_num = -alignment.get_signed_ref_num()
+            if opposite_num in set(x.get_signed_ref_num() for x in available_alignments):
+                continue
+
             available_alignments.append(alignment)
             available_alignments = sorted(available_alignments,
                                           key=lambda x: x.read_start_positive_strand())

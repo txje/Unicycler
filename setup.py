@@ -6,17 +6,21 @@ import os
 import shutil
 from distutils.command.build import build
 import subprocess
-from multiprocessing import cpu_count
+import multiprocessing
+
+# Install setuptools if not already present
+import ez_setup
+ez_setup.use_setuptools()
+
 from setuptools import setup
 from setuptools.command.install import install
 
+# Get the program version from another file.
 exec(open('unicycler/version.py').read())
 
 with open('README.md', 'rb') as readme:
     LONG_DESCR = readme.read().decode('utf-8')
 
-# BASEPATH = os.path.dirname(os.path.abspath(__file__))
-# UNICYCLER_PATH = os.path.join(BASEPATH, 'unicycler')
 
 class UnicycleBuild(build):
     '''
@@ -25,12 +29,13 @@ class UnicycleBuild(build):
     def run(self):
         build.run(self) # Run original build code
         try:
-            cmd = ['make', '-j', str(max(8, cpu_count()))]
+            cmd = ['make', '-j', str(max(8, multiprocessing.cpu_count()))]
         except NotImplementedError:
             cmd = ['make']
         def compile():
             subprocess.call(cmd)
         self.execute(compile, [], 'Compiling Unicycler: ' + ' '.join(cmd))
+
 
 class UnicycleInstall(install):
     '''

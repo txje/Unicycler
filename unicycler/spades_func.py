@@ -134,9 +134,6 @@ def spades_read_correction(short1, short2, spades_dir, verbosity, threads, spade
     spades_error = process.stderr.readline().strip().decode('utf-8')
     if spades_error:
         quit_with_error('SPAdes encountered an error: ' + spades_error)
-    if not spades_output:
-        quit_with_error('SPAdes failed to complete read correction - please check SPAdes '
-                        'installation')
 
     # Read error correction should be done now, so copy the correct read files to a more permanent
     # location.

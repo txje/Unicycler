@@ -25,7 +25,7 @@ class UnicycleBuild(build):
     def run(self):
         build.run(self) # Run original build code
         try:
-            cmd = ['make', '-j', str(cpu_count())]
+            cmd = ['make', '-j', str(max(8, cpu_count()))]
         except NotImplementedError:
             cmd = ['make']
         def compile():

@@ -265,16 +265,9 @@ def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity, km
 
 def strip_read_extensions(read_file_name):
     '''
-    This function removes certain file extensions from a file name.
+    This function removes all extensions from a file name.
     '''
-    no_extensions = read_file_name
-    lower = no_extensions.lower()
-    if lower.endswith('.gz'):
-        no_extensions = no_extensions[:-3]
-    lower = no_extensions.lower()
-    if lower.endswith('.fasta') or lower.endswith('.fastq') or lower.endswith('.fastg'):
-        no_extensions = no_extensions[:-6]
-    return no_extensions
+    return os.path.basename(read_file_name).split('.')[0]
 
 def get_read_lengths(reads_filename):
     '''

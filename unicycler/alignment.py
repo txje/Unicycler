@@ -6,9 +6,8 @@ email: rrwick@gmail.com
 '''
 
 import re
-from misc import get_nice_header, reverse_complement
-from cpp_function_wrappers import start_extension_alignment, end_extension_alignment
-
+from .misc import get_nice_header, reverse_complement
+from .cpp_function_wrappers import start_extension_alignment, end_extension_alignment
 
 class AlignmentScoringScheme(object):
     '''

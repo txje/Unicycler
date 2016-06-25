@@ -9,10 +9,9 @@ email: rrwick@gmail.com
 
 from multiprocessing.dummy import Pool as ThreadPool
 import time
-
-from misc import int_to_str, float_to_str, reverse_complement, print_progress_line, \
-                 weighted_average
-from cpp_function_wrappers import multiple_sequence_alignment, fully_global_alignment
+from .misc import int_to_str, float_to_str, reverse_complement, print_progress_line, \
+                  weighted_average
+from .cpp_function_wrappers import multiple_sequence_alignment, fully_global_alignment
 
 class SpadesContigBridge(object):
     '''

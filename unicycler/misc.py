@@ -11,7 +11,6 @@ import subprocess
 import random
 import math
 
-
 def float_to_str(num, decimals, max_num=0):
     '''
     Converts a number to a string. Will add left padding based on the max value to ensure numbers

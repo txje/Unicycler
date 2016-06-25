@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 '''
-Bikepath - a sensitive semi-global long read aligner
+Antpath - a sensitive semi-global long read aligner
 
 This is a script to align error-prone long reads (e.g. PacBio or Nanopore) to one or more
 references in a semi-global manner. Semi-global alignment allows for unpenalised end gaps, but the
@@ -34,44 +34,34 @@ import time
 from multiprocessing.dummy import Pool as ThreadPool
 from multiprocessing import cpu_count
 import threading
-
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(os.path.join(SCRIPT_DIR, 'lib'))
-from misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
-                 get_mean_and_st_dev, print_progress_line, reverse_complement, \
-                 print_section_header
-from cpp_function_wrappers import semi_global_alignment, new_kmer_positions, add_kmer_positions, \
-                                  delete_all_kmer_positions, start_extension_alignment, \
-                                  end_extension_alignment, \
-                                  get_random_sequence_alignment_mean_and_std_dev
-from read_ref import Read, Reference, load_references, load_long_reads
-from alignment import Alignment, AlignmentScoringScheme
+from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
+                  get_mean_and_st_dev, print_progress_line, print_section_header
+from .cpp_function_wrappers import semi_global_alignment, new_kmer_positions, add_kmer_positions, \
+                                   delete_all_kmer_positions, \
+                                   get_random_sequence_alignment_mean_and_std_dev
+from .read_ref import load_references, load_long_reads
+from .alignment import Alignment, AlignmentScoringScheme
 
 # Used to ensure that multiple threads writing to the same SAM file don't write at the same time.
-sam_write_lock = threading.Lock()
+SAM_WRITE_LOCK = threading.Lock()
 
-'''
-VERBOSITY controls how much the script prints to the screen.
-0 = nothing is printed
-1 = a relatively simple output is printed
-2 = a more thorough output is printed, including details on each Seqan alignment
-3 = even more output is printed, including stuff from the C++ code
-4 = tons of stuff is printed, including all k-mer positions in each Seqan alignment
-'''
+# VERBOSITY controls how much the script prints to the screen.
+# 0 = nothing is printed
+# 1 = a relatively simple output is printed
+# 2 = a more thorough output is printed, including details on each Seqan alignment
+# 3 = even more output is printed, including stuff from the C++ code
+# 4 = tons of stuff is printed, including all k-mer positions in each Seqan alignment
 VERBOSITY = 0
 
-'''
-EXPECTED_SLOPE is the anticipated reference to read ratio. It is used by the C++ Seqan code to
-rotate the common k-mer rectangles when looking for alignment lines. It is a global because it will
-be constantly updated as reads are aligned.
-TOTAL_REF_LENGTH and TOTAL_READ_LENGTH are the totals used to calculate EXPECTED_SLOPE. They start
-at 10000 (not the more literal value of 0) so EXPECTED_SLOPE isn't too prone to fluctuation at the
-start.
-'''
+# EXPECTED_SLOPE is the anticipated reference to read ratio. It is used by the C++ Seqan code to
+# rotate the common k-mer rectangles when looking for alignment lines. It is a global because it
+# will be constantly updated as reads are aligned.
+# TOTAL_REF_LENGTH and TOTAL_READ_LENGTH are the totals used to calculate EXPECTED_SLOPE. They
+# start at 10000 (not the more literal value of 0) so EXPECTED_SLOPE isn't too prone to fluctuation
+# at the start.
 EXPECTED_SLOPE = 1.0
 TOTAL_REF_LENGTH = 10000
 TOTAL_READ_LENGTH = 10000
-
 
 def main():
     '''
@@ -99,7 +89,8 @@ def get_arguments():
     '''
     Specifies the command line arguments required by the script.
     '''
-    parser = argparse.ArgumentParser(description='Semi-global long read aligner',
+    parser = argparse.ArgumentParser(description='Antpath - a sensitive semi-global long read '
+                                                 'aligner',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--ref', type=str, required=True, default=argparse.SUPPRESS,
@@ -676,12 +667,12 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
 
     # Write alignments to SAM.
     if sam_filename and read.alignments:
-        sam_write_lock.acquire()
+        SAM_WRITE_LOCK.acquire()
         sam_file = open(sam_filename, 'a')
         for alignment in read.alignments:
             sam_file.write(alignment.get_sam_line())
         sam_file.close()
-        sam_write_lock.release()
+        SAM_WRITE_LOCK.release()
 
     update_expected_slope(read, low_score_threshold)
     return output
@@ -734,6 +725,3 @@ def update_expected_slope(read, low_score_threshold):
         TOTAL_REF_LENGTH += read.alignments[0].get_aligned_ref_length()
         TOTAL_READ_LENGTH += read.alignments[0].get_aligned_read_length()
         EXPECTED_SLOPE = TOTAL_REF_LENGTH / TOTAL_READ_LENGTH
-
-if __name__ == '__main__':
-    main()

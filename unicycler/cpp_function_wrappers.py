@@ -8,9 +8,13 @@ email: rrwick@gmail.com
 
 import os
 from ctypes import CDLL, cast, c_char_p, c_int, c_double, c_void_p, c_bool, POINTER
+from .misc import quit_with_error
 
-C_LIB = CDLL(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'cpp_functions.so'))
-
+SO_FILE = 'cpp_functions.so'
+SO_FILE_FULL = os.path.join(os.path.dirname(os.path.realpath(__file__)), SO_FILE)
+if not os.path.isfile(SO_FILE_FULL):
+    quit_with_error('could not find ' + SO_FILE + ' - please reinstall')
+C_LIB = CDLL(SO_FILE_FULL)
 
 
 # This is the big semi-global C++ Seqan alignment function at the heart of the aligner.

@@ -9,9 +9,9 @@ import os
 import subprocess
 import gzip
 import shutil
-from misc import print_section_header, round_to_nearest_odd, get_compression_type, int_to_str, \
-                 quit_with_error
-from assembly_graph import AssemblyGraph
+from .misc import print_section_header, round_to_nearest_odd, get_compression_type, int_to_str, \
+                  quit_with_error
+from .assembly_graph import AssemblyGraph
 
 
 def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, spades_path,

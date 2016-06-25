@@ -1,0 +1,5 @@
+[console_scripts]
+antpath = unicycler.antpath:main
+scrutinate = unicycler.scrutinate:main
+unicycler = unicycler.unicycler:main
+

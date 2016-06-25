@@ -7,8 +7,8 @@ email: rrwick@gmail.com
 
 import random
 import gzip
-from misc import quit_with_error, print_progress_line, get_nice_header, get_compression_type, \
-                 print_section_header
+from .misc import quit_with_error, print_progress_line, get_nice_header, get_compression_type, \
+                  print_section_header
 
 def load_references(fasta_filename, verbosity):
     '''

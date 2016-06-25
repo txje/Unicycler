@@ -7,10 +7,10 @@ email: rrwick@gmail.com
 
 from collections import deque
 import random
-from misc import int_to_str, float_to_str, weighted_average, weighted_average_list, \
-                 print_section_header
-from bridge import SpadesContigBridge, LoopUnrollingBridge, get_applicable_bridge_pieces, \
-                   get_bridge_str
+from .misc import int_to_str, float_to_str, weighted_average, weighted_average_list, \
+                  print_section_header
+from .bridge import SpadesContigBridge, LoopUnrollingBridge, get_applicable_bridge_pieces, \
+                    get_bridge_str
 
 
 class AssemblyGraph(object):

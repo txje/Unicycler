@@ -14,17 +14,17 @@ CXX         ?= g++-5
 CXXFLAGS    ?= -Wall -Wextra -pedantic -march=native
 
 # These flags are required for the build to work.
-FLAGS        = -std=c++11 -Ilib/include -fPIC
+FLAGS        = -std=c++11 -Iunicycler/include -fPIC
 LDFLAGS      = -shared
 
 # Different debug/optimisation levels for debug/release builds.
 DEBUGFLAGS   = -DSEQAN_ENABLE_DEBUG=1 -g
 RELEASEFLAGS = -O3 -D NDEBUG
 
-TARGET       = lib/cpp_functions.so
+TARGET       = unicycler/cpp_functions.so
 SHELL        = /bin/sh
-SOURCES      = $(shell find lib/src -name "*.cpp")
-HEADERS      = $(shell find lib/include -name "*.h")
+SOURCES      = $(shell find unicycler -name "*.cpp")
+HEADERS      = $(shell find unicycler -name "*.h")
 OBJECTS      = $(SOURCES:.cpp=.o)
 
 # Linux needs '-soname' while Mac needs '-install_name'

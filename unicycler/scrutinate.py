@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 '''
-Roadworthy - a long read assembly checker
+Scrutinate - a long read assembly checker
 
 Author: Ryan Wick
 email: rrwick@gmail.com
@@ -12,18 +12,12 @@ import imp
 import os
 import string
 import argparse
-
-SCIRPT_DIR = os.path.dirname(os.path.realpath(__file__))
-sys.path.append(os.path.join(SCIRPT_DIR, 'lib'))
-from misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
-                 get_nice_header, reverse_complement, print_progress_line, print_section_header
-from read_ref import Read, Reference, load_references, load_long_reads
-from alignment import AlignmentScoringScheme
-from cpp_function_wrappers import simulate_depths, get_random_sequence_alignment_error_rates
-
-sys.dont_write_bytecode = True
-from semi_global_aligner import semi_global_align_long_reads, add_aligning_arguments, \
-                                fix_up_arguments
+from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
+                  get_nice_header, reverse_complement, print_progress_line, print_section_header
+from .read_ref import load_references, load_long_reads
+from .alignment import AlignmentScoringScheme
+from .cpp_function_wrappers import simulate_depths, get_random_sequence_alignment_error_rates
+from .antpath import semi_global_align_long_reads, add_aligning_arguments, fix_up_arguments
 
 VERBOSITY = 0 # Controls how much the script prints to the screen
 CONSOLE_WIDTH = 40 # The width of many things printed to stdout
@@ -1436,7 +1430,3 @@ def get_depth_min_and_max_distributions(read_lengths, reference_length, iteratio
         max_distribution.append((int(piece_parts[0]), float(piece_parts[1])))
 
     return min_distribution, max_distribution
-
-
-if __name__ == '__main__':
-    main()

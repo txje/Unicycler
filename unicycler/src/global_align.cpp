@@ -39,7 +39,6 @@ ScoredAlignment * fullyGlobalAlignment(std::string s1, std::string s2,
     Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
 
     AlignConfig<false, false, false, false> alignConfig;
-    int score;
     if (useBanding) {
         int lowerDiagonal = -bandSize;
         int upperDiagonal = bandSize;
@@ -56,10 +55,10 @@ ScoredAlignment * fullyGlobalAlignment(std::string s1, std::string s2,
         // std::cout << "Lower diagonal: " << lowerDiagonal << std::endl; // TEMP
         // std::cout << "Upper diagonal: " << upperDiagonal << std::endl; // TEMP
         
-        score = globalAlignment(alignment, scoringScheme, alignConfig, lowerDiagonal, upperDiagonal);
+        globalAlignment(alignment, scoringScheme, alignConfig, lowerDiagonal, upperDiagonal);
     }
     else
-        score = globalAlignment(alignment, scoringScheme, alignConfig);
+        globalAlignment(alignment, scoringScheme, alignConfig);
 
     std::string s1Name = "s1";
     std::string s2Name = "s2";

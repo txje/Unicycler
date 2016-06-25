@@ -1,6 +1,33 @@
-# semi_global_long_read_aligner.py
+# Unicycler
 
-This is a script to align error-prone long reads (e.g. PacBio or Nanopore) to one or more references in a semi-global manner. It uses GraphMap to do the actual alignment and then filters the resulting alignments and outputs summaries.
+This repository contains three separate (but related) tools:
+* Unicycler: a bacterial genome assembler for hybrid read sets
+* Antpath: a sensitive, semi-global long read aligner
+* Scrutinate: an assembly checker
+
+
+
+# Installation
+
+Unicycler, Antpath and Scrutinate are all built/installed together. Simply run: `python3 setup.py install`.
+
+
+
+# Unicycler
+
+Unicycler is a bacterial genome assembler for use with hybrid read sets (both short and long reads). It uses [SPAdes](http://bioinf.spbau.ru/spades) to construct an assembly graph from short reads, then it uses long read alignments to scaffold and simplify the graph.
+
+### Input requirements
+
+Unicycler requires short reads (e.g. Illumina read) of decent sequencing depth. Without a good set of short reads, SPAdes will not be able to make a reasonably complete assembly graph.
+
+The long reads, however, can be of any depth. Moderate long read depth should be sufficient to complete a bacterial genome assembly. With very low long read depth, Unicycler may not be able to complete an assembly, but it can still use them to improve the assembly.
+
+
+
+# Antpath
+
+Antpath sensitively aligns error-prone long reads (e.g. PacBio or Nanopore) to one or more references in a semi-global manner.
 
 Semi-global alignment allows for unpenalised end gaps, but the alignment will continue until one of the two sequences ends. This includes cases where the two sequences overlap and cases where one sequence is contained within the other:
 
@@ -10,7 +37,7 @@ Semi-global alignment allows for unpenalised end gaps, but the alignment will co
 BBBBBBBBB        BBBBBBB       BBBBBBBBB           BBBBBBBBB
 ```
 
-This tool is intended for cases where the reads and reference are expected to match perfectly (or at least as perfectly as error-prone long reads can match). An example of an appropriate case would be if the reference sequences are assembled contigs of a bacterial strain and the long reads are from the same strain.
+Antpath is intended for cases where the reads and reference are expected to match perfectly (or at least as perfectly as error-prone long reads can match). An example of an appropriate case would be if the reference sequences are assembled contigs of a bacterial strain and the long reads are from the same strain.
 
 Required inputs:
   1) FASTA file of one or more reference sequences
@@ -31,14 +58,8 @@ Output: SAM file of alignments
 * `--threads`: The number of CPU threads to use (default is to use all available CPUs).
 * `--verbosity`: How much stdout to produce. 0 = no stdout. 1 = default. 2 = extra output (display the alignments for each read). 3 = lots of extra output (display the attempted alignments for each read). 4 = tons (I use this for debugging - you probably shouldn't use it).
 
-### Build instructions
-This aligner uses a C++ shared library, so it must be compiled first. Just run `make` in the repository directory and it should (hopefully) build everything required.
 
-# assembly_checker.py
 
-This is a script which allows a user to assess whether a completed bacterial genome assembly is correct, using long reads. It requires long read alignments (produced by `semi_global_long_read_aligner.py`) and produces summary tables and plots.
+# Scrutinate
 
-# hybrid_assembler.py
-
-This script is a work in progress. It will ultimately conduct a hybrid assembly of Illumina reads and long reads, using SPAdes to produce an Illumina read assembly graph and then scaffolding the graph with long reads. It will work in a streaming, real-time fashion, using the long reads as they are made available.
-
+Scrutinate allows a user to assess whether a completed bacterial genome assembly is correct, using long reads. It requires long read alignments (produced by `semi_global_long_read_aligner.py`) and produces summary tables and plots.

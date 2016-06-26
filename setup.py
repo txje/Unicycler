@@ -11,11 +11,14 @@ import subprocess
 import multiprocessing
 import glob
 import fnmatch
+import imp
 
 # Install setuptools if not already present
-import ez_setup
-ez_setup.use_setuptools()
-
+try:
+    imp.find_module('setuptools')
+except ImportError:
+    import ez_setup
+    ez_setup.use_setuptools()
 from setuptools import setup
 from setuptools.command.install import install
 

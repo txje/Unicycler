@@ -31,11 +31,13 @@ import sys
 import os
 import argparse
 import time
+import statistics
 from multiprocessing.dummy import Pool as ThreadPool
 from multiprocessing import cpu_count
 import threading
 from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
-                  get_mean_and_st_dev, print_progress_line, print_section_header
+                  get_mean_and_st_dev, print_progress_line, print_section_header, \
+                  weighted_average_list
 from .cpp_function_wrappers import semi_global_alignment, new_kmer_positions, add_kmer_positions, \
                                    delete_all_kmer_positions, \
                                    get_random_sequence_alignment_mean_and_std_dev
@@ -417,6 +419,14 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
             print('    ' + ', '.join([x.name for x in unaligned]))
         print('Total bases aligned:    ', int_to_str(ref_bases_aligned, max_v) + ' bp')
 
+        identities = []
+        lengths = []
+        for read in fully_aligned + partially_aligned:
+            identities += [x.percent_identity for x in read.alignments]
+            lengths += [x.get_aligned_ref_length() for x in read.alignments]
+        mean_identity = weighted_average_list(identities, lengths)
+        print('Mean alignment identity:', float_to_str(mean_identity, 1, max_v) + '%')
+
     return read_dict
 
 def print_graphmap_summary_table(graphmap_alignments, percent_id_mean, percent_id_std_dev,
@@ -521,7 +531,7 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
     read_progress_started = False
     read_progress_finished = False
     while process.poll() is None:
-        graphmap_output = process.stderr.read(1)
+        graphmap_output = process.stderr.read(1).decode('utf-8')
         if VERBOSITY > 0:
             line += graphmap_output
             if line.endswith('\n') or line.endswith('\r'):
@@ -561,12 +571,12 @@ def get_graphmap_version(graphmap_path):
     command = [graphmap_path, '-h']
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = process.communicate()
-    allout = out + err
+    allout = (out + err).decode('utf-8')
     if 'Version: v' not in allout:
         command = [graphmap_path, 'align', '-h']
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out, err = process.communicate()
-        allout = out + err
+        allout = (out + err).decode('utf-8')
     if 'Version: v' not in allout:
         return 0.0
     version_i = allout.find('Version: v')

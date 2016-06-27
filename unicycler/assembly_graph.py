@@ -1031,30 +1031,39 @@ class AssemblyGraph(object):
             if not connections or self.all_have_copy_depths(connections):
                 continue
 
+
             # If we got here, then we can try to redistribute the segment's copy depths to its
             # connections which are lacking copy depth.
             copy_depths = self.copy_depths[num]
             bins = [[]] * len(connections)
             targets = [None if x not in self.copy_depths else len(self.copy_depths[x]) \
                        for x in connections]
-            arrangments = shuffle_into_bins(copy_depths, bins, targets)
-            if not arrangments:
+
+            # For cases where there are many copy depths being distributed to many segments, there
+            # will be too many combinations, so we don't bother trying.
+            arrangement_count = len(bins) ** len(copy_depths)
+            if arrangement_count > 10000: # TO DO: choose this cutoff more carefully?
+                continue
+
+            arrangements = shuffle_into_bins(copy_depths, bins, targets)
+            if not arrangements:
                 continue
 
             lowest_error = float('inf')
-            for arrangment in arrangments:
-                error = self.get_error_for_multiple_segments_and_depths(connections, arrangment)
+            for arrangement in arrangements:
+                error = self.get_error_for_multiple_segments_and_depths(connections, arrangement)
                 if error < lowest_error:
                     lowest_error = error
-                    best_arrangement = arrangment
+                    best_arrangement = arrangement
             if lowest_error < error_margin:
                 if self.assign_copy_depths_where_needed(connections, best_arrangement,
                                                         error_margin):
                     if verbosity > 1:
                         print('Split copies:   ', num,
                               '(' + float_to_str(self.segments[num].depth, 2) + 'x) ->',
-                              ' + '.join([str(x) + ' (' + float_to_str(self.segments[x].depth, 2) + 'x)' \
-                                  for x in connections]))
+                              ' + '.join([str(x) + ' (' +
+                                          float_to_str(self.segments[x].depth, 2) + 'x)' \
+                                          for x in connections]))
                     return 1
         return 0
 
@@ -1828,7 +1837,22 @@ def shuffle_into_bins(items, bins, targets):
     # If there are items not yet in a bin, place the first item in each possible bin and call this
     # function recursively.
     if items:
+
+        # If there are only enough items to fill the empty bins, then we will only put the next
+        # item in an empty bin (because putting it in a non-empty bin would prevent us from filling
+        # all bins).
+        empty_bin_count = sum(1 for x in bins if not x)
+        only_put_in_empty = len(items) <= empty_bin_count
+
         for i, _ in enumerate(bins):
+
+            # Don't put an item in a bin if that bin is already at capacity.
+            if targets[i] and len(bins[i]) >= targets[i]:
+                continue
+
+            if only_put_in_empty and bins[i]:
+                continue
+
             bins_copy = [list(x) for x in bins]
             bins_copy[i].append(items[0])
             arrangements += shuffle_into_bins(items[1:], bins_copy, targets)

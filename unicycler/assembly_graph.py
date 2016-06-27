@@ -718,9 +718,13 @@ class AssemblyGraph(object):
         '''
         Like the above function, but considered the whole path at once. It assumes that the path is
         simple and unbranching (i.e. could be merged into a single segment).
+        This function does not check whether the path start and end both connect to the same
+        segment. So if they form a hairpin loop, this function will return 0 even though the
+        deletion of the path would create a dead end. This behaviour is intentionally left, as it
+        helps to clean up such loops from the graph when they have been entirely used in bridges.
         '''
         start = path_segments[0]
-        end = path_segments[1]
+        end = path_segments[-1]
 
         potential_dead_ends = 0
         if end in self.forward_links:
@@ -1294,10 +1298,9 @@ class AssemblyGraph(object):
                     removed_segments.append(seg_num)
                     break
 
-                # It's possible that multiple segments are all in seg_nums_used_in_bridges, and
-                # deleting them together would not create a new dead end, but deleting any one
-                # would. For this case, we expand seg_num to a maximum simple path. If all segments
-                # in this path are also in seg_nums_used_in_bridges, then we can delete them all.
+                # It's possible that a group of segments have all been used and they form a simple
+                # path. Deleting the whole path would not create a dead end (but deleting any one
+                # segment would), so we look for these and delete them all together.
                 else:
                     path = self.get_simple_path(seg_num)
                     unsigned_path = [abs(x) for x in path]

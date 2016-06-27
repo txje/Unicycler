@@ -31,7 +31,6 @@ import sys
 import os
 import argparse
 import time
-import statistics
 from multiprocessing.dummy import Pool as ThreadPool
 from multiprocessing import cpu_count
 import threading

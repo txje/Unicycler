@@ -12,6 +12,7 @@ import imp
 import os
 import string
 import argparse
+import random
 from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
                   get_nice_header, reverse_complement, print_progress_line, print_section_header
 from .read_ref import load_references, load_long_reads
@@ -26,6 +27,9 @@ def main():
     '''
     Script execution starts here.
     '''
+    # Fix the random seed so the program produces the same output every time it's run.
+    random.seed(0)
+
     args = get_arguments()
     must_perform_alignment = not os.path.isfile(args.sam)
     full_command = ' '.join(sys.argv)    

@@ -31,6 +31,7 @@ import sys
 import os
 import argparse
 import time
+import random
 from multiprocessing.dummy import Pool as ThreadPool
 from multiprocessing import cpu_count
 import threading
@@ -68,6 +69,9 @@ def main():
     '''
     If this script is run on its own, execution starts here.
     '''
+    # Fix the random seed so the program produces the same output every time it's run.
+    random.seed(0)
+
     full_command = ' '.join(sys.argv)
     args = get_arguments()
     check_file_exists(args.ref)
@@ -387,7 +391,15 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
             arg_list.append((read, reference_dict, scoring_scheme, kmer_positions_ptr,
                              low_score_threshold, keep_bad, kmer_size, min_align_length,
                              sam_filename, allowed_overlap))
-        for output in pool.imap(seqan_alignment_one_arg, arg_list, 1):
+
+        # If the verbosity is 1, then the order doesn't matter, so use imap_unordered to deliver
+        # the results evenly. If the verbosity is higher, deliver the results in order with imap.
+        if VERBOSITY > 1:
+            imap_function = pool.imap
+        else:
+            imap_function = pool.imap_unordered
+
+        for output in imap_function(seqan_alignment_one_arg, arg_list):
             completed_count += 1
             if VERBOSITY == 1:
                 print_progress_line(completed_count, num_realignments, prefix='Read: ')

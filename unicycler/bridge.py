@@ -254,7 +254,7 @@ class LongReadBridge(object):
         # output += 'min graph path length: ' + str(min_path_length) + '\n'
         # output += 'max graph path length: ' + str(max_path_length) + '\n'
 
-        max_path_count = 50 # TO DO: make this a parameter?
+        max_path_count = 100 # TO DO: make this a parameter?
         path_start_time = time.time()
         potential_paths = self.graph.all_paths(self.start_segment, self.end_segment,
                                                min_path_length, target_path_length,
@@ -760,6 +760,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
             matching_bridge = new_bridge
         matching_bridge.full_span_reads += span
     all_bridges = existing_bridges + new_bridges
+    all_bridges = sorted(all_bridges, key=lambda x: (x.start_segment, x.end_segment))
 
     # Add overlapping sequences to appropriate bridges, but only if they have some full span
     # sequence (if their full span reads only have overlap-indicating negative numbers, then we
@@ -813,7 +814,14 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
         for bridge in long_read_bridges:
             arg_list.append((bridge, scoring_scheme, min_alignment_length, mean_spans_per_bridge,
                              verbosity))
-        for output in pool.imap_unordered(finalise_bridge, arg_list, 1):
+
+        # If the verbosity is 1, then the order doesn't matter, so use imap_unordered to deliver
+        # the results evenly. If the verbosity is higher, deliver the results in order with imap.
+        if verbosity > 1:
+            imap_function = pool.imap
+        else:
+            imap_function = pool.imap_unordered
+        for output in imap_function(finalise_bridge, arg_list):
             completed_count += 1
             if verbosity == 1:
                 print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')

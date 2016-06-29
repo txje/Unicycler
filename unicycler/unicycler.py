@@ -11,6 +11,7 @@ import os
 import sys
 import shutil
 import copy
+import random
 from multiprocessing import cpu_count
 from .assembly_graph import AssemblyGraph
 from .bridge import create_spades_contig_bridges, \
@@ -25,6 +26,9 @@ def main():
     '''
     Script execution starts here.
     '''
+    # Fix the random seed so the program produces the same output every time it's run.
+    random.seed(0)
+
     full_command = ' '.join(sys.argv)
     args = get_arguments()
     verbosity = args.verbosity

@@ -922,7 +922,7 @@ def get_applicable_bridge_pieces(bridge, single_copy_nums, right_bridged, left_b
     bridge_pieces = []
     current_piece = [(bridge.start_segment, 0)]
     for i, seg in enumerate(bridge.graph_path):
-        if seg in single_copy_nums:
+        if abs(seg) in single_copy_nums:
             bridge_pieces.append(current_piece + [(seg, i+1)])
             current_piece = [(seg, i+1)]
         else:

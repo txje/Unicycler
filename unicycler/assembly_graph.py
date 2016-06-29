@@ -67,6 +67,7 @@ class AssemblyGraph(object):
                 self.forward_links[start] = end_list
         self.forward_links = build_rc_links_if_necessary(self.forward_links)
         self.reverse_links = build_reverse_links(self.forward_links)
+        self.sort_link_order()
 
     def load_from_gfa(self, filename):   
         '''
@@ -104,6 +105,7 @@ class AssemblyGraph(object):
         self.forward_links = build_rc_links_if_necessary(self.forward_links)
         self.reverse_links = build_reverse_links(self.forward_links)
         gfa_file.close()
+        self.sort_link_order()
 
         # Load in the paths
         gfa_file = open(filename, 'r')
@@ -760,6 +762,7 @@ class AssemblyGraph(object):
         self.filter_homopolymer_loops()
         self.merge_all_possible()
         self.normalise_read_depths()
+        self.sort_link_order()
 
     def repair_multi_way_junctions(self):
         '''
@@ -1706,6 +1709,15 @@ class AssemblyGraph(object):
 
         return simple_path
 
+    def sort_link_order(self):
+        '''
+        This function sorts the lists in links so path finding can be consistent from one run to
+        the next.
+        '''
+        for seg_num in self.forward_links:
+            self.forward_links[seg_num].sort()
+        for seg_num in self.reverse_links:
+            self.reverse_links[seg_num].sort()
 
 
 

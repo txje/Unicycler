@@ -263,10 +263,10 @@ class LongReadBridge(object):
 
         output += '  path count:              ' + int_to_str(len(potential_paths)) + ' '
         output += '(' + float_to_str(path_time, 2) + ' sec)\n'
-
-        # output += 'potential paths:\n'
-        # if not potential_paths:
-        #     output += '  NONE\n'
+        if verbosity > 2:
+            for path in potential_paths:
+                output += '                           ' + ', '.join(str(x) for x in path)
+                output += ' (' + int_to_str(self.graph.get_path_length(path)) + ' bp)\n'
 
         self.graph_path = []
 

@@ -27,3 +27,6 @@ var/
 .installed.cfg
 *.egg
 setuptools*.zip
+
+# PyCharm
+.idea/

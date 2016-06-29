@@ -138,7 +138,7 @@ class LongReadBridge(object):
         start_seg = self.graph.segments[abs(self.start_segment)]
         end_seg = self.graph.segments[abs(self.end_segment)]
 
-        output = ''
+        output = '\n'
 
         # output += 'FINALISING BRIDGE\n'
         # output += '-----------------\n'
@@ -284,6 +284,9 @@ class LongReadBridge(object):
 
                 alignment_result = fully_global_alignment(self.consensus_sequence, path_seq,
                                                           scoring_scheme, True, 1000)
+                if not alignment_result:
+                    continue
+
                 seqan_parts = alignment_result.split(',', 9)
                 raw_score = int(seqan_parts[6])
                 scaled_score = float(seqan_parts[7])
@@ -402,7 +405,6 @@ class LongReadBridge(object):
             output += '  end length factor:       ' + float_to_str(end_length_factor, 2) + '\n'
             output += '  final quality:           ' + float_to_str(self.quality, 2) + '\n'
 
-        output += '\n'
         return output
 
     def contains_full_span_sequence(self):
@@ -892,45 +894,6 @@ def get_single_copy_alignments(read, single_copy_num_set, allowed_overlap, min_s
            alignment.scaled_score >= min_scaled_score:
             sc_alignments.append(alignment)
     return sc_alignments
-
-    # sc_alignments = {}
-    # for alignment in read.alignments:
-    #     ref_num = alignment.ref.number
-    #     if ref_num not in single_copy_num_set:
-    #         continue
-    #     if alignment.scaled_score < min_scaled_score:
-    #         continue
-    #     if ref_num not in sc_alignments:
-    #         sc_alignments[ref_num] = []
-    #     sc_alignments[ref_num].append(alignment)
-
-    # # If any two alignments are to the same segment, that implies that one is bogus and so we
-    # # should only include the higher scoring one. Unless, however, the two alignments to the same
-    # # segment overlap opposite ends of the read, in which case they may both be valid.
-    # final_alignments = []
-    # for alignments in sc_alignments.values():
-
-    #     # In most cases, there will be only one alignment per reference number, so this part is
-    #     # simple.
-    #     alignments = sorted(alignments, key=lambda x: x.scaled_score, reverse=True)
-    #     best_alignment = alignments[0]
-    #     final_alignments.append(best_alignment)
-
-    #     # However, multiple alignments are possible. In some cases, this means alignments other
-    #     # than the best should be thrown out (because the segment is supposed to be single-copy).
-    #     # But there are cases where two alignments to the same single-copy reference can be valid.
-    #     # This is when the start and end of the single-copy segment are close to each other in a
-    #     # circular piece of DNA and the read overlaps with both ends.
-    #     if len(alignments) > 1:
-    #         second_best_alignment = alignments[1]
-    #         combined_len = best_alignment.get_aligned_ref_length() + \
-    #                        second_best_alignment.get_aligned_ref_length()
-    #         if combined_len <= best_alignment.ref.get_length() + allowed_overlap:
-    #             if (best_alignment.ref_start_pos > 0 and second_best_alignment.ref_end_gap > 0) or \
-    #                (best_alignment.ref_end_gap > 0 and second_best_alignment.ref_start_pos > 0):
-    #                 final_alignments.append(second_best_alignment)
-    # return final_alignments
-
 
 def finalise_bridge(all_args):
     '''

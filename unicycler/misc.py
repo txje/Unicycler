@@ -242,6 +242,8 @@ def print_section_header(message, verbosity):
     '''
     Prints a header for std out, unless verbosity is zero, in which case it does nothing.
     '''
+    if verbosity > 1:
+        print()
     if verbosity > 0:
         print()
         print(message)

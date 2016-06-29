@@ -18,9 +18,13 @@ char * fullyGlobalAlignment(char * s1, char * s2,
                                                        matchScore, mismatchScore, gapOpenScore, gapExtensionScore,
                                                        useBanding, bandSize);
 
-    std::string returnString = alignment->getFullString();
-    delete alignment;
-    return cppStringToCString(returnString);
+    if (alignment != 0) {
+        std::string returnString = alignment->getFullString();
+        delete alignment;
+        return cppStringToCString(returnString);
+    }
+    else
+        return cppStringToCString("");
 }
 
 // This function runs a global alignment between two sequences.
@@ -54,11 +58,21 @@ ScoredAlignment * fullyGlobalAlignment(std::string s1, std::string s2,
 
         // std::cout << "Lower diagonal: " << lowerDiagonal << std::endl; // TEMP
         // std::cout << "Upper diagonal: " << upperDiagonal << std::endl; // TEMP
-        
-        globalAlignment(alignment, scoringScheme, alignConfig, lowerDiagonal, upperDiagonal);
+        try {
+            globalAlignment(alignment, scoringScheme, alignConfig, lowerDiagonal, upperDiagonal);
+        }
+        catch (...) {
+            return 0;
+        }
     }
-    else
-        globalAlignment(alignment, scoringScheme, alignConfig);
+    else {
+        try {
+            globalAlignment(alignment, scoringScheme, alignConfig);
+        }
+        catch (...) {
+            return 0;
+        }
+    }
 
     std::string s1Name = "s1";
     std::string s2Name = "s2";

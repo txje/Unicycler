@@ -1135,13 +1135,16 @@ appendSegmentMatches(StringSet<TString, Dependent<TSpec> > const& str,
 
         // Alignment
         TSize from = length(matches);
-        TScoreValue myScore = globalAlignment(matches, pairSet, score_type, ac, bandBottomRight.i1, bandBottomRight.i2, Gotoh());
-        TSize to = length(matches);
+        try {
+            TScoreValue myScore = globalAlignment(matches, pairSet, score_type, ac, bandBottomRight.i1, bandBottomRight.i2, Gotoh());
+            TSize to = length(matches);
 
-        _recordScores(scores, myScore, from, to);
+            _recordScores(scores, myScore, from, to);
 
-        // Get the alignment statistics
-        _setDistanceValue(matches, pairSet, dist, (TSize)*itPair, (TSize)*(itPair + 1), (TSize)nseq, (TSize)from);
+            // Get the alignment statistics
+            _setDistanceValue(matches, pairSet, dist, (TSize)*itPair, (TSize)*(itPair + 1), (TSize)nseq, (TSize)from);
+        }
+        catch (...) {}
     }
 }
 

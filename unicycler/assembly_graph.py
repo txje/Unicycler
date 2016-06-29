@@ -1458,6 +1458,10 @@ class AssemblyGraph(object):
         if start not in self.forward_links:
             return []
 
+        # Fix the random seed so if we have to subset the paths, they will be the same subset every
+        # time.
+        random.seed(0)
+
         start_seg = self.segments[abs(start)]
         end_seg = self.segments[abs(end)]
         start_end_depth = weighted_average(start_seg.depth, end_seg.depth,

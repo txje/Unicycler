@@ -201,9 +201,10 @@ def get_arguments():
     parser.add_argument('--short2', required=True, default=argparse.SUPPRESS,
                         help='FASTQ file of short reads (second reads in each pair).')
     parser.add_argument('--long', required=False, default=argparse.SUPPRESS,
-                        help='FASTQ file of long reads, if all reads are available at start.')
+                        help='FASTQ or FASTA file of long reads, if all reads are available at '
+                             'start.')
     parser.add_argument('--long_dir', required=False, default=argparse.SUPPRESS,
-                        help='Directory where FASTQ files will be deposited.')
+                        help='Directory where FASTQ or FASTA read files will be deposited.')
     parser.add_argument('--out', required=True, default=argparse.SUPPRESS,
                         help='Output directory')
     parser.add_argument('--read_depth_filter', type=float, required=False, default=0.5,

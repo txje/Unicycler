@@ -101,7 +101,7 @@ def get_arguments():
     parser.add_argument('--ref', type=str, required=True, default=argparse.SUPPRESS,
                         help='FASTA file containing one or more reference sequences')
     parser.add_argument('--reads', type=str, required=True, default=argparse.SUPPRESS,
-                        help='FASTQ file of long reads')
+                        help='FASTQ or FASTA file of long reads')
     parser.add_argument('--sam', type=str, required=True, default=argparse.SUPPRESS,
                         help='SAM file of resulting alignments')
     
@@ -294,7 +294,6 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
                 print(alignment)
                 if VERBOSITY > 4:
                     print(alignment.cigar)
-            print()
 
         # Use Seqan to extend the GraphMap alignments so they are fully semi-global. In this
         # process, some alignments will be discarded (those too far from being semi-global).
@@ -305,7 +304,6 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
                 print(alignment)
                 if VERBOSITY > 4:
                     print(alignment.cigar)
-            print()
 
         # Gather some statistics about the alignments.
         percent_ids = [x.percent_identity for x in graphmap_alignments]
@@ -336,6 +334,10 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
             print_graphmap_summary_table(graphmap_alignments,
                                          percent_id_mean, percent_id_std_dev,
                                          score_mean, score_std_dev)
+            max_v = len(read_dict)
+            print()
+            print('Reads completed by GraphMap:', int_to_str(len(completed_reads), max_v))
+            print('Reads to be realigned:      ', int_to_str(len(reads_to_align), max_v))
 
         # Write GraphMap alignments to SAM.
         if sam_filename:
@@ -355,14 +357,9 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
 
     if VERBOSITY > 0:
         if VERBOSITY < 3:
-            print_section_header('Aligning reads', VERBOSITY)
-        num_realignments = len(reads_to_align)
-        max_v = len(read_dict)
-        if use_graphmap:
-            print('Reads completed by GraphMap:', int_to_str(len(completed_reads), max_v))
-            print('Reads to be realigned:      ', int_to_str(num_realignments, max_v))
-            print()
+            print_section_header('Aligning reads', VERBOSITY, last_newline=(VERBOSITY == 1))
     if VERBOSITY == 1:
+        num_realignments = len(reads_to_align)
         print_progress_line(0, num_realignments, prefix='Read: ')
     completed_count = 0
 
@@ -376,7 +373,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         for read in reads_to_align:
             output = seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
                                      low_score_threshold, keep_bad, kmer_size, min_align_length,
-                                     sam_filename, allowed_overlap)
+                                     sam_filename, allowed_overlap, use_graphmap)
             completed_count += 1
             if VERBOSITY == 1:
                 print_progress_line(completed_count, num_realignments, prefix='Read: ')
@@ -390,7 +387,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         for read in reads_to_align:
             arg_list.append((read, reference_dict, scoring_scheme, kmer_positions_ptr,
                              low_score_threshold, keep_bad, kmer_size, min_align_length,
-                             sam_filename, allowed_overlap))
+                             sam_filename, allowed_overlap, use_graphmap))
 
         # If the verbosity is 1, then the order doesn't matter, so use imap_unordered to deliver
         # the results evenly. If the verbosity is higher, deliver the results in order with imap.
@@ -437,6 +434,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
             lengths += [x.get_aligned_ref_length() for x in read.alignments]
         mean_identity = weighted_average_list(identities, lengths)
         print('Mean alignment identity:', float_to_str(mean_identity, 1, max_v) + '%')
+        print()
 
     return read_dict
 
@@ -475,14 +473,13 @@ def print_graphmap_summary_table(graphmap_alignments, percent_id_mean, percent_i
         print(line)
     print()
     print('Current mean reference length / read length:', float_to_str(EXPECTED_SLOPE, 5))
-    print()
 
 def extend_to_semi_global(alignments, scoring_scheme):
     '''
     This function returns truly semi-global alignments made from the input alignments.
     '''
     if VERBOSITY > 3 and alignments:
-        print_section_header('Extending alignments', VERBOSITY)
+        print_section_header('Extending alignments', VERBOSITY, last_newline=False)
 
     allowed_missing_bases = 100 # TO DO: MAKE THIS A PARAMETER
     semi_global_alignments = []
@@ -562,9 +559,7 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
                         print(line, end='')
                 line = ''
     if VERBOSITY == 1:
-        print('\n')
-    if VERBOSITY > 1:
-        print()
+        print('')
 
     # Clean up.
     if os.path.isfile(fasta + '.gmidx'):
@@ -617,25 +612,28 @@ def seqan_alignment_one_arg(all_args):
     in a thread pool.
     '''
     read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold, keep_bad, \
-        kmer_size, min_align_length, sam_filename, allowed_overlap = all_args
+        kmer_size, min_align_length, sam_filename, allowed_overlap, used_graphmap = all_args
     return seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
                            low_score_threshold, keep_bad, kmer_size, min_align_length,
-                           sam_filename, allowed_overlap)
+                           sam_filename, allowed_overlap, used_graphmap)
 
 def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold,
-                    keep_bad, kmer_size, min_align_length, sam_filename, allowed_overlap):
+                    keep_bad, kmer_size, min_align_length, sam_filename, allowed_overlap,
+                    used_graphmap):
     '''
     Aligns a single read against all reference sequences using Seqan.
     '''
     start_time = time.time()
-    output = ''
+    output = '\n'
+    if VERBOSITY > 2:
+        output += '\n'
     if VERBOSITY > 1:
         output += str(read) + '\n'
     if VERBOSITY > 2:
         output += '-' * len(str(read)) + '\n'
 
-    starting_graphmap_alignments = len(read.alignments)
-    if VERBOSITY > 2:
+    if VERBOSITY > 2 and used_graphmap:
+        starting_graphmap_alignments = len(read.alignments)
         output += 'Graphmap alignments:\n'
         if starting_graphmap_alignments:
             for alignment in read.alignments:
@@ -684,7 +682,6 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
                 output += '  ' + str(alignment) + '\n'
         else:
             output += '  None\n'
-        output += '\n'
 
     # Write alignments to SAM.
     if sam_filename and read.alignments:

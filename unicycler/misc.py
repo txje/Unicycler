@@ -10,6 +10,7 @@ import os
 import subprocess
 import random
 import math
+import gzip
 
 def float_to_str(num, decimals, max_num=0):
     '''
@@ -238,16 +239,15 @@ def weighted_average_list(nums, weights):
     w_sum = sum(weights)
     return sum(num * (weights[i] / w_sum) for i, num in enumerate(nums))
 
-def print_section_header(message, verbosity):
+def print_section_header(message, verbosity, last_newline=True):
     '''
     Prints a header for std out, unless verbosity is zero, in which case it does nothing.
     '''
-    if verbosity > 1:
-        print()
     if verbosity > 0:
-        print()
+        print('\n')
         print(message)
-        print('-' * len(message), flush=True)
+        end_char = '\n' if last_newline else ''
+        print('-' * len(message), flush=True, end=end_char)
 
 def round_to_nearest_odd(num):
     '''
@@ -288,3 +288,21 @@ def get_compression_type(filename):
     if compression_type == 'zip':
         quit_with_error('cannot use zip format - use gzip instead')
     return compression_type
+
+def get_sequence_file_type(filename):
+    '''
+    Determines whether a file is FASTA or FASTQ.
+    '''
+    if get_compression_type(filename) == 'gz':
+        open_func = gzip.open
+    else:  # plain text
+        open_func = open
+    seq_file = open_func(filename, 'r')
+    first_char = seq_file.read(1)
+
+    if first_char == '>':
+        return 'FASTA'
+    elif first_char == '@':
+        return 'FASTQ'
+    else:
+        raise ValueError('File is neither FASTA or FASTQ')

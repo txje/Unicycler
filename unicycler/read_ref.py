@@ -8,7 +8,7 @@ email: rrwick@gmail.com
 import random
 import gzip
 from .misc import quit_with_error, print_progress_line, get_nice_header, get_compression_type, \
-                  print_section_header
+                  print_section_header, get_sequence_file_type
 
 def load_references(fasta_filename, verbosity):
     '''
@@ -17,6 +17,12 @@ def load_references(fasta_filename, verbosity):
     references = []
     total_bases = 0
     print_section_header('Loading references', verbosity)
+    try:
+        file_type = get_sequence_file_type(fasta_filename)
+    except ValueError:
+        quit_with_error(fasta_filename + ' is not in FASTA format')
+    if file_type != 'FASTA':
+        quit_with_error(fasta_filename + ' is not in FASTA format')
 
     if get_compression_type(fasta_filename) == 'gz':
         open_func = gzip.open
@@ -58,47 +64,100 @@ def load_references(fasta_filename, verbosity):
         total_bases += len(sequence)
         if verbosity > 0:
             print_progress_line(len(references), num_refs, total_bases)
-            print('\n')
+
+    if verbosity > 0:
+        print_progress_line(len(references), len(references), total_bases)
+        print()
+
     return references
 
-def load_long_reads(fastq_filename, verbosity):
+def load_long_reads(filename, verbosity):
     '''
     This function loads in long reads from a FASTQ file and returns a dictionary where key = read
     name and value = Read object. It also returns a list of read names, in the order they are in
     the file.
     '''
-    read_dict = {}
-    read_names = []
-    total_bases = 0
-    last_progress = 0.0
-
-    if get_compression_type(fastq_filename) == 'gz':
+    # Read files can be either FASTA or FASTQ and optionally gzipped.
+    try:
+        file_type = get_sequence_file_type(filename)
+    except ValueError:
+        quit_with_error(filename + ' is not in either FASTA or FASTQ format')
+    if get_compression_type(filename) == 'gz':
         open_func = gzip.open
     else: # plain text
         open_func = open
 
     print_section_header('Loading reads', verbosity)
+
+    read_dict = {}
+    read_names = []
+    total_bases = 0
+    last_progress = 0.0
+
+    if file_type == 'FASTQ':
+        num_reads = sum(1 for line in open_func(filename)) // 4
+    else: # file_type == 'FASTA'
+        num_reads = sum(1 for line in open_func(filename) if line.startswith('>'))
+    if not num_reads:
+        quit_with_error('There are no read sequences in ' + filename)
     if verbosity > 0:
-        num_reads = sum(1 for line in open_func(fastq_filename)) // 4
         print_progress_line(0, num_reads)
-    fastq = open_func(fastq_filename, 'r')
-    for line in fastq:
-        name = line.strip()[1:].split()[0]
-        sequence = next(fastq).strip()
-        _ = next(fastq)
-        qualities = next(fastq).strip()
-        read_dict[name] = Read(name, sequence, qualities)
-        read_names.append(name)
-        total_bases += len(sequence)
-        if verbosity > 0:
-            progress = 100.0 * len(read_dict) / num_reads
-            progress_rounded_down = float(int(progress))
-            if progress_rounded_down > last_progress:
+
+    if file_type == 'FASTQ':
+        fastq = open_func(filename, 'r')
+        for line in fastq:
+            name = line.strip()[1:].split()[0]
+            sequence = next(fastq).strip()
+            _ = next(fastq)
+            qualities = next(fastq).strip()
+            read_dict[name] = Read(name, sequence, qualities)
+            read_names.append(name)
+            total_bases += len(sequence)
+            if verbosity > 0:
+                progress = 100.0 * len(read_dict) / num_reads
+                progress_rounded_down = float(int(progress))
+                if progress_rounded_down > last_progress:
+                    print_progress_line(len(read_dict), num_reads, total_bases)
+                    last_progress = progress_rounded_down
+        fastq.close()
+
+    else: # file_type == 'FASTA'
+        fasta = open_func(filename, 'r')
+        name = ''
+        sequence = ''
+        last_progress = 0.0
+        for line in fasta:
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith('>'):  # Header line = start of new contig
+                if name:
+                    read_dict[name] = Read(name, sequence, None)
+                    read_names.append(name)
+                    total_bases += len(sequence)
+                    if verbosity > 0:
+                        progress = 100.0 * len(read_dict) / num_reads
+                        progress_rounded_down = float(int(progress))
+                        if progress_rounded_down > last_progress:
+                            print_progress_line(len(read_dict), num_reads, total_bases)
+                            last_progress = progress_rounded_down
+                    name = ''
+                    sequence = ''
+                name = get_nice_header(line[1:])
+            else:
+                sequence += line
+        fasta.close()
+        if name:
+            read_dict[name] = Read(name, sequence, None)
+            read_names.append(name)
+            total_bases += len(sequence)
+            if verbosity > 0:
                 print_progress_line(len(read_dict), num_reads, total_bases)
-                last_progress = progress_rounded_down    
-    fastq.close()
+
     if verbosity > 0:
+        print_progress_line(len(read_dict), len(read_dict), total_bases)
         print()
+
     return read_dict, read_names
 
 def simplify_ranges(ranges):
@@ -181,7 +240,14 @@ class Read(object):
     def __init__(self, name, sequence, qualities):
         self.name = name
         self.sequence = sequence.upper()
-        self.qualities = qualities
+
+        if qualities:
+            self.qualities = qualities
+
+        # If no qualities are given, then they are all set to '+', the Phred+33 score for 10% error.
+        else:
+            self.qualities = '+' * len(self.sequence)
+
         self.alignments = []
 
     def __repr__(self):
@@ -311,6 +377,3 @@ class Read(object):
         return len(self.alignments) == 1 and \
                self.alignments[0].read_start_pos == 0 and \
                self.alignments[0].read_end_gap == 0
-
-
-

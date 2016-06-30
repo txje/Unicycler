@@ -238,6 +238,7 @@ class Alignment(object):
         This function extends the start of the alignment to remove any missing start bases.
         '''
         if verbosity > 3:
+            print()
             print(self)
             if len(self.cigar) > 20:
                 print('   ', self.cigar[:20] + '...')
@@ -302,21 +303,21 @@ class Alignment(object):
             cigar_size_to_print = 20 + cigar_length_increase
             print(self)
             if len(self.cigar) > cigar_size_to_print:
-                print('    ', self.cigar[:cigar_size_to_print] + '...')
+                print('   ', self.cigar[:cigar_size_to_print] + '...')
             else:
-                print('    ', self.cigar[:cigar_size_to_print])
-            print()
+                print('   ', self.cigar[:cigar_size_to_print])
 
     def extend_end(self, scoring_scheme, verbosity):
         '''
         This function extends the end of the alignment to remove any missing end bases.
         '''
         if verbosity > 3:
+            print()
             print(self)
             if len(self.cigar) > 20:
                 print('    ...' + self.cigar[-20:])
             else:
-                print('       ' + self.cigar[-20:])
+                print('       ' + self. cigar[-20:])
             cigar_length_before = len(self.cigar)
 
         # We will try the end extension a few times, if necessary, with increasing margin sizes.
@@ -380,7 +381,6 @@ class Alignment(object):
                 print('    ...' + self.cigar[-cigar_size_to_print:])
             else:
                 print('       ' + self.cigar[-cigar_size_to_print:])
-            print()
 
     def __repr__(self):
         read_start, read_end = self.read_start_end_positive_strand()

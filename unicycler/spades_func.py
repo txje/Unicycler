@@ -47,6 +47,7 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
     if verbosity == 1:
         print('  k-mer   segments   dead ends         score')
     best_score = 0.0
+    best_kmer = kmer_range[0]
     best_assembly_graph = None
     for i, kmer in enumerate(kmer_range):
         clean_graph_filename = os.path.join(spades_dir, 'k' + str(kmer) +
@@ -71,8 +72,9 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
             print(int_to_str(kmer).rjust(7) + int_to_str(segment_count).rjust(11) +
                   int_to_str(dead_ends).rjust(12) + '{:.2e}'.format(score).rjust(14))
         if verbosity > 1:
-            title = 'SPAdes k=' + int_to_str(kmer) + ' assembly graph summary'
-            print(assembly_graph.get_summary(title, file=clean_graph_filename, score=score))
+            print_section_header('SPAdes k=' + int_to_str(kmer) + ' assembly graph summary',
+                                 verbosity)
+            print(assembly_graph.get_summary(file=clean_graph_filename, score=score))
         if score >= best_score:
             best_kmer = kmer
             best_score = score

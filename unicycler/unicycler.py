@@ -36,9 +36,8 @@ def main():
                              graphmap_path=(None if args.no_graphmap else args.graphmap_path))
     make_output_directory(args.out, verbosity)
 
-    unbridged_graph = os.path.join(args.out, '001_unbridged_graph.gfa')
-    spades_bridged_graph_unmerged = os.path.join(args.out, '002_spades_bridges_applied.gfa')
-    spades_bridged_graph_merged = os.path.join(args.out, '003_spades_bridges_merged.gfa')
+    file_num = 1
+    unbridged_graph = os.path.join(args.out, str(file_num).zfill(3) + '_unbridged_graph.gfa')
 
     # Produce a SPAdes assembly graph with a k-mer that balances contig length and connectivity.
     if os.path.isfile(unbridged_graph):
@@ -62,11 +61,28 @@ def main():
     bridges = create_spades_contig_bridges(assembly_graph, single_copy_segments, verbosity)
     bridges += create_loop_unrolling_bridges(assembly_graph, single_copy_segments, verbosity)
     bridged_graph = copy.deepcopy(assembly_graph)
-    bridged_graph.apply_bridges(bridges, verbosity, args.min_bridge_qual, single_copy_segments)
+    seg_nums_used_in_bridges = bridged_graph.apply_bridges(bridges, verbosity,
+                                                           args.min_bridge_qual,
+                                                           single_copy_segments)
+    file_num += 1
+    spades_bridged_graph_unmerged = os.path.join(args.out, str(file_num).zfill(3) +
+                                                 '_spades_bridges_applied.gfa')
     bridged_graph.save_to_gfa(spades_bridged_graph_unmerged, verbosity, save_seg_type_info=True,
                               single_copy_segments=single_copy_segments)
-    bridged_graph.remove_small_components(args.min_component_size, verbosity)
+
+    # Clean up unnecessary segments after bridging.
+    bridged_graph.clean_up_after_bridging(single_copy_segments, seg_nums_used_in_bridges,
+                                          args.min_component_size, args.min_dead_end_size,
+                                          verbosity)
+    file_num += 1
+    spades_bridged_graph_cleaned = os.path.join(args.out, str(file_num).zfill(3) + '_cleaned.gfa')
+    bridged_graph.save_to_gfa(spades_bridged_graph_cleaned, verbosity, save_seg_type_info=True,
+                              single_copy_segments=single_copy_segments)
+
+    # Merge the segments to simplify the graph.
     bridged_graph.merge_all_possible()
+    file_num += 1
+    spades_bridged_graph_merged = os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa')
     bridged_graph.save_to_gfa(spades_bridged_graph_merged, verbosity)
 
     # Prepare the directory for long read alignment.
@@ -126,8 +142,6 @@ def main():
                   '% percentile of full read alignments:', float_to_str(min_scaled_score, 2))
 
         # Do the long read bridging - this is the good part!
-        read_bridged_graph_unmerged = os.path.join(args.out, '006_long_read_bridges_applied.gfa')
-        read_bridged_graph_merged = os.path.join(args.out, '007_long_read_bridges_merged.gfa')
         print_section_header('Building long read bridges', verbosity)
         bridges = create_long_read_bridges(assembly_graph, read_dict, read_names,
                                            single_copy_segments, verbosity, bridges,
@@ -135,19 +149,34 @@ def main():
                                            min_alignment_length)
         bridged_graph = copy.deepcopy(assembly_graph)
         print_section_header('Bridging graph with long reads', verbosity)
-        bridged_graph.apply_bridges(bridges, verbosity, args.min_bridge_qual, single_copy_segments)
+        seg_nums_used_in_bridges = bridged_graph.apply_bridges(bridges, verbosity,
+                                                               args.min_bridge_qual,
+                                                               single_copy_segments)
+        file_num += 1
+        read_bridged_graph_unmerged = os.path.join(args.out, str(file_num).zfill(3) +
+                                                   '_long_read_bridges_applied.gfa')
         bridged_graph.save_to_gfa(read_bridged_graph_unmerged, verbosity, save_seg_type_info=True,
                                   single_copy_segments=single_copy_segments)
 
-        bridged_graph.remove_small_components(args.min_component_size, verbosity)
-        bridged_graph.merge_all_possible()
-        bridged_graph.remove_small_dead_ends(args.min_dead_end_size, verbosity)
-        bridged_graph.merge_all_possible()
+        # Clean up unnecessary segments after bridging.
+        bridged_graph.clean_up_after_bridging(single_copy_segments, seg_nums_used_in_bridges,
+                                              args.min_component_size, args.min_dead_end_size,
+                                              verbosity)
+        file_num += 1
+        read_bridged_graph_cleaned = os.path.join(args.out,
+                                                    str(file_num).zfill(3) + '_cleaned.gfa')
+        bridged_graph.save_to_gfa(read_bridged_graph_cleaned, verbosity, save_seg_type_info=True,
+                                  single_copy_segments=single_copy_segments)
 
+        # Merge the segments to simplify the graph.
+        bridged_graph.merge_all_possible()
+        file_num += 1
+        read_bridged_graph_merged = os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa')
         bridged_graph.save_to_gfa(read_bridged_graph_merged, verbosity)
+
         if verbosity > 0:
-            print()
-            print(bridged_graph.get_summary('Final assembly graph'))
+            print_section_header('Final assembly graph', verbosity)
+            print(bridged_graph.get_summary())
 
     # If we are getting long reads incrementally, then we do the process iteratively.
     elif args.long_dir:

@@ -372,7 +372,8 @@ class LongReadBridge(object):
 
         # The length of alignments to the start/end segments is positively correlated with quality
         # to reward bridges with long alignments.
-        total_alignment_length = sum(x[2].get_aligned_ref_length() + x[3].get_aligned_ref_length() \
+        total_alignment_length = sum(min(x[2].get_aligned_ref_length(),
+                                         x[3].get_aligned_ref_length())
                                      for x in self.full_span_reads)
         mean_alignment_length = total_alignment_length / (2.0 * len(self.full_span_reads))
         align_length_factor = score_function(mean_alignment_length, min_alignment_length * 4)

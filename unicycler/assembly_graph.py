@@ -6,7 +6,6 @@ email: rrwick@gmail.com
 '''
 
 from collections import deque
-import random
 from .misc import int_to_str, float_to_str, weighted_average, weighted_average_list, \
                   print_section_header
 from .bridge import SpadesContigBridge, LoopUnrollingBridge, get_applicable_bridge_pieces, \
@@ -416,7 +415,6 @@ class AssemblyGraph(object):
         self.remove_segments(segment_nums_to_remove)
         if verbosity > 1 and segment_nums_to_remove:
             print('\nRemoved small components:', ', '.join(str(x) for x in segment_nums_to_remove))
-
 
     def remove_small_dead_ends(self, min_dead_end_size, verbosity):
         '''
@@ -1278,10 +1276,60 @@ class AssemblyGraph(object):
             seen = set()
             seg_nums_used_in_bridges = [x for x in seg_nums_used_in_bridges \
                                         if not (x in seen or seen.add(x))]
+        return seg_nums_used_in_bridges
 
-        # Remove segments used in bridges, if doing do would not break up the graph.
+    def clean_up_after_bridging(self, single_copy_segments, seg_nums_used_in_bridges,
+                                min_component_size, min_dead_end_size, verbosity):
+        '''
+        Cleans up unnecessary segments to produce a clean graph. Used after bridge application.
+        '''
         if verbosity > 1:
             print_section_header('Cleaning up leftover segments', verbosity)
+
+        # Graph components which contain no single-copy segments are deleted.
+        single_copy_seg_nums = set(x.number for x in single_copy_segments)
+        segment_nums_to_remove = []
+        connected_components = self.get_connected_components()
+        for component_nums in connected_components:
+            for seg_num in component_nums:
+                if abs(seg_num) in single_copy_seg_nums:
+                    break
+            else:
+                segment_nums_to_remove += component_nums
+        if verbosity > 1 and segment_nums_to_remove:
+            print('\nRemoved components with no single-copy segments:',
+                  ', '.join(str(x) for x in segment_nums_to_remove))
+        self.remove_segments(segment_nums_to_remove)
+
+        # Graph components which have been entirely used in bridges are deleted.
+        segment_nums_to_remove = []
+        connected_components = self.get_connected_components()
+        for component_nums in connected_components:
+            for seg_num in component_nums:
+                if abs(seg_num) not in seg_nums_used_in_bridges:
+                    break
+            else:
+                segment_nums_to_remove += component_nums
+        if verbosity > 1 and segment_nums_to_remove:
+            print('\nRemoved components used in bridges:',
+                  ', '.join(str(x) for x in segment_nums_to_remove))
+        self.remove_segments(segment_nums_to_remove)
+
+        # Any multi-copy segments which cannot possibly connect two single-copy segments are
+        # deleted.
+        segment_nums_to_remove = []
+        for seg_num in self.segments:
+            if seg_num in single_copy_seg_nums:
+                continue
+            if not (self.search(seg_num, single_copy_seg_nums) and
+                    self.search(-seg_num, single_copy_seg_nums)):
+                segment_nums_to_remove.append(seg_num)
+        if verbosity > 1 and segment_nums_to_remove:
+            print('\nRemoved unbridging segments:',
+                  ', '.join(str(x) for x in segment_nums_to_remove))
+        self.remove_segments(segment_nums_to_remove)
+
+        # Remove segments used in bridges, if doing do would not break up the graph.
         removed_segments = []
         while True:
             for seg_num in seg_nums_used_in_bridges:
@@ -1328,8 +1376,13 @@ class AssemblyGraph(object):
                 segment_nums_to_remove += component_seg_nums
         self.remove_segments(segment_nums_to_remove)
         removed_segments += segment_nums_to_remove
-        if verbosity > 1:
-            print('Removed:', ', '.join(str(x) for x in removed_segments))
+        if verbosity > 1 and segment_nums_to_remove:
+            print('\nRemoved segments used in bridges', ', '.join(str(x) for x in removed_segments))
+
+        self.remove_small_components(min_component_size, verbosity)
+
+        self.remove_small_dead_ends(min_dead_end_size, verbosity)
+
 
     def apply_entire_bridge(self, bridge, verbosity, right_bridged, left_bridged,
                             seg_nums_used_in_bridges, single_copy_nums):
@@ -1461,10 +1514,6 @@ class AssemblyGraph(object):
         if start not in self.forward_links:
             return []
 
-        # Fix the random seed so if we have to subset the paths, they will be the same subset every
-        # time.
-        random.seed(0)
-
         start_seg = self.segments[abs(start)]
         end_seg = self.segments[abs(end)]
         start_end_depth = weighted_average(start_seg.depth, end_seg.depth,
@@ -1501,13 +1550,11 @@ class AssemblyGraph(object):
                         count_so_far = working_path.count(next_seg) + working_path.count(-next_seg)
                         if count_so_far < max_allowed_count:
                             new_working_paths.append(working_path + [next_seg])
-            working_paths = new_working_paths
 
-            # If the number of working paths is too crazily high, we randomly cut it down here.
+            # If the number of working paths is too crazily high, we cut it down here.
             # This isn't ideal, but may be necessary in pathogenic cases where the number could
             # grow exponentially.
-            if len(working_paths) > max_working_paths:
-                working_paths = random.sample(working_paths, max_working_paths)
+            working_paths = new_working_paths[:max_working_paths]
 
         # Sort by length discrepancy from the target so the closest length matches come first.
         final_paths = sorted(final_paths,
@@ -1568,7 +1615,7 @@ class AssemblyGraph(object):
             new_paths[name] = [changes[x] for x in path_nums]
         self.paths = new_paths
 
-    def get_summary(self, title, file=None, score=None):
+    def get_summary(self, file=None, score=None):
         '''
         Returns a nice table describing the graph.
         '''
@@ -1576,8 +1623,7 @@ class AssemblyGraph(object):
         max_v = max(total_length, 1000000)
         max_v_len = len(int_to_str(max_v))
 
-        summary = title + '\n'
-        summary += '-' * len(title) + '\n'
+        summary = ''
         if file:
             summary += file + '\n'
         summary += 'segments:              ' + int_to_str(len(self.segments), max_v) + '\n'
@@ -1718,6 +1764,28 @@ class AssemblyGraph(object):
             self.forward_links[seg_num].sort()
         for seg_num in self.reverse_links:
             self.reverse_links[seg_num].sort()
+
+    def search(self, start, ends):
+        '''
+        Conducts a DFS from the start segment to see if it leads to any of the end segments.
+        The start segment is signed, i.e. positive start and negative start will conduct the
+        search in different directions. The end segments are not signed, i.e. the search is
+        successful if it reaches either orientation of an end.
+        '''
+        end_set = set(ends)
+        end_set.update(-x for x in ends)
+        visited, stack = set(), [start]
+        while stack:
+            seg = stack.pop()
+            if seg not in visited:
+                visited.add(seg)
+                if seg in self.forward_links:
+                    for next_seg in self.forward_links[seg]:
+                        if next_seg in end_set:
+                            return True
+                        if next_seg not in visited:
+                            stack.append(next_seg)
+        return False
 
 
 

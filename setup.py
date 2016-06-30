@@ -10,19 +10,16 @@ from distutils.command.build import build
 from distutils.core import Command
 import subprocess
 import multiprocessing
-import glob
 import fnmatch
-import imp
+import importlib.util
 
-# Make sure this is being run with Python 3.
-if sys.version_info.major != 3:
-    print('Error: you must execute setup.py using Python 3')
+# Make sure this is being run with Python 3.4 or later.
+if sys.version_info.major != 3 or sys.version_info.minor < 4:
+    print('Error: you must execute setup.py using Python 3.4 or later')
     sys.exit(1)
 
-# Install setuptools if not already present
-try:
-    imp.find_module('setuptools')
-except ImportError:
+# Install setuptools if not already present.
+if not importlib.util.find_spec("setuptools"):
     import ez_setup
     ez_setup.use_setuptools()
 from setuptools import setup

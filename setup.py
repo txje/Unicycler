@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 '''
 Run 'python3 setup.py install' to install Unicycler.
 '''
@@ -12,6 +13,11 @@ import multiprocessing
 import glob
 import fnmatch
 import imp
+
+# Make sure this is being run with Python 3.
+if sys.version_info.major != 3:
+    print('Error: you must execute setup.py using Python 3')
+    sys.exit(1)
 
 # Install setuptools if not already present
 try:

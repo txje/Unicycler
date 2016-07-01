@@ -10,8 +10,8 @@ email: rrwick@gmail.com
 from multiprocessing.dummy import Pool as ThreadPool
 import time
 from .misc import int_to_str, float_to_str, reverse_complement, print_progress_line, \
-                  weighted_average
-from .cpp_function_wrappers import multiple_sequence_alignment, fully_global_alignment
+                  weighted_average, get_num_agreement
+from .cpp_function_wrappers import multiple_sequence_alignment
 
 class SpadesContigBridge(object):
     '''
@@ -106,6 +106,7 @@ class LongReadBridge(object):
 
         # The path through the unbridged graph, if one was found.
         self.graph_path = []
+        self.all_graph_paths = []
 
         # The bridge sequence, gotten from the graph path if a good path was found. Otherwise it's
         # from the consensus sequence.
@@ -157,7 +158,7 @@ class LongReadBridge(object):
         output += str(self.start_segment) + ' to ' + str(self.end_segment) + ':\n'
         output += '  bridging reads:          ' + int_to_str(len(self.full_span_reads)) + '\n'
 
-        # Parition the full span reads into two groups: those with negative numbers (implying that
+        # Partition the full span reads into two groups: those with negative numbers (implying that
         # the two segments overlap) and those with actual sequences.
         full_spans_without_seq = []
         full_spans_with_seq = []
@@ -192,7 +193,6 @@ class LongReadBridge(object):
                 full_span_seqs = [x[0] for x in sorted_full_span[:max_full_span]]
                 full_span_quals = [x[1] for x in sorted_full_span[:max_full_span]]
 
-
             # Start-only and end-only sequences make the MSA a lot slower, contribute less to the
             # consensus and can screw up the MSA if they are too abundant. So if there are too many
             # of them, we only include the ones with the best alignments.
@@ -216,25 +216,17 @@ class LongReadBridge(object):
                 end_only_quals = [x[1] for x in sorted_end_only[:max_partial]]
 
             consensus_start_time = time.time()
-            self.consensus_sequence, _, _, _ = \
-                                    multiple_sequence_alignment(full_span_seqs, full_span_quals,
-                                                                start_only_seqs, start_only_quals,
-                                                                end_only_seqs, end_only_quals,
-                                                                scoring_scheme)
-            # output += 'consensus: ' + str(self.consensus_sequence) + '\n'
-            # output += 'full span consensus scores: ' + str(full_span_scores) + '\n'
-            # if start_only_scores:
-            #     output += 'start-only consensus scores: ' + str(start_only_scores) + '\n'
-            # if end_only_scores:
-            #     output += 'end-only consensus scores: ' + str(end_only_scores) + '\n'
-
+            self.consensus_sequence = multiple_sequence_alignment(full_span_seqs, full_span_quals,
+                                                                  start_only_seqs, start_only_quals,
+                                                                  end_only_seqs, end_only_quals,
+                                                                  scoring_scheme)[0]
             consensus_time = time.time() - consensus_start_time
+
             output += '  consensus sequence:      ' + \
                       int_to_str(len(self.consensus_sequence)) + ' bp '
             output += '(' + float_to_str(consensus_time, 2) + ' sec)\n'
 
             target_path_length = len(self.consensus_sequence) + (2 * self.graph.overlap)
-
 
         # For full spans without sequence, we simply need a mean distance.
         elif full_spans_without_seq:
@@ -246,104 +238,47 @@ class LongReadBridge(object):
 
         output += '  target path length:      ' + int_to_str(target_path_length) + ' bp\n'
 
-        # Limit the path search to lengths near the target.
-        # TO DO: adjust these or make them parameters?
-        min_path_length = int(round(target_path_length * 0.5))
-        max_path_length = int(round(target_path_length * 1.5))
-
-        # output += 'min graph path length: ' + str(min_path_length) + '\n'
-        # output += 'max graph path length: ' + str(max_path_length) + '\n'
-
-        max_path_count = 100 # TO DO: make this a parameter?
         path_start_time = time.time()
-        potential_paths = self.graph.all_paths(self.start_segment, self.end_segment,
-                                               min_path_length, target_path_length,
-                                               max_path_length, max_path_count)
+        self.all_graph_paths = self.graph.get_best_paths_for_seq(self.start_segment,
+                                                                 self.end_segment,
+                                                                 target_path_length,
+                                                                 self.consensus_sequence,
+                                                                 scoring_scheme)
         path_time = time.time() - path_start_time
 
-        output += '  path count:              ' + int_to_str(len(potential_paths)) + ' '
+        output += '  path count:              ' + int_to_str(len(self.all_graph_paths)) + ' '
         output += '(' + float_to_str(path_time, 2) + ' sec)\n'
         if verbosity > 2:
-            for path in potential_paths:
-                output += '                           ' + ', '.join(str(x) for x in path)
-                output += ' (' + int_to_str(self.graph.get_path_length(path)) + ' bp)\n'
+            for i, path in enumerate(self.all_graph_paths):
+                label = '  path ' + str(i+1) + ':'
+                label = label.ljust(27)
+                output += label + ', '.join(str(x) for x in path[0])
+                output += ' (' + int_to_str(self.graph.get_path_length(path[0])) + ' bp)\n'
 
-        self.graph_path = []
+        # If paths were found, use a path sequence for the bridge.
+        if self.all_graph_paths:
 
-        # If we have a consensus to align to, then we use that do choose the best path.
-        if self.consensus_sequence:
-            best_raw_score = None
-            best_scaled_score = None
-            alignment_start_time = time.time()
-            for path in potential_paths:
+            # TO DO: Instead of simply choosing the best path (as I currently do),
+            # more intelligently choose the path to use. E.g. if the first (best) path isn't
+            # totally available (some of its segments are 'used up') and the second path is
+            # almost as good and is totally available, use it instead.
+            path_i = 0
 
-                path_seq = self.graph.get_path_sequence(path)
-
-                # output += '  ' + str(path)
-                # output += ' (' + str(len(path_seq)) + '), '
-
-                alignment_result = fully_global_alignment(self.consensus_sequence, path_seq,
-                                                          scoring_scheme, True, 1000)
-                if not alignment_result:
-                    continue
-
-                seqan_parts = alignment_result.split(',', 9)
-                raw_score = int(seqan_parts[6])
-                scaled_score = float(seqan_parts[7])
-                # output += str(raw_score) + ', ' + str(scaled_score) + '\n'
-
-                if best_raw_score is None or raw_score > best_raw_score:
-                    best_raw_score = raw_score
-                    best_scaled_score = scaled_score
-                    self.graph_path = path
-
-                # In case of a tie, go with the simpler path.
-                elif raw_score == best_raw_score and len(path) < len(self.graph_path):
-                    best_scaled_score = scaled_score
-                    self.graph_path = path
-
-            alignment_time = time.time() - alignment_start_time
-
-        # If there isn't a consensus (i.e. the start and end overlap), then we choose the best path
-        # based on its length.
-        else:
-            smallest_length_diff = None
-            for path in potential_paths:
-                path_len = self.graph.get_path_length(path)
-
-                # output += '  ' + str(path)
-                # output += ' (' + str(path_len) + ')\n'
-
-                length_diff = abs(path_len - target_path_length)
-                if smallest_length_diff is None or length_diff < smallest_length_diff:
-                    smallest_length_diff = length_diff
-                    self.graph_path = path
-                elif smallest_length_diff == length_diff and len(path) < len(self.graph_path):
-                    self.graph_path = path
-            if self.graph_path:
-                best_scaled_score = get_num_agreement(self.graph.get_path_length(self.graph_path),
-                                                      target_path_length) * 100.0
-            alignment_time = None
-
-        # If a path was found, use its sequence for the bridge.
-        if self.graph_path:
+            self.graph_path = self.all_graph_paths[path_i][0]
             output += '  best path:               ' + \
                       ', '.join(int_to_str(x) for x in self.graph_path) + ' '
-            output += '(' + int_to_str(self.graph.get_path_length(self.graph_path)) + ' bp'
-            if alignment_time:
-                output += ', ' + float_to_str(alignment_time, 2) + ' sec)\n'
-            else:
-                output += ')\n'
+            output += '(' + int_to_str(self.graph.get_path_length(self.graph_path)) + ' bp)\n'
 
             self.bridge_sequence = self.graph.get_path_sequence(self.graph_path)
             self.path_support = True
 
             # Now we adjust the quality. It starts on the scaled score of the path alignment (which
             # maxes out at 100.0).
-            self.quality = best_scaled_score
+            self.quality = self.all_graph_paths[path_i][3]
 
         # If a path wasn't found, the consensus sequence is the bridge (with the overlaps added).
         else:
+            self.graph_path = []
             output += '  best path:               none found\n'
             start_overlap = \
                 self.graph.get_seq_from_signed_seg_num(self.start_segment)[-self.graph.overlap:]
@@ -364,7 +299,7 @@ class LongReadBridge(object):
         depth_agreement_factor = get_num_agreement(start_seg.depth, end_seg.depth)
 
         # The number of reads which contribute to a bridge is a big deal, so the read count factor
-        # scales linearly. This is adjustes to the bridge's depth, so higher depth bridges need a
+        # scales linearly. This adjusts to the bridge's depth, so higher depth bridges need a
         # larger read count to get the same effect. However, the depth used here can't go below 1,
         # as that could give an unfair advantage to bridges between very low depth segments (which
         # we probably don't really care about anyways because they are low depth).
@@ -833,20 +768,6 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
         print()
 
     return all_bridges
-
-def get_num_agreement(num_1, num_2):
-    '''
-    Returns a value between 0.0 and 1.0 describing how well the numbers agree.
-    1.0 is perfect agreement and 0.0 is the worst.
-    '''
-    if num_1 == 0.0 and num_2 == 0.0:
-        return 1.0
-    if num_1 < 0.0 and num_2 < 0.0:
-        num_1 = -num_1
-        num_2 = -num_2
-    if num_1 * num_2 < 0.0:
-        return 0.0
-    return min(num_1, num_2) / max(num_1, num_2)
 
 def get_mean_depth(seg_1, seg_2, graph):
     '''

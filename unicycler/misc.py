@@ -306,3 +306,17 @@ def get_sequence_file_type(filename):
         return 'FASTQ'
     else:
         raise ValueError('File is neither FASTA or FASTQ')
+
+def get_num_agreement(num_1, num_2):
+    '''
+    Returns a value between 0.0 and 1.0 describing how well the numbers agree.
+    1.0 is perfect agreement and 0.0 is the worst.
+    '''
+    if num_1 == 0.0 and num_2 == 0.0:
+        return 1.0
+    if num_1 < 0.0 and num_2 < 0.0:
+        num_1 = -num_1
+        num_2 = -num_2
+    if num_1 * num_2 < 0.0:
+        return 0.0
+    return min(num_1, num_2) / max(num_1, num_2)

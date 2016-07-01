@@ -59,8 +59,7 @@ C_LIB.fullyGlobalAlignment.argtypes = [c_char_p, # Sequence 1
                                        c_int]    # Band size
 C_LIB.fullyGlobalAlignment.restype = c_void_p     # String describing alignment
 
-def fully_global_alignment(sequence_1, sequence_2, scoring_scheme,
-                           use_banding, band_size):
+def fully_global_alignment(sequence_1, sequence_2, scoring_scheme, use_banding, band_size):
     '''
     Python wrapper for fullyGlobalAlignment C++ function.
     '''
@@ -68,6 +67,31 @@ def fully_global_alignment(sequence_1, sequence_2, scoring_scheme,
                                      scoring_scheme.match, scoring_scheme.mismatch,
                                      scoring_scheme.gap_open, scoring_scheme.gap_extend,
                                      use_banding, band_size)
+    return c_string_to_python_string(ptr)
+
+
+
+# This is the mostly-global alignment function mainly used to compare potential path sequences to
+# a read consensus. It is 'mostly-global' because there are free end gaps in the first sequence,
+# so the path isn't penalised for not being complete.
+C_LIB.pathAlignment.argtypes = [c_char_p, # Sequence 1
+                                c_char_p, # Sequence 2
+                                c_int,    # Match score
+                                c_int,    # Mismatch score
+                                c_int,    # Gap open score
+                                c_int,    # Gap extension score
+                                c_bool,   # Use banding
+                                c_int]    # Band size
+C_LIB.pathAlignment.restype = c_void_p     # String describing alignment
+
+def path_alignment(partial_seq, full_seq, scoring_scheme, use_banding, band_size):
+    '''
+    Python wrapper for pathAlignment C++ function.
+    '''
+    ptr = C_LIB.pathAlignment(partial_seq.encode('utf-8'), full_seq.encode('utf-8'),
+                              scoring_scheme.match, scoring_scheme.mismatch,
+                              scoring_scheme.gap_open, scoring_scheme.gap_extend,
+                              use_banding, band_size)
     return c_string_to_python_string(ptr)
 
 

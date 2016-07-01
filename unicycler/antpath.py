@@ -591,20 +591,79 @@ def get_graphmap_version(graphmap_path):
     version = '.'.join(version.split('.')[0:2])
     return float(version)
 
-def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme):
+def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme, threads,
+                        verbosity):
     '''
     This function returns a list of Alignment objects from the given SAM file.
     '''
-    sam_alignments = []
+    print_section_header('Loading alignments', verbosity)
+
+    # Load the SAM lines into a list.
+    sam_lines = []
     sam_file = open(sam_filename, 'r')
     for line in sam_file:
         line = line.strip()
         if line and not line.startswith('@') and line.split('\t', 3)[2] != '*':
+            sam_lines.append(line)
+    num_alignments = sum(1 for line in open(sam_filename) if not line.startswith('@'))
+    if not num_alignments:
+        quit_with_error('there are no alignments in the file: ' + sam_filename)
+    if verbosity > 0:
+        print_progress_line(0, num_alignments)
+
+    # If single-threaded, just do the work in a simple loop.
+    threads = 1 # TEMP
+    sam_alignments = []
+    if threads == 1:
+        for line in sam_lines:
             sam_alignments.append(Alignment(sam_line=line, read_dict=read_dict,
                                             reference_dict=reference_dict,
                                             scoring_scheme=scoring_scheme))
-    sam_file.close()
+            if verbosity > 0:
+                print_progress_line(len(sam_alignments), num_alignments)
+
+    # # If multi-threaded, use processes.
+    # else:
+    #     sam_line_groups = chunkify(sam_lines, threads)
+    #     manager = Manager()
+    #     workers = []
+    #     sam_alignments = manager.list([])
+    #     for sam_line_group in sam_line_groups:
+    #         child = Process(target=make_alignments, args=(sam_line_group, read_dict,
+    #                                                       reference_dict, scoring_scheme,
+    #                                                       sam_alignments))
+    #         child.start()
+    #         workers.append(child)
+    #     while any(i.is_alive() for i in workers):
+    #         time.sleep(0.1)
+    #         if verbosity > 0:
+    #             print_progress_line(len(sam_alignments), num_alignments)
+    #     for worker in workers:
+    #         worker.join()
+    #     sam_alignments = sam_alignments._getvalue()
+
+    # At this point, we should have loaded num_alignments alignments. But check to make sure and
+    # fix up the progress line if any didn't load.
+    if verbosity > 0:
+        if len(sam_alignments) < num_alignments:
+            print_progress_line(len(sam_alignments), len(sam_alignments))
+        print()
+
     return sam_alignments
+
+# def chunkify(full_list, pieces):
+#     '''
+#     http://stackoverflow.com/questions/2130016/
+#     splitting-a-list-of-arbitrary-size-into-only-roughly-n-equal-parts
+#     '''
+#     return [full_list[i::pieces] for i in range(pieces)]
+
+# def make_alignments(sam_lines, read_dict, reference_dict, scoring_scheme, alignments):
+#     '''
+#     Produces alignments from SAM lines and deposits them in a managed list.
+#     '''
+#     for line in sam_lines:
+#         alignments.append(Alignment(line, read_dict, reference_dict, scoring_scheme))
 
 def seqan_alignment_one_arg(all_args):
     '''

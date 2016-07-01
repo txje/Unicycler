@@ -110,7 +110,7 @@ def main():
                       'a new alignment:')
                 print('  ' + alignments_sam)
             alignments = load_sam_alignments(alignments_sam, read_dict, reference_dict,
-                                             scoring_scheme)
+                                             scoring_scheme, args.threads, verbosity)
             for alignment in alignments:
                 read_dict[alignment.read.name].alignments.append(alignment)
 
@@ -139,7 +139,7 @@ def main():
         if verbosity > 1:
             print('\nSetting the minimum scaled score to the ' +
                   float_to_str(min_scaled_score_percentile, 1) +
-                  '% percentile of full read alignments:', float_to_str(min_scaled_score, 2))
+                  'th percentile of full read alignments:', float_to_str(min_scaled_score, 2))
 
         # Do the long read bridging - this is the good part!
         print_section_header('Building long read bridges', verbosity)

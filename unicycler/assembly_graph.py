@@ -6,11 +6,16 @@ email: rrwick@gmail.com
 '''
 
 from collections import deque
+import time, random
 from .misc import int_to_str, float_to_str, weighted_average, weighted_average_list, \
-                  print_section_header
+                  print_section_header, get_num_agreement, reverse_complement
 from .bridge import SpadesContigBridge, LoopUnrollingBridge, get_applicable_bridge_pieces, \
                     get_bridge_str
+from .cpp_function_wrappers import fully_global_alignment, path_alignment
 
+
+class TooManyPaths(Exception):
+    pass
 
 class AssemblyGraph(object):
     '''
@@ -1501,7 +1506,7 @@ class AssemblyGraph(object):
             simple_loops.append((start, end, middle, repeat))
         return simple_loops
 
-    def all_paths(self, start, end, min_length, target_length, max_length, max_path_count=None):
+    def all_paths(self, start, end, min_length, target_length, max_length, max_path_count):
         '''
         Returns a list of all paths which connect the starting segment to the ending segment and
         are within the length bounds. The start and end segments are not themselves included in the
@@ -1519,10 +1524,7 @@ class AssemblyGraph(object):
         start_end_depth = weighted_average(start_seg.depth, end_seg.depth,
                                            start_seg.get_length_no_overlap(self.overlap),
                                            end_seg.get_length_no_overlap(self.overlap))
-        max_allowed_counts = {}
-
-        max_working_paths = 10000 # TO DO: make this a parameter?
-
+        max_working_paths = 1000 # TO DO: make this a parameter?
         working_paths = [[x] for x in self.forward_links[start]]
         final_paths = []
         while working_paths:
@@ -1533,38 +1535,139 @@ class AssemblyGraph(object):
                     potential_result = working_path[:-1]
                     if self.get_path_length(potential_result) >= min_length:
                         final_paths.append(potential_result)
+                        if len(final_paths) > max_path_count:
+                            raise TooManyPaths
                 elif self.get_path_length(working_path) <= max_length and \
-                     last_seg in self.forward_links:
+                        last_seg in self.forward_links:
                     for next_seg in self.forward_links[last_seg]:
-                        if abs(next_seg) not in max_allowed_counts:
-                            if abs(next_seg) in self.copy_depths:
-                                count_by_copies = len(self.copy_depths[abs(next_seg)])
-                            else:
-                                count_by_copies = 1
-                            depth = self.segments[abs(next_seg)].depth
-                            count_by_depth = max(1, int(round(depth / start_end_depth)))
-                            max_allowed_count = 2 * max(count_by_copies, count_by_depth)
-                            max_allowed_counts[abs(next_seg)] = max_allowed_count
-                        else:
-                            max_allowed_count = max_allowed_counts[abs(next_seg)]
+                        max_allowed_count = self.max_path_segment_count(next_seg, start_end_depth)
                         count_so_far = working_path.count(next_seg) + working_path.count(-next_seg)
                         if count_so_far < max_allowed_count:
                             new_working_paths.append(working_path + [next_seg])
 
-            # If the number of working paths is too crazily high, we cut it down here.
-            # This isn't ideal, but may be necessary in pathogenic cases where the number could
-            # grow exponentially.
-            working_paths = new_working_paths[:max_working_paths]
+            # If the number of working paths is too high, we give up.
+            if len(working_paths) > max_working_paths:
+                raise TooManyPaths
+            working_paths = new_working_paths
 
         # Sort by length discrepancy from the target so the closest length matches come first.
         final_paths = sorted(final_paths,
                              key=lambda x: abs(target_length - self.get_path_length(x)))
 
-        # Trim to the max desired count.
-        if max_path_count:
-            final_paths = final_paths[:max_path_count]
+        return final_paths
+
+    def progressive_path_find(self, start, end, min_length, target_length, max_length, sequence,
+                              scoring_scheme):
+        '''
+        Finds paths from the start to the end that best match the sequence. It works outward and
+        culls paths when they grow too numerous. This function is called when all_paths fails due to
+        too many paths. The start and end segments are not themselves included in the paths.
+        '''
+        if start not in self.forward_links:
+            return []
+
+        start_seg = self.segments[abs(start)]
+        end_seg = self.segments[abs(end)]
+        start_end_depth = weighted_average(start_seg.depth, end_seg.depth,
+                                           start_seg.get_length_no_overlap(self.overlap),
+                                           end_seg.get_length_no_overlap(self.overlap))
+
+        # When the number of paths exceeds max_working_paths, they are all evaluated and the best
+        # keep_count paths will be kept.
+        max_working_paths = 100
+        keep_count = 10
+
+        final_paths = []
+        working_paths = [[x] for x in self.forward_links[start]]
+
+        # print('\n\n\n\n\n\n\n')
+        # print(start, 'to', end, 'progressive path finding:')
+        # print('  target length:', target_length)
+
+        while working_paths:
+
+            # Find the length of the shortest working path.
+            shortest_len = min(self.get_path_length(x) for x in working_paths)
+
+            # Extend the shortest working path(s) by adding downstream segments. Check to see if
+            # this finishes the path or makes it excessively long.
+            new_working_paths = []
+            for path in working_paths:
+                path_len = self.get_path_length(path)
+                if path_len == shortest_len:
+                    if path[-1] in self.forward_links:
+                        downstream_segments = self.forward_links[path[-1]]
+                        for next_seg in downstream_segments:
+                            if next_seg == end:
+                                if min_length <= path_len <= max_length:
+                                    final_paths.append(path)
+                            else:
+                                max_allowed_count = self.max_path_segment_count(next_seg,
+                                                                                start_end_depth)
+                                count_so_far = path.count(next_seg) + path.count(-next_seg)
+                                if count_so_far < max_allowed_count:
+                                    extended_path = path + [next_seg]
+                                    if self.get_path_length(extended_path) <= max_length:
+                                        new_working_paths.append(extended_path)
+                else:
+                    new_working_paths.append(path)
+
+            # print('\n  Working paths:', len(new_working_paths))
+            # for path in new_working_paths:
+            #     print('  ' + ','.join(str(x) for x in path) + ' (' +
+            #           int_to_str(self.get_path_length(path)) + ' bp)')
+
+            # If we've acquired too many working paths, cull out the worst ones.
+            if len(new_working_paths) > max_working_paths:
+                # print('\n  CULL\n')
+                scored_paths = []
+                shortest_len = min(self.get_path_length(x) for x in new_working_paths)
+                for path in new_working_paths:
+                    path_seq = self.get_path_sequence(path)[:shortest_len]
+                    alignment_result = path_alignment(path_seq, sequence, scoring_scheme, False,
+                                                      1000)
+                    if not alignment_result:
+                        continue
+                    seqan_parts = alignment_result.split(',', 9)
+                    raw_score = int(seqan_parts[6])
+                    # print('  ' + ','.join(str(x) for x in path) + ' (score = ' +
+                    #       int_to_str(raw_score) + ')')
+                    scored_paths.append((path, raw_score))
+                scored_paths = sorted(scored_paths, key=lambda x: x[1], reverse=True)
+                working_paths = [x[0] for x in scored_paths[:keep_count]]
+
+                # print('\n  CULLED PATHS:', len(working_paths))
+                # for i, path in enumerate(working_paths):
+                #     print('  ' + ','.join(str(x) for x in path) + ' (' +
+                #           int_to_str(self.get_path_length(path)) + ' bp, score = ' +
+                #           int_to_str(scored_paths[i][1]) + ')')
+            else:
+                working_paths = new_working_paths
+
+        # print('\n  FINAL PATHS:')
+        # for path in final_paths:
+        #     print('  ' + ','.join(str(x) for x in path))
+        # print()
+
+        # Sort by length discrepancy from the target so the closest length matches come first.
+        final_paths = sorted(final_paths,
+                             key=lambda x: abs(target_length - self.get_path_length(x)))
 
         return final_paths
+
+    def max_path_segment_count(self, seg_num, start_end_depth):
+        '''
+        This function returns the maximum allowed number of times a segment can be in a bridge
+        path. It uses both the segment's copy depth (if it has one) and the relative depth of the
+        segment as compared to the start/end of the bridge.
+        '''
+        if abs(seg_num) in self.copy_depths:
+            count_by_copies = len(self.copy_depths[abs(seg_num)])
+        else:
+            count_by_copies = 1
+        depth = self.segments[abs(seg_num)].depth
+        count_by_depth = max(1, int(round(depth / start_end_depth)))
+        return 2 * max(count_by_copies, count_by_depth)
 
     def get_path_length(self, path):
         '''
@@ -1787,7 +1890,55 @@ class AssemblyGraph(object):
                             stack.append(next_seg)
         return False
 
+    def get_best_paths_for_seq(self, start_seg, end_seg, target_length, sequence, scoring_scheme):
+        '''
+        Given a sequence and target length, this function finds the best path from the start
+        segment to the end segment.
+        '''
+        # Limit the path search to lengths near the target.
+        # TO DO: adjust these or make them parameters?
+        min_length = int(round(target_length * 0.5))
+        max_length = int(round(target_length * 1.5))
 
+        max_path_count = 100 # TO DO: make this a parameter?
+
+        # If there are few enough possible paths, we just try aligning to them all. But if there
+        # are too many, we use a progressive approach to keep the number down.
+        try:
+            paths = self.all_paths(start_seg, end_seg, min_length, target_length, max_length,
+                                   max_path_count)
+        except TooManyPaths as e:
+            paths = self.progressive_path_find(start_seg, end_seg, min_length, target_length,
+                                               max_length, sequence, scoring_scheme)
+        paths_and_scores = []
+        for path in paths:
+            path_len = self.get_path_length(path)
+            length_discrepancy = abs(path_len - target_length)
+
+            if sequence:
+                # We need to trim the overlap from the path seq, as that overlap will not be
+                # present in the consensus sequence.
+                path_seq = self.get_path_sequence(path)[self.overlap:-self.overlap]
+
+                alignment_result = fully_global_alignment(sequence, path_seq, scoring_scheme,
+                                                          True, 1000)
+                if not alignment_result:
+                    continue
+
+                seqan_parts = alignment_result.split(',', 9)
+                raw_score = int(seqan_parts[6])
+                scaled_score = float(seqan_parts[7])
+
+            else: # If there isn't a consensus (i.e. the start and end overlap)...
+                raw_score = get_num_agreement(path_len, target_length) * 100.0
+                scaled_score = 100.0
+
+            paths_and_scores.append((path, raw_score, length_discrepancy, scaled_score))
+
+        # Sort the paths first using alignment score (only available if there was a consensus
+        # sequence to align to) and then using the length discrepancy.
+        paths_and_scores = sorted(paths_and_scores, key=lambda x: (-x[1], x[2], -x[3]))
+        return paths_and_scores
 
 class Segment(object):
     '''
@@ -1979,23 +2130,6 @@ def get_headers_and_sequences(filename):
         headers.append(header)
         sequences.append(sequence)
     return headers, sequences
-
-def reverse_complement(seq):
-    '''
-    Given a DNA sequences, this function returns the reverse complement sequence.
-    '''
-    rev_comp = ''
-    for i in reversed(range(len(seq))):
-        rev_comp += complement_base(seq[i])
-    return rev_comp
-
-def complement_base(base):
-    '''
-    Given a DNA base, this returns the complement.
-    '''
-    forward = 'ATGCatgcRYSWKMryswkmBDHVbdhvNn.-?'
-    reverse = 'TACGtacgYRSWMKyrswmkVHDBvhdbNn.-?N'
-    return reverse[forward.find(base)]
 
 def get_unsigned_number_from_header(header):
     '''

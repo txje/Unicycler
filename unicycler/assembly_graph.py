@@ -1624,7 +1624,7 @@ class AssemblyGraph(object):
                 shortest_len = min(self.get_path_length(x) for x in new_working_paths)
                 for path in new_working_paths:
                     path_seq = self.get_path_sequence(path)[:shortest_len]
-                    alignment_result = path_alignment(path_seq, sequence, scoring_scheme, False,
+                    alignment_result = path_alignment(path_seq, sequence, scoring_scheme, True,
                                                       1000)
                     if not alignment_result:
                         continue

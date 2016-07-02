@@ -1896,8 +1896,7 @@ class AssemblyGraph(object):
         segment to the end segment.
         '''
         # Limit the path search to lengths near the target.
-        # TO DO: adjust these or make them parameters?
-        min_length = int(round(target_length * 0.5))
+        min_length = int(round(target_length * 0.5))  # TO DO: adjust or make these parameters?
         max_length = int(round(target_length * 1.5))
 
         max_path_count = 100 # TO DO: make this a parameter?
@@ -1910,16 +1909,21 @@ class AssemblyGraph(object):
         except TooManyPaths as e:
             paths = self.progressive_path_find(start_seg, end_seg, min_length, target_length,
                                                max_length, sequence, scoring_scheme)
+
+        # We now have some paths and want to see how well the consensus sequence matches each of
+        # them. The overlap isn't present in the consensus sequence, so we need to add it on.
+        if sequence:
+            sequence = self.get_seq_from_signed_seg_num(start_seg)[-self.overlap:] + sequence + \
+                       self.get_seq_from_signed_seg_num(end_seg)[:self.overlap]
+
         paths_and_scores = []
         for path in paths:
             path_len = self.get_path_length(path)
             length_discrepancy = abs(path_len - target_length)
 
+            # If there is a consensus sequence, then we actually do an alignment against the path.
             if sequence:
-                # We need to trim the overlap from the path seq, as that overlap will not be
-                # present in the consensus sequence.
-                path_seq = self.get_path_sequence(path)[self.overlap:-self.overlap]
-
+                path_seq = self.get_path_sequence(path)
                 alignment_result = fully_global_alignment(sequence, path_seq, scoring_scheme,
                                                           True, 1000)
                 if not alignment_result:
@@ -1929,7 +1933,9 @@ class AssemblyGraph(object):
                 raw_score = int(seqan_parts[6])
                 scaled_score = float(seqan_parts[7])
 
-            else: # If there isn't a consensus (i.e. the start and end overlap)...
+            # If there isn't a consensus sequence (i.e. the start and end overlap), then each
+            # path is only scored on how well its length agrees with the target length.
+            else:
                 raw_score = get_num_agreement(path_len, target_length) * 100.0
                 scaled_score = 100.0
 
@@ -1939,6 +1945,7 @@ class AssemblyGraph(object):
         # sequence to align to) and then using the length discrepancy.
         paths_and_scores = sorted(paths_and_scores, key=lambda x: (-x[1], x[2], -x[3]))
         return paths_and_scores
+
 
 class Segment(object):
     '''

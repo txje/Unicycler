@@ -1,27 +1,29 @@
-'''
+"""
 This module describes bridges - links between two single-copy segments in an assembly graph.
 Bridges can come from multiple sources, so there are a few different classes which all share
 the important members/methods (for duck-typing purposes).
 
 Author: Ryan Wick
 email: rrwick@gmail.com
-'''
+"""
 
 from multiprocessing.dummy import Pool as ThreadPool
 import time
 from .misc import int_to_str, float_to_str, reverse_complement, print_progress_line, \
-                  weighted_average, get_num_agreement
+    weighted_average, get_num_agreement
 from .cpp_function_wrappers import multiple_sequence_alignment
 
+
 class SpadesContigBridge(object):
-    '''
+    """
     This class describes a bridge created from the contigs.paths file made by SPAdes.
 
     Quality is affected by:
       * How well the start and end segments' depths agree.
       * The depth consistency within the path (only applies to bridges where the path segments
         exclusively lead to the start/end segments).
-    '''
+    """
+
     def __init__(self, graph, spades_contig_path):
 
         # The numbers of the two single-copy segments which are being bridged.
@@ -52,7 +54,7 @@ class SpadesContigBridge(object):
         # The start segment and end segment should agree in depth. If they don't, that's very bad,
         # so depth_disagreement is applied to quality twice (squared effect).
         depth_agreement = get_num_agreement(start_seg.depth, end_seg.depth)
-        self.quality *= (depth_agreement * depth_agreement) # has squared effect on quality
+        self.quality *= (depth_agreement * depth_agreement)  # has squared effect on quality
         self.depth = get_mean_depth(start_seg, end_seg, graph)
 
         # If the segments in the path exclusively lead to the start and end segments (i.e they
@@ -75,9 +77,10 @@ class SpadesContigBridge(object):
 
 
 class LongReadBridge(object):
-    '''
+    """
     This class describes a bridge created from long read alignments.
-    '''
+    """
+
     def __init__(self, graph, start, end):
 
         # The numbers of the two single-copy segments which are being bridged.
@@ -131,11 +134,11 @@ class LongReadBridge(object):
                ' (quality = ' + float_to_str(self.quality, 2) + ')'
 
     def finalise(self, scoring_scheme, min_alignment_length, mean_spans_per_bridge, verbosity):
-        '''
+        """
         Determines the consensus sequence for the bridge, attempts to find it in the graph and
         assigns a quality score to the bridge. This is the performance-intensive step of long read
         bridging.
-        '''
+        """
         start_seg = self.graph.segments[abs(self.start_segment)]
         end_seg = self.graph.segments[abs(self.end_segment)]
 
@@ -182,7 +185,7 @@ class LongReadBridge(object):
             # Full-span sequences are faster in the MSA and are very useful for the consensus
             # sequence, so we want to use a lot! But we still set an upper limit for cases of
             # very high read depth.
-            max_full_span = 50 # TO DO: make this a parameter?
+            max_full_span = 50  # TO DO: make this a parameter?
             if len(full_spans_with_seq) <= max_full_span:
                 full_span_seqs = [x[0] for x in full_spans_with_seq]
                 full_span_quals = [x[1] for x in full_spans_with_seq]
@@ -196,7 +199,7 @@ class LongReadBridge(object):
             # Start-only and end-only sequences make the MSA a lot slower, contribute less to the
             # consensus and can screw up the MSA if they are too abundant. So if there are too many
             # of them, we only include the ones with the best alignments.
-            max_partial = min(5, len(full_span_seqs)) # TO DO: make this a parameter?
+            max_partial = min(5, len(full_span_seqs))  # TO DO: make this a parameter?
             if len(self.start_only_reads) <= max_partial:
                 start_only_seqs = [x[0] for x in self.start_only_reads]
                 start_only_quals = [x[1] for x in self.start_only_reads]
@@ -250,7 +253,7 @@ class LongReadBridge(object):
         output += '(' + float_to_str(path_time, 2) + ' sec)\n'
         if verbosity > 2:
             for i, path in enumerate(all_paths):
-                label = '  path ' + str(i+1) + ':'
+                label = '  path ' + str(i + 1) + ':'
                 label = label.ljust(27)
                 output += label + ', '.join(str(x) for x in path[0])
                 output += ' (' + int_to_str(self.graph.get_path_length(path[0])) + ' bp, '
@@ -349,11 +352,11 @@ class LongReadBridge(object):
         return output
 
     def contains_full_span_sequence(self):
-        '''
+        """
         Some LongReadBridge objects bridge two close segments, and therefore do not actually have
         any bridging read sequence (just a negative number implying overlap). This function returns
         True if any full span read sequences exist and False if they are just negative numbers.
-        '''
+        """
         for full_span_read in self.full_span_reads:
             seq_or_num = full_span_read[0]
             if not isinstance(seq_or_num, int):
@@ -361,22 +364,22 @@ class LongReadBridge(object):
         return False
 
 
-
 class LoopUnrollingBridge(object):
-    '''
+    """
     This class describes a bridge created from unrolling an assembly graph loop.
 
     Quality is affected by:
       * How well the start and end segments' depths agree.
       * How close the determined loop count is to a whole number.
       * The final loop count (higher counts get lower quality).
-    '''
+    """
+
     def __init__(self, graph, start, end, middle, repeat):
-        '''
+        """
         This constructor assumes the the start, end, middle and repeat segments form a simple loop
         in the graph supported by either a SPAdes contig or a long read alignment. It will use
         segment depths to determine the loop count and score the bridge's quality.
-        '''
+        """
         # The numbers of the two single-copy segments which are being bridged.
         self.start_segment = start
         self.end_segment = end
@@ -404,7 +407,7 @@ class LoopUnrollingBridge(object):
         # The start segment and end segment should agree in depth. If they don't, that's very bad,
         # so depth_disagreement is applied to quality twice (squared effect).
         depth_agreement = get_num_agreement(start_seg.depth, end_seg.depth)
-        self.quality *= (depth_agreement * depth_agreement) # has squared effect on quality
+        self.quality *= (depth_agreement * depth_agreement)  # has squared effect on quality
 
         # We'll use a mean loop count that's weighted by the middle and repeat segment lengths.
         self.depth = get_mean_depth(start_seg, end_seg, graph)
@@ -440,10 +443,11 @@ class LoopUnrollingBridge(object):
                                                 self.end_segment) + \
                ' (quality = ' + float_to_str(self.quality, 2) + ')'
 
+
 def create_spades_contig_bridges(graph, single_copy_segments, verbosity):
-    '''
+    """
     Builds graph bridges using the SPAdes contig paths.
-    '''
+    """
     bridge_path_set = set()
     single_copy_numbers = [x.number for x in single_copy_segments]
     for segment in single_copy_segments:
@@ -456,7 +460,7 @@ def create_spades_contig_bridges(graph, single_copy_segments, verbosity):
                 contig_bridge_str = ','.join([str(x) for x in contig_bridge])
                 flipped_contig_bridge_str = ','.join([str(x) for x in flipped_contig_bridge])
                 if contig_bridge_str not in bridge_path_set and \
-                   flipped_contig_bridge_str not in bridge_path_set:
+                                flipped_contig_bridge_str not in bridge_path_set:
                     if contig_bridge[0] < 0 and contig_bridge[-1] < 0:
                         bridge_path_set.add(flipped_contig_bridge_str)
                     else:
@@ -514,16 +518,17 @@ def create_spades_contig_bridges(graph, single_copy_segments, verbosity):
 
     return [SpadesContigBridge(spades_contig_path=x, graph=graph) for x in final_bridge_paths]
 
+
 def find_contig_bridges(segment_num, path, single_copy_numbers):
-    '''
+    """
     This function returns a list of lists: every part of the path which starts on the segment_num
     and ends on any of the single_copy_numbers.
-    '''
+    """
     bridge_paths = []
     indices = [i for i, x in enumerate(path) if abs(x) == segment_num]
     for index in indices:
         bridge_path = [path[index]]
-        for i in range(index+1, len(path)):
+        for i in range(index + 1, len(path)):
             bridge_path.append(path[i])
             if path[i] in single_copy_numbers or -path[i] in single_copy_numbers:
                 break
@@ -533,10 +538,11 @@ def find_contig_bridges(segment_num, path, single_copy_numbers):
             bridge_paths.append(bridge_path)
     return bridge_paths
 
+
 def create_loop_unrolling_bridges(graph, single_copy_segments, verbosity):
-    '''
+    """
     This function creates loop unrolling bridges using the information in SPAdes paths.
-    '''
+    """
     bridges = []
     simple_loops = graph.find_all_simple_loops()
 
@@ -550,9 +556,9 @@ def create_loop_unrolling_bridges(graph, single_copy_segments, verbosity):
             joined = False
             flipped_path = [-x for x in reversed(path)]
             if (start in path and middle in path) or \
-               (end in path and middle in path) or \
-               (start in flipped_path and middle in flipped_path) or \
-               (end in flipped_path and middle in flipped_path):
+                    (end in path and middle in path) or \
+                    (start in flipped_path and middle in flipped_path) or \
+                    (end in flipped_path and middle in flipped_path):
                 joined = True
                 break
         if not joined:
@@ -563,12 +569,13 @@ def create_loop_unrolling_bridges(graph, single_copy_segments, verbosity):
 
     return bridges
 
+
 def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments, verbosity,
                              existing_bridges, min_scaled_score, threads, scoring_scheme,
                              min_alignment_length):
-    '''
+    """
     Makes bridges between single-copy segments using the alignments in the long reads.
-    '''
+    """
     single_copy_seg_num_set = set()
     for seg in single_copy_segments:
         single_copy_seg_num_set.add(seg.number)
@@ -628,7 +635,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
                                           key=lambda x: x.read_start_positive_strand())
             for i in range(len(available_alignments) - 1):
                 alignment_1 = available_alignments[i]
-                alignment_2 = available_alignments[i+1]
+                alignment_2 = available_alignments[i + 1]
 
                 # Standardise the order so we don't end up with both directions (e.g. 5 to -6 and
                 # 6 to -5) in spanning_read_seqs.
@@ -645,7 +652,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
                             bridge_seq = reverse_complement(bridge_seq)
                             bridge_qual = bridge_qual[::-1]
                     else:
-                        bridge_seq = bridge_end - bridge_start # 0 or a negative number
+                        bridge_seq = bridge_end - bridge_start  # 0 or a negative number
                         bridge_qual = ''
 
                     if seg_nums not in spanning_read_seqs:
@@ -680,10 +687,10 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
             if seg_num not in overlapping_read_seqs:
                 overlapping_read_seqs[seg_num] = []
             overlapping_read_seqs[seg_num].append((end_overlap, end_qual, last_alignment))
-        #     print('  END OVERLAPPING SEQUENCE:')
-        #     print('    ', seg_num, end_overlap)
-        #     print('    ', seg_num, end_qual)
-        # print('\n')
+            #     print('  END OVERLAPPING SEQUENCE:')
+            #     print('    ', seg_num, end_overlap)
+            #     print('    ', seg_num, end_qual)
+            # print('\n')
 
     # If a bridge already exists for a spanning sequence, we add the sequence to the bridge. If
     # not, we create a new bridge and add it.
@@ -692,7 +699,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
         start, end = seg_nums
         for existing_bridge in existing_bridges:
             if isinstance(existing_bridge, LongReadBridge) and \
-               existing_bridge.start_segment == start and existing_bridge.end_segment == end:
+                            existing_bridge.start_segment == start and existing_bridge.end_segment == end:
                 matching_bridge = existing_bridge
                 break
         else:
@@ -774,19 +781,21 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
 
     return all_bridges
 
+
 def get_mean_depth(seg_1, seg_2, graph):
-    '''
+    """
     Returns the mean depth of the two segments, weighted by their length.
-    '''
+    """
     return weighted_average(seg_1.depth, seg_2.depth,
                             seg_1.get_length_no_overlap(graph.overlap),
                             seg_2.get_length_no_overlap(graph.overlap))
 
+
 def path_is_self_contained(path, start, end, graph):
-    '''
+    """
     Returns True if the path segments are only connected to each other and the start/end segments.
     If they are connected to anything else, it returns False.
-    '''
+    """
     all_numbers_in_path = set()
     all_numbers_in_path.add(abs(start))
     all_numbers_in_path.add(abs(end))
@@ -799,69 +808,74 @@ def path_is_self_contained(path, start, end, graph):
                 return False
     return True
 
+
 def flip_segment_order(seg_num_1, seg_num_2):
-    '''
+    """
     Given two segment numbers, this function possibly flips them around. It returns the new numbers
     (either unchanged or flipped) and whether or not a flip took place. The decision is somewhat
     arbitrary, but it needs to be consistent so when we collect bridging read sequences they are
     always in the same direction.
-    '''
+    """
     if seg_num_1 > 0 and seg_num_2 > 0:
         flip = False
     elif seg_num_1 < 0 and seg_num_2 < 0:
         flip = True
-    elif seg_num_1 < 0: # only seg_num_1 is negative
+    elif seg_num_1 < 0:  # only seg_num_1 is negative
         flip = abs(seg_num_1) > abs(seg_num_2)
-    else: # only seg_num_2 is negative
+    else:  # only seg_num_2 is negative
         flip = abs(seg_num_2) > abs(seg_num_1)
     if flip:
         return (-seg_num_2, -seg_num_1), True
     else:
         return (seg_num_1, seg_num_2), False
 
+
 def get_single_copy_alignments(read, single_copy_num_set, allowed_overlap, min_scaled_score):
-    '''
+    """
     Returns a list of single-copy segment alignments for the read.
-    '''
+    """
     sc_alignments = []
     for alignment in read.alignments:
         if alignment.ref.number in single_copy_num_set and \
-           alignment.scaled_score >= min_scaled_score:
+                        alignment.scaled_score >= min_scaled_score:
             sc_alignments.append(alignment)
     return sc_alignments
 
+
 def finalise_bridge(all_args):
-    '''
+    """
     Just a one-argument version of bridge.finalise, for pool.imap.
-    '''
+    """
     bridge, scoring_scheme, min_alignment_length, mean_spans_per_bridge, verbosity = all_args
     return bridge.finalise(scoring_scheme, min_alignment_length, mean_spans_per_bridge, verbosity)
 
+
 def score_function(val, half_score_val):
-    '''
+    """
     For inputs of 0.0 and greater, this function returns a value between 0.0 and 1.0, approaching
     1.0 with large values. The half_score_val argument is the point at which the function returns
     0.5. If it's large the function approaches 1.0 more slowly, if it's small the function
     approaches 1.0 more quickly.
-    '''
+    """
     return 1.0 - (half_score_val / (half_score_val + val))
+
 
 def get_applicable_bridge_pieces(bridge, single_copy_nums, right_bridged, left_bridged,
                                  seg_nums_used_in_bridges):
-    '''
+    """
     Using the given sets, this function returns a list of bridge pieces which can be applied to the
     graph.
-    '''
+    """
     # Break the bridge into pieces based on single-copy segments in the bridge path. Each piece is
     # grouped with its index which make it easier to combine the adjacent pieces later.
     bridge_pieces = []
     current_piece = [(bridge.start_segment, 0)]
     for i, seg in enumerate(bridge.graph_path):
         if abs(seg) in single_copy_nums:
-            bridge_pieces.append(current_piece + [(seg, i+1)])
-            current_piece = [(seg, i+1)]
+            bridge_pieces.append(current_piece + [(seg, i + 1)])
+            current_piece = [(seg, i + 1)]
         else:
-            current_piece.append((seg, i+1))
+            current_piece.append((seg, i + 1))
     bridge_pieces.append(current_piece + [(bridge.end_segment, len(bridge.graph_path) + 1)])
 
     # A piece can only be applied if its start/end haven't already been bridged or used in a
@@ -885,22 +899,24 @@ def get_applicable_bridge_pieces(bridge, single_copy_nums, right_bridged, left_b
     # We no longer need those indicies, so simplify the list to just segment numbers.
     return [[y[0] for y in x] for x in merged_pieces_to_apply]
 
+
 def get_bridge_str(start, middle, end):
-    '''
+    """
     Returns a bridge sequence in human-readable form.
-    '''
+    """
     bridge_str = str(start) + ' -> '
     if middle:
         bridge_str += ', '.join([str(x) for x in middle]) + ' -> '
     bridge_str += str(end)
     return bridge_str
 
+
 def start_end_available_to_bridge(start, end, right_bridged, left_bridged,
                                   seg_nums_used_in_bridges):
-    '''
+    """
     Checks whether the start and end segments can be bridged together (i.e. that they are both
     unbridged on the relevant sides).
-    '''
+    """
     if start > 0 and start in right_bridged:
         return False
     if start < 0 and -start in left_bridged:
@@ -914,5 +930,3 @@ def start_end_available_to_bridge(start, end, right_bridged, left_bridged,
     if abs(end) in seg_nums_used_in_bridges:
         return False
     return True
-
-

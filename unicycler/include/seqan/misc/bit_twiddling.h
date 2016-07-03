@@ -514,7 +514,7 @@ _bitScanReverse(TWord word, WordSize_<NUM_BITS>)
 // Function _bitScanForwardGeneric()                     [Platform independent]
 // ----------------------------------------------------------------------------
 
-// bitScanForward implementations for 64 and 32 bit values using DeBruijn sequence by Martin LŠuter, Charles E. Leiserson,
+// bitScanForward implementations for 64 and 32 bit values using DeBruijn sequence by Martin LÅ uter, Charles E. Leiserson,
 // Harald Prokop and Keith H. Randall; "Using de Bruijn Sequences to Index a 1 in a Computer Word"; (1997)
 
 // Note, the cast of word to a signed integer is necessary to fix compiler warning C4146 on Windows platforms.

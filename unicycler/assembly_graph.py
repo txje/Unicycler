@@ -1,32 +1,34 @@
-'''
+"""
 This module describes an assembly graph and many related functions.
 
 Author: Ryan Wick
 email: rrwick@gmail.com
-'''
+"""
 
 from collections import deque
 import time, random
 from .misc import int_to_str, float_to_str, weighted_average, weighted_average_list, \
-                  print_section_header, get_num_agreement, reverse_complement
+    print_section_header, get_num_agreement, reverse_complement
 from .bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge, \
-                    get_applicable_bridge_pieces, get_bridge_str
+    get_applicable_bridge_pieces, get_bridge_str
 from .cpp_function_wrappers import fully_global_alignment, path_alignment
 
 
 class TooManyPaths(Exception):
     pass
 
+
 class AssemblyGraph(object):
-    '''
+    """
     This class holds an assembly graph with segments and links.
-    '''
+    """
+
     def __init__(self, filename, overlap, paths_file=None):
-        self.segments = {} # Dict of unsigned segment number -> segment
-        self.forward_links = {} # Dict of signed segment number -> list of signed segment numbers
-        self.reverse_links = {} # Dict of signed segment number <- list of signed segment numbers
-        self.copy_depths = {} # Dict of unsigned segment number -> list of copy depths
-        self.paths = {} # Dict of path name -> list of signed segment numbers
+        self.segments = {}  # Dict of unsigned segment number -> segment
+        self.forward_links = {}  # Dict of signed segment number -> list of signed segment numbers
+        self.reverse_links = {}  # Dict of signed segment number <- list of signed segment numbers
+        self.copy_depths = {}  # Dict of unsigned segment number -> list of copy depths
+        self.paths = {}  # Dict of path name -> list of signed segment numbers
         self.overlap = overlap
 
         if filename.endswith('.fastg'):
@@ -40,9 +42,9 @@ class AssemblyGraph(object):
             self.load_spades_paths(paths_file)
 
     def load_from_fastg(self, filename):
-        '''
+        """
         Loads a Graph from a SPAdes-style FASTG file.
-        '''
+        """
         # Load in the graph segments.
         headers, sequences = get_headers_and_sequences(filename)
         for i, header in enumerate(headers):
@@ -73,13 +75,13 @@ class AssemblyGraph(object):
         self.reverse_links = build_reverse_links(self.forward_links)
         self.sort_link_order()
 
-    def load_from_gfa(self, filename):   
-        '''
+    def load_from_gfa(self, filename):
+        """
         Loads a Graph from a GFA file. It does not load any GFA file, but makes some restrictions:
         1) The segment names must be integers.
         2) The depths should be stored in a DP tag.
         3) All link overlaps are the same (equal to the graph overlap value).
-        '''
+        """
         # Load in the segments.
         gfa_file = open(filename, 'r')
         for line in gfa_file:
@@ -122,12 +124,12 @@ class AssemblyGraph(object):
         gfa_file.close()
 
     def load_spades_paths(self, filename):
-        '''
+        """
         Loads in SPAdes contig paths from file.
         It only saves the positive paths and does not save paths with only one segment.
         If a SPAdes path has a gap (semicolon), then it treats each component part as a separate
         path (i.e. paths do not span gaps).
-        '''
+        """
         names = []
         segment_strings = []
         name = ''
@@ -167,15 +169,15 @@ class AssemblyGraph(object):
             for j, segment_string_part in enumerate(segment_string_parts):
                 path_name = name
                 if len(segment_string_parts) > 1:
-                    path_name += '_' + str(j+1)
+                    path_name += '_' + str(j + 1)
                 segments = [signed_string_to_int(x) for x in segment_string_part.split(',')]
                 self.paths[path_name] = segments
 
     def get_median_read_depth(self, segment_list=None):
-        '''
+        """
         Returns the assembly graph's median read depth (by base).  Optionally, a list of segments
         can be given, in which case only those segments are used for the calculation.
-        '''
+        """
         if not segment_list:
             segment_list = self.segments.values()
         sorted_segments = sorted(segment_list, key=lambda x: x.depth)
@@ -191,33 +193,33 @@ class AssemblyGraph(object):
         return 0.0
 
     def normalise_read_depths(self):
-        '''
+        """
         For every segment in the graph, divide its depth by the graph's median.
         This makes segments with the median depth have a depth of 1, segments with more than the
         median a depth of greater than 1 and segments with less than the median a depth of less
         than 1.
-        '''
+        """
         median_depth = self.get_median_read_depth()
         for segment in self.segments.values():
             segment.divide_depth(median_depth)
 
     def get_total_length(self):
-        '''
+        """
         Returns the sum of all segment sequence lengths.
-        '''
+        """
         return sum([x.get_length() for x in self.segments.values()])
 
     def get_total_length_no_overlaps(self):
-        '''
+        """
         Returns the sum of all segment sequence lengths, subtracting the overlap size from each
         segment.
-        '''
+        """
         return sum([x.get_length_no_overlap(self.overlap) for x in self.segments.values()])
 
     def save_to_fasta(self, filename):
-        '''
+        """
         Saves whole graph (only forward sequences) to a FASTA file.
-        '''
+        """
         fasta = open(filename, 'w')
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
         for segment in sorted_segments:
@@ -225,9 +227,9 @@ class AssemblyGraph(object):
             fasta.write(add_line_breaks_to_sequence(segment.forward_sequence, 60))
 
     def save_to_fastg(self, filename):
-        '''
+        """
         Saves whole graph to a SPAdes-style FASTG file.
-        '''
+        """
         fastg = open(filename, 'w')
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
         for segment in sorted_segments:
@@ -238,9 +240,9 @@ class AssemblyGraph(object):
 
     def save_to_gfa(self, filename, verbosity, save_copy_depth_info=False,
                     save_seg_type_info=False, single_copy_segments=None):
-        '''
+        """
         Saves whole graph to a GFA file.
-        '''
+        """
         gfa = open(filename, 'w')
         if verbosity > 0:
             print('\nSaving', filename)
@@ -250,12 +252,12 @@ class AssemblyGraph(object):
         for segment in sorted_segments:
             segment_line = segment.gfa_segment_line()
             if save_copy_depth_info and segment.number in self.copy_depths:
-                segment_line = segment_line[:-1] # Remove newline
+                segment_line = segment_line[:-1]  # Remove newline
                 segment_line += '\tLB:z:' + self.get_depth_string(segment)
                 segment_line += '\tCL:z:' + self.get_copy_number_colour(segment)
                 segment_line += '\n'
             if save_seg_type_info:
-                segment_line = segment_line[:-1] # Remove newline
+                segment_line = segment_line[:-1]  # Remove newline
                 segment_line += '\tLB:z:' + segment.get_seg_type_label()
                 if segment.number in single_copy_segments:
                     colour = 'forestgreen'
@@ -279,9 +281,9 @@ class AssemblyGraph(object):
         gfa.close()
 
     def get_all_gfa_link_lines(self):
-        '''
+        """
         Returns a string of the link component of the GFA file for this graph.
-        '''
+        """
         gfa_link_lines = ''
         for start, ends in self.forward_links.items():
             for end in ends:
@@ -290,10 +292,10 @@ class AssemblyGraph(object):
         return gfa_link_lines
 
     def get_fastg_header_with_links(self, segment, positive):
-        '''
+        """
         Returns a full SPAdes-style FASTG header for a segment, including the leading '>', all of
         the links, the trailing ';' and a newline.
-        '''
+        """
         number = segment.number
         if not positive:
             number *= -1
@@ -314,18 +316,18 @@ class AssemblyGraph(object):
         return header
 
     def total_dead_end_count(self):
-        '''
+        """
         Returns the total number of dead ends in the assembly graph.
-        '''
+        """
         dead_ends = 0
         for seg_num in self.segments:
             dead_ends += self.dead_end_count(seg_num)
         return dead_ends
 
     def dead_end_count(self, seg_num):
-        '''
+        """
         Returns the number of dead ends for one segment: 0, 1 or 2.
-        '''
+        """
         dead_ends = 0
         if seg_num not in self.forward_links or not self.forward_links[seg_num]:
             dead_ends += 1
@@ -334,7 +336,7 @@ class AssemblyGraph(object):
         return dead_ends
 
     def filter_by_read_depth(self, relative_depth_cutoff):
-        '''
+        """
         This function removes segments from the graph based on a relative depth cutoff. Segments
         are considered below the cutoff if they are less than the cutoff for the entire graph or
         less than the cutoff for their connected component.
@@ -343,7 +345,7 @@ class AssemblyGraph(object):
           2) the segment is part of a connected component where all of the segments are below the
              whole graph cutoff
           3) deleting the segment would not create any dead ends
-        '''
+        """
         segment_nums_to_remove = []
         whole_graph_cutoff = self.get_median_read_depth() * relative_depth_cutoff
         connected_components = self.get_connected_components()
@@ -354,16 +356,16 @@ class AssemblyGraph(object):
                 segment = self.segments[seg_num]
                 if segment.depth < whole_graph_cutoff or segment.depth < component_cutoff:
                     if self.dead_end_count(seg_num) > 0 or \
-                       self.all_segments_below_depth(component, whole_graph_cutoff) or \
-                       self.dead_end_change_if_deleted(seg_num) <= 0:
+                            self.all_segments_below_depth(component, whole_graph_cutoff) or \
+                                    self.dead_end_change_if_deleted(seg_num) <= 0:
                         segment_nums_to_remove.append(seg_num)
         self.remove_segments(segment_nums_to_remove)
 
     def filter_homopolymer_loops(self):
-        '''
+        """
         A common feature in SPAdes graphs is a small piece of the graph (often just one segment)
         which has nothing but one base.  Filter these out.
-        '''
+        """
         segment_nums_to_remove = []
         connected_components = self.get_connected_components()
         for component_nums in connected_components:
@@ -373,11 +375,11 @@ class AssemblyGraph(object):
         self.remove_segments(segment_nums_to_remove)
 
     def remove_segments(self, nums_to_remove):
-        '''
+        """
         Given a list of segment numbers to remove, this function rebuilds the graph's segments
         and links, excluding those segments. It also deletes any paths which contain those
         segments.
-        '''
+        """
         new_segments = {}
         for num, segment in self.segments.items():
             if num not in nums_to_remove:
@@ -402,11 +404,11 @@ class AssemblyGraph(object):
             del self.paths[path_to_delete]
 
     def remove_small_components(self, min_component_size, verbosity):
-        '''
+        """
         Remove small graph components, but only if they do not contain any bridges. The idea is
         to clean up parts of the graph that were orphaned by the bridging process. But if they
         contain a bridge, then they are more likely to be genuine and we keep them.
-        '''
+        """
         segment_nums_to_remove = []
         connected_components = self.get_connected_components()
         for component_nums in connected_components:
@@ -422,10 +424,10 @@ class AssemblyGraph(object):
             print('\nRemoved small components:', ', '.join(str(x) for x in segment_nums_to_remove))
 
     def remove_small_dead_ends(self, min_dead_end_size, verbosity):
-        '''
+        """
         Remove small segments which are graph dead-ends. This is just to tidy things up a bit
         before the final merge.
-        '''
+        """
         removed_segments = []
         while True:
             for seg_num, segment in self.segments.items():
@@ -441,9 +443,9 @@ class AssemblyGraph(object):
             print('\nRemoved small dead ends: ', ', '.join(str(x) for x in removed_segments))
 
     def merge_all_possible(self):
-        '''
+        """
         This function merges segments which are in a simple, unbranching path.
-        '''
+        """
         while True:
             # Sort the segment numbers first so we apply the merging in a consistent order.
             seg_nums = sorted(list(self.segments.keys()))
@@ -459,10 +461,10 @@ class AssemblyGraph(object):
         self.renumber_segments()
 
     def merge_simple_path(self, merge_path):
-        '''
+        """
         Merges the path into a single segment and adjusts any graph paths as necessary. Assumes
         that the path is a simple, unbranching path and can be merged.
-        '''
+        """
         start = merge_path[0]
         end = merge_path[-1]
 
@@ -517,14 +519,14 @@ class AssemblyGraph(object):
                 new_paths[path_name] = split_paths[0]
             elif len(split_paths) > 1:
                 for i, path in enumerate(split_paths):
-                    new_paths[path_name+'_'+str(i+1)] = path
+                    new_paths[path_name + '_' + str(i + 1)] = path
         self.paths = new_paths
 
     def add_link(self, start, end):
-        '''
+        """
         Adds a link to the graph in all necessary ways: forward and reverse, and for reverse
         complements too.
-        '''
+        """
         if start not in self.forward_links:
             self.forward_links[start] = []
         if end not in self.forward_links[start]:
@@ -546,10 +548,10 @@ class AssemblyGraph(object):
             self.forward_links[-end].append(-start)
 
     def remove_link(self, start, end):
-        '''
+        """
         Removes a link from the graph in all necessary ways: forward and reverse, and for reverse
         complements too.
-        '''
+        """
         if start in self.forward_links:
             self.forward_links[start].remove(end)
         if -end in self.forward_links:
@@ -560,22 +562,22 @@ class AssemblyGraph(object):
             self.reverse_links[-start].remove(-end)
 
     def get_seq_from_signed_seg_num(self, signed_num):
-        '''
+        """
         Returns the forwards or reverse sequence of a segment, if the number is next_positive or
         negative, respectively. Assumes the segment number is in the graph.
-        '''
+        """
         if signed_num > 0:
             return self.segments[signed_num].forward_sequence
         else:
             return self.segments[-signed_num].reverse_sequence
 
     def get_connected_components(self):
-        '''
+        """
         Returns a list of lists, where each inner list is the segment numbers of one connected
         component of the graph.
         E.g. [[1, 2], [3, 4, 5]] would mean that segments 1 and 2 are in a connected component
-        and segments 3, 4 and 5 are in another connected component. 
-        '''
+        and segments 3, 4 and 5 are in another connected component.
+        """
         visited = set()
         components = []
         for v in self.segments:
@@ -596,11 +598,11 @@ class AssemblyGraph(object):
         return components
 
     def get_connected_segments(self, segment_num):
-        '''
+        """
         Given a segment number, this function returns a list of all other segment numbers for
         segments that are directly connected.
         It only returns positive numbers (i.e. is not strand-specific).
-        '''
+        """
         connected_segments = set()
         if segment_num in self.forward_links:
             downstream_segments = self.forward_links[segment_num]
@@ -613,19 +615,19 @@ class AssemblyGraph(object):
         return list(connected_segments)
 
     def all_segments_below_depth(self, segment_nums, cutoff):
-        '''
+        """
         Returns true if all segments in the list are below the depth cutoff.
-        '''
+        """
         for num in segment_nums:
             if self.segments[num].depth >= cutoff:
                 return False
         return True
 
     def get_n_segment_length(self, n_percent):
-        '''
+        """
         Returns the length for which segments that length and longer make up >= n% of the total
         bases.  E.g. if n = 50, this function returns the N50.  n must be from 0 to 100.
-        '''
+        """
         total_length = self.get_total_length_no_overlaps()
         target_length = total_length * (n_percent / 100.0)
         sorted_segments = sorted(self.segments.values(),
@@ -640,9 +642,9 @@ class AssemblyGraph(object):
         return 0
 
     def gfa_link_line(self, start, end):
-        '''
+        """
         Returns an entire L line for GFA output, including the newline.
-        '''
+        """
         l_line = 'L\t'
         l_line += str(abs(start)) + '\t'
         l_line += get_sign_string(start) + '\t'
@@ -652,54 +654,56 @@ class AssemblyGraph(object):
         return l_line
 
     def get_all_outputs(self, segment):
-        '''
+        """
         Returns a list of segments which lead out from the given segment.
-        '''
+        """
         if segment.number in self.reverse_links:
             return [self.segments[x] for x in self.forward_links[segment.number]]
         else:
             return []
 
     def get_exclusive_inputs(self, segment_number):
-        '''
+        """
         This function finds all segments which lead into the given segment.  If those segments
         do not lead into any other segments, then this function returns them in a list.  If they
         do lead into other segments, then this function returns None.
         Specifically, this function returns a list of unsigned numbers.
-        '''
+        """
         if segment_number not in self.reverse_links:
             return []
-        return [abs(x) for x in self.reverse_links[segment_number] if self.lead_exclusively_to(x, segment_number)]
+        return [abs(x) for x in self.reverse_links[segment_number] if
+                self.lead_exclusively_to(x, segment_number)]
 
     def get_exclusive_outputs(self, segment_number):
-        '''
+        """
         Does the same thing as get_exclusive_inputs, but in the other direction.
-        '''
+        """
         if segment_number not in self.forward_links:
             return []
-        return [abs(x) for x in self.forward_links[segment_number] if self.lead_exclusively_from(x, segment_number)]
+        return [abs(x) for x in self.forward_links[segment_number] if
+                self.lead_exclusively_from(x, segment_number)]
 
     def lead_exclusively_to(self, segment_num_1, segment_num_2):
-        '''
+        """
         Returns whether or not the first segment leads to and only to the second segment.
-        '''
+        """
         if segment_num_1 not in self.forward_links:
             return False
         return self.forward_links[segment_num_1] == [segment_num_2]
 
     def lead_exclusively_from(self, segment_num_1, segment_num_2):
-        '''
+        """
         Does the same thing as lead_exclusively_to, but follows links in the opposite direction.
-        '''
+        """
         if segment_num_1 not in self.reverse_links:
             return False
         return self.reverse_links[segment_num_1] == [segment_num_2]
 
     def dead_end_change_if_deleted(self, seg_num):
-        '''
+        """
         Returns the change in graph dead end count if this segment was deleted. 0 means no change,
         positive values mean an increase in dead ends, negative values mean a decrease.
-        '''
+        """
         potential_dead_ends = 0
         if seg_num in self.forward_links:
             downstream_segments = self.forward_links[seg_num]
@@ -720,14 +724,14 @@ class AssemblyGraph(object):
         return potential_dead_ends - self.dead_end_count(seg_num)
 
     def dead_end_change_if_path_deleted(self, path_segments):
-        '''
+        """
         Like the above function, but considered the whole path at once. It assumes that the path is
         simple and unbranching (i.e. could be merged into a single segment).
         This function does not check whether the path start and end both connect to the same
         segment. So if they form a hairpin loop, this function will return 0 even though the
         deletion of the path would create a dead end. This behaviour is intentionally left, as it
         helps to clean up such loops from the graph when they have been entirely used in bridges.
-        '''
+        """
         start = path_segments[0]
         end = path_segments[-1]
 
@@ -756,10 +760,10 @@ class AssemblyGraph(object):
         return potential_dead_ends - dead_ends
 
     def clean(self, read_depth_filter):
-        '''
+        """
         This function does various graph repairs, filters and normalisations to make it a bit
         nicer.
-        '''
+        """
         self.repair_multi_way_junctions()
         self.filter_by_read_depth(read_depth_filter)
         self.filter_homopolymer_loops()
@@ -768,12 +772,12 @@ class AssemblyGraph(object):
         self.sort_link_order()
 
     def repair_multi_way_junctions(self):
-        '''
+        """
         This function finds and fixes multi-way junctions in the graph, as these can mess up copy
         number determination. It fixes them by creating a new segment with no length (i.e with the
         overlap size) to bridge the connection.
         For example: A->B,C and D->B,C becomes A->E and D->E and E->B and E->C
-        '''
+        """
         while True:
             seg_nums = list(self.segments) + [-x for x in self.segments]
             for seg_num in seg_nums:
@@ -808,10 +812,10 @@ class AssemblyGraph(object):
                 starting_segs = list(starting_segs)
                 ending_segs = list(ending_segs)
                 bridge_seq = self.get_seq_from_signed_seg_num(ending_segs[0])[:self.overlap]
-                for seg_num in starting_segs:
-                    assert bridge_seq == self.get_seq_from_signed_seg_num(seg_num)[-self.overlap:]
-                for seg_num in ending_segs:
-                    assert bridge_seq == self.get_seq_from_signed_seg_num(seg_num)[:self.overlap]
+                for start_seg in starting_segs:
+                    assert bridge_seq == self.get_seq_from_signed_seg_num(start_seg)[-self.overlap:]
+                for end_seg in ending_segs:
+                    assert bridge_seq == self.get_seq_from_signed_seg_num(end_seg)[:self.overlap]
 
                 # Create a new segment to bridge the starting and ending segments.
                 bridge_num = self.get_next_available_seg_number()
@@ -823,12 +827,12 @@ class AssemblyGraph(object):
                 self.segments[bridge_num] = bridge_seg
 
                 # Now rebuild the links around the junction.
-                for seg_num in starting_segs:
-                    self.forward_links[seg_num] = [bridge_num]
-                    self.reverse_links[-seg_num] = [-bridge_num]
-                for seg_num in ending_segs:
-                    self.reverse_links[seg_num] = [bridge_num]
-                    self.forward_links[-seg_num] = [-bridge_num]
+                for start_seg in starting_segs:
+                    self.forward_links[start_seg] = [bridge_num]
+                    self.reverse_links[-start_seg] = [-bridge_num]
+                for end_seg in ending_segs:
+                    self.reverse_links[end_seg] = [bridge_num]
+                    self.forward_links[-end_seg] = [-bridge_num]
                 self.forward_links[bridge_num] = ending_segs
                 self.reverse_links[bridge_num] = starting_segs
                 self.reverse_links[-bridge_num] = [-x for x in ending_segs]
@@ -848,25 +852,25 @@ class AssemblyGraph(object):
                 break
 
     def get_next_available_seg_number(self):
-        '''
-        This function finds the largest used segment number and returns the next 
-        '''
+        """
+        This function finds the largest used segment number and returns the next
+        """
         current_largest = max(self.segments)
         return current_largest + 1
 
     def get_depth_string(self, segment):
-        '''
+        """
         Given a particular segment, this function returns a string with the segment's copy depths
         (if it has any).
-        '''
+        """
         if segment.number not in self.copy_depths:
             return ''
         return ', '.join(['%.3f' % x for x in self.copy_depths[segment.number]])
 
     def get_copy_number_colour(self, segment):
-        '''
+        """
         Given a particular segment, this function returns a colour string based on the copy number.
-        '''
+        """
         if segment.number not in self.copy_depths:
             return 'black'
         copy_number = len(self.copy_depths[segment.number])
@@ -876,19 +880,19 @@ class AssemblyGraph(object):
             return 'gold'
         if copy_number == 3:
             return 'darkorange'
-        else: # 4+
+        else:  # 4+
             return 'red'
 
     def determine_copy_depth(self, verbosity):
-        '''
+        """
         Assigns a copy depth to each segment in the graph.
-        '''
+        """
         # Reset any existing copy depths.
         self.copy_depths = {}
 
         # TO DO: These should be parameters, after I have them sorted out.
         initial_tolerance = 0.1
-        propogation_tolerance = 0.2
+        propagation_tolerance = 0.2
         min_half_median_for_diploid = 0.1
         min_single_copy_length = 1000
 
@@ -909,7 +913,7 @@ class AssemblyGraph(object):
         half_median_frac = bases_near_half_median / total_graph_bases
         double_median_frac = bases_near_double_median / total_graph_bases
         if half_median_frac > double_median_frac and \
-           half_median_frac >= min_half_median_for_diploid:
+                        half_median_frac >= min_half_median_for_diploid:
             single_copy_depth = median_depth / 2.0
         else:
             single_copy_depth = median_depth
@@ -921,7 +925,7 @@ class AssemblyGraph(object):
         initial_single_copy_segments = []
         for seg_num, segment in self.segments.items():
             if segment.depth <= max_depth and \
-               self.at_most_one_link_per_end(segment):
+                    self.at_most_one_link_per_end(segment):
                 self.copy_depths[segment.number] = [segment.depth]
                 initial_single_copy_segments.append(seg_num)
         if verbosity > 1:
@@ -934,31 +938,31 @@ class AssemblyGraph(object):
             print_section_header('Propogating copy numbers', verbosity)
 
         # Propogate copy depth as possible using those initial assignments.
-        self.determine_copy_depth_part_2(propogation_tolerance, verbosity)
+        self.determine_copy_depth_part_2(propagation_tolerance, verbosity)
 
-        # Assign single-copy to the largest available segment, propogate and repeat.
+        # Assign single-copy to the largest available segment, propagate and repeat.
         while True:
             assignments = self.assign_single_copy_depth(verbosity, min_single_copy_length)
-            self.determine_copy_depth_part_2(propogation_tolerance, verbosity)
+            self.determine_copy_depth_part_2(propagation_tolerance, verbosity)
             if not assignments:
                 break
 
-        # Now propogate with no tolerance threshold to complete the remaining segments.
+        # Now propagate with no tolerance threshold to complete the remaining segments.
         self.determine_copy_depth_part_2(1.0, verbosity)
 
     def determine_copy_depth_part_2(self, tolerance, verbosity):
-        '''
-        Propogates copy depth repeatedly until assignments stop.
-        '''
+        """
+        Propagates copy depth repeatedly until assignments stop.
+        """
         while self.merge_copy_depths(tolerance, verbosity):
             pass
         if self.redistribute_copy_depths(tolerance, verbosity):
             self.determine_copy_depth_part_2(tolerance, verbosity)
 
     def assign_single_copy_depth(self, verbosity, min_single_copy_length):
-        '''
+        """
         This function assigns a single copy to the longest available segment.
-        '''
+        """
         segments = sorted(self.get_segments_without_copies(),
                           key=lambda x: x.get_length(), reverse=True)
         for segment in segments:
@@ -973,14 +977,14 @@ class AssemblyGraph(object):
         return 0
 
     def merge_copy_depths(self, error_margin, verbosity):
-        '''
+        """
         This function looks for segments where they have input on one end where:
           1) All input segments have copy depth assigned.
           2) All input segments exclusively input to this segment.
         All such cases are evaluated, and the segment with the lowest error (if that error is below
         the allowed error margin) is assigned copy depths, scaling the inputs so their sum
         exactly matches the segment's depth.
-        '''
+        """
         segments = self.get_segments_without_copies()
         if not segments:
             return 0
@@ -1023,13 +1027,13 @@ class AssemblyGraph(object):
             return 0
 
     def redistribute_copy_depths(self, error_margin, verbosity):
-        '''
+        """
         This function deals with the easier case of copy depth redistribution: where one segments
         with copy depth leads exclusively to multiple segments without copy depth.
         We will then try to redistribute the source segment's copy depths among the destination
         segments.  If it can be done within the allowed error margin, the destination segments will
         get their copy depths.
-        '''
+        """
         segments = self.get_segments_with_two_or_more_copies()
         if not segments:
             return 0
@@ -1051,7 +1055,7 @@ class AssemblyGraph(object):
             # For cases where there are many copy depths being distributed to many segments, there
             # will be too many combinations, so we don't bother trying.
             arrangement_count = len(bins) ** len(copy_depths)
-            if arrangement_count > 10000: # TO DO: choose this cutoff more carefully?
+            if arrangement_count > 10000:  # TO DO: choose this cutoff more carefully?
                 continue
 
             arrangements = shuffle_into_bins(copy_depths, bins, targets)
@@ -1077,9 +1081,9 @@ class AssemblyGraph(object):
         return 0
 
     def at_most_one_link_per_end(self, segment):
-        '''
+        """
         Returns True if the given segment has no more than one link on either end.
-        '''
+        """
         num = segment.number
         if num in self.forward_links and len(self.forward_links[num]) > 1:
             return False
@@ -1088,9 +1092,9 @@ class AssemblyGraph(object):
         return True
 
     def exactly_one_link_per_end(self, segment):
-        '''
+        """
         Returns True if the given segment has exactly one link on either end.
-        '''
+        """
         num = segment.number
         if num in self.forward_links and len(self.forward_links[num]) != 1:
             return False
@@ -1099,24 +1103,24 @@ class AssemblyGraph(object):
         return True
 
     def all_have_copy_depths(self, segment_numbers):
-        '''
+        """
         Takes a list of segment numbers and returns whether every segment in the list has copy
         depths assigned.
-        '''
+        """
         for num in segment_numbers:
             if num not in self.copy_depths:
                 return False
         return True
 
     def scale_copy_depths_from_source_segments(self, segment_number, source_segment_numbers):
-        '''
+        """
         Using a list of segments which are the source of copy depth, this function scales them so
         that their sum matches the depth of the given segment.
         It returns:
           1) a list of depth numbers
           2) the error (i.e. the degree of scaling which had to occur)
         It assumes that all of the source segments definitely have copy depths.
-        '''
+        """
         source_depths = []
         for num in source_segment_numbers:
             source_depths += self.copy_depths[num]
@@ -1124,10 +1128,10 @@ class AssemblyGraph(object):
         return self.scale_copy_depths(target_depth, source_depths)
 
     def scale_copy_depths(self, target_depth, source_depths):
-        '''
+        """
         This function takes the source depths and scales them so their sum matches the target
         depth.  It returns the scaled depths and the error.
-        '''
+        """
         source_depth_sum = sum(source_depths)
         scaling_factor = target_depth / source_depth_sum
         scaled_depths = sorted([scaling_factor * x for x in source_depths], reverse=True)
@@ -1135,19 +1139,20 @@ class AssemblyGraph(object):
         return scaled_depths, error
 
     def get_segments_without_copies(self):
-        '''
+        """
         Returns a list of the graph segments lacking copy depth information.
-        '''
+        """
         return [x for x in self.segments.values() if x.number not in self.copy_depths]
 
     def get_segments_with_two_or_more_copies(self):
-        return [x for x in self.segments.values() if x.number in self.copy_depths and len(self.copy_depths[x.number]) > 1]
+        return [x for x in self.segments.values() if
+                x.number in self.copy_depths and len(self.copy_depths[x.number]) > 1]
 
     def get_error_for_multiple_segments_and_depths(self, segment_numbers, copy_depths):
-        '''
+        """
         For the given segments, this function assesses how well the given copy depths match up.
         The maximum error for any segment is what's returned at the end.
-        '''
+        """
         max_error = 0.0
         for i, num in enumerate(segment_numbers):
             segment_depth = self.segments[num].depth
@@ -1156,12 +1161,12 @@ class AssemblyGraph(object):
         return max_error
 
     def assign_copy_depths_where_needed(self, segment_numbers, new_depths, error_margin):
-        '''
+        """
         For the given segments, this function assigns the corresponding copy depths, scaled to fit
         the segment.  If a segment already has copy depths, it is skipped (i.e. this function only
         write new copy depths, doesn't overwrite existing ones).
         It will only create copy depths if doing so is within the allowed error margin.
-        '''
+        """
         success = False
         for i, num in enumerate(segment_numbers):
             if num not in self.copy_depths:
@@ -1173,10 +1178,10 @@ class AssemblyGraph(object):
         return success
 
     def remove_segment_depth(self, seg_num, depth_to_remove):
-        '''
+        """
         This function removes the depth from the specified segment. If the segment has copy depths,
         it will also removes the copy depth closest to the given depth.
-        '''
+        """
         seg_num = abs(seg_num)
         if seg_num not in self.segments:
             return
@@ -1187,11 +1192,10 @@ class AssemblyGraph(object):
         closest_depth = min(self.copy_depths[seg_num], key=lambda x: abs(x - depth_to_remove))
         del self.copy_depths[seg_num][self.copy_depths[seg_num].index(closest_depth)]
 
-
     def get_base_count_in_depth_range(self, min_depth, max_depth):
-        '''
+        """
         Returns the total number of bases in the graph in the given depth range.
-        '''
+        """
         total_bases = 0
         for segment in self.segments.values():
             if segment.depth >= min_depth and segment.depth <= max_depth:
@@ -1199,9 +1203,9 @@ class AssemblyGraph(object):
         return total_bases
 
     def get_single_copy_segments(self):
-        '''
+        """
         Returns a list of the graph segments with a copy number of 1.
-        '''
+        """
         single_copy_segments = []
         for num, segment in self.segments.items():
             if num in self.copy_depths and len(self.copy_depths[num]) == 1:
@@ -1209,9 +1213,9 @@ class AssemblyGraph(object):
         return single_copy_segments
 
     def get_path_sequence(self, path_segments):
-        '''
+        """
         Gets a linear (i.e. not circular) path sequence from the graph.
-        '''
+        """
         path_sequence = ''
         prev_segment_number = None
         for i, seg_num in enumerate(path_segments):
@@ -1231,9 +1235,9 @@ class AssemblyGraph(object):
         return path_sequence
 
     def apply_bridges(self, bridges, verbosity, min_bridge_qual, single_copy_segments):
-        '''
+        """
         Uses the supplied bridges to simplify the graph.
-        '''
+        """
         # Each segment can have only one bridge per side, so we will track which segments have had
         # a bridge applied off one side or the other.
         right_bridged = set()
@@ -1278,13 +1282,14 @@ class AssemblyGraph(object):
                 continue
 
             if len(pieces) == 1 and \
-               pieces[0] == [bridge.start_segment] + bridge.graph_path + [bridge.end_segment]:
+                            pieces[0] == [bridge.start_segment] + bridge.graph_path + [
+                        bridge.end_segment]:
                 bridge.bridge_sequence = self.get_path_sequence(bridge.graph_path)
                 bridge = self.apply_entire_bridge(bridge, verbosity, right_bridged, left_bridged,
                                                   seg_nums_used_in_bridges, single_copy_nums)
                 bridge_segs.append(bridge)
 
-            else: # Either multiple pieces or a single piece which isn't the whole bridge.
+            else:  # Either multiple pieces or a single piece which isn't the whole bridge.
                 bridges = self.apply_bridge_in_pieces(bridge, pieces, verbosity, right_bridged,
                                                       left_bridged, seg_nums_used_in_bridges,
                                                       single_copy_nums)
@@ -1298,9 +1303,9 @@ class AssemblyGraph(object):
 
     def clean_up_after_bridging(self, single_copy_segments, seg_nums_used_in_bridges,
                                 min_component_size, min_dead_end_size, verbosity):
-        '''
+        """
         Cleans up unnecessary segments to produce a clean graph. Used after bridge application.
-        '''
+        """
         if verbosity > 1:
             print_section_header('Cleaning up leftover segments', verbosity)
 
@@ -1340,7 +1345,7 @@ class AssemblyGraph(object):
             if seg_num in single_copy_seg_nums:
                 continue
             if not (self.search(seg_num, single_copy_seg_nums) and
-                    self.search(-seg_num, single_copy_seg_nums)):
+                        self.search(-seg_num, single_copy_seg_nums)):
                 segment_nums_to_remove.append(seg_num)
         if verbosity > 1 and segment_nums_to_remove:
             print('\nRemoved unbridging segments:',
@@ -1374,8 +1379,8 @@ class AssemblyGraph(object):
                     path = self.get_simple_path(seg_num)
                     unsigned_path = [abs(x) for x in path]
                     if len(path) > 1 and \
-                       all(x in seg_nums_used_in_bridges for x in unsigned_path) and \
-                       self.dead_end_change_if_path_deleted(path) <= 0:
+                            all(x in seg_nums_used_in_bridges for x in unsigned_path) and \
+                                    self.dead_end_change_if_path_deleted(path) <= 0:
                         self.remove_segments(unsigned_path)
                         removed_segments += unsigned_path
                         break
@@ -1402,9 +1407,9 @@ class AssemblyGraph(object):
 
     def apply_entire_bridge(self, bridge, verbosity, right_bridged, left_bridged,
                             seg_nums_used_in_bridges, single_copy_nums):
-        '''
+        """
         Applies a whole bridge, start to end.
-        '''
+        """
         if verbosity > 1:
             print('Applying', bridge)
         new_seg = self.apply_bridge(bridge, bridge.start_segment, bridge.end_segment,
@@ -1417,10 +1422,10 @@ class AssemblyGraph(object):
 
     def apply_bridge_in_pieces(self, bridge, pieces, verbosity, right_bridged, left_bridged,
                                seg_nums_used_in_bridges, single_copy_nums):
-        '''
+        """
         Applies a bridge in chunks, as appropriate. Used for bridges which can't be applied in
         their entirety.
-        '''
+        """
         new_segs = []
         if verbosity > 1:
             if len(pieces) == 1:
@@ -1445,10 +1450,10 @@ class AssemblyGraph(object):
         return new_segs
 
     def apply_bridge(self, bridge, start, end, sequence, graph_path, verbosity):
-        '''
+        """
         Applies one bridge to the graph, from the start segment to the end and with the given
         sequence. This may be the entire bridge, or possibly just a piece of the bridge.
-        '''
+        """
         # Remove all existing links for the segments being bridged.
         if start in self.forward_links:
             for link in self.forward_links[start]:
@@ -1474,11 +1479,11 @@ class AssemblyGraph(object):
         return new_seg
 
     def find_all_simple_loops(self):
-        '''
+        """
         This function finds all cases of a simple loop in the graph: A->B->C->B->D.
         It returns them as a list of 4-tuples of segment numbers in this order:
         (start, end, middle, repeat).
-        '''
+        """
         simple_loops = []
 
         # We'll search specifically for the middle segments as they should be easy to spot.
@@ -1518,7 +1523,7 @@ class AssemblyGraph(object):
         return simple_loops
 
     def all_paths(self, start, end, min_length, target_length, max_length, max_path_count):
-        '''
+        """
         Returns a list of all paths which connect the starting segment to the ending segment and
         are within the length bounds. The start and end segments are not themselves included in the
         paths. Returns an empty list if no paths exist.
@@ -1526,7 +1531,7 @@ class AssemblyGraph(object):
         length) can result in very large numbers of potential paths in complex areas. To somewhat
         manage this, we exclude paths which include too many copies of a segment. 'Too many copies'
         is defined as double the copy depth count or the depth to start/end count.
-        '''
+        """
         if start not in self.forward_links:
             return []
 
@@ -1535,7 +1540,7 @@ class AssemblyGraph(object):
         start_end_depth = weighted_average(start_seg.depth, end_seg.depth,
                                            start_seg.get_length_no_overlap(self.overlap),
                                            end_seg.get_length_no_overlap(self.overlap))
-        max_working_paths = 1000 # TO DO: make this a parameter?
+        max_working_paths = 1000  # TO DO: make this a parameter?
         working_paths = [[x] for x in self.forward_links[start]]
         final_paths = []
         while working_paths:
@@ -1549,7 +1554,7 @@ class AssemblyGraph(object):
                         if len(final_paths) > max_path_count:
                             raise TooManyPaths
                 elif self.get_path_length(working_path) <= max_length and \
-                        last_seg in self.forward_links:
+                                last_seg in self.forward_links:
                     for next_seg in self.forward_links[last_seg]:
                         max_allowed_count = self.max_path_segment_count(next_seg, start_end_depth)
                         count_so_far = working_path.count(next_seg) + working_path.count(-next_seg)
@@ -1569,11 +1574,11 @@ class AssemblyGraph(object):
 
     def progressive_path_find(self, start, end, min_length, target_length, max_length, sequence,
                               scoring_scheme):
-        '''
+        """
         Finds paths from the start to the end that best match the sequence. It works outward and
         culls paths when they grow too numerous. This function is called when all_paths fails due to
         too many paths. The start and end segments are not themselves included in the paths.
-        '''
+        """
         if start not in self.forward_links:
             return []
 
@@ -1667,11 +1672,11 @@ class AssemblyGraph(object):
         return final_paths
 
     def max_path_segment_count(self, seg_num, start_end_depth):
-        '''
+        """
         This function returns the maximum allowed number of times a segment can be in a bridge
         path. It uses both the segment's copy depth (if it has one) and the relative depth of the
         segment as compared to the start/end of the bridge.
-        '''
+        """
         if abs(seg_num) in self.copy_depths:
             count_by_copies = len(self.copy_depths[abs(seg_num)])
         else:
@@ -1681,9 +1686,9 @@ class AssemblyGraph(object):
         return 2 * max(count_by_copies, count_by_depth)
 
     def get_path_length(self, path):
-        '''
+        """
         Returns the length of the given path.
-        '''
+        """
         try:
             path_length = 0
             for seg in path:
@@ -1695,9 +1700,9 @@ class AssemblyGraph(object):
             return 0
 
     def renumber_segments(self):
-        '''
+        """
         This function gives the longest segment the number 1, the second-longest the number 2, etc.
-        '''
+        """
         old_nums = [x.number for x in sorted(self.segments.values(), reverse=True,
                                              key=lambda x: x.get_length())]
         new_nums = list(range(1, len(old_nums) + 1))
@@ -1730,9 +1735,9 @@ class AssemblyGraph(object):
         self.paths = new_paths
 
     def get_summary(self, file=None, score=None):
-        '''
+        """
         Returns a nice table describing the graph.
-        '''
+        """
         total_length = self.get_total_length()
         max_v = max(total_length, 1000000)
         max_v_len = len(int_to_str(max_v))
@@ -1771,9 +1776,9 @@ class AssemblyGraph(object):
         return summary
 
     def get_total_link_count(self):
-        '''
+        """
         Returns the total number of forward links in the graph, not counting rev comp duplicates.
-        '''
+        """
         links = set()
         for start, ends in self.forward_links.items():
             for end in ends:
@@ -1782,9 +1787,9 @@ class AssemblyGraph(object):
         return len(links)
 
     def get_contig_stats(self):
-        '''
+        """
         Returns various contig length metrics.
-        '''
+        """
         segment_lengths = sorted([x.get_length() for x in self.segments.values()])
         if not segment_lengths:
             return 0, 0, 0, 0, 0, 0
@@ -1816,39 +1821,39 @@ class AssemblyGraph(object):
         return n50, shortest, first_quartile, median, third_quartile, longest
 
     def completed_circular_components(self):
-        '''
+        """
         Returns the number of graph components which are simple loops: one segment connected to
         itself to make a circular piece of DNA.
-        '''
+        """
         single_segment_components = [x for x in self.get_connected_components() if len(x) == 1]
         completed_components = []
         for component in single_segment_components:
             only_segment = component[0]
             if only_segment in self.forward_links and \
-               self.forward_links[only_segment] == [only_segment] and \
-               only_segment in self.reverse_links and \
-               self.reverse_links[only_segment] == [only_segment]:
+                            self.forward_links[only_segment] == [only_segment] and \
+                            only_segment in self.reverse_links and \
+                            self.reverse_links[only_segment] == [only_segment]:
                 completed_components.append(component)
         return completed_components
 
     def get_simple_path(self, starting_seg):
-        '''
+        """
         Starting with the given segment, this function tries to expand outward as far as possible
         while maintaining a simple (i.e. mergeable) path. If it can't expand at all, it will just
         return a list of the starting segment.
-        '''
+        """
         simple_path = [starting_seg]
 
         # Expand forward as much as possible.
         while True:
             if simple_path[-1] not in self.forward_links or \
-               len(self.forward_links[simple_path[-1]]) != 1:
+                            len(self.forward_links[simple_path[-1]]) != 1:
                 break
             potential = self.forward_links[simple_path[-1]][0]
             if potential in simple_path or -potential in simple_path:
                 break
             if len(self.reverse_links[potential]) == 1 and \
-               self.reverse_links[potential][0] == simple_path[-1]:
+                            self.reverse_links[potential][0] == simple_path[-1]:
                 simple_path.append(potential)
             else:
                 break
@@ -1856,13 +1861,13 @@ class AssemblyGraph(object):
         # Expand backward as much as possible.
         while True:
             if simple_path[0] not in self.reverse_links or \
-               len(self.reverse_links[simple_path[0]]) != 1:
+                            len(self.reverse_links[simple_path[0]]) != 1:
                 break
             potential = self.reverse_links[simple_path[0]][0]
             if potential in simple_path or -potential in simple_path:
                 break
             if len(self.forward_links[potential]) == 1 and \
-               self.forward_links[potential][0] == simple_path[0]:
+                            self.forward_links[potential][0] == simple_path[0]:
                 simple_path.insert(0, potential)
             else:
                 break
@@ -1870,22 +1875,22 @@ class AssemblyGraph(object):
         return simple_path
 
     def sort_link_order(self):
-        '''
+        """
         This function sorts the lists in links so path finding can be consistent from one run to
         the next.
-        '''
+        """
         for seg_num in self.forward_links:
             self.forward_links[seg_num].sort()
         for seg_num in self.reverse_links:
             self.reverse_links[seg_num].sort()
 
     def search(self, start, ends):
-        '''
+        """
         Conducts a DFS from the start segment to see if it leads to any of the end segments.
         The start segment is signed, i.e. positive start and negative start will conduct the
         search in different directions. The end segments are not signed, i.e. the search is
         successful if it reaches either orientation of an end.
-        '''
+        """
         end_set = set(ends)
         end_set.update(-x for x in ends)
         visited, stack = set(), [start]
@@ -1902,15 +1907,15 @@ class AssemblyGraph(object):
         return False
 
     def get_best_paths_for_seq(self, start_seg, end_seg, target_length, sequence, scoring_scheme):
-        '''
+        """
         Given a sequence and target length, this function finds the best path from the start
         segment to the end segment.
-        '''
+        """
         # Limit the path search to lengths near the target.
         min_length = int(round(target_length * 0.5))  # TO DO: adjust or make these parameters?
         max_length = int(round(target_length * 1.5))
 
-        max_path_count = 100 # TO DO: make this a parameter?
+        max_path_count = 100  # TO DO: make this a parameter?
 
         # If there are few enough possible paths, we just try aligning to them all. But if there
         # are too many, we use a progressive approach to keep the number down.
@@ -1971,10 +1976,10 @@ class AssemblyGraph(object):
         return paths_and_scores, best_paths
 
     def get_path_availability(self, path):
-        '''
+        """
         Given a path, this function returns the fraction that is available. A segment is considered
         unavailable if it has no more copy depth or has a depth of below 0.5.
-        '''
+        """
         total_bases = 0
         available_bases = 0
         for seg_num in path:
@@ -1995,10 +2000,12 @@ class AssemblyGraph(object):
         else:
             return available_bases / total_bases
 
+
 class Segment(object):
-    '''
+    """
     This hold a graph segment with a number, depth, direction and sequence.
-    '''
+    """
+
     def __init__(self, number, depth, sequence, positive, bridge=None, graph_path=None):
         self.number = number
         self.depth = depth
@@ -2034,10 +2041,11 @@ class Segment(object):
         self.depth /= divisor
 
     def get_fastg_header(self, positive):
-        '''
+        """
         Returns a SPAdes-style FASTG header, without the leading '>' or ending ';'.
-        '''
-        header = 'EDGE_' + str(self.number) + '_length_' + str(len(self.forward_sequence)) + '_cov_' + str(self.depth)
+        """
+        header = 'EDGE_' + str(self.number) + '_length_' + str(
+            len(self.forward_sequence)) + '_cov_' + str(self.depth)
         if not positive:
             header += "'"
         return header
@@ -2049,9 +2057,9 @@ class Segment(object):
         return len(self.forward_sequence) - overlap
 
     def is_homopolymer(self):
-        '''
+        """
         Returns True if the segment's sequence is made up of only one base.
-        '''
+        """
         if len(self.forward_sequence) == 0:
             return False
         first_base = self.forward_sequence[0].lower()
@@ -2061,9 +2069,9 @@ class Segment(object):
         return True
 
     def gfa_segment_line(self):
-        '''
+        """
         Returns an entire S line for GFA output, including the newline.
-        '''
+        """
         s_line = 'S\t'
         s_line += str(self.number) + '\t'
         s_line += self.forward_sequence + '\t'
@@ -2072,18 +2080,18 @@ class Segment(object):
         return s_line
 
     def save_to_fasta(self, fasta_filename):
-        '''
+        """
         Saves the segment's sequence to FASTA file.
-        '''
+        """
         fasta = open(fasta_filename, 'w')
         fasta.write('>' + self.get_fastg_header(True) + '\n')
         fasta.write(add_line_breaks_to_sequence(self.forward_sequence, 60))
         fasta.close()
 
     def get_seg_type_label(self):
-        '''
+        """
         Given a particular segment, this function returns a label string based its type.
-        '''
+        """
         if self.bridge is None:
             return ''
         label = ''
@@ -2091,7 +2099,7 @@ class Segment(object):
             label = 'SPAdes contig bridge'
         elif isinstance(self.bridge, LoopUnrollingBridge):
             label = 'Loop unrolling bridge'
-        else: # LongReadBridge
+        else:  # LongReadBridge
             label = 'Long read bridge'
         if self.graph_path:
             graph_path_str = ', '.join([str(x) for x in self.graph_path])
@@ -2099,32 +2107,33 @@ class Segment(object):
         return label
 
 
-
 def get_error(source, target):
-    '''
+    """
     Returns the relative error from trying to assign the source value to the target value.
     E.g. if source = 1.6 and target = 2.0, the error is 0.2
-    '''
+    """
     if target > 0.0:
         return abs(source - target) / target
     else:
         return float('inf')
 
+
 def within_error_margin(val_1, val_2, error_margin):
-    '''
+    """
     Returns whether val_1 is within the error margin of val_2.
     I.e. val_2 * (1 - em) <= val_1 <= val_2 * (1 + em)
     E.g. if val_2 is 100 and the error margin is 0.3, then val_1 must be in the range of 70 to 130
          (inclusive) for this function to return true.
-    '''
+    """
     return val_1 >= val_2 * (1 - error_margin) and val_1 <= val_2 * (1 + error_margin)
 
+
 def shuffle_into_bins(items, bins, targets):
-    '''
+    """
     Shuffle items into bins in all possible arrangements that satisfy these conditions:
       1) All bins must have at least one item.
       2) Any bins with a specified target must have exactly that number of items.
-    '''
+    """
     arrangements = []
 
     # If there are items not yet in a bin, place the first item in each possible bin and call this
@@ -2153,16 +2162,17 @@ def shuffle_into_bins(items, bins, targets):
     # If all items are in a bin, all bins have at least one item and any bins with a target have
     # the appropriate amount, then add the arrangement to the results.
     elif all(x for x in bins) and \
-         all([not target or target == len(bins[i]) for i, target in enumerate(targets)]):
+            all([not target or target == len(bins[i]) for i, target in enumerate(targets)]):
         arrangements.append(bins)
     return arrangements
 
+
 def get_headers_and_sequences(filename):
-    '''
+    """
     Reads through a SPAdes assembly graph file and returns two lists:
     1) the headers for each segment (without the leading '>')
     2) the sequences for each segment
-    '''
+    """
     headers = []
     sequences = []
     header = ''
@@ -2186,37 +2196,41 @@ def get_headers_and_sequences(filename):
         sequences.append(sequence)
     return headers, sequences
 
+
 def get_unsigned_number_from_header(header):
-    '''
+    """
     Input: a SPAdes FASTG header line
     Output: an int for the segment number (always positive)
-    '''
+    """
     return int(header.split('_')[1])
 
+
 def get_signed_number_from_header(header):
-    '''
+    """
     Input: a SPAdes FASTG header line
     Output: an int for the segment number (always positive)
-    '''
+    """
     number = get_unsigned_number_from_header(header)
     if not is_header_positive(header):
         number *= -1
     return number
 
+
 def is_header_positive(header):
-    '''
+    """
     Input: a SPAdes FASTG header line
     Output: True if the header is for a positive segment, False for a negative segment.
-    '''
+    """
     if header[-1] == ';':
         header = header[:-1]
     return header.split(':')[0][-1] != "'"
 
+
 def get_depth_from_header(header):
-    '''
+    """
     Input: a SPAdes FASTG header line
     Output: The segment's depth
-    '''
+    """
     header = header.split(':')[0]
     if header[-1] == "'":
         header = header[:-1]
@@ -2228,11 +2242,12 @@ def get_depth_from_header(header):
         depth_str = depth_str[:-1]
     return float(depth_str)
 
+
 def get_links_from_header(header):
-    '''
+    """
     Input: a SPAdes FASTG header line
     Output: a tuple of starting segment and a list of ending segments
-    '''
+    """
     if header[-1] == ';':
         header = header[:-1]
     start = get_signed_number_from_header(header)
@@ -2244,11 +2259,12 @@ def get_links_from_header(header):
             end_list.append(get_signed_number_from_header(end))
     return (start, end_list)
 
+
 def build_rc_links_if_necessary(links):
-    '''
+    """
     This function makes sure that every link also has a reverse complement.  E.g. if there is a
     link from 5+ to 7-, there should also be a link from 7+ to 5-.
-    '''
+    """
     new_links = links.copy()
     for start, ends in links.items():
         rc_start = -start
@@ -2260,11 +2276,12 @@ def build_rc_links_if_necessary(links):
                 new_links[rc_end].append(rc_start)
     return new_links
 
+
 def build_reverse_links(links):
-    '''
+    """
     This function builds a dictionary of links going the other way.  I.e. if given a dictionary
     of start to end links, it will return a dictionary of end to start links.
-    '''
+    """
     reverse_links = {}
     for start, ends in links.items():
         for end in ends:
@@ -2273,10 +2290,11 @@ def build_reverse_links(links):
             reverse_links[end].append(start)
     return reverse_links
 
+
 def add_line_breaks_to_sequence(sequence, length):
-    '''
+    """
     Wraps sequences to the defined length.  All resulting sequences end in a line break.
-    '''
+    """
     seq_with_breaks = ''
     while len(sequence) > length:
         seq_with_breaks += sequence[:length] + '\n'
@@ -2286,11 +2304,12 @@ def add_line_breaks_to_sequence(sequence, length):
         seq_with_breaks += '\n'
     return seq_with_breaks
 
+
 def remove_nums_from_links(links, nums_to_remove):
-    '''
+    """
     This function rebuilds a link dictionary excluding the given numbers.
     nums_to_remove is expected to be a list of positive (unsigned) segment numbers.
-    '''
+    """
     new_links = {}
     for n_1, n_2 in links.items():
         if abs(n_1) not in nums_to_remove:
@@ -2299,10 +2318,11 @@ def remove_nums_from_links(links, nums_to_remove):
                 del new_links[n_1]
     return new_links
 
+
 def all_segments_are_one_base(segments):
-    '''
+    """
     This function returns true if all given segments have nothing but one base.
-    '''
+    """
     non_empty_segments = [x for x in segments if x.get_length() > 0]
     if not non_empty_segments:
         return False
@@ -2316,15 +2336,16 @@ def all_segments_are_one_base(segments):
             return False
     return True
 
+
 def is_link_positive(start, end):
-    '''
+    """
     Returns True if the link is 'positive'.  This is a somewhat arbitrary call that allows us to
     only get one link per RC pair.
     A link is positive if:
       1) Both segments are positive
       2) It has no RC link (i.e. is its own RC)
       3) The starting segment has a higher absolute value than the ending segment.
-    '''
+    """
     if start > 0 and end > 0:
         return True
     if start < 0 and end < 0:
@@ -2333,28 +2354,31 @@ def is_link_positive(start, end):
         return True
     return abs(start) > abs(end)
 
+
 def get_sign_string(num):
-    '''
+    """
     Returns '+' for positive numbers (and zero) and '-' for negative numbers.
-    '''
+    """
     if num >= 0:
         return '+'
     else:
         return '-'
 
+
 def int_to_signed_string(num):
-    '''
+    """
     Takes an integer and returns a string with the sign at the end.
     Examples:
       5 -> 5+
       -6 -> 6-
-    '''
+    """
     return str(abs(num)) + get_sign_string(num)
 
+
 def signed_string_to_int(signed_str):
-    '''
+    """
     Takes a string with the sign at the end and returns an integer.
-    '''
+    """
     sign = signed_str[-1]
     num = int(signed_str[:-1])
     if sign == '+':
@@ -2362,68 +2386,72 @@ def signed_string_to_int(signed_str):
     else:
         return -num
 
+
 def insert_num_in_list(lst, val_1, val_2, insert_val):
-    '''
+    """
     If the list lst contains val_1 immediately followed by val_2, the function returns a new list
     with insert_val between them. If the list does not contain that sequence of values, this
     function just returns the original list.
-    '''
+    """
     if len(lst) < 2:
         return lst
     new_list = []
     for i, val in enumerate(lst[:-1]):
-        next_val = lst[i+1]
+        next_val = lst[i + 1]
         new_list.append(val)
         if val == val_1 and next_val == val_2:
             new_list.append(insert_val)
     new_list.append(lst[-1])
     return new_list
 
+
 def find_replace_in_list(lst, pattern, replacement):
-    '''
+    """
     This function looks for the given pattern in the list and if found, replaces it.
     Example: find_replace_in_list([1,5,8,3], [5,8], 7) -> [1,7,3]
     If there are multiple occurrences, it will replace them all.
-    '''
+    """
     replacement_made = True
     while replacement_made:
         replacement_made = False
         for i, _ in enumerate(lst):
-            if lst[i] == pattern[0] and lst[i:i+len(pattern)] == pattern:
+            if lst[i] == pattern[0] and lst[i:i + len(pattern)] == pattern:
                 replacement_made = True
-                lst = lst[:i] + replacement + lst[i+len(pattern):]
+                lst = lst[:i] + replacement + lst[i + len(pattern):]
                 break
     return lst
 
 
 def find_replace_one_val_in_list(lst, val, replacement):
-    '''
+    """
     This function looks for the given value in the list and if found, replaces it.
     Like the above function, but simpler.
-    '''
+    """
     if val not in lst:
         return lst
     return [replacement if x == val else x for x in lst]
 
+
 def split_path(path, seg):
-    '''
+    """
     If val is in the list, it returns multiple lists split at that point, excluding val.
     Sort of like the string split function, but it throws out lists of 1 (because they aren't
     useful as paths).
-    '''
+    """
     return_paths = []
     while seg in path:
         seg_i = path.index(seg)
         return_paths.append(path[:seg_i])
-        path = path[seg_i+1:]
+        path = path[seg_i + 1:]
     return_paths.append(path)
     return_paths = [x for x in return_paths if len(x) > 1]
     return return_paths
 
+
 def split_path_multiple(path, segs):
-    '''
+    """
     Like split_path, but vals is a list of vals, all of which split the list.
-    '''
+    """
     path_parts = [path]
     for seg in segs:
         new_path_parts = []
@@ -2432,16 +2460,17 @@ def split_path_multiple(path, segs):
         path_parts = new_path_parts
     return path_parts
 
+
 def value_from_fractional_index(lst, index):
-    '''
+    """
     Given a list of numbers and a fractional index, this function will interpolate between the
     values.
-    '''
+    """
     if not lst:
         return 0
     if len(lst) == 1:
         return lst[0]
-    
+
     whole_part = int(index)
     if whole_part < 0:
         return lst[0]
@@ -2450,14 +2479,15 @@ def value_from_fractional_index(lst, index):
 
     fractional_part = index - float(whole_part)
     piece_1 = lst[whole_part]
-    piece_2 = lst[whole_part+1]
+    piece_2 = lst[whole_part + 1]
     return piece_1 * (1.0 - fractional_part) + piece_2 * fractional_part
 
+
 def add_to_bridged_sets(start, end, right_bridged, left_bridged):
-    '''
+    """
     Adds the start and end segments to the sets which track bridging direction,
     based on their sign.
-    '''
+    """
     if start > 0:
         right_bridged.add(start)
     else:
@@ -2467,11 +2497,12 @@ def add_to_bridged_sets(start, end, right_bridged, left_bridged):
     else:
         right_bridged.add(-end)
 
+
 def get_overlap_from_gfa_link(filename):
-    '''
+    """
     Looks for the first link line and gets the overlap. Assumes that all overlaps in the graph are
     the same.
-    '''
+    """
     gfa_file = open(filename, 'r')
     for line in gfa_file:
         if line.startswith('L'):
@@ -2480,5 +2511,3 @@ def get_overlap_from_gfa_link(filename):
                 cigar = line_parts[5]
                 return int(cigar[:-1])
     return 0
-
-

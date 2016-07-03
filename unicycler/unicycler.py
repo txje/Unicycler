@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-'''
+"""
 Unicycler - bacterial genome assembler for hybrid read sets
 
 Author: Ryan Wick
 email: rrwick@gmail.com
-'''
+"""
 
 import argparse
 import os
@@ -15,17 +15,18 @@ import random
 from multiprocessing import cpu_count
 from .assembly_graph import AssemblyGraph
 from .bridge import create_spades_contig_bridges, \
-                    create_long_read_bridges, create_loop_unrolling_bridges
+    create_long_read_bridges, create_loop_unrolling_bridges
 from .misc import int_to_str, float_to_str, quit_with_error, get_percentile, \
-                  print_section_header, check_files_and_programs
+    print_section_header, check_files_and_programs
 from .spades_func import get_best_spades_graph
 from .antpath import add_aligning_arguments, fix_up_arguments, semi_global_align_long_reads, \
-                     load_references, load_long_reads, AlignmentScoringScheme, load_sam_alignments
+    load_references, load_long_reads, AlignmentScoringScheme, load_sam_alignments
+
 
 def main():
-    '''
+    """
     Script execution starts here.
-    '''
+    """
     # Fix the random seed so the program produces the same output every time it's run.
     random.seed(0)
 
@@ -95,7 +96,7 @@ def main():
     assembly_graph.save_to_fasta(graph_fasta)
 
     scoring_scheme = AlignmentScoringScheme(args.scores)
-    min_alignment_length = assembly_graph.overlap * 2 # TO DO: make this a parameter?
+    min_alignment_length = assembly_graph.overlap * 2  # TO DO: make this a parameter?
 
     # If all long reads are available now, then we do the entire process in one pass.
     if args.long:
@@ -117,7 +118,7 @@ def main():
         # Conduct alignment if existing alignments are not available.
         else:
             alignments_sam_in_progress = alignments_sam + '.incomplete'
-            allowed_overlap = int(round(assembly_graph.overlap * 1.1)) # TO DO: adjust?
+            allowed_overlap = int(round(assembly_graph.overlap * 1.1))  # TO DO: adjust?
 
             semi_global_align_long_reads(references, graph_fasta, read_dict, read_names,
                                          args.long, temp_alignment_dir, args.graphmap_path,
@@ -133,7 +134,7 @@ def main():
         contained_scores = []
         for read in contained_reads:
             contained_scores += [x.scaled_score for x in read.alignments]
-        min_scaled_score_percentile = 5.0 # TO DO: make this a parameter?
+        min_scaled_score_percentile = 5.0  # TO DO: make this a parameter?
         min_scaled_score = get_percentile(contained_scores, min_scaled_score_percentile)
 
         if verbosity > 1:
@@ -164,7 +165,7 @@ def main():
                                               verbosity)
         file_num += 1
         read_bridged_graph_cleaned = os.path.join(args.out,
-                                                    str(file_num).zfill(3) + '_cleaned.gfa')
+                                                  str(file_num).zfill(3) + '_cleaned.gfa')
         bridged_graph.save_to_gfa(read_bridged_graph_cleaned, verbosity, save_seg_type_info=True,
                                   single_copy_segments=single_copy_segments)
 
@@ -188,12 +189,13 @@ def main():
             # TO DO: APPLY THE BRIDGES TO THE GRAPH
             # TO DO: SAVE THE RESULTS
             # TO DO: ASSESS WHETHER THE PROCESS IS COMPLETE
-            finished = True # TEMP
+            finished = True  # TEMP
+
 
 def get_arguments():
-    '''
+    """
     Parse the command line arguments.
-    '''
+    """
     parser = argparse.ArgumentParser(description='Hybrid Assembler')
 
     parser.add_argument('--short1', required=True, default=argparse.SUPPRESS,
@@ -275,26 +277,28 @@ def get_arguments():
 
     return args
 
-def make_output_directory(outdir, verbosity):
-    '''
+
+def make_output_directory(out_dir, verbosity):
+    """
     Creates the output directory, if it doesn't already exist.
-    '''
+    """
     if verbosity > 1:
         print_section_header('Making output directory', verbosity)
-    if not os.path.exists(outdir):
-        os.makedirs(outdir)
-        print(outdir)
-    elif os.listdir(outdir) and verbosity > 1:
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+        print(out_dir)
+    elif os.listdir(out_dir) and verbosity > 1:
         print('The directory already exists and files may be reused and/or overwritten:')
-        print('  ' + outdir)
+        print('  ' + out_dir)
+
 
 def get_single_copy_segments(graph, verbosity, min_single_copy_length):
-    '''
+    """
     Returns a list of the graph segments determined to be single-copy.
-    '''
+    """
     print_section_header('Finding single-copy segments', verbosity)
     graph.determine_copy_depth(verbosity)
-    single_copy_segments = [x for x in graph.get_single_copy_segments() \
+    single_copy_segments = [x for x in graph.get_single_copy_segments()
                             if x.get_length() >= min_single_copy_length]
 
     if verbosity > 1:
@@ -308,10 +312,11 @@ def get_single_copy_segments(graph, verbosity, min_single_copy_length):
 
     return single_copy_segments
 
+
 def sam_references_match(sam_filename, assembly_graph):
-    '''
+    """
     Returns True if the references in the SAM header exactly match the graph segment numbers.
-    '''
+    """
     sam_file = open(sam_filename, 'r')
     ref_numbers_in_sam = []
     for line in sam_file:

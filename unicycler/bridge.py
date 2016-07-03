@@ -232,9 +232,9 @@ class LongReadBridge(object):
             target_path_length = len(self.consensus_sequence) + (2 * self.graph.overlap)
 
         # For full spans without sequence, we simply need a mean distance.
-        elif full_spans_without_seq:
+        else:
             self.consensus_sequence = ''
-            mean_overlap = int(round(sum(x[0] for x in full_spans_without_seq) / \
+            mean_overlap = int(round(sum(x[0] for x in full_spans_without_seq) /
                                      len(full_spans_without_seq)))
             output += '  mean overlap:            ' + int_to_str(abs(mean_overlap)) + '\n'
             target_path_length = mean_overlap + (2 * self.graph.overlap)
@@ -323,7 +323,7 @@ class LongReadBridge(object):
 
         # The mean alignment score to the start/end segments is positively correlated with quality,
         # so bridges with high quality alignments are rewarded.
-        scaled_score_total = sum(x[2].scaled_score + x[3].scaled_score \
+        scaled_score_total = sum(x[2].scaled_score + x[3].scaled_score
                                  for x in self.full_span_reads)
         mean_scaled_score = scaled_score_total / (2.0 * len(self.full_span_reads))
         align_score_factor = mean_scaled_score / 100.0
@@ -460,7 +460,7 @@ def create_spades_contig_bridges(graph, single_copy_segments, verbosity):
                 contig_bridge_str = ','.join([str(x) for x in contig_bridge])
                 flipped_contig_bridge_str = ','.join([str(x) for x in flipped_contig_bridge])
                 if contig_bridge_str not in bridge_path_set and \
-                                flipped_contig_bridge_str not in bridge_path_set:
+                        flipped_contig_bridge_str not in bridge_path_set:
                     if contig_bridge[0] < 0 and contig_bridge[-1] < 0:
                         bridge_path_set.add(flipped_contig_bridge_str)
                     else:
@@ -552,8 +552,8 @@ def create_loop_unrolling_bridges(graph, single_copy_segments, verbosity):
     # loop's start or end is in a SPAdes contig path along with the middle. That implies that they
     # are on the same piece of DNA and can be unrolled.
     for start, end, middle, repeat in simple_loops:
+        joined = False
         for path in graph.paths.values():
-            joined = False
             flipped_path = [-x for x in reversed(path)]
             if (start in path and middle in path) or \
                     (end in path and middle in path) or \
@@ -561,11 +561,11 @@ def create_loop_unrolling_bridges(graph, single_copy_segments, verbosity):
                     (end in flipped_path and middle in flipped_path):
                 joined = True
                 break
-        if not joined:
-            continue
 
-        # If the code got here, then things look good and we'll make a loop unrolling bridge!
-        bridges.append(LoopUnrollingBridge(graph, start, end, middle, repeat))
+        # If we've found evidence the simply loop is a single piece of DNA, then we'll make a loop
+        # unrolling bridge!
+        if joined:
+            bridges.append(LoopUnrollingBridge(graph, start, end, middle, repeat))
 
     return bridges
 
@@ -699,7 +699,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
         start, end = seg_nums
         for existing_bridge in existing_bridges:
             if isinstance(existing_bridge, LongReadBridge) and \
-                            existing_bridge.start_segment == start and existing_bridge.end_segment == end:
+                    existing_bridge.start_segment == start and existing_bridge.end_segment == end:
                 matching_bridge = existing_bridge
                 break
         else:
@@ -743,7 +743,6 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     # graph paths. We therefore use available threads to make this faster.
     long_read_bridges = [x for x in all_bridges if isinstance(x, LongReadBridge)]
     num_long_read_bridges = len(long_read_bridges)
-    completed_count = 0
     if verbosity == 1:
         print_progress_line(0, num_long_read_bridges, prefix='Bridge: ')
     completed_count = 0

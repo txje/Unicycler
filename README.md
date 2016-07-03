@@ -29,7 +29,7 @@ The long reads, however, can be of any depth. Moderate long read depth should be
 
 Antpath sensitively aligns error-prone long reads (e.g. PacBio or Nanopore) to one or more references in a semi-global manner.
 
-Semi-global alignment allows for unpenalised end gaps, but the alignment will continue until one of the two sequences ends. This includes cases where the two sequences overlap and cases where one sequence is contained within the other:
+Semi-global alignment does not penalise end gaps, but the alignment will continue until one of the two sequences ends. This includes cases where the two sequences overlap and cases where one sequence is contained within the other:
 
 ```
   AAAAA        AAAAAAAAAAA         AAAAAAAA     AAAAAAAA

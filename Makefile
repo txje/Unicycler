@@ -9,7 +9,7 @@
 #   make CXXFLAGS="-Werror -g3" (build with particular compiler flags)
 
 
-# CXX and CXXFLAGS can be overriden by the user.
+# CXX and CXXFLAGS can be overridden by the user.
 CXX         ?= g++-5
 CXXFLAGS    ?= -Wall -Wextra -pedantic -march=native
 

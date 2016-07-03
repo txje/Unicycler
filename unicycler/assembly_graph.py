@@ -6,7 +6,6 @@ email: rrwick@gmail.com
 """
 
 from collections import deque
-import time, random
 from .misc import int_to_str, float_to_str, weighted_average, weighted_average_list, \
     print_section_header, get_num_agreement, reverse_complement
 from .bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge, \
@@ -144,7 +143,6 @@ class AssemblyGraph(object):
                 if name:
                     names.append(name)
                     segment_strings.append(segment_string)
-                    name = ''
                     segment_string = ''
                 name = line
             else:
@@ -357,7 +355,7 @@ class AssemblyGraph(object):
                 if segment.depth < whole_graph_cutoff or segment.depth < component_cutoff:
                     if self.dead_end_count(seg_num) > 0 or \
                             self.all_segments_below_depth(component, whole_graph_cutoff) or \
-                                    self.dead_end_change_if_deleted(seg_num) <= 0:
+                            self.dead_end_change_if_deleted(seg_num) <= 0:
                         segment_nums_to_remove.append(seg_num)
         self.remove_segments(segment_nums_to_remove)
 
@@ -913,7 +911,7 @@ class AssemblyGraph(object):
         half_median_frac = bases_near_half_median / total_graph_bases
         double_median_frac = bases_near_double_median / total_graph_bases
         if half_median_frac > double_median_frac and \
-                        half_median_frac >= min_half_median_for_diploid:
+                half_median_frac >= min_half_median_for_diploid:
             single_copy_depth = median_depth / 2.0
         else:
             single_copy_depth = median_depth
@@ -1018,7 +1016,7 @@ class AssemblyGraph(object):
             self.copy_depths[best_segment_num] = best_new_depths
             if verbosity > 1:
                 print('Merged copies:  ',
-                      ' + '.join([str(x) + ' (' + float_to_str(self.segments[x].depth, 2) + 'x)' \
+                      ' + '.join([str(x) + ' (' + float_to_str(self.segments[x].depth, 2) + 'x)'
                                   for x in best_source_nums]), '->',
                       best_segment_num,
                       '(' + float_to_str(self.segments[best_segment_num].depth, 2) + 'x)')
@@ -1049,7 +1047,7 @@ class AssemblyGraph(object):
             # connections which are lacking copy depth.
             copy_depths = self.copy_depths[num]
             bins = [[]] * len(connections)
-            targets = [None if x not in self.copy_depths else len(self.copy_depths[x]) \
+            targets = [None if x not in self.copy_depths else len(self.copy_depths[x])
                        for x in connections]
 
             # For cases where there are many copy depths being distributed to many segments, there
@@ -1063,9 +1061,9 @@ class AssemblyGraph(object):
                 continue
 
             lowest_error = float('inf')
-            for arrangement in arrangements:
+            for i, arrangement in enumerate(arrangements):
                 error = self.get_error_for_multiple_segments_and_depths(connections, arrangement)
-                if error < lowest_error:
+                if i == 0 or error < lowest_error:
                     lowest_error = error
                     best_arrangement = arrangement
             if lowest_error < error_margin:
@@ -1075,7 +1073,7 @@ class AssemblyGraph(object):
                         print('Split copies:   ', num,
                               '(' + float_to_str(self.segments[num].depth, 2) + 'x) ->',
                               ' + '.join([str(x) + ' (' +
-                                          float_to_str(self.segments[x].depth, 2) + 'x)' \
+                                          float_to_str(self.segments[x].depth, 2) + 'x)'
                                           for x in connections]))
                     return 1
         return 0
@@ -1127,7 +1125,8 @@ class AssemblyGraph(object):
         target_depth = self.segments[segment_number].depth
         return self.scale_copy_depths(target_depth, source_depths)
 
-    def scale_copy_depths(self, target_depth, source_depths):
+    @staticmethod
+    def scale_copy_depths(target_depth, source_depths):
         """
         This function takes the source depths and scales them so their sum matches the target
         depth.  It returns the scaled depths and the error.
@@ -1198,7 +1197,7 @@ class AssemblyGraph(object):
         """
         total_bases = 0
         for segment in self.segments.values():
-            if segment.depth >= min_depth and segment.depth <= max_depth:
+            if min_depth <= segment.depth <= max_depth:
                 total_bases += segment.get_length()
         return total_bases
 
@@ -1282,8 +1281,7 @@ class AssemblyGraph(object):
                 continue
 
             if len(pieces) == 1 and \
-                            pieces[0] == [bridge.start_segment] + bridge.graph_path + [
-                        bridge.end_segment]:
+                    pieces[0] == [bridge.start_segment] + bridge.graph_path + [bridge.end_segment]:
                 bridge.bridge_sequence = self.get_path_sequence(bridge.graph_path)
                 bridge = self.apply_entire_bridge(bridge, verbosity, right_bridged, left_bridged,
                                                   seg_nums_used_in_bridges, single_copy_nums)
@@ -1297,7 +1295,7 @@ class AssemblyGraph(object):
 
             # Remove duplicates, while preserving order.
             seen = set()
-            seg_nums_used_in_bridges = [x for x in seg_nums_used_in_bridges \
+            seg_nums_used_in_bridges = [x for x in seg_nums_used_in_bridges
                                         if not (x in seen or seen.add(x))]
         return seg_nums_used_in_bridges
 
@@ -1345,7 +1343,7 @@ class AssemblyGraph(object):
             if seg_num in single_copy_seg_nums:
                 continue
             if not (self.search(seg_num, single_copy_seg_nums) and
-                        self.search(-seg_num, single_copy_seg_nums)):
+                    self.search(-seg_num, single_copy_seg_nums)):
                 segment_nums_to_remove.append(seg_num)
         if verbosity > 1 and segment_nums_to_remove:
             print('\nRemoved unbridging segments:',
@@ -1380,7 +1378,7 @@ class AssemblyGraph(object):
                     unsigned_path = [abs(x) for x in path]
                     if len(path) > 1 and \
                             all(x in seg_nums_used_in_bridges for x in unsigned_path) and \
-                                    self.dead_end_change_if_path_deleted(path) <= 0:
+                            self.dead_end_change_if_path_deleted(path) <= 0:
                         self.remove_segments(unsigned_path)
                         removed_segments += unsigned_path
                         break
@@ -1554,7 +1552,7 @@ class AssemblyGraph(object):
                         if len(final_paths) > max_path_count:
                             raise TooManyPaths
                 elif self.get_path_length(working_path) <= max_length and \
-                                last_seg in self.forward_links:
+                        last_seg in self.forward_links:
                     for next_seg in self.forward_links[last_seg]:
                         max_allowed_count = self.max_path_segment_count(next_seg, start_end_depth)
                         count_so_far = working_path.count(next_seg) + working_path.count(-next_seg)
@@ -1740,7 +1738,6 @@ class AssemblyGraph(object):
         """
         total_length = self.get_total_length()
         max_v = max(total_length, 1000000)
-        max_v_len = len(int_to_str(max_v))
 
         summary = ''
         if file:
@@ -1830,9 +1827,9 @@ class AssemblyGraph(object):
         for component in single_segment_components:
             only_segment = component[0]
             if only_segment in self.forward_links and \
-                            self.forward_links[only_segment] == [only_segment] and \
-                            only_segment in self.reverse_links and \
-                            self.reverse_links[only_segment] == [only_segment]:
+                    self.forward_links[only_segment] == [only_segment] and \
+                    only_segment in self.reverse_links and \
+                    self.reverse_links[only_segment] == [only_segment]:
                 completed_components.append(component)
         return completed_components
 
@@ -1853,7 +1850,7 @@ class AssemblyGraph(object):
             if potential in simple_path or -potential in simple_path:
                 break
             if len(self.reverse_links[potential]) == 1 and \
-                            self.reverse_links[potential][0] == simple_path[-1]:
+                    self.reverse_links[potential][0] == simple_path[-1]:
                 simple_path.append(potential)
             else:
                 break
@@ -1867,7 +1864,7 @@ class AssemblyGraph(object):
             if potential in simple_path or -potential in simple_path:
                 break
             if len(self.forward_links[potential]) == 1 and \
-                            self.forward_links[potential][0] == simple_path[0]:
+                    self.forward_links[potential][0] == simple_path[0]:
                 simple_path.insert(0, potential)
             else:
                 break
@@ -1922,7 +1919,7 @@ class AssemblyGraph(object):
         try:
             paths = self.all_paths(start_seg, end_seg, min_length, target_length, max_length,
                                    max_path_count)
-        except TooManyPaths as e:
+        except TooManyPaths as _:
             paths = self.progressive_path_find(start_seg, end_seg, min_length, target_length,
                                                max_length, sequence, scoring_scheme)
 
@@ -2094,7 +2091,6 @@ class Segment(object):
         """
         if self.bridge is None:
             return ''
-        label = ''
         if isinstance(self.bridge, SpadesContigBridge):
             label = 'SPAdes contig bridge'
         elif isinstance(self.bridge, LoopUnrollingBridge):
@@ -2125,7 +2121,7 @@ def within_error_margin(val_1, val_2, error_margin):
     E.g. if val_2 is 100 and the error margin is 0.3, then val_1 must be in the range of 70 to 130
          (inclusive) for this function to return true.
     """
-    return val_1 >= val_2 * (1 - error_margin) and val_1 <= val_2 * (1 + error_margin)
+    return val_2 * (1 - error_margin) <= val_1 <= val_2 * (1 + error_margin)
 
 
 def shuffle_into_bins(items, bins, targets):
@@ -2186,7 +2182,6 @@ def get_headers_and_sequences(filename):
             if header:
                 headers.append(header)
                 sequences.append(sequence)
-                header = ''
                 sequence = ''
             header = line[1:]
         else:
@@ -2257,7 +2252,7 @@ def get_links_from_header(header):
         ends = pieces[1].split(',')
         for end in ends:
             end_list.append(get_signed_number_from_header(end))
-    return (start, end_list)
+    return start, end_list
 
 
 def build_rc_links_if_necessary(links):
@@ -2314,7 +2309,7 @@ def remove_nums_from_links(links, nums_to_remove):
     for n_1, n_2 in links.items():
         if abs(n_1) not in nums_to_remove:
             new_links[n_1] = [x for x in n_2 if abs(x) not in nums_to_remove]
-            if new_links[n_1] == []:
+            if not new_links[n_1]:
                 del new_links[n_1]
     return new_links
 

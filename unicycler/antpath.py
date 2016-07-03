@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-'''
+"""
 Antpath - a sensitive semi-global long read aligner
 
 This is a script to align error-prone long reads (e.g. PacBio or Nanopore) to one or more
-references in a semi-global manner. Semi-global alignment allows for unpenalised end gaps, but the
+references in a semi-global manner. Semi-global alignment does not penalise end gaps, but the
 alignment will continue until one of the two sequences ends. This includes cases where the two
 sequences overlap and cases where one sequence is contained within the other:
 
@@ -24,7 +24,7 @@ Output: SAM file of alignments
 
 Author: Ryan Wick
 email: rrwick@gmail.com
-'''
+"""
 
 import subprocess
 import sys
@@ -36,11 +36,11 @@ from multiprocessing.dummy import Pool as ThreadPool
 from multiprocessing import cpu_count
 import threading
 from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
-                  get_mean_and_st_dev, print_progress_line, print_section_header, \
-                  weighted_average_list
+    get_mean_and_st_dev, print_progress_line, print_section_header, \
+    weighted_average_list
 from .cpp_function_wrappers import semi_global_alignment, new_kmer_positions, add_kmer_positions, \
-                                   delete_all_kmer_positions, \
-                                   get_random_sequence_alignment_mean_and_std_dev
+    delete_all_kmer_positions, \
+    get_random_sequence_alignment_mean_and_std_dev
 from .read_ref import load_references, load_long_reads
 from .alignment import Alignment, AlignmentScoringScheme
 
@@ -65,10 +65,11 @@ EXPECTED_SLOPE = 1.0
 TOTAL_REF_LENGTH = 10000
 TOTAL_READ_LENGTH = 10000
 
+
 def main():
-    '''
+    """
     If this script is run on its own, execution starts here.
-    '''
+    """
     # Fix the random seed so the program produces the same output every time it's run.
     random.seed(0)
 
@@ -90,10 +91,11 @@ def main():
                                  VERBOSITY)
     sys.exit(0)
 
+
 def get_arguments():
-    '''
+    """
     Specifies the command line arguments required by the script.
-    '''
+    """
     parser = argparse.ArgumentParser(description='Antpath - a sensitive semi-global long read '
                                                  'aligner',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -104,7 +106,7 @@ def get_arguments():
                         help='FASTQ or FASTA file of long reads')
     parser.add_argument('--sam', type=str, required=True, default=argparse.SUPPRESS,
                         help='SAM file of resulting alignments')
-    
+
     add_aligning_arguments(parser, False)
 
     parser.add_argument('--threads', type=int, required=False, default=argparse.SUPPRESS,
@@ -122,10 +124,11 @@ def get_arguments():
 
     return args
 
+
 def add_aligning_arguments(parser, hide_help):
-    '''
+    """
     Adds the aligning-specific arguments to the parser.
-    '''
+    """
     temp_dir_help = argparse.SUPPRESS if hide_help else 'Temp directory for working files ' + \
                                                         '("PID" will be replaced with the ' + \
                                                         'process ID)'
@@ -177,11 +180,12 @@ def add_aligning_arguments(parser, hide_help):
     parser.add_argument('--kmer', type=int, required=False, default=7,
                         help=kmer_help)
 
+
 def fix_up_arguments(args):
-    '''
+    """
     Repairs issues with the arguments, like not existing. We don't use None/False as a default
     in add_argument because it makes the help text look weird.
-    '''
+    """
     try:
         args.low_score
     except AttributeError:
@@ -205,23 +209,24 @@ def fix_up_arguments(args):
     # same directory.
     args.temp_dir = args.temp_dir.replace('PID', str(os.getpid()))
 
+
 def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, reads_fastq,
                                  temp_dir, graphmap_path, threads, scoring_scheme,
                                  low_score_threshold, use_graphmap, keep_bad, kmer_size,
                                  min_align_length, sam_filename, full_command, allowed_overlap,
                                  verbosity=None):
-    '''
+    """
     This function does the primary work of this module: aligning long reads to references in an
     end-gap-free, semi-global manner. It returns a list of Read objects which contain their
     alignments.
     If seqan_all is True, then every Alignment object will be refined by using Seqan.
     If seqan_all is False, then only the overlap alignments and a small set of long contained
     alignments will be run through Seqan.
-    '''
+    """
     if verbosity:
         global VERBOSITY
         VERBOSITY = verbosity
-        
+
     # If the user supplied a low score threshold, we use that. Otherwise, we'll use the median
     # score minus three times the MAD.
     print_section_header('Determining low-score threshold', VERBOSITY)
@@ -239,8 +244,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
             print('Random alignment mean score: ' + float_to_str(rand_mean, 2))
             print('         standard deviation: ' + float_to_str(rand_std_dev, 2, rand_mean))
             print()
-            print('Low score threshold = ' + float_to_str(rand_mean, 2) + ' + ' + \
-                  str(std_devs_over_mean) + ' x ' +  float_to_str(rand_std_dev, 2) + ' = ' + \
+            print('Low score threshold = ' + float_to_str(rand_mean, 2) + ' + ' +
+                  str(std_devs_over_mean) + ' x ' + float_to_str(rand_std_dev, 2) + ' = ' +
                   float_to_str(low_score_threshold, 2))
 
     reference_dict = {x.name: x for x in references}
@@ -347,9 +352,9 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
                     sam_file.write(alignment.get_sam_line())
             sam_file.close()
 
-        # OPTIONAL TO DO: for reads which are completed, I could still try to refine GraphMap
-        #                 alignments using my Seqan code. I'm not sure if it's worth it, so I
-        #                 should give it a try to see what kind of difference it makes.
+            # OPTIONAL TO DO: for reads which are completed, I could still try to refine GraphMap
+            #                 alignments using my Seqan code. I'm not sure if it's worth it, so I
+            #                 should give it a try to see what kind of difference it makes.
 
     # If we aren't using GraphMap as a first pass, then we align every read using Seqan.
     else:
@@ -405,7 +410,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
 
     # We're done with the C++ KmerPositions object, so delete it now.
     delete_all_kmer_positions(kmer_positions_ptr)
-    
+
     if VERBOSITY == 1:
         print()
 
@@ -438,11 +443,12 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
 
     return read_dict
 
+
 def print_graphmap_summary_table(graphmap_alignments, percent_id_mean, percent_id_std_dev,
                                  score_mean, score_std_dev):
-    '''
+    """
     Prints a small table showing some details about the GraphMap alignments.
-    '''
+    """
     print_section_header('Graphmap alignment summary', VERBOSITY)
     print('Total alignments:', int_to_str(len(graphmap_alignments)))
     print()
@@ -474,14 +480,15 @@ def print_graphmap_summary_table(graphmap_alignments, percent_id_mean, percent_i
     print()
     print('Current mean reference length / read length:', float_to_str(EXPECTED_SLOPE, 5))
 
+
 def extend_to_semi_global(alignments, scoring_scheme):
-    '''
+    """
     This function returns truly semi-global alignments made from the input alignments.
-    '''
+    """
     if VERBOSITY > 3 and alignments:
         print_section_header('Extending alignments', VERBOSITY, last_newline=False)
 
-    allowed_missing_bases = 100 # TO DO: MAKE THIS A PARAMETER
+    allowed_missing_bases = 100  # TO DO: MAKE THIS A PARAMETER
     semi_global_alignments = []
     for alignment in alignments:
         total_missing_bases = alignment.get_total_missing_bases()
@@ -508,10 +515,11 @@ def extend_to_semi_global(alignments, scoring_scheme):
 
     return semi_global_alignments
 
+
 def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scoring_scheme):
-    '''
+    """
     This function runs GraphMap for the given inputs and produces a SAM file at the given location.
-    '''
+    """
     graphmap_version = get_graphmap_version(graphmap_path)
 
     # Build the GraphMap command. There is a bit of difference if we're using a version before or
@@ -570,10 +578,11 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
     if not os.path.isfile(sam_file):
         quit_with_error('GraphMap failure')
 
+
 def get_graphmap_version(graphmap_path):
-    '''
+    """
     Returns the version of GraphMap.
-    '''
+    """
     command = [graphmap_path, '-h']
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = process.communicate()
@@ -591,11 +600,12 @@ def get_graphmap_version(graphmap_path):
     version = '.'.join(version.split('.')[0:2])
     return float(version)
 
+
 def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme, threads,
                         verbosity):
-    '''
+    """
     This function returns a list of Alignment objects from the given SAM file.
-    '''
+    """
     print_section_header('Loading alignments', verbosity)
 
     # Load the SAM lines into a list.
@@ -612,7 +622,7 @@ def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme,
         print_progress_line(0, num_alignments)
 
     # If single-threaded, just do the work in a simple loop.
-    threads = 1 # TEMP
+    threads = 1  # TEMP
     sam_alignments = []
     if threads == 1:
         for line in sam_lines:
@@ -651,6 +661,7 @@ def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme,
 
     return sam_alignments
 
+
 # def chunkify(full_list, pieces):
 #     '''
 #     http://stackoverflow.com/questions/2130016/
@@ -666,22 +677,23 @@ def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme,
 #         alignments.append(Alignment(line, read_dict, reference_dict, scoring_scheme))
 
 def seqan_alignment_one_arg(all_args):
-    '''
+    """
     This is just a one-argument version of seqan_alignment to make it easier to use that function
     in a thread pool.
-    '''
+    """
     read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold, keep_bad, \
         kmer_size, min_align_length, sam_filename, allowed_overlap, used_graphmap = all_args
     return seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
                            low_score_threshold, keep_bad, kmer_size, min_align_length,
                            sam_filename, allowed_overlap, used_graphmap)
 
+
 def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold,
                     keep_bad, kmer_size, min_align_length, sam_filename, allowed_overlap,
                     used_graphmap):
-    '''
+    """
     Aligns a single read against all reference sequences using Seqan.
-    '''
+    """
     start_time = time.time()
     output = '\n'
     if VERBOSITY > 2:
@@ -754,13 +766,14 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
     update_expected_slope(read, low_score_threshold)
     return output
 
+
 def group_reads_by_fraction_aligned(read_dict):
-    '''
+    """
     Groups reads into three lists:
       1) Fully aligned
       2) Partially aligned
       3) Unaligned
-    '''
+    """
     fully_aligned_reads = []
     partially_aligned_reads = []
     unaligned_reads = []
@@ -774,11 +787,12 @@ def group_reads_by_fraction_aligned(read_dict):
             partially_aligned_reads.append(read)
     return fully_aligned_reads, partially_aligned_reads, unaligned_reads
 
+
 def get_auto_score_threshold(scoring_scheme, std_devs_over_mean):
-    '''
+    """
     This function determines a good low score threshold for the alignments. To do this it examines
     the distribution of scores acquired by aligning random sequences.
-    '''
+    """
     # TO DO: make the random alignments run in separate threads to be a bit faster
     mean, std_dev = get_random_sequence_alignment_mean_and_std_dev(100, 10000, scoring_scheme)
     threshold = mean + (std_devs_over_mean * std_dev)
@@ -788,14 +802,15 @@ def get_auto_score_threshold(scoring_scheme, std_devs_over_mean):
     threshold = max(threshold, 50.0)
     return threshold, mean, std_dev
 
+
 def update_expected_slope(read, low_score_threshold):
-    '''
+    """
     This function updates the EXPECTED_SLOPE and ALIGNMENTS_CONTRIBUTING_TO_EXPECTED_SLOPE global
     variables using a read, but only if the read's alignment looks good.
-    '''
-    if len(read.alignments) == 1 and \
-       read.alignments[0].read_start_pos == 0 and read.alignments[0].read_end_gap == 0 and \
-       read.alignments[0].scaled_score > low_score_threshold:
+    """
+    if len(read.alignments) == 1 and read.alignments[0].read_start_pos == 0 and \
+            read.alignments[0].read_end_gap == 0 and \
+            read.alignments[0].scaled_score > low_score_threshold:
         global EXPECTED_SLOPE
         global TOTAL_REF_LENGTH
         global TOTAL_READ_LENGTH

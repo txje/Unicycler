@@ -1,32 +1,32 @@
-'''
+"""
 Classes for reads and references, and related functions.
 
 Author: Ryan Wick
 email: rrwick@gmail.com
-'''
+"""
 
 import random
 import gzip
 from .misc import quit_with_error, print_progress_line, get_nice_header, get_compression_type, \
-                  print_section_header, get_sequence_file_type
+    print_section_header, get_sequence_file_type
+
 
 def load_references(fasta_filename, verbosity):
-    '''
+    """
     This function loads in sequences from a FASTA file and returns a list of Reference objects.
-    '''
+    """
     references = []
     total_bases = 0
     print_section_header('Loading references', verbosity)
     try:
-        file_type = get_sequence_file_type(fasta_filename)
+        if get_sequence_file_type(fasta_filename) != 'FASTA':
+            quit_with_error(fasta_filename + ' is not in FASTA format')
     except ValueError:
-        quit_with_error(fasta_filename + ' is not in FASTA format')
-    if file_type != 'FASTA':
         quit_with_error(fasta_filename + ' is not in FASTA format')
 
     if get_compression_type(fasta_filename) == 'gz':
         open_func = gzip.open
-    else: # plain text
+    else:  # plain text
         open_func = open
 
     if verbosity > 0:
@@ -43,7 +43,7 @@ def load_references(fasta_filename, verbosity):
         line = line.strip()
         if not line:
             continue
-        if line.startswith('>'): # Header line = start of new contig
+        if line.startswith('>'):  # Header line = start of new contig
             if name:
                 references.append(Reference(name, sequence))
                 total_bases += len(sequence)
@@ -53,7 +53,6 @@ def load_references(fasta_filename, verbosity):
                     if progress_rounded_down > last_progress:
                         print_progress_line(len(references), num_refs, total_bases)
                         last_progress = progress_rounded_down
-                name = ''
                 sequence = ''
             name = get_nice_header(line[1:])
         else:
@@ -71,12 +70,13 @@ def load_references(fasta_filename, verbosity):
 
     return references
 
+
 def load_long_reads(filename, verbosity):
-    '''
+    """
     This function loads in long reads from a FASTQ file and returns a dictionary where key = read
     name and value = Read object. It also returns a list of read names, in the order they are in
     the file.
-    '''
+    """
     # Read files can be either FASTA or FASTQ and optionally gzipped.
     try:
         file_type = get_sequence_file_type(filename)
@@ -84,7 +84,7 @@ def load_long_reads(filename, verbosity):
         quit_with_error(filename + ' is not in either FASTA or FASTQ format')
     if get_compression_type(filename) == 'gz':
         open_func = gzip.open
-    else: # plain text
+    else:  # plain text
         open_func = open
 
     print_section_header('Loading reads', verbosity)
@@ -95,8 +95,8 @@ def load_long_reads(filename, verbosity):
     last_progress = 0.0
 
     if file_type == 'FASTQ':
-        num_reads = sum(1 for line in open_func(filename)) // 4
-    else: # file_type == 'FASTA'
+        num_reads = sum(1 for _ in open_func(filename)) // 4
+    else:  # file_type == 'FASTA'
         num_reads = sum(1 for line in open_func(filename) if line.startswith('>'))
     if not num_reads:
         quit_with_error('There are no read sequences in ' + filename)
@@ -121,7 +121,7 @@ def load_long_reads(filename, verbosity):
                     last_progress = progress_rounded_down
         fastq.close()
 
-    else: # file_type == 'FASTA'
+    else:  # file_type == 'FASTA'
         fasta = open_func(filename, 'r')
         name = ''
         sequence = ''
@@ -141,7 +141,6 @@ def load_long_reads(filename, verbosity):
                         if progress_rounded_down > last_progress:
                             print_progress_line(len(read_dict), num_reads, total_bases)
                             last_progress = progress_rounded_down
-                    name = ''
                     sequence = ''
                 name = get_nice_header(line[1:])
             else:
@@ -160,11 +159,12 @@ def load_long_reads(filename, verbosity):
 
     return read_dict, read_names
 
+
 def simplify_ranges(ranges):
-    '''
+    """
     Collapses overlapping ranges together. Input ranges are tuples of (start, end) in the normal
     Python manner where the end isn't included.
-    '''
+    """
     fixed_ranges = []
     for int_range in ranges:
         if int_range[0] > int_range[1]:
@@ -190,20 +190,22 @@ def simplify_ranges(ranges):
         prev_depth = depth
     return combined
 
+
 def range_is_contained(test_range, other_ranges):
-    '''
+    """
     Returns True if test_range is entirely contained within any range in other_ranges.
-    '''
+    """
     start, end = test_range
     for other_range in other_ranges:
         if other_range[0] <= start and other_range[1] >= end:
             return True
     return False
 
+
 def range_overlap(test_range, other_ranges):
-    '''
+    """
     Returns the size of the overlap (integer) between the two ranges.
-    '''
+    """
     start, end = test_range
     max_overlap = 0
     for other_range in other_ranges:
@@ -211,11 +213,11 @@ def range_overlap(test_range, other_ranges):
     return max_overlap
 
 
-
 class Reference(object):
-    '''
+    """
     This class holds a reference sequence: just a name and a nucleotide sequence.
-    '''
+    """
+
     def __init__(self, name, sequence):
         self.name = name
         self.sequence = sequence.upper()
@@ -227,16 +229,17 @@ class Reference(object):
             self.number = 0
 
     def get_length(self):
-        '''
+        """
         Returns the sequence length.
-        '''
+        """
         return len(self.sequence)
 
 
 class Read(object):
-    '''
+    """
     This class holds a long read, e.g. from PacBio or Oxford Nanopore.
-    '''
+    """
+
     def __init__(self, name, sequence, qualities):
         self.name = name
         self.sequence = sequence.upper()
@@ -254,16 +257,16 @@ class Read(object):
         return self.name + ' (' + str(len(self.sequence)) + ' bp)'
 
     def get_length(self):
-        '''
+        """
         Returns the sequence length.
-        '''
+        """
         return len(self.sequence)
 
     def needs_seqan_realignment(self, low_score_threshold):
-        '''
+        """
         This function returns True or False based on whether a read was nicely aligned by GraphMap
         or needs to be realigned with Seqan.
-        '''
+        """
         # Either zero or more than one alignments result in realignment.
         if len(self.alignments) != 1:
             return True
@@ -274,10 +277,10 @@ class Read(object):
                 only_alignment.scaled_score < low_score_threshold)
 
     def remove_conflicting_alignments(self, allowed_overlap):
-        '''
+        """
         This function removes alignments from the read which are likely to be spurious or
         redundant.
-        '''
+        """
         self.alignments = sorted(self.alignments, reverse=True,
                                  key=lambda x: (x.raw_score, random.random()))
         kept_alignments = []
@@ -309,40 +312,40 @@ class Read(object):
         self.alignments = kept_alignments
 
     def remove_low_score_alignments(self, low_score_threshold):
-        '''
+        """
         This function removes alignments with identity below the cutoff.
-        '''
+        """
         self.alignments = [x for x in self.alignments if x.scaled_score >= low_score_threshold]
 
     def remove_short_alignments(self, min_align_length):
-        '''
+        """
         This function removes alignments with identity below the cutoff.
-        '''
-        self.alignments = [x for x in self.alignments \
+        """
+        self.alignments = [x for x in self.alignments
                            if x.get_aligned_ref_length() >= min_align_length]
 
     def get_fastq(self):
-        '''
+        """
         Returns a string for the read in FASTQ format. It contains four lines and ends in a line
         break.
-        '''
+        """
         return '@' + self.name + '\n' + \
                self.sequence + '\n' + \
                '+' + self.name + '\n' + \
                self.qualities + '\n'
 
     def get_fasta(self):
-        '''
+        """
         Returns a string for the read in FASTA format. It contains two lines and ends in a line
         break.
-        '''
+        """
         return '>' + self.name + '\n' + \
                self.sequence + '\n'
 
     def get_descriptive_string(self):
-        '''
+        """
         Returns a multi-line string that describes the read and its alignments.
-        '''
+        """
         header = self.name + ' (' + str(len(self.sequence)) + ' bp)'
         line = '-' * len(header)
         description = header + '\n' + line + '\n'
@@ -354,26 +357,26 @@ class Read(object):
         return description + '\n\n'
 
     def get_fraction_aligned(self):
-        '''
+        """
         This function returns the fraction of the read which is covered by any of the read's
         alignments.
-        '''
-        read_ranges = [x.read_start_end_positive_strand() \
+        """
+        read_ranges = [x.read_start_end_positive_strand()
                        for x in self.alignments]
         read_ranges = simplify_ranges(read_ranges)
         aligned_length = sum([x[1] - x[0] for x in read_ranges])
         return aligned_length / len(self.sequence)
 
     def get_reference_bases_aligned(self):
-        '''
+        """
         This function returns the number of bases aligned with respect to the reference.
-        '''
+        """
         return sum([x.get_aligned_ref_length() for x in self.alignments])
 
     def has_one_contained_alignment(self):
-        '''
+        """
         Returns true if this read aligned entirely within a reference (i.e. no read end gaps).
-        '''
+        """
         return len(self.alignments) == 1 and \
-               self.alignments[0].read_start_pos == 0 and \
-               self.alignments[0].read_end_gap == 0
+            self.alignments[0].read_start_pos == 0 and \
+            self.alignments[0].read_end_gap == 0

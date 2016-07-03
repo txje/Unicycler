@@ -1,39 +1,40 @@
 #!/usr/bin/env python3
-'''
+"""
 Scrutinate - a long read assembly checker
 
 Author: Ryan Wick
 email: rrwick@gmail.com
-'''
+"""
 
 import sys
 import re
-import imp
+import importlib.util
 import os
 import string
 import argparse
 import random
-from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap,\
-                  get_nice_header, reverse_complement, print_progress_line, print_section_header
+from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
+    get_nice_header, reverse_complement, print_progress_line, print_section_header
 from .read_ref import load_references, load_long_reads
 from .alignment import AlignmentScoringScheme
 from .cpp_function_wrappers import simulate_depths, get_random_sequence_alignment_error_rates
-from .antpath import semi_global_align_long_reads, add_aligning_arguments, fix_up_arguments,\
-                     load_sam_alignments
+from .antpath import semi_global_align_long_reads, add_aligning_arguments, fix_up_arguments, \
+    load_sam_alignments
 
-VERBOSITY = 0 # Controls how much the script prints to the screen
-CONSOLE_WIDTH = 40 # The width of many things printed to stdout
+VERBOSITY = 0  # Controls how much the script prints to the screen
+CONSOLE_WIDTH = 40  # The width of many things printed to stdout
+
 
 def main():
-    '''
+    """
     Script execution starts here.
-    '''
+    """
     # Fix the random seed so the program produces the same output every time it's run.
     random.seed(0)
 
     args = get_arguments()
     must_perform_alignment = not os.path.isfile(args.sam)
-    full_command = ' '.join(sys.argv)    
+    full_command = ' '.join(sys.argv)
     check_file_exists(args.ref)
     check_file_exists(args.reads)
     if must_perform_alignment and not args.no_graphmap:
@@ -60,8 +61,8 @@ def main():
 
     count_depth_and_errors_per_base(references, reference_dict, alignments)
     high_error_rate, very_high_error_rate, random_seq_error_rate, mean_error_rate = \
-                    determine_thresholds(scoring_scheme, references, alignments,
-                                         args.threads, args.depth_p_val, args.error_rate_threshold)
+        determine_thresholds(scoring_scheme, references, alignments,
+                             args.threads, args.depth_p_val, args.error_rate_threshold)
     count_depth_and_errors_per_window(references, args.error_window_size, args.depth_window_size,
                                       high_error_rate, very_high_error_rate)
 
@@ -85,10 +86,11 @@ def main():
 
     sys.exit(0)
 
+
 def get_arguments():
-    '''
+    """
     Specifies the command line arguments required by the script.
-    '''
+    """
     parser = argparse.ArgumentParser(description='Long read assembly checker',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
@@ -152,8 +154,8 @@ def get_arguments():
     if args.error_rate_threshold >= 1.0 or args.error_rate_threshold <= 0.0:
         quit_with_error('--error_rate_threshold must be greater than 0.0 and less than 1.0')
 
-    if args.html:
-        check_plotly_exists()
+    if args.html and not importlib.util.find_spec('plotly'):
+        quit_with_error('plotly not found - please install plotly package to produce html plots')
 
     # Add the process ID to the default temp directory so multiple instances can run at once in the
     # same directory.
@@ -161,10 +163,11 @@ def get_arguments():
 
     return args
 
+
 def prepare_output_dirs(output_prefix):
-    '''
+    """
     Ensures the output prefix is nicely formatted and any necessary directories are made.
-    '''
+    """
     if output_prefix is None:
         return None
     if os.path.isdir(output_prefix) and not output_prefix.endswith('/'):
@@ -177,20 +180,11 @@ def prepare_output_dirs(output_prefix):
             os.makedirs(directory)
     return output_prefix
 
-def check_plotly_exists():
-    '''
-    Checks to see if the plotly library is available. If so, it's imported. If not, quit with an
-    error.
-    '''
-    try:
-        imp.find_module('plotly')
-    except ImportError:
-        quit_with_error('plotly not found - please install plotly package to produce html plots')
 
 def get_scoring_scheme_from_sam(sam_filename):
-    '''
+    """
     Looks for the 'SC' tag in the SAM file to get the alignment scoring scheme.
-    '''
+    """
     sam_file = open(sam_filename, 'r')
     for line in sam_file:
         line = line.strip()
@@ -209,11 +203,12 @@ def get_scoring_scheme_from_sam(sam_filename):
 
     return AlignmentScoringScheme('1,-1,-1,-1')
 
+
 def get_random_sequence_error_rate(scoring_scheme):
-    '''
+    """
     Returns the expected number of errors per reference base for an alignment of random sequences
     using the given scoring scheme.
-    '''
+    """
     # I've precalculated the error rate for some typical scoring schemes.
     scoring_scheme_str = str(scoring_scheme)
     if scoring_scheme_str == '1,0,0,0':
@@ -222,27 +217,27 @@ def get_random_sequence_error_rate(scoring_scheme):
         return 0.506547
     elif scoring_scheme_str == '1,-1,-1,-1':
         return 0.489942
-    elif scoring_scheme_str == '5,-4,-8,-6': # GraphMap
+    elif scoring_scheme_str == '5,-4,-8,-6':   # GraphMap
         return 0.496997
-    elif scoring_scheme_str == '5,-6,-10,0': # BLASR
+    elif scoring_scheme_str == '5,-6,-10,0':   # BLASR
         return 0.585428
-    elif scoring_scheme_str == '2,-5,-2,-1': # BWA-MEM
+    elif scoring_scheme_str == '2,-5,-2,-1':   # BWA-MEM
         return 0.52616
-    elif scoring_scheme_str == '1,-3,-5,-2': # CUSHAW2 / blastn-short
+    elif scoring_scheme_str == '1,-3,-5,-2':   # CUSHAW2 / blastn-short
         return 0.482431
-    elif scoring_scheme_str == '5,-11,-2,-4': # proovread
+    elif scoring_scheme_str == '5,-11,-2,-4':  # proovread
         return 0.571232
-    elif scoring_scheme_str == '3,-6,-5,-2': # my aligner
+    elif scoring_scheme_str == '3,-6,-5,-2':   # my aligner
         return 0.477499
-    elif scoring_scheme_str == '2,-3,-5,-2': # blastn / dc-megablast
+    elif scoring_scheme_str == '2,-3,-5,-2':   # blastn / dc-megablast
         return 0.471655
-    elif scoring_scheme_str == '1,-2,0,0': # megablast
+    elif scoring_scheme_str == '1,-2,0,0':     # megablast
         return 0.571199
-    elif scoring_scheme_str == '0,-6,-5,-3': # Bowtie2 end-to-end
+    elif scoring_scheme_str == '0,-6,-5,-3':   # Bowtie2 end-to-end
         return 0.466259
-    elif scoring_scheme_str == '2,-6,-5,-3': # Bowtie2 local
+    elif scoring_scheme_str == '2,-6,-5,-3':   # Bowtie2 local
         return 0.468592
-    elif scoring_scheme_str == '1,-4,-6,-1': # BWA
+    elif scoring_scheme_str == '1,-4,-6,-1':   # BWA
         return 0.523119
 
     # If the scoring scheme doesn't match a previously known one, we will use the C++ code to get
@@ -251,11 +246,12 @@ def get_random_sequence_error_rate(scoring_scheme):
         error_rate_str = get_random_sequence_alignment_error_rates(1000, 100, scoring_scheme)
         return float(error_rate_str.split('\n')[1].split('\t')[8])
 
+
 def count_depth_and_errors_per_base(references, reference_dict, alignments):
-    '''
+    """
     Counts up the depth and errors for each base of each reference and stores the counts in the
     Reference objects.
-    '''
+    """
     print_section_header('Counting depth and errors', VERBOSITY)
     if VERBOSITY > 0:
         print_progress_line(0, len(alignments))
@@ -283,7 +279,7 @@ def count_depth_and_errors_per_base(references, reference_dict, alignments):
         for j in alignment.ref_deletion_positions:
             ref.deletion_counts[j] += 1
         if VERBOSITY > 0:
-            print_progress_line(i+1, len(alignments))
+            print_progress_line(i + 1, len(alignments))
 
     if VERBOSITY > 0:
         print()
@@ -311,10 +307,10 @@ def count_depth_and_errors_per_base(references, reference_dict, alignments):
 
 def count_depth_and_errors_per_window(references, er_window_size, depth_window_size,
                                       high_error_rate, very_high_error_rate):
-    '''
+    """
     Counts up the depth and errors for each window of each reference and stores the counts in the
     Reference objects.
-    '''
+    """
     for ref in references:
         ref_length = ref.get_length()
 
@@ -329,7 +325,6 @@ def count_depth_and_errors_per_window(references, er_window_size, depth_window_s
             window_start = int(round(ref.er_window_size * i))
             window_end = int(round(ref.er_window_size * (i + 1)))
             ref.er_window_starts.append(window_start)
-            this_window_size = window_end - window_start
             this_window_pos_with_error_rate = 0
 
             total_window_error_rate = None
@@ -350,7 +345,7 @@ def count_depth_and_errors_per_window(references, er_window_size, depth_window_s
                         current_high_error_region = (window_start, window_end)
                     else:
                         current_high_error_region = (current_high_error_region[0], window_end)
-                elif window_error_rate < high_error_rate: # error rate is not high
+                elif window_error_rate < high_error_rate:  # error rate is not high
                     if current_high_error_region is not None:
                         ref.high_error_regions.append(current_high_error_region)
                         current_high_error_region = None
@@ -385,18 +380,18 @@ def count_depth_and_errors_per_window(references, er_window_size, depth_window_s
                     current_low_depth_region = (window_start, window_end)
                 else:
                     current_low_depth_region = (current_low_depth_region[0], window_end)
-            elif window_depth > ref.low_depth_cutoff: # depth is not low
+            elif window_depth > ref.low_depth_cutoff:  # depth is not low
                 if current_low_depth_region is not None:
                     ref.low_depth_regions.append(current_low_depth_region)
                     current_low_depth_region = None
 
             # Check for high depth regions.
             if window_depth > ref.very_high_depth_cutoff:
-                if current_low_depth_region is None:
+                if current_high_depth_region is None:
                     current_high_depth_region = (window_start, window_end)
                 else:
                     current_high_depth_region = (current_high_depth_region[0], window_end)
-            elif window_depth < ref.high_depth_cutoff: # depth is not high
+            elif window_depth < ref.high_depth_cutoff:  # depth is not high
                 if current_high_depth_region is not None:
                     ref.high_depth_regions.append(current_high_depth_region)
                     current_high_depth_region = None
@@ -425,12 +420,13 @@ def count_depth_and_errors_per_window(references, er_window_size, depth_window_s
             ref.max_window_error_rate = max(not_none_error_rates)
             ref.mean_window_error_rate = sum(not_none_error_rates) / len(not_none_error_rates)
 
+
 def determine_thresholds(scoring_scheme, references, alignments, threads, depth_p_val,
                          error_rate_fraction):
-    '''
+    """
     This function sets thresholds for error rate and depth. Error rate thresholds are set once for
     all references, while depth thresholds are per-reference.
-    '''
+    """
     print_section_header('Setting error and depth thresholds', VERBOSITY)
 
     # Find the mean of all error rates.
@@ -449,10 +445,10 @@ def determine_thresholds(scoring_scheme, references, alignments, threads, depth_
 
     # The mean error rate should not be as big as the random alignment error rate.
     if mean_error_rate >= random_seq_error_rate:
-        quit_with_error('the mean error rate (' + float_to_str(mean_error_rate * 100.0, 2) + \
-                        '%) is too high and exceeds the randoml alignment error rate (' + \
+        quit_with_error('the mean error rate (' + float_to_str(mean_error_rate * 100.0, 2) +
+                        '%) is too high and exceeds the randoml alignment error rate (' +
                         float_to_str(random_seq_error_rate * 100.0, 2) + '%)')
-    
+
     difference = random_seq_error_rate - mean_error_rate
     high_error_rate = mean_error_rate + (error_rate_fraction * 0.5 * difference)
     very_high_error_rate = mean_error_rate + (error_rate_fraction * difference)
@@ -471,10 +467,10 @@ def determine_thresholds(scoring_scheme, references, alignments, threads, depth_
 
 
 def determine_depth_thresholds(ref, alignments, threads, depth_p_val_1, depth_p_val_2):
-    '''
+    """
     This function determines read depth thresholds by simulating a random distribution of reads.
-    '''
-    alignment_lengths = [x.ref_end_pos - x.ref_start_pos for x in alignments \
+    """
+    alignment_lengths = [x.ref_end_pos - x.ref_start_pos for x in alignments
                          if x.ref.name == ref.name]
     ref_length = ref.get_length()
 
@@ -502,6 +498,7 @@ def get_low_depth_cutoff(min_depth_dist, p_val):
             return depth
     return 0
 
+
 def get_high_depth_cutoff(max_depth_dist, p_val):
     dist_sum = 0.0
     for depth, fraction in max_depth_dist:
@@ -510,10 +507,11 @@ def get_high_depth_cutoff(max_depth_dist, p_val):
             return depth
     return max_depth_dist[-1][0]
 
+
 def depths_to_capture_fraction(depth_distribution, fraction):
-    '''
+    """
     Returns a min and max depth which capture at least the given fraction of the distribution.
-    '''
+    """
     depths = list(depth_distribution.keys())
     proportions = list(depth_distribution.values())
     mode_depth = depths[proportions.index(max(proportions))]
@@ -535,27 +533,29 @@ def depths_to_capture_fraction(depth_distribution, fraction):
         elif fraction_from_next_high > fraction_from_next_low:
             high_cutoff = next_possible_high
             fraction_captured += fraction_from_next_high
-        elif fraction_from_next_high > 0.0: # they are equal but non-zero.
+        elif fraction_from_next_high > 0.0:  # they are equal but non-zero.
             high_cutoff = next_possible_high
             fraction_captured += fraction_from_next_high
-        else: # they are both zero.
+        else:  # they are both zero.
             if next_possible_low >= 0:
                 low_cutoff = next_possible_low
             high_cutoff = next_possible_high
     return low_cutoff, high_cutoff
 
+
 def get_mean(num_list):
-    '''
+    """
     This function returns the mean of the given list of numbers.
-    '''
+    """
     if not num_list:
         return None
     return sum(num_list) / len(num_list)
 
+
 def produce_console_output(references):
-    '''
+    """
     Write a summary of the results to std out.
-    '''
+    """
     for ref in references:
         print()
         print('Results: ' + ref.name)
@@ -563,23 +563,23 @@ def produce_console_output(references):
         ref_length = ref.get_length()
 
         print(lr_justify('Length:', int_to_str(ref_length) + ' bp'))
-        print(lr_justify('Alignments:', int_to_str(ref.alignment_count))) 
+        print(lr_justify('Alignments:', int_to_str(ref.alignment_count)))
         print()
         min_er = ref.min_window_error_rate
-        print(lr_justify('Min error rate:', 'n/a') if min_er is None else \
+        print(lr_justify('Min error rate:', 'n/a') if min_er is None else
               lr_justify('Min error rate:', (float_to_str(min_er * 100.0, 1) + '%')))
         mean_er = ref.mean_window_error_rate
-        print(lr_justify('Mean error rate:', 'n/a') if mean_er is None else \
+        print(lr_justify('Mean error rate:', 'n/a') if mean_er is None else
               lr_justify('Mean error rate:', (float_to_str(mean_er * 100.0, 1) + '%')))
         max_er = ref.max_window_error_rate
-        print(lr_justify('Max error rate:', 'n/a') if max_er is None else \
+        print(lr_justify('Max error rate:', 'n/a') if max_er is None else
               lr_justify('Max error rate:', (float_to_str(max_er * 100.0, 1) + '%')))
         print()
 
         if ref.high_error_regions:
             print('High error regions:')
             for i, high_error_region in enumerate(ref.high_error_regions):
-                print('  ' + str(i+1) + ') ' + int_to_str(high_error_region[0]) +
+                print('  ' + str(i + 1) + ') ' + int_to_str(high_error_region[0]) +
                       ' bp to ' + int_to_str(high_error_region[1]) + ' bp')
         else:
             print(lr_justify('High error regions:', 'none'))
@@ -593,7 +593,7 @@ def produce_console_output(references):
         if ref.low_depth_regions:
             print('Low depth regions:')
             for i, low_depth_region in enumerate(ref.low_depth_regions):
-                print(str(i+1) + ') ' + int_to_str(low_depth_region[0]) +
+                print(str(i + 1) + ') ' + int_to_str(low_depth_region[0]) +
                       ' bp to ' + int_to_str(low_depth_region[1]) + ' bp')
             print()
         else:
@@ -602,29 +602,32 @@ def produce_console_output(references):
         if ref.high_depth_regions:
             print('High depth regions:')
             for i, high_depth_region in enumerate(ref.high_depth_regions):
-                print('   ' + str(i+1) + ') ' + int_to_str(high_depth_region[0]) + ' bp to ' + 
+                print('   ' + str(i + 1) + ') ' + int_to_str(high_depth_region[0]) + ' bp to ' +
                       int_to_str(high_depth_region[1]) + ' bp')
         else:
             print(lr_justify('High depth regions:', 'none'))
         print()
 
+
 def lr_justify(str_1, str_2):
-    '''
+    """
     Concatenates the two strings with enough spaces in the middle to make the
     whole string at least CONSOLE_WIDTH in width.
-    '''
+    """
     return str_1 + (' ' * (CONSOLE_WIDTH - len(str_1) - len(str_2))) + str_2
 
+
 def clean_str_for_filename(filename):
-    '''
+    """
     This function removes characters from a string which would not be suitable in a filename.
     It also turns spaces into underscores, because filenames with spaces can occasionally cause
     issues.
     http://stackoverflow.com/questions/295135/turn-a-string-into-a-valid-filename-in-python
-    '''
+    """
     valid_chars = "-_.() %s%s" % (string.ascii_letters, string.digits)
     filename_valid_chars = ''.join(c for c in filename if c in valid_chars)
     return filename_valid_chars.replace(' ', '_')
+
 
 def add_ref_name_to_output_prefix(ref, output_prefix, ending):
     clean_ref_name = clean_str_for_filename(ref.name)
@@ -633,10 +636,11 @@ def add_ref_name_to_output_prefix(ref, output_prefix, ending):
     else:
         return output_prefix + '_' + clean_ref_name + ending
 
+
 def produce_window_tables(references, window_tables_prefix):
-    '''
+    """
     Write tables of depth and error rates per reference window.
-    '''
+    """
     print_section_header('Saving window tables', VERBOSITY)
 
     for ref in references:
@@ -651,7 +655,7 @@ def produce_window_tables(references, window_tables_prefix):
             if i + 1 == window_count:
                 window_end = ref.get_length()
             else:
-                window_end = ref.window_starts[i+1]
+                window_end = ref.window_starts[i + 1]
             table.write('\t'.join([str(ref.window_starts[i]),
                                    str(window_end),
                                    str(ref.window_depths[i]),
@@ -659,10 +663,11 @@ def produce_window_tables(references, window_tables_prefix):
         if VERBOSITY > 0:
             print(window_table_filename)
 
+
 def produce_base_tables(references, base_tables_prefix):
-    '''
+    """
     Write tables of depth and error counts per reference base.
-    '''
+    """
     print_section_header('Saving base tables', VERBOSITY)
     for ref in references:
         base_table_filename = add_ref_name_to_output_prefix(ref, base_tables_prefix, '.txt')
@@ -673,7 +678,7 @@ def produce_base_tables(references, base_tables_prefix):
                                'Deletions',
                                'Insertions']) + '\n')
         for i in range(ref.get_length()):
-            table.write('\t'.join([str(i+1),
+            table.write('\t'.join([str(i + 1),
                                    str(ref.depths[i]),
                                    str(ref.mismatch_counts[i]),
                                    str(ref.deletion_counts[i]),
@@ -681,15 +686,18 @@ def produce_base_tables(references, base_tables_prefix):
         if VERBOSITY > 0:
             print(base_table_filename)
 
+
 def produce_html_report(references, html_filename, high_error_rate, very_high_error_rate,
                         random_seq_error_rate, full_command, ref_filename, sam_filename,
                         scoring_scheme, alignments, mean_error_rate, er_window_size,
                         depth_window_size, depth_p_val, error_rate_fraction):
-    '''
+    """
     Write html files containing plots of results.
-    '''
+    """
     print_section_header('Saving html plots', VERBOSITY)
+    # noinspection PyPackageRequirements
     import plotly.offline as py
+    # noinspection PyPackageRequirements
     import plotly.graph_objs as go
 
     if not html_filename.endswith('.htm') and not html_filename.endswith('.html'):
@@ -750,9 +758,9 @@ def produce_html_report(references, html_filename, high_error_rate, very_high_er
 
 def get_error_rate_plotly_plot(ref, py, go, include_javascript, high_error_rate,
                                very_high_error_rate, random_seq_error_rate, report_width):
-    '''
+    """
     Returns the HTML div for the error rate plot.
-    '''
+    """
     half_er_window_size = ref.er_window_size / 2
     x = []
     y = []
@@ -786,7 +794,7 @@ def get_error_rate_plotly_plot(ref, py, go, include_javascript, high_error_rate,
                                   x1=max_x, y1=max_y,
                                   line=dict(width=0), fillcolor=red)]
 
-    layout = dict(autosize=False, width=report_width-15, height=300, hovermode='closest',
+    layout = dict(autosize=False, width=report_width - 15, height=300, hovermode='closest',
                   margin=go.Margin(l=40, r=10, b=10, t=10),
                   xaxis=dict(range=[0, max_x], rangeslider=dict(), type='linear'),
                   yaxis=dict(ticksuffix='%', range=[0.0, max_y]), shapes=error_rate_background)
@@ -796,10 +804,11 @@ def get_error_rate_plotly_plot(ref, py, go, include_javascript, high_error_rate,
            py.plot(fig, output_type='div', include_plotlyjs=include_javascript, show_link=False) + \
            '</div></div>'
 
+
 def get_depth_plotly_plot(ref, py, go, include_javascript, report_width):
-    '''
+    """
     Returns the HTML div for the error rate plot.
-    '''
+    """
     half_depth_window_size = ref.depth_window_size / 2
     x = []
     y = []
@@ -841,7 +850,7 @@ def get_depth_plotly_plot(ref, py, go, include_javascript, report_width):
                                  x1=max_x, y1=max_y, line=dict(width=0), fillcolor=red))
 
     # Create the depth plot.
-    layout = dict(autosize=False, width=report_width-10, height=300, hovermode='closest',
+    layout = dict(autosize=False, width=report_width - 10, height=300, hovermode='closest',
                   margin=go.Margin(l=40, r=10, b=10, t=10),
                   xaxis=dict(range=[0, max_x], rangeslider=dict(), type='linear'),
                   yaxis=dict(ticksuffix='x', range=[0.0, max_y]), shapes=depth_background)
@@ -851,23 +860,27 @@ def get_depth_plotly_plot(ref, py, go, include_javascript, report_width):
            py.plot(fig, output_type='div', include_plotlyjs=include_javascript, show_link=False) + \
            '</div></div>'
 
+
 def get_plot_background_colours():
-    '''
+    """
     Returns strings describing the red, yellow and green (in that order) used for the plot
     backgrounds.
-    '''
+    """
     red = 'rgba(255, 0, 0, 0.1)'
     yellow = 'rgba(255, 200, 0, 0.1)'
     green = 'rgba(50, 200, 50, 0.1)'
     return red, yellow, green
+
 
 def get_html_start(report_width):
     return '<!DOCTYPE html>\n<html>\n' + \
            get_html_style(report_width) + \
            '<body><div class="content">\n'
 
+
 def get_html_end():
     return '</div></body>\n</html>\n'
+
 
 def get_html_style(report_width):
     style = '<style>\n'
@@ -912,12 +925,13 @@ def get_html_style(report_width):
     style += '</style>\n'
     return style
 
+
 def get_report_html_table(ref_filename, sam_filename, full_command, directory, scoring_scheme,
                           references, alignments, random_seq_error_rate, very_high_error_rate,
                           mean_error_rate, er_window_size, depth_window_size, error_rate_fraction):
-    '''
+    """
     Produces the table of information at the top of the report, not specific to any one reference.
-    '''
+    """
     table = '<table width="100%">\n'
     table += '  <col width="30%">\n'
 
@@ -985,12 +999,11 @@ def get_report_html_table(ref_filename, sam_filename, full_command, directory, s
              '<td>' + float_to_str(random_seq_error_rate * 100.0, 1) + '%' + \
              '</td></tr>\n'
 
-    very_high_error_rate_help = int_to_str(er_window_size) + ' bp windows exceeding this ' + \
-                                'threshold are counted as high error regions. This is ' + \
-                                'indicated in the plots with the colour red. ' + \
-                                'This value was set to an intermediate value (' + \
-                                float_to_str(error_rate_fraction * 100.0, 1) + '%) ' + \
-                                'between the mean error rate and random alignment error rate.'
+    very_high_error_rate_help = int_to_str(er_window_size) + ' bp windows exceeding this ' \
+        'threshold are counted as high error regions. This is indicated in the plots with the ' \
+        'colour red. This value was set to an intermediate value (' + \
+        float_to_str(error_rate_fraction * 100.0, 1) + '%) between the mean error rate and ' \
+        'random alignment error rate.'
     table += '  <tr title="' + very_high_error_rate_help + '">' + \
              '<td>High error threshold:</td>' + \
              '<td>' + float_to_str(very_high_error_rate * 100.0, 1) + '%' + \
@@ -1004,9 +1017,9 @@ def get_report_html_table(ref_filename, sam_filename, full_command, directory, s
              '<td>' + int_to_str(er_window_size) + ' bp' + \
              '</td></tr>\n'
 
-    depth_window_size_help = 'The size of the sliding window used to make the depth plots. ' + \
-                          'I.e. the plotted read depths are averages over a reference window ' + \
-                          'of this size.'
+    depth_window_size_help = 'The size of the sliding window used to make the depth plots. ' \
+                             'I.e. the plotted read depths are averages over a reference window ' \
+                             'of this size.'
     table += '  <tr title="' + depth_window_size_help + '">' + \
              '<td>Read depth window size:</td>' + \
              '<td>' + int_to_str(depth_window_size) + ' bp' + \
@@ -1020,7 +1033,7 @@ def get_report_html_table(ref_filename, sam_filename, full_command, directory, s
              '<td>' + int_to_str(total_high_error_regions) + \
              '</td></tr>\n'
 
-    total_depth_problem_regions = sum([len(x.low_depth_regions) + len(x.high_depth_regions) \
+    total_depth_problem_regions = sum([len(x.low_depth_regions) + len(x.high_depth_regions)
                                        for x in references])
     total_depth_problems_help = 'The total count of depth problem regions for all ' + \
                                 'references. A value of 0 is ideal, but depth problems do not ' + \
@@ -1032,6 +1045,7 @@ def get_report_html_table(ref_filename, sam_filename, full_command, directory, s
 
     table += '</table>\n'
     return table
+
 
 def get_reference_html_table(ref):
     table = '<table width="100%">\n'
@@ -1052,10 +1066,11 @@ def get_reference_html_table(ref):
     table += '</table>\n'
     return table
 
+
 def get_reference_error_rate_html_table(ref, er_window_size):
-    '''
+    """
     Produces an HTML table summarising the error rate for the reference.
-    '''
+    """
     window_str = int_to_str(er_window_size) + ' bp'
     table = '<br>\n'
     table += '<table width="100%">\n'
@@ -1066,7 +1081,7 @@ def get_reference_error_rate_html_table(ref, er_window_size):
     table += '  <tr title="' + min_error_rate_help + '">' + \
              '<td>Min error rate:</td><td>'
     table += 'n/a' if ref.min_window_error_rate is None \
-                   else float_to_str(ref.min_window_error_rate * 100.0, 1)
+        else float_to_str(ref.min_window_error_rate * 100.0, 1)
     table += '%</td></tr>\n'
 
     mean_error_rate_help = 'The mean error rate for all ' + window_str + ' windows in this ' + \
@@ -1074,15 +1089,15 @@ def get_reference_error_rate_html_table(ref, er_window_size):
     table += '  <tr title="' + mean_error_rate_help + '">' + \
              '<td>Mean error rate:</td><td>'
     table += 'n/a' if ref.mean_window_error_rate is None \
-                   else float_to_str(ref.mean_window_error_rate * 100.0, 1)
+        else float_to_str(ref.mean_window_error_rate * 100.0, 1)
     table += '%</td></tr>\n'
 
-    max_error_rate_help = 'The highest error rate of any ' + window_str + ' window in this ' + \
+    max_error_rate_help = 'The highest error rate of any ' + window_str + ' window in this ' \
                           'reference.'
     table += '  <tr title="' + max_error_rate_help + '">' + \
              '<td>Max error rate:</td><td>'
     table += 'n/a' if ref.max_window_error_rate is None \
-                   else float_to_str(ref.max_window_error_rate * 100.0, 1)
+        else float_to_str(ref.max_window_error_rate * 100.0, 1)
     table += '%</td></tr>\n'
 
     table += '</table>\n'
@@ -1090,28 +1105,29 @@ def get_reference_error_rate_html_table(ref, er_window_size):
     table += '<br>\n'
     table += '<table width="100%">\n'
     if ref.high_error_regions:
-        high_error_regions_help = 'These regions of the reference exceed the high error rate ' + \
+        high_error_regions_help = 'These regions of the reference exceed the high error rate ' \
                                   'threshold.'
         table += '  <tr title="' + high_error_regions_help + '">' + \
                  '<th>High error regions</th></tr>'
         for i, high_error_region in enumerate(ref.high_error_regions):
             table += '      <tr title="' + high_error_regions_help + '">' + \
-                     '<td>' + int_to_str(i+1) + ')  ' + \
+                     '<td>' + int_to_str(i + 1) + ')  ' + \
                      int_to_str(high_error_region[0]) + ' bp to ' + \
                      int_to_str(high_error_region[1]) + ' bp</td></tr>\n'
     else:
-        no_high_error_regions_help = 'No ' + window_str + ' windows in this reference exceed the high error rate ' + \
-                                     'threshold.'
+        no_high_error_regions_help = 'No ' + window_str + ' windows in this reference exceed the ' \
+                                     'high error rate threshold.'
         table += '  <tr title="' + no_high_error_regions_help + '">' + \
                  '<th>No high error regions</th></tr>'
     table += '</table>\n'
 
     return table
 
+
 def get_reference_depth_html_table(ref, depth_window_size, depth_p_val):
-    '''
+    """
     Produces an HTML table summarising the read depth for the reference.
-    '''
+    """
     window_str = int_to_str(depth_window_size) + ' bp'
     table = '<br>\n'
     table += '<table width="100%">\n'
@@ -1135,23 +1151,21 @@ def get_reference_depth_html_table(ref, depth_window_size, depth_p_val):
              float_to_str(ref.max_window_depth, 1) + 'x' + \
              '</td></tr>\n'
 
-    low_depth_help = window_str + ' windows with depth below this threshold are counted as ' + \
-                     'low depth regions. This is indicated in the plots with the colour red. ' + \
-                     'This value was set using the p-value of ' + float_to_str(depth_p_val, 3) + \
-                     '. When reads are placed randomly, only ' + \
-                     float_to_str(depth_p_val * 100.0, 1) + '% of trials contain a lower ' + \
-                     'minimum depth.'
+    low_depth_help = window_str + ' windows with depth below this threshold are counted as low ' \
+        'low depth regions. This is indicated in the plots with the colour red. This value was ' \
+        'set using the p-value of ' + float_to_str(depth_p_val, 3) + '. When reads are placed ' \
+        'randomly, only ' + float_to_str(depth_p_val * 100.0, 1) + '% of trials contain a lower ' \
+        'minimum depth.'
     table += '  <tr title="' + low_depth_help + '">' + \
              '<td>Low depth threshold:</td><td>' + \
              float_to_str(ref.very_low_depth_cutoff, 1) + 'x' + \
              '</td></tr>\n'
 
-    high_depth_help = window_str + ' windows with depth above this threshold are counted as ' + \
-                      'high depth regions. This is indicated in the plots with the colour red. ' + \
-                     'This value was set using the p-value of ' + float_to_str(depth_p_val, 3) + \
-                     '. When reads are placed randomly, only ' + \
-                     float_to_str(depth_p_val * 100.0, 1) + '% of trials contain a higher ' + \
-                     'maximum depth.'
+    high_depth_help = window_str + ' windows with depth above this threshold are counted as high ' \
+        'high depth regions. This is indicated in the plots with the colour red. This value was ' \
+        'set using the p-value of ' + float_to_str(depth_p_val, 3) + '. When reads are placed ' \
+        'randomly, only ' + float_to_str(depth_p_val * 100.0, 1) + '% of trials contain a higher ' \
+        'maximum depth.'
     table += '  <tr title="' + high_depth_help + '">' + \
              '<td>High depth threshold:</td><td>' + \
              float_to_str(ref.very_high_depth_cutoff, 1) + 'x' + \
@@ -1168,7 +1182,7 @@ def get_reference_depth_html_table(ref, depth_window_size, depth_p_val):
                  '<th>Low depth regions</th></tr>'
         for i, low_depth_region in enumerate(ref.low_depth_regions):
             table += '      <tr title="' + low_depth_regions_help + '">' + \
-                     '<td>' + int_to_str(i+1) + ')  ' + \
+                     '<td>' + int_to_str(i + 1) + ')  ' + \
                      int_to_str(low_depth_region[0]) + ' bp to ' + \
                      int_to_str(low_depth_region[1]) + ' bp</td></tr>\n'
     else:
@@ -1187,7 +1201,7 @@ def get_reference_depth_html_table(ref, depth_window_size, depth_p_val):
                  '<th>High depth regions</th></tr>'
         for i, high_depth_region in enumerate(ref.high_depth_regions):
             table += '      <tr title="' + high_depth_regions_help + '">' + \
-                     '<td>' + int_to_str(i+1) + ')  ' + \
+                     '<td>' + int_to_str(i + 1) + ')  ' + \
                      int_to_str(high_depth_region[0]) + ' bp to ' + \
                      int_to_str(high_depth_region[1]) + ' bp</td></tr>\n'
     else:
@@ -1201,9 +1215,10 @@ def get_reference_depth_html_table(ref, depth_window_size, depth_p_val):
 
 
 class Alignment(object):
-    '''
+    """
     This class describes an alignment between a long read and a reference.
-    '''
+    """
+
     def __init__(self, sam_line, read_dict, reference_dict, scoring_scheme):
 
         # Grab the important parts of the alignment from the SAM line.
@@ -1217,7 +1232,7 @@ class Alignment(object):
         if read_name not in read_dict:
             print()
             quit_with_error('the read ' + read_name + ' is in the SAM file but not in the '
-                            'provided reads')
+                                                      'provided reads')
 
         self.read = read_dict[read_name]
         read_len = self.read.get_length()
@@ -1229,7 +1244,7 @@ class Alignment(object):
         if ref_name not in reference_dict:
             print()
             quit_with_error('the reference ' + ref_name + ' is in the SAM file but not in the '
-                            'provided references')
+                                                          'provided references')
 
         self.ref = reference_dict[get_nice_header(sam_parts[2])]
         ref_len = self.ref.get_length()
@@ -1269,13 +1284,13 @@ class Alignment(object):
 
             # Insertions are only counted as a single error, regardless of size.
             if cigar_type == 'I':
-                self.ref_insertion_positions += [ref_i] 
+                self.ref_insertion_positions += [ref_i]
                 read_i += cigar_count
             elif cigar_type == 'D':
-                for i in range(cigar_count):
-                    self.ref_deletion_positions.append(ref_i + i)
+                for j in range(cigar_count):
+                    self.ref_deletion_positions.append(ref_i + j)
                 ref_i += cigar_count
-            else: # match/mismatch
+            else:  # match/mismatch
                 for _ in range(cigar_count):
                     # If all is good with the CIGAR, then we should never end up with a sequence
                     # index out of the sequence range. But a CIGAR error (which has occurred in
@@ -1295,36 +1310,38 @@ class Alignment(object):
         else:
             return_str += 'strand: +), '
         return_str += self.ref.name + ' (' + str(self.ref_start_pos) + '-' + \
-                      str(self.ref_end_pos) + ')'
+            str(self.ref_end_pos) + ')'
         error_count = len(self.ref_mismatch_positions) + len(self.ref_deletion_positions) + \
-                      len(self.ref_insertion_positions)
+            len(self.ref_insertion_positions)
         return_str += ', errors = ' + int_to_str(error_count)
         return return_str
 
-    def get_start_soft_clips(self, cigar_parts):
-        '''
+    @staticmethod
+    def get_start_soft_clips(cigar_parts):
+        """
         Returns the number of soft-clipped bases at the start of the alignment.
-        '''
+        """
         if cigar_parts[0][-1] == 'S':
             return int(cigar_parts[0][:-1])
         else:
             return 0
 
-    def get_end_soft_clips(self, cigar_parts):
-        '''
+    @staticmethod
+    def get_end_soft_clips(cigar_parts):
+        """
         Returns the number of soft-clipped bases at the start of the alignment.
-        '''
+        """
         if cigar_parts[-1][-1] == 'S':
             return int(cigar_parts[-1][:-1])
         else:
             return 0
 
     def read_start_end_positive_strand(self):
-        '''
+        """
         This function returns the read start/end coordinates for the positive strand of the read.
         For alignments on the positive strand, this is just the normal start/end. But for
         alignments on the negative strand, the coordinates are flipped to the other side.
-        '''
+        """
         if not self.rev_comp:
             return self.read_start_pos, self.read_end_pos
         else:
@@ -1334,18 +1351,19 @@ class Alignment(object):
 
 
 def get_ref_shift_from_cigar_part(cigar_type, cigar_count):
-    '''
+    """
     This function returns how much a given cigar moves on a reference.
     Examples:
       * '5M' returns 5
       * '5S' returns 0
       * '5D' returns 5
       * '5I' returns 0
-    '''
+    """
     if cigar_type == 'M' or cigar_type == 'D':
         return cigar_count
     else:
         return 0
+
 
 def get_depth_min_and_max_distributions(read_lengths, reference_length, iterations, threads):
     distribution_str = simulate_depths(read_lengths, reference_length, iterations, threads)

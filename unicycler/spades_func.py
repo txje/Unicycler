@@ -1,26 +1,26 @@
-'''
+"""
 Functions relating to SPAdes assembly steps.
 
 Author: Ryan Wick
 email: rrwick@gmail.com
-'''
+"""
 
 import os
 import subprocess
 import gzip
 import shutil
 from .misc import print_section_header, round_to_nearest_odd, get_compression_type, int_to_str, \
-                  quit_with_error
+    quit_with_error
 from .assembly_graph import AssemblyGraph
 
 
 def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, spades_path,
                           threads, keep_temp, kmer_count, min_kmer_frac, max_kmer_frac):
-    '''
+    """
     This function tries a SPAdes assembly at different kmers and returns the best.
     'The best' is defined as the smallest dead-end count after low-depth filtering.  If multiple
     graphs have the same dead-end count (e.g. zero!) then the highest kmer is used.
-    '''
+    """
     spades_dir = os.path.join(outdir, 'spades_assembly_temp')
     reads = spades_read_correction(short1, short2, spades_dir, verbosity, threads, spades_path)
     kmer_range = get_kmer_range(short1, short2, spades_dir, verbosity, kmer_count, min_kmer_frac,
@@ -55,7 +55,7 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
         if files_exist:
             assembly_graph = AssemblyGraph(clean_graph_filename, kmer)
         else:
-            graph_file, paths_file = spades_assembly(reads, assem_dir, kmer_range[:i+1],
+            graph_file, paths_file = spades_assembly(reads, assem_dir, kmer_range[:i + 1],
                                                      verbosity, threads, spades_path)
             assembly_graph = AssemblyGraph(graph_file, kmer, paths_file=paths_file)
             assembly_graph.clean(read_depth_filter)
@@ -98,10 +98,11 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
 
     return best_assembly_graph
 
+
 def spades_read_correction(short1, short2, spades_dir, verbosity, threads, spades_path):
-    '''
+    """
     This runs SPAdes with the --only-error-correction option.
-    '''
+    """
     print_section_header('SPAdes read error correction', verbosity)
 
     # If the corrected reads already exist, then we just use them and proceed.
@@ -116,7 +117,7 @@ def spades_read_correction(short1, short2, spades_dir, verbosity, threads, spade
             print('  ' + corrected_2)
             if os.path.isfile(corrected_u):
                 print('  ' + corrected_u)
-        return (corrected_1, corrected_2, corrected_u)
+        return corrected_1, corrected_2, corrected_u
 
     # If the corrected reads don't exist, then we run SPAdes in error correction only mode.
     read_correction_dir = os.path.join(spades_dir, 'read_correction')
@@ -164,12 +165,13 @@ def spades_read_correction(short1, short2, spades_dir, verbosity, threads, spade
         if os.path.isfile(corrected_u):
             print('  ' + corrected_u)
 
-    return (corrected_1, corrected_2, corrected_u)
+    return corrected_1, corrected_2, corrected_u
+
 
 def spades_assembly(read_files, outdir, kmers, verbosity, threads, spades_path):
-    '''
+    """
     This runs a SPAdes assembly, possibly continuing from a previous assembly.
-    '''
+    """
     short1 = read_files[0]
     short2 = read_files[1]
     unpaired = read_files[2]
@@ -210,9 +212,9 @@ def spades_assembly(read_files, outdir, kmers, verbosity, threads, spades_path):
 
 def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity, kmer_count,
                    min_kmer_frac, max_kmer_frac):
-    '''
+    """
     Uses the read lengths to determine the k-mer range to be used in the SPAdes assembly.
-    '''
+    """
     print_section_header('Choosing k-mer range for assembly', verbosity)
 
     # If the k-mer range file already exists, we use its values and proceed.
@@ -262,19 +264,21 @@ def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity, km
     kmer_range_file.close()
     return kmer_range
 
+
 def strip_read_extensions(read_file_name):
-    '''
+    """
     This function removes all extensions from a file name.
-    '''
+    """
     return os.path.basename(read_file_name).split('.')[0]
 
+
 def get_read_lengths(reads_filename):
-    '''
+    """
     Returns a list of the read lengths for the given read file.
-    '''
+    """
     if get_compression_type(reads_filename) == 'gz':
         open_func = gzip.open
-    else: # plain text
+    else:  # plain text
         open_func = open
     reads = open_func(reads_filename, 'rb')
     read_lengths = []

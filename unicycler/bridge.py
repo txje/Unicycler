@@ -106,7 +106,7 @@ class LongReadBridge(object):
 
         # The path through the unbridged graph, if one was found.
         self.graph_path = []
-        self.all_graph_paths = []
+        self.all_best_paths = []
 
         # The bridge sequence, gotten from the graph path if a good path was found. Otherwise it's
         # from the consensus sequence.
@@ -239,42 +239,47 @@ class LongReadBridge(object):
         output += '  target path length:      ' + int_to_str(target_path_length) + ' bp\n'
 
         path_start_time = time.time()
-        self.all_graph_paths = self.graph.get_best_paths_for_seq(self.start_segment,
-                                                                 self.end_segment,
-                                                                 target_path_length,
-                                                                 self.consensus_sequence,
-                                                                 scoring_scheme)
+        all_paths, self.all_best_paths = self.graph.get_best_paths_for_seq(self.start_segment,
+                                                                           self.end_segment,
+                                                                           target_path_length,
+                                                                           self.consensus_sequence,
+                                                                           scoring_scheme)
         path_time = time.time() - path_start_time
 
-        output += '  path count:              ' + int_to_str(len(self.all_graph_paths)) + ' '
+        output += '  path count:              ' + int_to_str(len(all_paths)) + ' '
         output += '(' + float_to_str(path_time, 2) + ' sec)\n'
         if verbosity > 2:
-            for i, path in enumerate(self.all_graph_paths):
+            for i, path in enumerate(all_paths):
                 label = '  path ' + str(i+1) + ':'
                 label = label.ljust(27)
                 output += label + ', '.join(str(x) for x in path[0])
-                output += ' (' + int_to_str(self.graph.get_path_length(path[0])) + ' bp)\n'
+                output += ' (' + int_to_str(self.graph.get_path_length(path[0])) + ' bp, '
+                output += 'raw score = ' + str(path[1]) + ', '
+                output += 'scaled score = ' + float_to_str(path[3], 2) + ', '
+                output += 'length discrepancy = ' + str(path[2]) + ' bp)\n'
 
         # If paths were found, use a path sequence for the bridge.
-        if self.all_graph_paths:
-
-            # TO DO: Instead of simply choosing the best path (as I currently do),
-            # more intelligently choose the path to use. E.g. if the first (best) path isn't
-            # totally available (some of its segments are 'used up') and the second path is
-            # almost as good and is totally available, use it instead.
-            path_i = 0
-
-            self.graph_path = self.all_graph_paths[path_i][0]
-            output += '  best path:               ' + \
-                      ', '.join(int_to_str(x) for x in self.graph_path) + ' '
-            output += '(' + int_to_str(self.graph.get_path_length(self.graph_path)) + ' bp)\n'
+        if self.all_best_paths:
+            self.graph_path = self.all_best_paths[0][0]
+            if len(self.all_best_paths) == 1:
+                output += '  best path:               '
+            else:
+                output += '  best paths:              '
+            for i, best_path in enumerate(self.all_best_paths):
+                if i > 0:
+                    output += '                           '
+                output += ', '.join(int_to_str(x) for x in best_path[0]) + ' ('
+                output += int_to_str(self.graph.get_path_length(best_path[0])) + ' bp, '
+                output += 'raw score = ' + str(best_path[1]) + ', '
+                output += 'scaled score = ' + float_to_str(best_path[3], 2) + ', '
+                output += 'length discrepancy = ' + str(best_path[2]) + ' bp)\n'
 
             self.bridge_sequence = self.graph.get_path_sequence(self.graph_path)
             self.path_support = True
 
             # Now we adjust the quality. It starts on the scaled score of the path alignment (which
             # maxes out at 100.0).
-            self.quality = self.all_graph_paths[path_i][3]
+            self.quality = self.all_best_paths[0][3]
 
         # If a path wasn't found, the consensus sequence is the bridge (with the overlaps added).
         else:

@@ -9,8 +9,8 @@ from collections import deque
 import time, random
 from .misc import int_to_str, float_to_str, weighted_average, weighted_average_list, \
                   print_section_header, get_num_agreement, reverse_complement
-from .bridge import SpadesContigBridge, LoopUnrollingBridge, get_applicable_bridge_pieces, \
-                    get_bridge_str
+from .bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge, \
+                    get_applicable_bridge_pieces, get_bridge_str
 from .cpp_function_wrappers import fully_global_alignment, path_alignment
 
 
@@ -1041,7 +1041,6 @@ class AssemblyGraph(object):
             if not connections or self.all_have_copy_depths(connections):
                 continue
 
-
             # If we got here, then we can try to redistribute the segment's copy depths to its
             # connections which are lacking copy depth.
             copy_depths = self.copy_depths[num]
@@ -1249,6 +1248,19 @@ class AssemblyGraph(object):
 
         for bridge in sorted_bridges:
 
+            # If a bridge has multiple equally-good graph paths, then we can choose which one to
+            # use based on the availability of the path.
+            if isinstance(bridge, LongReadBridge) and len(bridge.all_best_paths) > 1:
+                best_path = bridge.all_best_paths[0][0]
+                best_availability = self.get_path_availability(best_path)
+                for i in range(1, len(bridge.all_best_paths)):
+                    potential_path = bridge.all_best_paths[i][0]
+                    potential_path_availability = self.get_path_availability(potential_path)
+                    if potential_path_availability > best_availability:
+                        best_availability = potential_path_availability
+                        best_path = potential_path
+                bridge.graph_path = best_path
+
             # Get the pieces of the bridge which can be applied.
             pieces = get_applicable_bridge_pieces(bridge, single_copy_nums, right_bridged,
                                                   left_bridged, seg_nums_used_in_bridges)
@@ -1267,6 +1279,7 @@ class AssemblyGraph(object):
 
             if len(pieces) == 1 and \
                pieces[0] == [bridge.start_segment] + bridge.graph_path + [bridge.end_segment]:
+                bridge.bridge_sequence = self.get_path_sequence(bridge.graph_path)
                 bridge = self.apply_entire_bridge(bridge, verbosity, right_bridged, left_bridged,
                                                   seg_nums_used_in_bridges, single_copy_nums)
                 bridge_segs.append(bridge)
@@ -1385,9 +1398,7 @@ class AssemblyGraph(object):
             print('\nRemoved segments used in bridges', ', '.join(str(x) for x in removed_segments))
 
         self.remove_small_components(min_component_size, verbosity)
-
         self.remove_small_dead_ends(min_dead_end_size, verbosity)
-
 
     def apply_entire_bridge(self, bridge, verbosity, right_bridged, left_bridged,
                             seg_nums_used_in_bridges, single_copy_nums):
@@ -1941,11 +1952,48 @@ class AssemblyGraph(object):
 
             paths_and_scores.append((path, raw_score, length_discrepancy, scaled_score))
 
-        # Sort the paths first using alignment score (only available if there was a consensus
-        # sequence to align to) and then using the length discrepancy.
+        # Sort the paths from highest to lowest quality.
         paths_and_scores = sorted(paths_and_scores, key=lambda x: (-x[1], x[2], -x[3]))
-        return paths_and_scores
 
+        # Only keep the paths which tie for the top slot. This will usually mean only one path,
+        # but could be multiple paths that tie.
+        if not paths_and_scores:
+            return [], []
+        best_path = paths_and_scores[0]
+        best_paths = [best_path]
+        for i in range(1, len(paths_and_scores)):
+            potential_best = paths_and_scores[i]
+            if potential_best[1:4] == best_path[1:4]:
+                best_paths.append(potential_best)
+            else:
+                break
+
+        return paths_and_scores, best_paths
+
+    def get_path_availability(self, path):
+        '''
+        Given a path, this function returns the fraction that is available. A segment is considered
+        unavailable if it has no more copy depth or has a depth of below 0.5.
+        '''
+        total_bases = 0
+        available_bases = 0
+        for seg_num in path:
+            abs_seg_num = abs(seg_num)
+            seg = self.segments[abs_seg_num]
+            if abs_seg_num in self.copy_depths and len(self.copy_depths[abs_seg_num]) == 0:
+                available = False
+            elif seg.depth < 0.5:
+                available = False
+            else:
+                available = True
+            seg_len = seg.get_length() - self.overlap
+            total_bases += seg_len
+            if available:
+                available_bases += seg_len
+        if total_bases == 0:
+            return 1.0
+        else:
+            return available_bases / total_bases
 
 class Segment(object):
     '''

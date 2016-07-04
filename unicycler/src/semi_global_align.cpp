@@ -76,9 +76,9 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
         }
         else if (!line->buildSeedChain(MIN_POINT_COUNT, MIN_ALIGNMENT_LENGTH, kSize)) {
             ++badAlignmentCount;
-            delete line;
             if (verbosity > 2)
                 output += "  line: " + line->getDescriptiveString() + ", no seed chain, BAD\n";
+            delete line;
         }
         else {
             // If the code got here, then we should have an alignment line with a seed chain ready to

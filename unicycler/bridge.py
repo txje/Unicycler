@@ -9,6 +9,7 @@ email: rrwick@gmail.com
 
 from multiprocessing.dummy import Pool as ThreadPool
 import time
+from collections import defaultdict
 from .misc import int_to_str, float_to_str, reverse_complement, print_progress_line, \
     weighted_average, get_num_agreement
 from .cpp_function_wrappers import multiple_sequence_alignment
@@ -133,7 +134,8 @@ class LongReadBridge(object):
                                                      self.end_segment) + \
                ' (quality = ' + float_to_str(self.quality, 2) + ')'
 
-    def finalise(self, scoring_scheme, min_alignment_length, mean_spans_per_bridge, verbosity):
+    def finalise(self, scoring_scheme, min_alignment_length, read_lengths, estimated_genome_size,
+                 verbosity):
         """
         Determines the consensus sequence for the bridge, attempts to find it in the graph and
         assigns a quality score to the bridge. This is the performance-intensive step of long read
@@ -299,19 +301,40 @@ class LongReadBridge(object):
             # bridges.
             self.quality = 20.0
 
+        # Expected read count is determined using the read lengths and bridge size. For a given
+        # read length and bridge, there are an estimable number of positions where a read of that
+        # length would be able to contribute to the bridge. This is used to get the probability
+        # that any read would create a bridge, and totalling those up gives us our estimated count.
+        bridge_len = max(len(self.bridge_sequence), self.graph.overlap)
+        min_read_len = (2 * min_alignment_length) + bridge_len - (2 * self.graph.overlap)
+        total_possible_placements = 0
+        for read_len, count in read_lengths.items():
+            if read_len < min_read_len:
+                continue
+            possible_read_placements = read_len - min_read_len + 1
+            possible_read_placements *= count
+            possible_read_placements *= max(self.depth, 1)
+            total_possible_placements += possible_read_placements
+        expected_read_count = total_possible_placements / estimated_genome_size
+        actual_read_count = len(self.full_span_reads)
+
+        # Don't let the expected read count get too low, as this could create an inappropriately
+        # huge quality boost.
+        expected_read_count = max(expected_read_count, 0.1)
+
         if verbosity > 2:
+            output += '  expected bridging reads: ' + float_to_str(expected_read_count, 2) + '\n'
             output += '  starting quality:        ' + float_to_str(self.quality, 2) + '\n'
 
         # The start segment and end segment should agree in depth. If they don't, that's very bad,
         # as it implies that they aren't actually single-copy or on the same piece of DNA.
-        depth_agreement_factor = get_num_agreement(start_seg.depth, end_seg.depth)
+        depth_agreement_factor = get_num_agreement(start_seg.depth, end_seg.depth) ** 2
+        self.quality *= depth_agreement_factor
 
         # The number of reads which contribute to a bridge is a big deal, so the read count factor
-        # scales linearly. This adjusts to the bridge's depth, so higher depth bridges need a
-        # larger read count to get the same effect. However, the depth used here can't go below 1,
-        # as that could give an unfair advantage to bridges between very low depth segments (which
-        # we probably don't really care about anyways because they are low depth).
-        read_count_factor = len(self.full_span_reads) / mean_spans_per_bridge / max(self.depth, 1)
+        # scales linearly.
+        read_count_factor = actual_read_count / expected_read_count
+        self.quality *= read_count_factor
 
         # The length of alignments to the start/end segments is positively correlated with quality
         # to reward bridges with long alignments.
@@ -320,6 +343,7 @@ class LongReadBridge(object):
                                      for x in self.full_span_reads)
         mean_alignment_length = total_alignment_length / (2.0 * len(self.full_span_reads))
         align_length_factor = score_function(mean_alignment_length, min_alignment_length * 4)
+        self.quality *= align_length_factor
 
         # The mean alignment score to the start/end segments is positively correlated with quality,
         # so bridges with high quality alignments are rewarded.
@@ -327,17 +351,13 @@ class LongReadBridge(object):
                                  for x in self.full_span_reads)
         mean_scaled_score = scaled_score_total / (2.0 * len(self.full_span_reads))
         align_score_factor = mean_scaled_score / 100.0
+        self.quality *= align_score_factor
 
         # Bridges between long start/end segments are rewarded, as they are more likely to actually
         # be single-copy.
         start_length_factor = score_function(start_seg.get_length(), min_alignment_length)
-        end_length_factor = score_function(end_seg.get_length(), min_alignment_length)
-
-        self.quality *= depth_agreement_factor * depth_agreement_factor
-        self.quality *= read_count_factor
-        self.quality *= align_length_factor
-        self.quality *= align_score_factor
         self.quality *= start_length_factor
+        end_length_factor = score_function(end_seg.get_length(), min_alignment_length)
         self.quality *= end_length_factor
 
         if verbosity > 2:
@@ -348,7 +368,6 @@ class LongReadBridge(object):
             output += '  start length factor:     ' + float_to_str(start_length_factor, 2) + '\n'
             output += '  end length factor:       ' + float_to_str(end_length_factor, 2) + '\n'
             output += '  final quality:           ' + float_to_str(self.quality, 2) + '\n'
-
         return output
 
     def contains_full_span_sequence(self):
@@ -728,19 +747,19 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
                         bridge.start_only_reads.append((reverse_complement(overlap_seq),
                                                         overlap_qual[::-1], alignment))
 
-    # Figure out the average number of spanning reads per bridge, normalised to the bridge's depth.
-    total_normalised_reads = 0.0
-    long_read_bridge_count = 0
-    for bridge in all_bridges:
-        if not isinstance(bridge, LongReadBridge) or not bridge.contains_full_span_sequence():
-            continue
-        long_read_bridge_count += 1
-        total_normalised_reads += len(bridge.full_span_reads) / bridge.depth
-    mean_spans_per_bridge = total_normalised_reads / long_read_bridge_count
+    # During finalisation, we will compare the expected read count to the actual read count for
+    # each bridge. To do this, we'll need the lengths of all reads (excluding those with no
+    # alignments). We also need an estimate of the genome size.
+    read_lengths = defaultdict(int)
+    for read_name in read_names:
+        read = read_dict[read_name]
+        if read.alignments:
+            read_lengths[read.get_length()] += 1
+    estimated_genome_size = graph.get_estimated_sequence_len()
 
-    # Now we need to finalise the reads. This is the intensive step, as it involves creating a
+    # Now we need to finalise the bridges. This is the intensive step, as it involves creating a
     # consensus sequence, finding graph paths and doing alignments between the consensus and the
-    # graph paths. We therefore use available threads to make this faster.
+    # graph paths. We can therefore use threads to make this faster.
     long_read_bridges = [x for x in all_bridges if isinstance(x, LongReadBridge)]
     num_long_read_bridges = len(long_read_bridges)
     if verbosity == 1:
@@ -748,8 +767,8 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     completed_count = 0
     if threads == 1:
         for bridge in long_read_bridges:
-            output = bridge.finalise(scoring_scheme, min_alignment_length, mean_spans_per_bridge,
-                                     verbosity)
+            output = bridge.finalise(scoring_scheme, min_alignment_length, read_lengths,
+                                     estimated_genome_size, verbosity)
             completed_count += 1
             if verbosity == 1:
                 print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')
@@ -759,8 +778,8 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
         pool = ThreadPool(threads)
         arg_list = []
         for bridge in long_read_bridges:
-            arg_list.append((bridge, scoring_scheme, min_alignment_length, mean_spans_per_bridge,
-                             verbosity))
+            arg_list.append((bridge, scoring_scheme, min_alignment_length, read_lengths,
+                             estimated_genome_size, verbosity))
 
         # If the verbosity is 1, then the order doesn't matter, so use imap_unordered to deliver
         # the results evenly. If the verbosity is higher, deliver the results in order with imap.
@@ -845,8 +864,10 @@ def finalise_bridge(all_args):
     """
     Just a one-argument version of bridge.finalise, for pool.imap.
     """
-    bridge, scoring_scheme, min_alignment_length, mean_spans_per_bridge, verbosity = all_args
-    return bridge.finalise(scoring_scheme, min_alignment_length, mean_spans_per_bridge, verbosity)
+    bridge, scoring_scheme, min_alignment_length, read_lengths, estimated_genome_size, verbosity = \
+        all_args
+    return bridge.finalise(scoring_scheme, min_alignment_length, read_lengths,
+                           estimated_genome_size, verbosity)
 
 
 def score_function(val, half_score_val):

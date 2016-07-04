@@ -1997,6 +1997,23 @@ class AssemblyGraph(object):
         else:
             return available_bases / total_bases
 
+    def get_estimated_sequence_len(self):
+        """
+        Returns an estimate sequence length, based on the depth. E.g. a segment of depth 1.0
+        contributes it own length (minus overlaps), a segment of depth 2.5 contributes 2.5 times
+        its own length, etc.
+        """
+        total_seq_len = 0.0
+        for seg_num, seg in self.segments.items():
+            seg_len = seg.get_length()
+            if seg_num in self.forward_links:
+                seg_len -= self.overlap / 2
+            if seg_num in self.reverse_links:
+                seg_len -= self.overlap / 2
+            seg_len *= seg.depth
+            total_seq_len += seg_len
+        return total_seq_len
+
 
 class Segment(object):
     """

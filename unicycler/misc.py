@@ -235,6 +235,8 @@ def get_percentile(unsorted_list, percentile):
     Implements the nearest rank method:
     https://en.wikipedia.org/wiki/Percentile#The_Nearest_Rank_method
     """
+    if not unsorted_list:
+        return 0.0
     sorted_list = sorted(unsorted_list)
     fraction = percentile / 100.0
     rank = int(math.ceil(fraction * len(unsorted_list)))

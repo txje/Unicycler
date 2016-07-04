@@ -259,7 +259,7 @@ class LongReadBridge(object):
                 label = label.ljust(27)
                 output += label + ', '.join(str(x) for x in path[0])
                 output += ' (' + int_to_str(self.graph.get_path_length(path[0])) + ' bp, '
-                output += 'raw score = ' + str(path[1]) + ', '
+                output += 'raw score = ' + float_to_str(path[1], 1) + ', '
                 output += 'scaled score = ' + float_to_str(path[3], 2) + ', '
                 output += 'length discrepancy = ' + str(path[2]) + ' bp)\n'
 
@@ -275,7 +275,7 @@ class LongReadBridge(object):
                     output += '                           '
                 output += ', '.join(int_to_str(x) for x in best_path[0]) + ' ('
                 output += int_to_str(self.graph.get_path_length(best_path[0])) + ' bp, '
-                output += 'raw score = ' + str(best_path[1]) + ', '
+                output += 'raw score = ' + float_to_str(best_path[1], 1) + ', '
                 output += 'scaled score = ' + float_to_str(best_path[3], 2) + ', '
                 output += 'length discrepancy = ' + str(best_path[2]) + ' bp)\n'
 

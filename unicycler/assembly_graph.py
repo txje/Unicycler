@@ -592,8 +592,10 @@ class AssemblyGraph(object):
                         if k not in visited:
                             visited.add(k)
                             q.append(k)
-                components.append(component)
-        return components
+                components.append(sorted(component))
+
+        # Sort (just for consistency from one run to the next)
+        return sorted(components)
 
     def get_connected_segments(self, segment_num):
         """

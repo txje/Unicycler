@@ -186,8 +186,9 @@ class LongReadBridge(object):
 
             # Full-span sequences are faster in the MSA and are very useful for the consensus
             # sequence, so we want to use a lot! But we still set an upper limit for cases of
-            # very high read depth.
-            max_full_span = 50  # TO DO: make this a parameter?
+            # very high read depth, as getting the consensus sequence will be very slow if there
+            # are too many reads.
+            max_full_span = 25  # TO DO: make this a parameter?
             if len(full_spans_with_seq) <= max_full_span:
                 full_span_seqs = [x[0] for x in full_spans_with_seq]
                 full_span_quals = [x[1] for x in full_spans_with_seq]
@@ -201,7 +202,11 @@ class LongReadBridge(object):
             # Start-only and end-only sequences make the MSA a lot slower, contribute less to the
             # consensus and can screw up the MSA if they are too abundant. So if there are too many
             # of them, we only include the ones with the best alignments.
+            # Also, if we have a LOT of full span reads, there's no need to include any partial
+            # sequences at all.
             max_partial = min(5, len(full_span_seqs))  # TO DO: make this a parameter?
+            if len(full_span_seqs) == max_full_span:
+                max_partial = 0
             if len(self.start_only_reads) <= max_partial:
                 start_only_seqs = [x[0] for x in self.start_only_reads]
                 start_only_quals = [x[1] for x in self.start_only_reads]

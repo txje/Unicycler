@@ -327,6 +327,9 @@ class LongReadBridge(object):
         # huge quality boost.
         expected_read_count = max(expected_read_count, 0.1)
 
+        # Adjust the expected read count down, especially for higher values.
+        expected_read_count = reduce_expected_count(expected_read_count, 30, 0.5)
+
         if verbosity > 2:
             output += '  expected bridging reads: ' + float_to_str(expected_read_count, 2) + '\n'
             output += '  starting quality:        ' + float_to_str(self.quality, 2) + '\n'
@@ -955,3 +958,14 @@ def start_end_available_to_bridge(start, end, right_bridged, left_bridged,
     if abs(end) in seg_nums_used_in_bridges:
         return False
     return True
+
+def reduce_expected_count(expected_count, a, b):
+    """
+    This function reduces the expected read count. It reduces by a factor which is a function of
+    the read count, so low expected values aren't reduced much, but high expected values are
+    reduced more. This is to help with high read depth cases where expected counts get quite high.
+
+    https://www.desmos.com/calculator
+    y=x\cdot \left(\left(\frac{a}{a+x}\right)\cdot \left(1-b\right)+b\right)
+    """
+    return expected_count * ((a / (a + expected_count)) * (1.0 - b) + b)

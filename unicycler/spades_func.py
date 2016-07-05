@@ -28,7 +28,7 @@ def get_best_spades_graph(short1, short2, outdir, read_depth_filter, verbosity, 
     assem_dir = os.path.join(spades_dir, 'assembly')
     print_section_header('Conducting SPAdes assemblies', verbosity)
 
-    # Check to see if the SPAdes assembies already exist. If so, we'll use them instead of doing
+    # Check to see if the SPAdes assemblies already exist. If so, we'll use them instead of doing
     # the assembly again.
     files_exist = True
     file_list = []
@@ -168,7 +168,7 @@ def spades_read_correction(short1, short2, spades_dir, verbosity, threads, spade
     return corrected_1, corrected_2, corrected_u
 
 
-def spades_assembly(read_files, outdir, kmers, verbosity, threads, spades_path):
+def spades_assembly(read_files, out_dir, kmers, verbosity, threads, spades_path):
     """
     This runs a SPAdes assembly, possibly continuing from a previous assembly.
     """
@@ -177,7 +177,7 @@ def spades_assembly(read_files, outdir, kmers, verbosity, threads, spades_path):
     unpaired = read_files[2]
     kmer_string = ','.join([str(x) for x in kmers])
     this_kmer = 'k' + str(kmers[-1])
-    command = [spades_path, '-o', outdir, '-k', kmer_string, '--threads', str(threads)]
+    command = [spades_path, '-o', out_dir, '-k', kmer_string, '--threads', str(threads)]
     if len(kmers) > 1:
         last_kmer = 'k' + str(kmers[-2])
         command += ['--restart-from', last_kmer]
@@ -198,10 +198,10 @@ def spades_assembly(read_files, outdir, kmers, verbosity, threads, spades_path):
     if spades_error:
         quit_with_error('SPAdes encountered an error: ' + spades_error)
 
-    graph_file = os.path.join(outdir, 'assembly_graph.fastg')
-    paths_file = os.path.join(outdir, 'contigs.paths')
+    graph_file = os.path.join(out_dir, 'assembly_graph.fastg')
+    paths_file = os.path.join(out_dir, 'contigs.paths')
 
-    parent_dir = os.path.dirname(outdir)
+    parent_dir = os.path.dirname(out_dir)
     moved_graph_file = os.path.join(parent_dir, this_kmer + '_assembly_graph.fastg')
     shutil.move(graph_file, moved_graph_file)
     moved_paths_file = os.path.join(parent_dir, this_kmer + '_contigs.paths')

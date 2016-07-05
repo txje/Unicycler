@@ -764,11 +764,13 @@ class AssemblyGraph(object):
         This function does various graph repairs, filters and normalisations to make it a bit
         nicer.
         """
+        self.remove_all_overlaps()
         self.repair_multi_way_junctions()
         self.filter_by_read_depth(read_depth_filter)
         self.filter_homopolymer_loops()
         self.merge_all_possible()
         self.normalise_read_depths()
+        self.remove_zero_length_segs()
         self.sort_link_order()
 
     def repair_multi_way_junctions(self):
@@ -807,8 +809,7 @@ class AssemblyGraph(object):
                 if ending_segs_2 != ending_segs:
                     continue
 
-                # If the code got here, then we've found a four-way junction! Double-check that all
-                # of the overlaps agree.
+                # Double-check that all of the overlaps agree.
                 starting_segs = list(starting_segs)
                 ending_segs = list(ending_segs)
                 bridge_seq = self.get_seq_from_signed_seg_num(ending_segs[0])[:self.overlap]
@@ -2016,6 +2017,126 @@ class AssemblyGraph(object):
             total_seq_len += seg_len
         return total_seq_len
 
+    def remove_all_overlaps(self):
+        """
+        This function removes all overlaps from the graph by shortening segments. It assumes that
+        all overlaps in the graph are the same size.
+        """
+        edges_without_overlap = set()
+        edges_with_overlap = set()
+        for start, ends in self.forward_links.items():
+            for end in ends:
+                edges_with_overlap.add((start, end))
+                edges_with_overlap.add((-end, -start))
+
+        # We remove overlaps starting with the most connected segments
+        seg_nums = list(self.segments) + [-x for x in list(self.segments)]
+        seg_nums = sorted(seg_nums, key=lambda x: (-self.get_segment_forward_connections(x), x))
+
+        for seg_num in seg_nums:
+            if seg_num not in self.forward_links:
+                continue
+
+            # If the segment is too short to remove the overlap, then we can't do anything with it.
+            if self.segments[abs(seg_num)].get_length() < self.overlap:
+                continue
+
+            # Gather up the full set of edges for which the overlap must be removed in agreement.
+            edges = set()
+            edges.update((seg_num, x) for x in self.forward_links[seg_num])
+            while True:
+                new_edge = None
+                for edge in edges:
+                    start_seg = edge[0]
+                    downstream_segs = []
+                    if start_seg in self.forward_links:
+                        downstream_segs = self.forward_links[start_seg]
+                    for end_seg in downstream_segs:
+                        potential_edge = (start_seg, end_seg)
+                        if potential_edge not in edges:
+                            new_edge = potential_edge
+                            break
+                if new_edge is not None:
+                    edges.add(new_edge)
+                    continue
+                for edge in edges:
+                    end_seg = edge[1]
+                    upstream_segs = []
+                    if end_seg in self.reverse_links:
+                        upstream_segs = self.reverse_links[end_seg]
+                    for start_seg in upstream_segs:
+                        potential_edge = (start_seg, end_seg)
+                        if potential_edge not in edges:
+                            new_edge = potential_edge
+                            break
+                if new_edge is not None:
+                    edges.add(new_edge)
+                    continue
+                break
+
+            # Either all edges should already have been taken care of, or none of them have.
+            # Anything else is a problem.
+            all_edges_lack_overlap = all(x in edges_without_overlap for x in edges)
+            all_edges_have_overlap = all(x in edges_with_overlap for x in edges)
+            assert all_edges_lack_overlap != all_edges_have_overlap
+
+            if all_edges_have_overlap:
+                start_segs = set(x[0] for x in edges)
+                for start_seg in start_segs:
+                    if start_seg > 0:
+                        self.segments[start_seg].trim_from_end(self.overlap)
+                    else:
+                        self.segments[-start_seg].trim_from_start(self.overlap)
+                reverse_edges = set((-x[1], -x[0]) for x in edges)
+                edges_without_overlap.update(edges)
+                edges_without_overlap.update(reverse_edges)
+                edges_with_overlap.difference_update(edges)
+                edges_with_overlap.difference_update(reverse_edges)
+
+        assert not edges_with_overlap
+        self.overlap = 0
+
+    def get_segment_forward_connections(self, signed_seg_num):
+        """
+        Returns how many forward connections the segment has.
+        """
+        if signed_seg_num not in self.forward_links:
+            return 0
+        else:
+            return len(self.forward_links[signed_seg_num])
+
+    def remove_zero_length_segs(self):
+        """
+        This function removes zero-length segments from the graph, but only if they they aren't
+        serving a purpose (such as in a multi-way junction).
+        """
+        segs_to_remove = []
+        for seg_num, seg in self.segments.items():
+            if seg.get_length() > 0:
+                continue
+            if seg_num in self.forward_links:
+                forward_connections = len(self.forward_links[seg_num])
+            else:
+                forward_connections = 0
+            if seg_num in self.reverse_links:
+                reverse_connections = len(self.reverse_links[seg_num])
+            else:
+                reverse_connections = 0
+
+            if forward_connections == 1 and reverse_connections > 0:
+                downstream_seg = self.forward_links[seg_num][0]
+                for upstream_seg in self.reverse_links[seg_num]:
+                    self.add_link(upstream_seg, downstream_seg)
+                segs_to_remove.append(seg_num)
+
+            elif reverse_connections == 1 and forward_connections > 0:
+                upstream_seg = self.reverse_links[seg_num][0]
+                for downstream_seg in self.forward_links[seg_num]:
+                    self.add_link(upstream_seg, downstream_seg)
+                segs_to_remove.append(seg_num)
+
+        self.remove_segments(segs_to_remove)
+
 
 class Segment(object):
     """
@@ -2120,6 +2241,20 @@ class Segment(object):
             graph_path_str = ', '.join([str(x) for x in self.graph_path])
             label += ': ' + graph_path_str
         return label
+
+    def trim_from_end(self, amount):
+        """
+        Removes the specified number of bases from the end of the segment sequence.
+        """
+        self.forward_sequence = self.forward_sequence[:-amount]
+        self.reverse_sequence = self.forward_sequence[amount:]
+
+    def trim_from_start(self, amount):
+        """
+        Removes the specified number of bases from the end of the segment sequence.
+        """
+        self.forward_sequence = self.forward_sequence[amount:]
+        self.reverse_sequence = self.forward_sequence[:-amount]
 
 
 def get_error(source, target):

@@ -764,13 +764,22 @@ class AssemblyGraph(object):
         This function does various graph repairs, filters and normalisations to make it a bit
         nicer.
         """
-        self.remove_all_overlaps()
         self.repair_multi_way_junctions()
         self.filter_by_read_depth(read_depth_filter)
         self.filter_homopolymer_loops()
         self.merge_all_possible()
         self.normalise_read_depths()
         self.remove_zero_length_segs()
+        self.sort_link_order()
+
+    def final_clean(self):
+        """
+        This function cleans up the final assembled graph, in preparation for saving.
+        """
+        self.remove_all_overlaps()
+        self.normalise_read_depths()
+        self.remove_zero_length_segs()
+        self.renumber_segments()
         self.sort_link_order()
 
     def repair_multi_way_junctions(self):
@@ -2093,6 +2102,7 @@ class AssemblyGraph(object):
                 edges_with_overlap.difference_update(edges)
                 edges_with_overlap.difference_update(reverse_edges)
 
+        print(edges_with_overlap)
         assert not edges_with_overlap
         self.overlap = 0
 
@@ -2107,12 +2117,13 @@ class AssemblyGraph(object):
 
     def remove_zero_length_segs(self):
         """
-        This function removes zero-length segments from the graph, but only if they they aren't
-        serving a purpose (such as in a multi-way junction).
+        This function removes zero-length segments from the graph (segments with a length equal
+        to the graph overlap), but only if they they aren't serving a purpose (such as in a
+        multi-way junction).
         """
         segs_to_remove = []
         for seg_num, seg in self.segments.items():
-            if seg.get_length() > 0:
+            if seg.get_length() != self.overlap:
                 continue
             if seg_num in self.forward_links:
                 forward_connections = len(self.forward_links[seg_num])

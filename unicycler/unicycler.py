@@ -163,6 +163,7 @@ def main():
         bridged_graph.clean_up_after_bridging(single_copy_segments, seg_nums_used_in_bridges,
                                               args.min_component_size, args.min_dead_end_size,
                                               verbosity)
+        bridged_graph.final_clean()
         file_num += 1
         read_bridged_graph_cleaned = os.path.join(args.out,
                                                   str(file_num).zfill(3) + '_cleaned.gfa')

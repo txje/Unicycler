@@ -5,6 +5,8 @@ This script isn't part of Unicycler but is run separately to process UniProt gen
 It operates on UniProt clustered sequences like those you can get here:
 http://www.uniprot.org/uniref/?query=uniprot:(gene%3Adnaa+length%3A%5B10+TO+1000%5D+%28taxonomy%3Aarchaea+OR+taxonomy%3Abacteria%29)+identity:0.9
 http://www.uniprot.org/uniref/?query=uniprot:(gene%3Arepa+length%3A%5B10+TO+1000%5D+%28taxonomy%3Aarchaea+OR+taxonomy%3Abacteria%29)+identity:0.9
+http://www.uniprot.org/uniref/?query=uniprot:(gene%3Aters+taxonomy%3Aviruses)+identity:0.9
+http://www.uniprot.org/uniref/?query=uniprot:(gene%3Aterl+taxonomy%3Aviruses)+identity:0.9
 
 Author: Ryan Wick
 email: rrwick@gmail.com

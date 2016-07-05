@@ -346,3 +346,23 @@ def get_num_agreement(num_1, num_2):
     if num_1 * num_2 < 0.0:
         return 0.0
     return min(num_1, num_2) / max(num_1, num_2)
+
+def flip_number_order(num_1, num_2):
+    """
+    Given two segment numbers, this function possibly flips them around. It returns the new numbers
+    (either unchanged or flipped) and whether or not a flip took place. The decision is somewhat
+    arbitrary, but it needs to be consistent so when we collect bridging read sequences they are
+    always in the same direction.
+    """
+    if num_1 > 0 and num_2 > 0:
+        flip = False
+    elif num_1 < 0 and num_2 < 0:
+        flip = True
+    elif num_1 < 0:  # only num_1 is negative
+        flip = abs(num_1) > abs(num_2)
+    else:  # only num_2 is negative
+        flip = abs(num_2) > abs(num_1)
+    if flip:
+        return (-num_2, -num_1), True
+    else:
+        return (num_1, num_2), False

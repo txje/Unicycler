@@ -5,15 +5,19 @@ Author: Ryan Wick
 email: rrwick@gmail.com
 """
 
-from collections import deque
+from collections import deque, defaultdict
 from .misc import int_to_str, float_to_str, weighted_average, weighted_average_list, \
-    print_section_header, get_num_agreement, reverse_complement
+    print_section_header, get_num_agreement, reverse_complement, flip_number_order
 from .bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge, \
     get_applicable_bridge_pieces, get_bridge_str
 from .cpp_function_wrappers import fully_global_alignment, path_alignment
 
 
 class TooManyPaths(Exception):
+    pass
+
+
+class CannotTrimOverlaps(Exception):
     pass
 
 
@@ -776,7 +780,10 @@ class AssemblyGraph(object):
         """
         This function cleans up the final assembled graph, in preparation for saving.
         """
-        self.remove_all_overlaps()
+        try:
+            self.remove_all_overlaps()
+        except CannotTrimOverlaps:
+            pass
         self.normalise_read_depths()
         self.remove_zero_length_segs()
         self.renumber_segments()
@@ -1931,7 +1938,7 @@ class AssemblyGraph(object):
         try:
             paths = self.all_paths(start_seg, end_seg, min_length, target_length, max_length,
                                    max_path_count)
-        except TooManyPaths as _:
+        except TooManyPaths:
             paths = self.progressive_path_find(start_seg, end_seg, min_length, target_length,
                                                max_length, sequence, scoring_scheme)
 
@@ -2031,89 +2038,156 @@ class AssemblyGraph(object):
         This function removes all overlaps from the graph by shortening segments. It assumes that
         all overlaps in the graph are the same size.
         """
-        edges_without_overlap = set()
-        edges_with_overlap = set()
+        # First we create a set of all graph edges, in both directions.
+        all_edges = set()
         for start, ends in self.forward_links.items():
             for end in ends:
-                edges_with_overlap.add((start, end))
-                edges_with_overlap.add((-end, -start))
+                all_edges.add((start, end))
+                all_edges.add((-end, -start))
 
-        # We remove overlaps starting with the most connected segments
-        seg_nums = list(self.segments) + [-x for x in list(self.segments)]
-        seg_nums = sorted(seg_nums, key=lambda x: (-self.get_segment_forward_connections(x), x))
+        # This function will strive to put each edge into two groups:
+        #   1) Trim sequence from the end of the starting segment
+        #   2) Trim sequence from start of the ending segment
 
-        for seg_num in seg_nums:
-            if seg_num not in self.forward_links:
+        # To do this, we determine which edges which must be in the same group as each other and
+        # edges which must be in different groups.
+        must_match = defaultdict(set)
+        must_differ = defaultdict(set)
+
+        # Firstly, each edge must be in the opposite group as its complement edge. E.g. if we
+        # have an edge (5, -4) and trim from the first segment, then we need to trim from the
+        # second segment of its complement edge (4, -5).
+        for edge in all_edges:
+            rev_edge = (-edge[1], -edge[0])
+            must_differ[edge].add(rev_edge)
+
+        # Edges which connect to the same side of a segment must be grouped together.
+        pos_and_neg_seg_nums = list(self.segments) + [-x for x in self.segments]
+        for seg in pos_and_neg_seg_nums:
+            downstream_segs = self.get_downstream_seg_nums(seg)
+            if len(downstream_segs) > 1:
+                edge_1 = (seg, downstream_segs[0])
+                for downstream_seg in downstream_segs[1:]:
+                    edge_2 = (seg, downstream_seg)
+                    must_match[edge_1].add(edge_2)
+                    must_match[edge_2].add(edge_1)
+            upstream_segs = self.get_upstream_seg_nums(seg)
+            if len(upstream_segs) > 1:
+                edge_1 = (upstream_segs[0], seg)
+                for upstream_seg in upstream_segs[1:]:
+                    edge_2 = (upstream_seg, seg)
+                    must_match[edge_1].add(edge_2)
+                    must_match[edge_2].add(edge_1)
+
+        # Some segments are likely to be too small to handle trimming on both sides. So we
+        # require that edges on opposite sides are grouped together, so only one trim will occur
+        # on these segments.
+        small_seg_nums = [x for x in pos_and_neg_seg_nums
+                          if self.segments[abs(x)].get_length() < 2 * self.overlap]
+        for seg_num in small_seg_nums:
+            downstream_segs = self.get_downstream_seg_nums(seg_num)
+            upstream_segs = self.get_upstream_seg_nums(seg_num)
+            if downstream_segs and upstream_segs:
+                for downstream_seg in downstream_segs:
+                    edge_1 = (seg_num, downstream_seg)
+                    for upstream_seg in upstream_segs:
+                        edge_2 = (upstream_seg, seg_num)
+                        must_match[edge_1].add(edge_2)
+
+        # Now we do the grouping!
+        # We work with the edges in order for consistency from one run to the next.
+        ordered_edges = list(all_edges)
+        group_1 = set()
+        group_2 = set()
+        for edge in ordered_edges:
+            if edge in group_1 or edge in group_2:
                 continue
 
-            # If the segment is too short to remove the overlap, then we can't do anything with it.
-            if self.segments[abs(seg_num)].get_length() < self.overlap:
-                continue
+            # Put the edge in the first group (arbitrary decision).
+            group_1.add(edge)
 
-            # Gather up the full set of edges for which the overlap must be removed in agreement.
-            edges = set()
-            edges.update((seg_num, x) for x in self.forward_links[seg_num])
             while True:
-                new_edge = None
-                for edge in edges:
-                    start_seg = edge[0]
-                    downstream_segs = []
-                    if start_seg in self.forward_links:
-                        downstream_segs = self.forward_links[start_seg]
-                    for end_seg in downstream_segs:
-                        potential_edge = (start_seg, end_seg)
-                        if potential_edge not in edges:
-                            new_edge = potential_edge
-                            break
-                if new_edge is not None:
-                    edges.add(new_edge)
-                    continue
-                for edge in edges:
-                    end_seg = edge[1]
-                    upstream_segs = []
-                    if end_seg in self.reverse_links:
-                        upstream_segs = self.reverse_links[end_seg]
-                    for start_seg in upstream_segs:
-                        potential_edge = (start_seg, end_seg)
-                        if potential_edge not in edges:
-                            new_edge = potential_edge
-                            break
-                if new_edge is not None:
-                    edges.add(new_edge)
-                    continue
-                break
+                new_group_1 = set()
+                new_group_2 = set()
 
-            # Either all edges should already have been taken care of, or none of them have.
-            # Anything else is a problem.
-            all_edges_lack_overlap = all(x in edges_without_overlap for x in edges)
-            all_edges_have_overlap = all(x in edges_with_overlap for x in edges)
-            assert all_edges_lack_overlap != all_edges_have_overlap
+                for group_1_edge in group_1:
+                    for must_match_edge in must_match[group_1_edge]:
+                        if must_match_edge in group_2 or must_match_edge in new_group_2:
+                            print(must_match_edge)
+                            raise CannotTrimOverlaps
+                        else:
+                            new_group_1.add(must_match_edge)
+                    for must_differ_edge in must_differ[group_1_edge]:
+                        if must_differ_edge in group_1 or must_differ_edge in new_group_1:
+                            print(must_differ_edge)
+                            raise CannotTrimOverlaps
+                        else:
+                            new_group_2.add(must_differ_edge)
+                for group_2_edge in group_2:
+                    for must_match_edge in must_match[group_2_edge]:
+                        if must_match_edge in group_1 or must_match_edge in new_group_1:
+                            print(must_match_edge)
+                            raise CannotTrimOverlaps
+                        else:
+                            new_group_2.add(must_match_edge)
+                    for must_differ_edge in must_differ[group_2_edge]:
+                        if must_differ_edge in group_2 or must_differ_edge in new_group_2:
+                            print(must_differ_edge)
+                            raise CannotTrimOverlaps
+                        else:
+                            new_group_1.add(must_differ_edge)
 
-            if all_edges_have_overlap:
-                start_segs = set(x[0] for x in edges)
-                for start_seg in start_segs:
-                    if start_seg > 0:
-                        self.segments[start_seg].trim_from_end(self.overlap)
-                    else:
-                        self.segments[-start_seg].trim_from_start(self.overlap)
-                reverse_edges = set((-x[1], -x[0]) for x in edges)
-                edges_without_overlap.update(edges)
-                edges_without_overlap.update(reverse_edges)
-                edges_with_overlap.difference_update(edges)
-                edges_with_overlap.difference_update(reverse_edges)
+                # We continue to loop until the groups stop growing.
+                group_1_size_before = len(group_1)
+                group_2_size_before = len(group_2)
+                group_1.update(new_group_1)
+                group_2.update(new_group_2)
+                if len(group_1) == group_1_size_before and len(group_2) == group_2_size_before:
+                    break
 
-        print(edges_with_overlap)
-        assert not edges_with_overlap
+        # If the code got here, that means that all edges have been grouped according to the
+        # rules, and we can go ahead with the trimming!
+        # Group 1 will get its first segment trimmed (at the end) and group 2 will get its second
+        # segment trimmed (at the start).
+        trim_end = set()
+        trim_start = set()
+        for edge in group_1:
+            start_seg = edge[0]
+            if start_seg > 0:
+                trim_end.add(start_seg)
+            else:
+                trim_start.add(-start_seg)
+        for edge in group_2:
+            end_seg = edge[1]
+            if end_seg > 0:
+                trim_start.add(end_seg)
+            else:
+                trim_end.add(-end_seg)
+        for seg in trim_start:
+            self.segments[seg].trim_from_start(self.overlap)
+        for seg in trim_end:
+            self.segments[seg].trim_from_end(self.overlap)
         self.overlap = 0
 
-    def get_segment_forward_connections(self, signed_seg_num):
+    def get_downstream_seg_nums(self, seg_num):
         """
-        Returns how many forward connections the segment has.
+        Returns the list of downstream segments for the given segment (or an empty list if there
+        are none).
         """
-        if signed_seg_num not in self.forward_links:
-            return 0
+        if seg_num not in self.forward_links:
+            return []
         else:
-            return len(self.forward_links[signed_seg_num])
+            return self.forward_links[seg_num]
+
+    def get_upstream_seg_nums(self, seg_num):
+        """
+        Returns the list of upstream segments for the given segment (or an empty list if there
+        are none).
+        """
+        if seg_num not in self.reverse_links:
+            return []
+        else:
+            return self.reverse_links[seg_num]
 
     def remove_zero_length_segs(self):
         """

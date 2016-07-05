@@ -11,7 +11,7 @@ from multiprocessing.dummy import Pool as ThreadPool
 import time
 from collections import defaultdict
 from .misc import int_to_str, float_to_str, reverse_complement, print_progress_line, \
-    weighted_average, get_num_agreement
+    weighted_average, get_num_agreement, flip_number_order
 from .cpp_function_wrappers import multiple_sequence_alignment
 
 
@@ -666,8 +666,8 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
 
                 # Standardise the order so we don't end up with both directions (e.g. 5 to -6 and
                 # 6 to -5) in spanning_read_seqs.
-                seg_nums, flipped = flip_segment_order(alignment_1.get_signed_ref_num(),
-                                                       alignment_2.get_signed_ref_num())
+                seg_nums, flipped = flip_number_order(alignment_1.get_signed_ref_num(),
+                                                      alignment_2.get_signed_ref_num())
                 if seg_nums not in already_added:
                     bridge_start = alignment_1.read_end_positive_strand()
                     bridge_end = alignment_2.read_start_positive_strand()
@@ -833,28 +833,6 @@ def path_is_self_contained(path, start, end, graph):
             if connected_segment not in all_numbers_in_path:
                 return False
     return True
-
-
-def flip_segment_order(seg_num_1, seg_num_2):
-    """
-    Given two segment numbers, this function possibly flips them around. It returns the new numbers
-    (either unchanged or flipped) and whether or not a flip took place. The decision is somewhat
-    arbitrary, but it needs to be consistent so when we collect bridging read sequences they are
-    always in the same direction.
-    """
-    if seg_num_1 > 0 and seg_num_2 > 0:
-        flip = False
-    elif seg_num_1 < 0 and seg_num_2 < 0:
-        flip = True
-    elif seg_num_1 < 0:  # only seg_num_1 is negative
-        flip = abs(seg_num_1) > abs(seg_num_2)
-    else:  # only seg_num_2 is negative
-        flip = abs(seg_num_2) > abs(seg_num_1)
-    if flip:
-        return (-seg_num_2, -seg_num_1), True
-    else:
-        return (seg_num_1, seg_num_2), False
-
 
 def get_single_copy_alignments(read, single_copy_num_set, allowed_overlap, min_scaled_score):
     """

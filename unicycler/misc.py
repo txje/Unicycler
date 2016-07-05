@@ -325,9 +325,9 @@ def get_sequence_file_type(filename):
     seq_file = open_func(filename, 'r')
     first_char = seq_file.read(1)
 
-    if first_char == '>':
+    if first_char == '>' or first_char == b'>':
         return 'FASTA'
-    elif first_char == '@':
+    elif first_char == '@' or first_char == b'@':
         return 'FASTQ'
     else:
         raise ValueError('File is neither FASTA or FASTQ')

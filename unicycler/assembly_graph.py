@@ -958,9 +958,9 @@ class AssemblyGraph(object):
                       ', '.join([str(x) for x in initial_single_copy_segments]))
             else:
                 print('Initial single copy segments: none')
-            print_section_header('Propogating copy numbers', verbosity)
+            print_section_header('Propagating copy numbers', verbosity)
 
-        # Propogate copy depth as possible using those initial assignments.
+        # Propagate copy depth as possible using those initial assignments.
         self.determine_copy_depth_part_2(propagation_tolerance, verbosity)
 
         # Assign single-copy to the largest available segment, propagate and repeat.

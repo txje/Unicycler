@@ -781,16 +781,17 @@ class AssemblyGraph(object):
         """
         This function cleans up the final assembled graph, in preparation for saving.
         """
-        try:
-            self.remove_all_overlaps(verbosity)
-            if verbosity > 0:
-                print('Successfully removed graph overlaps')
-        except CannotTrimOverlaps:
-            if verbosity > 0:
-                print('Unable to remove graph overlaps')
-        self.normalise_read_depths()
+        if self.overlap:
+            try:
+                self.remove_all_overlaps(verbosity)
+                if verbosity > 0:
+                    print('Successfully removed all graph overlaps')
+            except CannotTrimOverlaps:
+                if verbosity > 0:
+                    print('Unable to remove graph overlaps')
         self.remove_zero_length_segs(verbosity)
         self.merge_small_segments(verbosity, 5)
+        self.normalise_read_depths()
         self.renumber_segments()
         self.sort_link_order()
 

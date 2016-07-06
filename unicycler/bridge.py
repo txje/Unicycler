@@ -566,7 +566,7 @@ def find_contig_bridges(segment_num, path, single_copy_numbers):
     return bridge_paths
 
 
-def create_loop_unrolling_bridges(graph, single_copy_segments, verbosity):
+def create_loop_unrolling_bridges(graph, verbosity):
     """
     This function creates loop unrolling bridges using the information in SPAdes paths.
     """
@@ -834,6 +834,7 @@ def path_is_self_contained(path, start, end, graph):
                 return False
     return True
 
+
 def get_single_copy_alignments(read, single_copy_num_set, allowed_overlap, min_scaled_score):
     """
     Returns a list of single-copy segment alignments for the read.
@@ -936,6 +937,7 @@ def start_end_available_to_bridge(start, end, right_bridged, left_bridged,
     if abs(end) in seg_nums_used_in_bridges:
         return False
     return True
+
 
 def reduce_expected_count(expected_count, a, b):
     """

@@ -16,6 +16,7 @@ import gzip
 import argparse
 from misc import quit_with_error, get_sequence_file_type, get_compression_type, check_file_exists
 
+
 def main():
     args = get_arguments()
     check_file_exists(args.gene_fasta)

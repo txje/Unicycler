@@ -286,7 +286,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         graphmap_sam = os.path.join(temp_dir, 'graphmap_alignments.sam')
         run_graphmap(ref_fasta, reads_fastq, graphmap_sam, graphmap_path, threads, scoring_scheme)
         graphmap_alignments = load_sam_alignments(graphmap_sam, read_dict, reference_dict,
-                                                  scoring_scheme)
+                                                  scoring_scheme, threads, VERBOSITY)
         # Clean up files and directories.
         if use_graphmap:
             os.remove(graphmap_sam)

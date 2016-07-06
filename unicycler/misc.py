@@ -347,6 +347,7 @@ def get_num_agreement(num_1, num_2):
         return 0.0
     return min(num_1, num_2) / max(num_1, num_2)
 
+
 def flip_number_order(num_1, num_2):
     """
     Given two segment numbers, this function possibly flips them around. It returns the new numbers

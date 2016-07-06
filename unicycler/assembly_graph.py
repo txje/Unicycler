@@ -8,7 +8,7 @@ email: rrwick@gmail.com
 import math
 from collections import deque, defaultdict
 from .misc import int_to_str, float_to_str, weighted_average, weighted_average_list, \
-    print_section_header, get_num_agreement, reverse_complement, flip_number_order
+    print_section_header, get_num_agreement, reverse_complement
 from .bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge, \
     get_applicable_bridge_pieces, get_bridge_str
 from .cpp_function_wrappers import fully_global_alignment, path_alignment
@@ -774,7 +774,7 @@ class AssemblyGraph(object):
         self.filter_homopolymer_loops()
         self.merge_all_possible()
         self.normalise_read_depths()
-        self.remove_zero_length_segs()
+        self.remove_zero_length_segs(0)
         self.sort_link_order()
 
     def final_clean(self, verbosity):
@@ -2310,10 +2310,8 @@ class AssemblyGraph(object):
                 break
             self.remove_zero_length_segs(0)
 
-
         if verbosity > 0 and merged_seg_nums:
             print('Merged small segments:', ', '.join(str(x) for x in merged_seg_nums))
-
 
 
 class Segment(object):

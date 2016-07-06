@@ -60,7 +60,7 @@ def main():
     # Make an initial set of bridges using the SPAdes contig paths.
     print_section_header('Bridging graph with SPAdes contig paths', verbosity)
     bridges = create_spades_contig_bridges(assembly_graph, single_copy_segments, verbosity)
-    bridges += create_loop_unrolling_bridges(assembly_graph, single_copy_segments, verbosity)
+    bridges += create_loop_unrolling_bridges(assembly_graph, verbosity)
     bridged_graph = copy.deepcopy(assembly_graph)
     seg_nums_used_in_bridges = bridged_graph.apply_bridges(bridges, verbosity,
                                                            args.min_bridge_qual,

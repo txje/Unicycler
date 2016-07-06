@@ -5,6 +5,7 @@ Author: Ryan Wick
 email: rrwick@gmail.com
 """
 
+import math
 from collections import deque, defaultdict
 from .misc import int_to_str, float_to_str, weighted_average, weighted_average_list, \
     print_section_header, get_num_agreement, reverse_complement, flip_number_order
@@ -776,16 +777,20 @@ class AssemblyGraph(object):
         self.remove_zero_length_segs()
         self.sort_link_order()
 
-    def final_clean(self):
+    def final_clean(self, verbosity):
         """
         This function cleans up the final assembled graph, in preparation for saving.
         """
         try:
-            self.remove_all_overlaps()
+            self.remove_all_overlaps(verbosity)
+            if verbosity > 0:
+                print('Successfully removed graph overlaps')
         except CannotTrimOverlaps:
-            pass
+            if verbosity > 0:
+                print('Unable to remove graph overlaps')
         self.normalise_read_depths()
-        self.remove_zero_length_segs()
+        self.remove_zero_length_segs(verbosity)
+        self.merge_small_segments(verbosity, 5)
         self.renumber_segments()
         self.sort_link_order()
 
@@ -2033,7 +2038,7 @@ class AssemblyGraph(object):
             total_seq_len += seg_len
         return total_seq_len
 
-    def remove_all_overlaps(self):
+    def remove_all_overlaps(self, verbosity):
         """
         This function removes all overlaps from the graph by shortening segments. It assumes that
         all overlaps in the graph are the same size.
@@ -2045,9 +2050,14 @@ class AssemblyGraph(object):
                 all_edges.add((start, end))
                 all_edges.add((-end, -start))
 
-        # This function will strive to put each edge into two groups:
-        #   1) Trim sequence from the end of the starting segment
-        #   2) Trim sequence from start of the ending segment
+        # The overlap to be removed is an odd number, as SPAdes only uses odd k-mers. We'll split
+        # this value approximately in half.
+        large_half = int(math.ceil(self.overlap / 2))
+        small_half = int(math.floor(self.overlap / 2))
+
+        # This function will strive to put each edge into one of two groups:
+        #   1) Trim more sequence from the end of the starting segment
+        #   2) Trim more sequence from start of the ending segment
 
         # To do this, we determine which edges which must be in the same group as each other and
         # edges which must be in different groups.
@@ -2055,47 +2065,60 @@ class AssemblyGraph(object):
         must_differ = defaultdict(set)
 
         # Firstly, each edge must be in the opposite group as its complement edge. E.g. if we
-        # have an edge (5, -4) and trim from the first segment, then we need to trim from the
-        # second segment of its complement edge (4, -5).
+        # have an edge (5, -4) and trim more from the first segment, then we need to trim more from
+        # the second segment of its complement edge (4, -5).
         for edge in all_edges:
             rev_edge = (-edge[1], -edge[0])
             must_differ[edge].add(rev_edge)
+            must_differ[rev_edge].add(edge)
 
         # Edges which connect to the same side of a segment must be grouped together.
         pos_and_neg_seg_nums = list(self.segments) + [-x for x in self.segments]
         for seg in pos_and_neg_seg_nums:
             downstream_segs = self.get_downstream_seg_nums(seg)
             if len(downstream_segs) > 1:
-                edge_1 = (seg, downstream_segs[0])
+                edge_1_for = (seg, downstream_segs[0])
+                edge_1_rev = (-downstream_segs[0], -seg)
                 for downstream_seg in downstream_segs[1:]:
-                    edge_2 = (seg, downstream_seg)
-                    must_match[edge_1].add(edge_2)
-                    must_match[edge_2].add(edge_1)
+                    edge_2_for = (seg, downstream_seg)
+                    edge_2_rev = (-downstream_seg, -seg)
+                    must_match[edge_1_for].add(edge_2_for)
+                    must_match[edge_2_for].add(edge_1_for)
+                    must_match[edge_1_rev].add(edge_2_rev)
+                    must_match[edge_2_rev].add(edge_1_rev)
             upstream_segs = self.get_upstream_seg_nums(seg)
             if len(upstream_segs) > 1:
-                edge_1 = (upstream_segs[0], seg)
+                edge_1_for = (upstream_segs[0], seg)
+                edge_1_rev = (-seg, -upstream_segs[0])
                 for upstream_seg in upstream_segs[1:]:
-                    edge_2 = (upstream_seg, seg)
-                    must_match[edge_1].add(edge_2)
-                    must_match[edge_2].add(edge_1)
+                    edge_2_for = (upstream_seg, seg)
+                    edge_2_rev = (-seg, -upstream_seg)
+                    must_match[edge_1_for].add(edge_2_for)
+                    must_match[edge_2_for].add(edge_1_for)
+                    must_match[edge_1_rev].add(edge_2_rev)
+                    must_match[edge_2_rev].add(edge_1_rev)
 
-        # Some segments are likely to be too small to handle trimming on both sides. So we
-        # require that edges on opposite sides are grouped together, so only one trim will occur
-        # on these segments.
+        # Segments which are equal to the overlap size cannot have the larger trim applied to
+        # both sides, so we require that edges on opposite sides of these segments to be grouped
+        # together.
         small_seg_nums = [x for x in pos_and_neg_seg_nums
-                          if self.segments[abs(x)].get_length() < 2 * self.overlap]
-        for seg_num in small_seg_nums:
-            downstream_segs = self.get_downstream_seg_nums(seg_num)
-            upstream_segs = self.get_upstream_seg_nums(seg_num)
+                          if self.segments[abs(x)].get_length() == self.overlap]
+        for seg in small_seg_nums:
+            downstream_segs = self.get_downstream_seg_nums(seg)
+            upstream_segs = self.get_upstream_seg_nums(seg)
             if downstream_segs and upstream_segs:
                 for downstream_seg in downstream_segs:
-                    edge_1 = (seg_num, downstream_seg)
+                    edge_1_for = (seg, downstream_seg)
+                    edge_1_rev = (-downstream_seg, -seg)
                     for upstream_seg in upstream_segs:
-                        edge_2 = (upstream_seg, seg_num)
-                        must_match[edge_1].add(edge_2)
+                        edge_2_for = (upstream_seg, seg)
+                        edge_2_rev = (-seg, -seg)
+                        must_match[edge_1_for].add(edge_2_for)
+                        must_match[edge_2_for].add(edge_1_for)
+                        must_match[edge_1_rev].add(edge_2_rev)
+                        must_match[edge_2_rev].add(edge_1_rev)
 
-        # Now we do the grouping!
-        # We work with the edges in order for consistency from one run to the next.
+        # Now for the grouping! We order the edges for consistency from one run to the next.
         ordered_edges = list(all_edges)
         group_1 = set()
         group_2 = set()
@@ -2103,7 +2126,7 @@ class AssemblyGraph(object):
             if edge in group_1 or edge in group_2:
                 continue
 
-            # Put the edge in the first group (arbitrary decision).
+            # Put an edge in the first group (arbitrary decision).
             group_1.add(edge)
 
             while True:
@@ -2123,6 +2146,7 @@ class AssemblyGraph(object):
                             raise CannotTrimOverlaps
                         else:
                             new_group_2.add(must_differ_edge)
+
                 for group_2_edge in group_2:
                     for must_match_edge in must_match[group_2_edge]:
                         if must_match_edge in group_1 or must_match_edge in new_group_1:
@@ -2146,27 +2170,40 @@ class AssemblyGraph(object):
                     break
 
         # If the code got here, that means that all edges have been grouped according to the
-        # rules, and we can go ahead with the trimming!
-        # Group 1 will get its first segment trimmed (at the end) and group 2 will get its second
-        # segment trimmed (at the start).
-        trim_end = set()
-        trim_start = set()
+        # rules, so now we produce sets of what to do for each segment. Segments in the
+        # large_trim_end set will have the larger overlap trimmed from their end. Segments not in
+        # that set will have the shorter overlap trimmed from their end. And similarly for the
+        # large_trim_start set. These two sets are not exclusive - a segment may be in neither,
+        # just one or both.
+        large_trim_end = set()
+        large_trim_start = set()
         for edge in group_1:
             start_seg = edge[0]
             if start_seg > 0:
-                trim_end.add(start_seg)
+                large_trim_end.add(start_seg)
             else:
-                trim_start.add(-start_seg)
+                large_trim_start.add(-start_seg)
         for edge in group_2:
             end_seg = edge[1]
             if end_seg > 0:
-                trim_start.add(end_seg)
+                large_trim_start.add(end_seg)
             else:
-                trim_end.add(-end_seg)
-        for seg in trim_start:
-            self.segments[seg].trim_from_start(self.overlap)
-        for seg in trim_end:
-            self.segments[seg].trim_from_end(self.overlap)
+                large_trim_end.add(-end_seg)
+
+        # Now we finally do the segment trimming!
+        if verbosity > 2:
+            print('               Bases     Bases')
+            print('             trimmed   trimmed')
+            print('   Segment      from      from')
+            print('    number     start       end')
+        for seg_num, segment in self.segments.items():
+            start_trim = large_half if seg_num in large_trim_start else small_half
+            end_trim = large_half if seg_num in large_trim_end else small_half
+            segment.trim_from_start(start_trim)
+            segment.trim_from_end(end_trim)
+            if verbosity > 2:
+                print(str(seg_num).rjust(10) + str(start_trim).rjust(10) + str(end_trim).rjust(10))
+
         self.overlap = 0
 
     def get_downstream_seg_nums(self, seg_num):
@@ -2189,7 +2226,7 @@ class AssemblyGraph(object):
         else:
             return self.reverse_links[seg_num]
 
-    def remove_zero_length_segs(self):
+    def remove_zero_length_segs(self, verbosity):
         """
         This function removes zero-length segments from the graph (segments with a length equal
         to the graph overlap), but only if they they aren't serving a purpose (such as in a
@@ -2221,6 +2258,61 @@ class AssemblyGraph(object):
                 segs_to_remove.append(seg_num)
 
         self.remove_segments(segs_to_remove)
+        if verbosity > 0 and segs_to_remove:
+            print('Removed zero-length segments:', ', '.join(str(x) for x in segs_to_remove))
+
+    def merge_small_segments(self, verbosity, max_merge_size):
+        """
+        In some cases, small segments can be merged into neighbouring segments to simplify the
+        graph somewhat. This function does just that!
+        """
+        # This function assumes an overlap-free graph.
+        if self.overlap > 0:
+            return
+
+        merged_seg_nums = []
+        while True:
+            for seg_num, segment in self.segments.items():
+                if segment.get_length() > max_merge_size or segment.get_length() == 0:
+                    continue
+                downstream_segs = self.get_downstream_seg_nums(seg_num)
+                upstream_segs = self.get_upstream_seg_nums(seg_num)
+
+                # If the segment has one downstream segment and multiple upstream segments,
+                # then we can merge it into the upstream segments.
+                if len(downstream_segs) == 1 and len(upstream_segs) > 1 and \
+                        all(self.lead_exclusively_to(x, seg_num) for x in upstream_segs):
+                    for upstream_seg_num in upstream_segs:
+                        upstream_seg = self.segments[abs(upstream_seg_num)]
+                        if upstream_seg_num > 0:
+                            upstream_seg.append_to_forward_sequence(segment.forward_sequence)
+                        else:
+                            upstream_seg.append_to_reverse_sequence(segment.forward_sequence)
+                    segment.remove_sequence()
+                    merged_seg_nums.append(seg_num)
+                    break
+
+                # If the segment has one upstream segment and multiple downstream segments,
+                # then we can merge it into the downstream segments.
+                if len(upstream_segs) == 1 and len(downstream_segs) > 1 and \
+                        all(self.lead_exclusively_from(x, seg_num) for x in downstream_segs):
+                    for downstream_seg_num in downstream_segs:
+                        downstream_seg = self.segments[abs(downstream_seg_num)]
+                        if downstream_seg_num > 0:
+                            downstream_seg.prepend_to_forward_sequence(segment.forward_sequence)
+                        else:
+                            downstream_seg.prepend_to_reverse_sequence(segment.forward_sequence)
+                    segment.remove_sequence()
+                    merged_seg_nums.append(seg_num)
+                    break
+            else:
+                break
+            self.remove_zero_length_segs(0)
+
+
+        if verbosity > 0 and merged_seg_nums:
+            print('Merged small segments:', ', '.join(str(x) for x in merged_seg_nums))
+
 
 
 class Segment(object):
@@ -2332,14 +2424,53 @@ class Segment(object):
         Removes the specified number of bases from the end of the segment sequence.
         """
         self.forward_sequence = self.forward_sequence[:-amount]
-        self.reverse_sequence = self.forward_sequence[amount:]
+        self.reverse_sequence = self.reverse_sequence[amount:]
 
     def trim_from_start(self, amount):
         """
         Removes the specified number of bases from the end of the segment sequence.
         """
         self.forward_sequence = self.forward_sequence[amount:]
-        self.reverse_sequence = self.forward_sequence[:-amount]
+        self.reverse_sequence = self.reverse_sequence[:-amount]
+
+    def append_to_forward_sequence(self, additional_seq):
+        """
+        Adds the given sequence to the end of the forward sequence (and updates the reverse
+        sequence accordingly).
+        """
+        self.forward_sequence = self.forward_sequence + additional_seq
+        self.reverse_sequence = reverse_complement(self.forward_sequence)
+
+    def append_to_reverse_sequence(self, additional_seq):
+        """
+        Adds the given sequence to the end of the reverse sequence (and updates the forward
+        sequence accordingly).
+        """
+        self.reverse_sequence = self.reverse_sequence + additional_seq
+        self.forward_sequence = reverse_complement(self.reverse_sequence)
+
+    def prepend_to_forward_sequence(self, additional_seq):
+        """
+        Adds the given sequence to the end of the forward sequence (and updates the reverse
+        sequence accordingly).
+        """
+        self.forward_sequence = additional_seq + self.forward_sequence
+        self.reverse_sequence = reverse_complement(self.forward_sequence)
+
+    def prepend_to_reverse_sequence(self, additional_seq):
+        """
+        Adds the given sequence to the end of the reverse sequence (and updates the forward
+        sequence accordingly).
+        """
+        self.reverse_sequence = additional_seq + self.reverse_sequence
+        self.forward_sequence = reverse_complement(self.reverse_sequence)
+
+    def remove_sequence(self):
+        """
+        Gets rid of the segment sequence entirely, turning it into a zero-length segment.
+        """
+        self.forward_sequence = ''
+        self.reverse_sequence = ''
 
 
 def get_error(source, target):

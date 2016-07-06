@@ -163,7 +163,6 @@ def main():
         bridged_graph.clean_up_after_bridging(single_copy_segments, seg_nums_used_in_bridges,
                                               args.min_component_size, args.min_dead_end_size,
                                               verbosity)
-        bridged_graph.final_clean()
         file_num += 1
         read_bridged_graph_cleaned = os.path.join(args.out,
                                                   str(file_num).zfill(3) + '_cleaned.gfa')
@@ -175,6 +174,10 @@ def main():
         file_num += 1
         read_bridged_graph_merged = os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa')
         bridged_graph.save_to_gfa(read_bridged_graph_merged, verbosity)
+
+        # Finalise the graph
+        print_section_header('Finalising graph', verbosity)
+        bridged_graph.final_clean(verbosity)
 
         if verbosity > 0:
             print_section_header('Final assembly graph', verbosity)

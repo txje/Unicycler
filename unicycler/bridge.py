@@ -366,9 +366,9 @@ class LongReadBridge(object):
 
         # Bridges between long start/end segments are rewarded, as they are more likely to actually
         # be single-copy.
-        start_length_factor = score_function(start_seg.get_length(), min_alignment_length)
+        start_length_factor = score_function(start_seg.get_length(), min_alignment_length * 4)
         self.quality *= start_length_factor
-        end_length_factor = score_function(end_seg.get_length(), min_alignment_length)
+        end_length_factor = score_function(end_seg.get_length(), min_alignment_length * 4)
         self.quality *= end_length_factor
 
         if verbosity > 2:

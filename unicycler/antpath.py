@@ -381,9 +381,9 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
                                      sam_filename, allowed_overlap, use_graphmap)
             completed_count += 1
             if VERBOSITY == 1:
-                print_progress_line(completed_count, num_realignments, prefix='Read: ')
+                print_progress_line(completed_count, num_realignments, prefix='Read: ', flush=True)
             if VERBOSITY > 1:
-                print(output, end='')
+                print(output, end='', flush=True)
 
     # If multi-threaded, use a thread pool.
     else:
@@ -404,9 +404,9 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         for output in imap_function(seqan_alignment_one_arg, arg_list):
             completed_count += 1
             if VERBOSITY == 1:
-                print_progress_line(completed_count, num_realignments, prefix='Read: ')
+                print_progress_line(completed_count, num_realignments, prefix='Read: ', flush=True)
             if VERBOSITY > 1:
-                print(output, end='')
+                print(output, end='', flush=True)
 
     # We're done with the C++ KmerPositions object, so delete it now.
     delete_all_kmer_positions(kmer_positions_ptr)

@@ -41,7 +41,7 @@ def find_start_gene(sequence, start_genes_fasta, identity_threshold, coverage_th
 
     # Run the tblastn search.
     command = [tblastn_path, '-db', replicon_fasta_filename, '-query', start_genes_fasta, '-outfmt',
-               '6 qseqid sstart send pident qlen qseq qstart', '-num_threads', str(threads)]
+               '6 qseqid sstart send pident qlen qseq qstart qend', '-num_threads', str(threads)]
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     while process.poll() is None:
         line = process.stdout.readline().strip().decode()
@@ -54,10 +54,11 @@ def find_start_gene(sequence, start_genes_fasta, identity_threshold, coverage_th
                 pident = float(parts[3])
                 qlen = float(parts[4])
                 qseq = parts[5]
-                qstart = int(parts[6])
+                qstart = int(parts[6]) - 1
+                qend = int(parts[7])
                 query_cov = 100.0 * len(qseq) / qlen
 
-                if pident >= identity_threshold and query_cov >= coverage_threshold and qstart == 1:
+                if pident >= identity_threshold and query_cov >= coverage_threshold and qstart == 0:
                     if sstart <= send:
                         start_pos = sstart - 1
                         flip = False
@@ -67,7 +68,10 @@ def find_start_gene(sequence, start_genes_fasta, identity_threshold, coverage_th
                     process.terminate()
                     if verbosity > 2:
                         hit_str = qseqid + ', ' + float_to_str(query_cov, 2) + '% cov, ' + \
-                            float_to_str(pident, 2) + '% identity'
+                            float_to_str(pident, 2) + '% identity, gene start pos = ' + \
+                            str(qstart+1) + ', gene end pos = ' + str(qend) + \
+                            ', replicon start pos = ' + str(sstart+1) + ', replicon end pos = ' + \
+                            str(send)
                         print('  Successful BLAST hit:', hit_str, flush=True)
                     return qseqid, start_pos, flip
 

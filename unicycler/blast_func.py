@@ -60,17 +60,17 @@ def find_start_gene(sequence, start_genes_fasta, identity_threshold, coverage_th
 
                 if pident >= identity_threshold and query_cov >= coverage_threshold and qstart == 0:
                     if sstart <= send:
-                        start_pos = sstart - 1
+                        start_pos = sstart
                         flip = False
                     else:
-                        start_pos = sstart
+                        start_pos = sstart + 1
                         flip = True
                     process.terminate()
                     if verbosity > 2:
                         hit_str = qseqid + ', ' + float_to_str(query_cov, 2) + '% cov, ' + \
                             float_to_str(pident, 2) + '% identity, gene start pos = ' + \
-                            str(qstart+1) + ', gene end pos = ' + str(qend) + \
-                            ', replicon start pos = ' + str(sstart+1) + ', replicon end pos = ' + \
+                            str(qstart) + ', gene end pos = ' + str(qend) + \
+                            ', replicon start pos = ' + str(sstart) + ', replicon end pos = ' + \
                             str(send)
                         print('  Successful BLAST hit:', hit_str, flush=True)
                     return qseqid, start_pos, flip

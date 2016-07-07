@@ -295,7 +295,7 @@ def get_arguments():
     parser.add_argument('--no_rotate', action='store_true',
                         help='Do not rotate completed replicons to start at a standard gene')
     parser.add_argument('--start_genes', type=str,
-                        default=os.path.join(this_script_dir, 'start_genes.fasta'),
+                        default=os.path.join(this_script_dir, 'gene_data', 'start_genes.fasta'),
                         help='FASTA file of genes for start point of rotated replicons')
     parser.add_argument('--start_gene_id', type=float, default=90.0,
                         help='The minimum required BLAST percent identity for a start gene search')

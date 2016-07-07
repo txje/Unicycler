@@ -47,35 +47,40 @@ def find_start_gene(sequence, start_genes_fasta, identity_threshold, coverage_th
         line = process.stdout.readline().strip().decode()
         if line != '':
             parts = line.split('\t')
-            qseqid = parts[0]
-            sstart = int(parts[1]) - 1
-            send = int(parts[2])
-            pident = float(parts[3])
-            qlen = float(parts[4])
-            qseq = parts[5]
-            qstart = int(parts[6])
-            query_cov = 100.0 * len(qseq) / qlen
+            if len(parts) > 6:
+                qseqid = parts[0]
+                sstart = int(parts[1]) - 1
+                send = int(parts[2])
+                pident = float(parts[3])
+                qlen = float(parts[4])
+                qseq = parts[5]
+                qstart = int(parts[6])
+                query_cov = 100.0 * len(qseq) / qlen
 
-            if verbosity > 2:
-                hit_str = qseqid + ' ' + float_to_str(query_cov, 2) + '% cov' + \
-                    float_to_str(pident, 2) + '% identity'
-
-            good_hit = pident >= identity_threshold and query_cov >= coverage_threshold and \
-                qstart == 1
-
-            if not good_hit and verbosity > 2:
-                print('  Insufficient BLAST hit:', hit_str, flush=True)
-
-            if good_hit:
-                if sstart <= send:
-                    start_pos = sstart - 1
-                    flip = False
-                else:
-                    start_pos = sstart
-                    flip = True
-                process.terminate()
                 if verbosity > 2:
-                    print('  Successful BLAST hit:', hit_str, flush=True)
-                return qseqid, start_pos, flip
+                    hit_str = qseqid + ' ' + float_to_str(query_cov, 2) + '% cov' + \
+                        float_to_str(pident, 2) + '% identity'
+
+                good_hit = pident >= identity_threshold and query_cov >= coverage_threshold and \
+                    qstart == 1
+
+                if not good_hit and verbosity > 2:
+                    print('  Insufficient BLAST hit:', hit_str, flush=True)
+
+                if good_hit:
+                    if sstart <= send:
+                        start_pos = sstart - 1
+                        flip = False
+                    else:
+                        start_pos = sstart
+                        flip = True
+                    process.terminate()
+                    if verbosity > 2:
+                        print('  Successful BLAST hit:', hit_str, flush=True)
+                    return qseqid, start_pos, flip
+
+    blast_error = process.stderr.readline().strip().decode()
+    if blast_error:
+        quit_with_error('BLAST encountered an error:\n' + blast_error)
 
     raise CannotFindStart

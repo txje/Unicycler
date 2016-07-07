@@ -323,10 +323,6 @@ class LongReadBridge(object):
         expected_read_count = total_possible_placements / estimated_genome_size
         actual_read_count = len(self.full_span_reads)
 
-        # Don't let the expected read count get too low, as this could create an inappropriately
-        # large quality boost.
-        expected_read_count = max(expected_read_count, 1.0)
-
         # Adjust the expected read count down, especially for higher values.
         expected_read_count = reduce_expected_count(expected_read_count, 30, 0.5)
 
@@ -340,8 +336,9 @@ class LongReadBridge(object):
         self.quality *= depth_agreement_factor
 
         # The number of reads which contribute to a bridge is a big deal, so the read count factor
-        # scales linearly.
-        read_count_factor = actual_read_count / expected_read_count
+        # scales linearly. This value is capped at 1, which means that bridges with too few reads
+        # are punished but bridges with excess reads are not rewarded.
+        read_count_factor = min(1.0, actual_read_count / expected_read_count)
         self.quality *= read_count_factor
 
         # The length of alignments to the start/end segments is positively correlated with quality
@@ -365,11 +362,15 @@ class LongReadBridge(object):
         self.quality *= align_score_factor
 
         # Bridges between long start/end segments are rewarded, as they are more likely to actually
-        # be single-copy.
+        # be single-copy. We apply a length factor for both the start and the end segments,
+        # and then apply the smaller of two again. This is to punish cases where both segments
+        # are not long.
         start_length_factor = score_function(start_seg.get_length(), min_alignment_length * 4)
         self.quality *= start_length_factor
         end_length_factor = score_function(end_seg.get_length(), min_alignment_length * 4)
         self.quality *= end_length_factor
+        smaller_length_factor = min(start_length_factor, end_length_factor)
+        self.quality *= smaller_length_factor
 
         if verbosity > 2:
             output += '  depth agreement factor:  ' + float_to_str(depth_agreement_factor, 2) + '\n'
@@ -378,6 +379,7 @@ class LongReadBridge(object):
             output += '  alignment score factor:  ' + float_to_str(align_score_factor, 2) + '\n'
             output += '  start length factor:     ' + float_to_str(start_length_factor, 2) + '\n'
             output += '  end length factor:       ' + float_to_str(end_length_factor, 2) + '\n'
+            output += '  smaller_length_factor:   ' + float_to_str(smaller_length_factor, 2) + '\n'
             output += '  final quality:           ' + float_to_str(self.quality, 2) + '\n'
         return output
 

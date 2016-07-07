@@ -547,7 +547,7 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
     read_progress_started = False
     read_progress_finished = False
     while process.poll() is None:
-        graphmap_output = process.stderr.read(1).decode('utf-8')
+        graphmap_output = process.stderr.read(1).decode()
         if VERBOSITY > 0:
             line += graphmap_output
             if line.endswith('\n') or line.endswith('\r'):
@@ -586,16 +586,16 @@ def get_graphmap_version(graphmap_path):
     command = [graphmap_path, '-h']
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = process.communicate()
-    allout = (out + err).decode('utf-8')
-    if 'Version: v' not in allout:
+    all_out = (out + err).decode()
+    if 'Version: v' not in all_out:
         command = [graphmap_path, 'align', '-h']
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out, err = process.communicate()
-        allout = (out + err).decode('utf-8')
-    if 'Version: v' not in allout:
+        all_out = (out + err).decode()
+    if 'Version: v' not in all_out:
         return 0.0
-    version_i = allout.find('Version: v')
-    version = allout[version_i + 10:]
+    version_i = all_out.find('Version: v')
+    version = all_out[version_i + 10:]
     version = version.split()[0]
     version = '.'.join(version.split('.')[0:2])
     return float(version)

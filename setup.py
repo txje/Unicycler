@@ -33,7 +33,7 @@ from setuptools.command.install import install
 exec(open('unicycler/version.py').read())
 
 with open('README.md', 'rb') as readme:
-    LONG_DESCRIPTION = readme.read().decode('utf-8')
+    LONG_DESCRIPTION = readme.read().decode()
 
 
 class UnicycleBuild(build):

@@ -43,10 +43,10 @@ def find_start_gene(sequence, start_genes_fasta, identity_threshold, coverage_th
     command = [tblastn_path, '-db', replicon_fasta_filename, '-query', start_genes_fasta, '-outfmt',
                '6 qseqid sstart send pident qlen qseq qstart', '-num_threads', str(threads)]
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    while True:
-        line = process.stdout.readline().decode()
+    while process.poll() is None:
+        line = process.stdout.readline().strip().decode()
         if line != '':
-            parts = line.strip().split('\t')
+            parts = line.split('\t')
             qseqid = parts[0]
             sstart = int(parts[1]) - 1
             send = int(parts[2])
@@ -77,7 +77,5 @@ def find_start_gene(sequence, start_genes_fasta, identity_threshold, coverage_th
                 if verbosity > 2:
                     print('  Successful BLAST hit:', hit_str, flush=True)
                 return qseqid, start_pos, flip
-        else:
-            break
 
     raise CannotFindStart

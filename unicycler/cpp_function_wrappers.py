@@ -147,7 +147,7 @@ def c_string_to_python_string(c_string):
     This function casts a C string to a Python string and then calls a function to delete the C
     string from the heap.
     """
-    python_string = cast(c_string, c_char_p).value.decode('utf-8')
+    python_string = cast(c_string, c_char_p).value.decode()
     C_LIB.freeCString(c_string)
     return python_string
 

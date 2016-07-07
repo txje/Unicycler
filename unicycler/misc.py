@@ -103,7 +103,7 @@ def check_spades(spades_path):
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = process.communicate()
 
-    if not err.decode('utf-8'):
+    if not err.decode():
         quit_with_error('SPAdes was found but does not produce output (make sure to use '
                         '"spades.py" location, not "spades")')
 

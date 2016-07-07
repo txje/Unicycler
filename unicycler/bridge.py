@@ -345,20 +345,23 @@ class LongReadBridge(object):
         self.quality *= read_count_factor
 
         # The length of alignments to the start/end segments is positively correlated with quality
-        # to reward bridges with long alignments.
-        total_alignment_length = sum(min(x[2].get_aligned_ref_length(),
-                                         x[3].get_aligned_ref_length())
-                                     for x in self.full_span_reads)
-        mean_alignment_length = total_alignment_length / (2.0 * len(self.full_span_reads))
-        align_length_factor = score_function(mean_alignment_length, min_alignment_length * 4)
+        # to reward bridges with long alignments. Specifically, we want there to be at least one
+        # spanning read with a long alignment to the start segment and at least one spanning read
+        # with a long alignment to the end segment.
+        longest_start_alignment = max(x[2].get_aligned_ref_length() for x in self.full_span_reads)
+        longest_end_alignment = max(x[3].get_aligned_ref_length() for x in self.full_span_reads)
+        alignment_length = min(longest_start_alignment, longest_end_alignment)
+        align_length_factor = score_function(alignment_length, min_alignment_length * 4)
         self.quality *= align_length_factor
 
         # The mean alignment score to the start/end segments is positively correlated with quality,
-        # so bridges with high quality alignments are rewarded.
-        scaled_score_total = sum(x[2].scaled_score + x[3].scaled_score
-                                 for x in self.full_span_reads)
-        mean_scaled_score = scaled_score_total / (2.0 * len(self.full_span_reads))
-        align_score_factor = mean_scaled_score / 100.0
+        # so bridges with high quality alignments are rewarded. Specifically, we want there to be at
+        # least one spanning read with a high quality alignment to the start segment and at least
+        # one spanning read with a high quality alignment to the end segment.
+        best_start_alignment = max(x[2].scaled_score for x in self.full_span_reads)
+        best_end_alignment = max(x[3].scaled_score for x in self.full_span_reads)
+        alignment_quality = min(best_start_alignment, best_end_alignment)
+        align_score_factor = alignment_quality / 100.0
         self.quality *= align_score_factor
 
         # Bridges between long start/end segments are rewarded, as they are more likely to actually

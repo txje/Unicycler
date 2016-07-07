@@ -44,7 +44,7 @@ def find_start_gene(sequence, start_genes_fasta, identity_threshold, coverage_th
                '6 qseqid sstart send pident qlen qseq', '-num_threads', str(threads)]
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     while True:
-        line = process.stdout.readline()
+        line = process.stdout.readline().decode()
         if line != '':
             # the real code does filtering here
             parts = line.strip().split('\t')

@@ -196,6 +196,9 @@ def main():
     if verbosity > 0:
         print_section_header('Final assembly graph', verbosity)
         print(bridged_graph.get_summary())
+    file_num += 1
+    cleaned_graph = os.path.join(args.out, str(file_num).zfill(3) + '_cleaned.gfa')
+    bridged_graph.save_to_gfa(cleaned_graph, verbosity)
 
     # Rotate completed replicons in the graph to a standard starting gene.
     completed_replicons = bridged_graph.completed_circular_replicons()
@@ -203,6 +206,7 @@ def main():
         print_section_header('Rotating completed replicons', verbosity)
         completed_replicons = sorted(completed_replicons,
                                      key=lambda x: bridged_graph.segments[x].get_length())
+        rotation_count = 0
         for i, completed_replicon in enumerate(completed_replicons):
             segment = bridged_graph.segments[completed_replicon]
             sequence = segment.forward_sequence
@@ -219,14 +223,20 @@ def main():
                                                               args.start_gene_cov, args.out,
                                                               args.makeblastdb_path,
                                                               args.tblastn_path, args.threads)
+            except CannotFindStart:
+                if verbosity > 0:
+                    print('  Unable to find a starting gene')
+            else:
                 print('  Starting gene:', start_gene)
                 strand_str = '(reverse strand)' if flip else '(forward strand)'
                 print('  Starting position:', int_to_str(start_pos), strand_str)
                 segment.rotate_sequence(start_pos, flip, bridged_graph.overlap)
+                rotation_count += 1
 
-            except CannotFindStart:
-                if verbosity > 0:
-                    print('  Unable to find a starting gene')
+        if rotation_count:
+            file_num += 1
+            rotated_graph = os.path.join(args.out, str(file_num).zfill(3) + '_rotated.gfa')
+            bridged_graph.save_to_gfa(rotated_graph, verbosity)
 
 
 

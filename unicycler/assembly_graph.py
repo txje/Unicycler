@@ -785,10 +785,10 @@ class AssemblyGraph(object):
             try:
                 self.remove_all_overlaps(verbosity)
                 if verbosity > 0:
-                    print('Successfully removed all graph overlaps')
+                    print('\nSuccessfully removed all graph overlaps')
             except CannotTrimOverlaps:
                 if verbosity > 0:
-                    print('Unable to remove graph overlaps')
+                    print('\nUnable to remove graph overlaps')
         self.remove_zero_length_segs(verbosity)
         self.merge_small_segments(verbosity, 5)
         self.normalise_read_depths()
@@ -1785,11 +1785,9 @@ class AssemblyGraph(object):
         summary += 'connected components:  ' + \
                    int_to_str(len(self.get_connected_components()), max_v) + '\n'
 
-        completed_components = self.completed_circular_components()
+        completed_components = self.completed_circular_replicons()
         summary += 'completed components:  ' + int_to_str(len(completed_components), max_v) + '\n'
-        completed_length = 0
-        for component in completed_components:
-            completed_length += sum(self.segments[x].get_length() for x in component)
+        completed_length = sum(self.segments[x].get_length() for x in completed_components)
         summary += 'completed length (bp): ' + int_to_str(completed_length, max_v) + '\n'
 
         if score:
@@ -1842,20 +1840,20 @@ class AssemblyGraph(object):
 
         return n50, shortest, first_quartile, median, third_quartile, longest
 
-    def completed_circular_components(self):
+    def completed_circular_replicons(self):
         """
-        Returns the number of graph components which are simple loops: one segment connected to
-        itself to make a circular piece of DNA.
+        Returns a list of graph components which are simple loops: one segment connected to itself
+        to make a circular piece of DNA.
         """
-        single_segment_components = [x for x in self.get_connected_components() if len(x) == 1]
         completed_components = []
+        single_segment_components = [x for x in self.get_connected_components() if len(x) == 1]
         for component in single_segment_components:
             only_segment = component[0]
             if only_segment in self.forward_links and \
                     self.forward_links[only_segment] == [only_segment] and \
                     only_segment in self.reverse_links and \
                     self.reverse_links[only_segment] == [only_segment]:
-                completed_components.append(component)
+                completed_components.append(only_segment)
         return completed_components
 
     def get_simple_path(self, starting_seg):
@@ -2260,7 +2258,7 @@ class AssemblyGraph(object):
 
         self.remove_segments(segs_to_remove)
         if verbosity > 0 and segs_to_remove:
-            print('Removed zero-length segments:', ', '.join(str(x) for x in segs_to_remove))
+            print('\nRemoved zero-length segments:', ', '.join(str(x) for x in segs_to_remove))
 
     def merge_small_segments(self, verbosity, max_merge_size):
         """
@@ -2311,7 +2309,7 @@ class AssemblyGraph(object):
             self.remove_zero_length_segs(0)
 
         if verbosity > 0 and merged_seg_nums:
-            print('Merged small segments:', ', '.join(str(x) for x in merged_seg_nums))
+            print('\nMerged small segments:', ', '.join(str(x) for x in merged_seg_nums))
 
 
 class Segment(object):
@@ -2470,6 +2468,27 @@ class Segment(object):
         """
         self.forward_sequence = ''
         self.reverse_sequence = ''
+
+    def rotate_sequence(self, start_pos, flip, overlap):
+        """
+        Rotates the sequence so it begins at start_pos. If flip is True, it also switches the
+        forward and reverse strands. This function assumes that the segment is a circular
+        completed replicon.
+        """
+        unrotated_seq = self.forward_sequence
+        if overlap > 0:
+            unrotated_seq = unrotated_seq[:-overlap]
+        rotated_seq = unrotated_seq[start_pos:] + unrotated_seq[:start_pos]
+        if overlap > 0:
+            rotated_seq += rotated_seq[:overlap]
+        rev_comp_rotated_seq = reverse_complement(rotated_seq)
+
+        if flip:
+            self.forward_sequence = rev_comp_rotated_seq
+            self.reverse_sequence = rotated_seq
+        else:
+            self.forward_sequence = rotated_seq
+            self.reverse_sequence = rev_comp_rotated_seq
 
 
 def get_error(source, target):

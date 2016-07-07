@@ -19,6 +19,7 @@ from .bridge import create_spades_contig_bridges, \
 from .misc import int_to_str, float_to_str, quit_with_error, get_percentile, \
     print_section_header, check_files_and_programs
 from .spades_func import get_best_spades_graph
+from .blast_func import find_start_gene, CannotFindStart
 from .antpath import add_aligning_arguments, fix_up_arguments, semi_global_align_long_reads, \
     load_references, load_long_reads, AlignmentScoringScheme, load_sam_alignments
 
@@ -34,7 +35,10 @@ def main():
     args = get_arguments()
     verbosity = args.verbosity
     check_files_and_programs([args.short1, args.short2, args.long], spades_path=args.spades_path,
-                             graphmap_path=(None if args.no_graphmap else args.graphmap_path))
+                             graphmap_path=(None if args.no_graphmap else args.graphmap_path),
+                             makeblastdb_path=(None if args.no_rotate else args.makeblastdb_path),
+                             tblastn_path=(None if args.no_rotate else args.tblastn_path),
+                             pilon_path=(None if args.no_pilon else args.pilon_path))
     make_output_directory(args.out, verbosity)
 
     file_num = 1
@@ -119,7 +123,6 @@ def main():
         else:
             alignments_sam_in_progress = alignments_sam + '.incomplete'
             allowed_overlap = int(round(assembly_graph.overlap * 1.1))  # TO DO: adjust?
-
             semi_global_align_long_reads(references, graph_fasta, read_dict, read_names,
                                          args.long, temp_alignment_dir, args.graphmap_path,
                                          args.threads, scoring_scheme, args.low_score,
@@ -175,14 +178,6 @@ def main():
         read_bridged_graph_merged = os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa')
         bridged_graph.save_to_gfa(read_bridged_graph_merged, verbosity)
 
-        # Finalise the graph
-        print_section_header('Finalising graph', verbosity)
-        bridged_graph.final_clean(verbosity)
-
-        if verbosity > 0:
-            print_section_header('Final assembly graph', verbosity)
-            print(bridged_graph.get_summary())
-
     # If we are getting long reads incrementally, then we do the process iteratively.
     elif args.long_dir:
         finished = False
@@ -195,11 +190,55 @@ def main():
             # TO DO: ASSESS WHETHER THE PROCESS IS COMPLETE
             finished = True  # TEMP
 
+    # Perform a final clean on the graph, including overlap removal.
+    print_section_header('Finalising graph', verbosity)
+    bridged_graph.final_clean(verbosity)
+    if verbosity > 0:
+        print_section_header('Final assembly graph', verbosity)
+        print(bridged_graph.get_summary())
+
+    # Rotate completed replicons in the graph to a standard starting gene.
+    completed_replicons = bridged_graph.completed_circular_replicons()
+    if not args.no_rotate and len(completed_replicons) > 0:
+        print_section_header('Rotating completed replicons', verbosity)
+        completed_replicons = sorted(completed_replicons,
+                                     key=lambda x: bridged_graph.segments[x].get_length())
+        for i, completed_replicon in enumerate(completed_replicons):
+            segment = bridged_graph.segments[completed_replicon]
+            sequence = segment.forward_sequence
+            if bridged_graph.overlap > 0:
+                sequence = sequence[:-bridged_graph.overlap]
+            depth = segment.depth
+            if verbosity > 0:
+                print('Replicon ' + str(i+1) + ':')
+                print('  Length =', int_to_str(len(sequence)), 'bp')
+                print('  Depth =', float_to_str(depth, 2) + 'x')
+            try:
+                start_gene, start_pos, flip = find_start_gene(sequence, args.start_genes,
+                                                              args.start_gene_id,
+                                                              args.start_gene_cov, args.out,
+                                                              args.makeblastdb_path,
+                                                              args.tblastn_path, args.threads)
+                print('  Starting gene:', start_gene)
+                strand_str = '(reverse strand)' if flip else '(forward strand)'
+                print('  Starting position:', int_to_str(start_pos), strand_str)
+                segment.rotate_sequence(start_pos, flip, bridged_graph.overlap)
+
+            except CannotFindStart:
+                if verbosity > 0:
+                    print('  Unable to find a starting gene')
+
+
+
+
+
 
 def get_arguments():
     """
     Parse the command line arguments.
     """
+    this_script_dir = os.path.dirname(os.path.realpath(__file__))
+
     parser = argparse.ArgumentParser(description='Hybrid Assembler')
 
     parser.add_argument('--short1', required=True, default=argparse.SUPPRESS,
@@ -242,6 +281,23 @@ def get_arguments():
                         help='Number of k-mer steps to use in SPAdes assembly')
     parser.add_argument('--verbosity', type=int, required=False, default=1,
                         help='Level of stdout information (0 to 2)')
+    parser.add_argument('--no_rotate', action='store_true',
+                        help='Do not rotate completed replicons to start at a standard gene')
+    parser.add_argument('--start_genes', type=str,
+                        default=os.path.join(this_script_dir, 'start_genes.fasta'),
+                        help='FASTA file of genes for start point of rotated replicons')
+    parser.add_argument('--start_gene_id', type=float, default=90.0,
+                        help='The minimum required BLAST percent identity for a start gene search')
+    parser.add_argument('--start_gene_cov', type=float, default=99.0,
+                        help='The minimum required BLAST percent coverage for a start gene search')
+    parser.add_argument('--makeblastdb_path', type=str, default='makeblastdb',
+                        help='Path to the makeblastdb executable')
+    parser.add_argument('--tblastn_path', type=str, default='tblastn',
+                        help='Path to the tblastn executable')
+    parser.add_argument('--no_pilon', action='store_true',
+                        help='Do not use Pilon to polish the final assembly')
+    parser.add_argument('--pilon_path', type=str, default='pilon',
+                        help='Path to the pilon executable')
 
     # Add the arguments for the aligner, but suppress the help text.
     add_aligning_arguments(parser, True)

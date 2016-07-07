@@ -46,7 +46,8 @@ def int_to_str(num, max_num=0):
     return num_str.rjust(len(max_str))
 
 
-def check_files_and_programs(files, spades_path=None, graphmap_path=None):
+def check_files_and_programs(files, spades_path=None, graphmap_path=None, makeblastdb_path=None,
+                             tblastn_path=None, pilon_path=None):
     """
     Checks to make sure all files in the list are present and either program, as needed.
     """
@@ -56,6 +57,10 @@ def check_files_and_programs(files, spades_path=None, graphmap_path=None):
         check_graphmap(check_graphmap)
     if spades_path:
         check_spades(spades_path)
+    if makeblastdb_path and tblastn_path:
+        check_blast(makeblastdb_path, tblastn_path)
+    if pilon_path:
+        check_pilon(pilon_path)
 
 
 def check_file_exists(filename):  # type: (str) -> bool
@@ -91,11 +96,7 @@ def check_spades(spades_path):
     """
     Makes sure the SPAdes executable is available.
     """
-    process = subprocess.Popen(['which', spades_path], stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
-    out, err = process.communicate()
-    found_spades = bool(out) and not bool(err)
-    if not found_spades:
+    if not find_program_with_which(spades_path):
         quit_with_error('could not find SPAdes at ' + spades_path)
 
     command = [spades_path, '-h']
@@ -105,6 +106,43 @@ def check_spades(spades_path):
     if not err.decode('utf-8'):
         quit_with_error('SPAdes was found but does not produce output (make sure to use '
                         '"spades.py" location, not "spades")')
+
+
+def check_blast(makeblastdb_path, tblastn_path):
+    """
+    Makes sure the BLAST executables are available.
+    """
+    if not find_program_with_which(makeblastdb_path):
+        quit_with_error('could not find makeblastdb - either specify its location using '
+                        '--makeblastdb_path or use --no_rotate to remove BLAST dependency')
+    if not find_program_with_which(tblastn_path):
+        quit_with_error('could not find tblastn - either specify its location using '
+                        '--tblastn_path or use --no_rotate to remove BLAST dependency')
+
+
+def check_pilon(pilon_path):
+    """
+    Makes sure the Pilon executable is available.
+    """
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+    # TO DO
+
+
+def find_program_with_which(executable_path):
+    """
+    Returns whether or not the executable was found.
+    """
+    process = subprocess.Popen(['which', executable_path], stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE)
+    out, err = process.communicate()
+    return bool(out) and not bool(err)
 
 
 def get_mean_and_st_dev(num_list):

@@ -324,8 +324,8 @@ class LongReadBridge(object):
         actual_read_count = len(self.full_span_reads)
 
         # Don't let the expected read count get too low, as this could create an inappropriately
-        # huge quality boost.
-        expected_read_count = max(expected_read_count, 0.1)
+        # large quality boost.
+        expected_read_count = max(expected_read_count, 1.0)
 
         # Adjust the expected read count down, especially for higher values.
         expected_read_count = reduce_expected_count(expected_read_count, 30, 0.5)

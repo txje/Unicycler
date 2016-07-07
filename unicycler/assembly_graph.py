@@ -1763,33 +1763,26 @@ class AssemblyGraph(object):
         """
         total_length = self.get_total_length()
         max_v = max(total_length, 1000000)
-
+        n50, shortest, lower_quartile, median, upper_quartile, longest = self.get_contig_stats()
         summary = ''
         if file:
             summary += file + '\n'
         summary += 'segments:              ' + int_to_str(len(self.segments), max_v) + '\n'
         summary += 'links:                 ' + int_to_str(self.get_total_link_count(), max_v) + '\n'
-
-        total_length = self.get_total_length()
         summary += 'total length (bp):     ' + int_to_str(total_length, max_v) + '\n'
-
-        n50, shortest, lower_quartile, median, upper_quartile, longest = self.get_contig_stats()
         summary += 'N50:                   ' + int_to_str(n50, max_v) + '\n'
         summary += 'shortest segment (bp): ' + int_to_str(shortest, max_v) + '\n'
         summary += 'lower quartile (bp):   ' + int_to_str(lower_quartile, max_v) + '\n'
         summary += 'median segment (bp):   ' + int_to_str(median, max_v) + '\n'
         summary += 'upper quartile (bp):   ' + int_to_str(upper_quartile, max_v) + '\n'
         summary += 'longest segment (bp):  ' + int_to_str(longest, max_v) + '\n'
-
         summary += 'dead ends:             ' + int_to_str(self.total_dead_end_count(), max_v) + '\n'
         summary += 'connected components:  ' + \
                    int_to_str(len(self.get_connected_components()), max_v) + '\n'
-
         completed_components = self.completed_circular_replicons()
         summary += 'completed components:  ' + int_to_str(len(completed_components), max_v) + '\n'
         completed_length = sum(self.segments[x].get_length() for x in completed_components)
         summary += 'completed length (bp): ' + int_to_str(completed_length, max_v) + '\n'
-
         if score:
             pad_size = len(int_to_str(max_v))
             summary += 'score:                 ' + '{:.2e}'.format(score).rjust(pad_size) + '\n'

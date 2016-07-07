@@ -195,7 +195,7 @@ def main():
     bridged_graph.final_clean(verbosity)
     if verbosity > 0:
         print_section_header('Final assembly graph', verbosity)
-        print(bridged_graph.get_summary())
+        print(bridged_graph.get_summary(), end='')
     file_num += 1
     cleaned_graph = os.path.join(args.out, str(file_num).zfill(3) + '_cleaned.gfa')
     bridged_graph.save_to_gfa(cleaned_graph, verbosity)

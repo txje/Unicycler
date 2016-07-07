@@ -226,7 +226,7 @@ def main():
                                                               args.verbosity)
             except CannotFindStart:
                 if verbosity > 0:
-                    print('  Unable to find a starting gene')
+                    print('  Unable to find a starting gene - not rotating sequence')
             else:
                 print('  Starting gene:', start_gene)
                 strand_str = '(reverse strand)' if flip else '(forward strand)'
@@ -239,6 +239,9 @@ def main():
             rotated_graph = os.path.join(args.out, str(file_num).zfill(3) + '_rotated.gfa')
             bridged_graph.save_to_gfa(rotated_graph, verbosity)
 
+    # Polish the final assembly!
+    if not args.no_pilon:
+        pass
 
 
 
@@ -309,6 +312,8 @@ def get_arguments():
                         help='Do not use Pilon to polish the final assembly')
     parser.add_argument('--pilon_path', type=str, default='pilon',
                         help='Path to the pilon executable')
+    parser.add_argument('--min_pilon_size', type=int, default=10000,
+                        help='Sequences shorter than this value will not be polished using Pilon')
 
     # Add the arguments for the aligner, but suppress the help text.
     add_aligning_arguments(parser, True)

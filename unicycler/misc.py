@@ -11,6 +11,8 @@ import subprocess
 import random
 import math
 import gzip
+import itertools
+
 
 
 def float_to_str(num, decimals, max_num=0):
@@ -405,3 +407,28 @@ def flip_number_order(num_1, num_2):
         return (-num_2, -num_1), True
     else:
         return (num_1, num_2), False
+
+
+def load_fasta(filename):
+    """
+    Returns a list of tuples (header, seq) for each record in the fasta file.
+    """
+    fasta_seqs = []
+    fasta_file = open(filename, 'r')
+    name = ''
+    sequence = ''
+    for line in fasta_file:
+        line = line.strip()
+        if not line:
+            continue
+        if line[0] == '>':  # Header line = start of new contig
+            if name:
+                fasta_seqs.append((name.split()[0], sequence))
+                sequence = ''
+            name = line[1:]
+        else:
+            sequence += line
+    if name:
+        fasta_seqs.append((name.split()[0], sequence))
+    fasta_file.close()
+    return fasta_seqs

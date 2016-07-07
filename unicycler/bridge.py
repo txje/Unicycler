@@ -324,6 +324,7 @@ class LongReadBridge(object):
         actual_read_count = len(self.full_span_reads)
 
         # Adjust the expected read count down, especially for higher values.
+        # TO DO: reevaluate this step - is it necessary?
         expected_read_count = reduce_expected_count(expected_read_count, 30, 0.5)
 
         if verbosity > 2:

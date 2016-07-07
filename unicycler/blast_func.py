@@ -7,7 +7,7 @@ email: rrwick@gmail.com
 
 import os
 import subprocess
-from .misc import quit_with_error, float_to_str
+from .misc import quit_with_error, float_to_str, load_fasta
 
 
 class CannotFindStart(Exception):
@@ -20,7 +20,20 @@ def find_start_gene(sequence, start_genes_fasta, identity_threshold, coverage_th
     This function uses tblastn to look for start genes in the sequence. It returns the first gene
     (using the order in the file) which meets the identity and coverage thresholds, as well as
     the position of that gene (including which strand it is on).
+    This function assumes that the sequence is circular with no overlap.
     """
+    # Prepare the replicon sequence. In order to get a solid, single BLAST hit in cases where the
+    # gene overlaps from the end to the start, we have to duplicate some of the replicon sequence
+    # for the BLAST database.
+    seq_len = len(sequence)
+    queries = load_fasta(start_genes_fasta)
+    if not queries:
+        raise CannotFindStart
+    longest_query = max(len(x[1]) for x in queries)
+    longest_query *= 3  # amino acids to nucleotides
+    dup_length = min(seq_len, longest_query)
+    sequence = sequence + sequence[:dup_length]
+
     # Create a FASTA file of the replicon sequence.
     blast_dir = os.path.join(out_dir, 'blast_temp')
     if not os.path.exists(blast_dir):
@@ -59,13 +72,15 @@ def find_start_gene(sequence, start_genes_fasta, identity_threshold, coverage_th
                 query_cov = 100.0 * len(qseq) / qlen
 
                 if pident >= identity_threshold and query_cov >= coverage_threshold and qstart == 0:
+                    process.terminate()
                     if sstart <= send:
                         start_pos = sstart
                         flip = False
                     else:
                         start_pos = sstart + 1
                         flip = True
-                    process.terminate()
+                    if start_pos >= seq_len:
+                        start_pos -= seq_len
                     if verbosity > 2:
                         hit_str = qseqid + ', ' + float_to_str(query_cov, 2) + '% cov, ' + \
                             float_to_str(pident, 2) + '% identity, gene start pos = ' + \

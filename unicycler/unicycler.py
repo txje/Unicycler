@@ -204,7 +204,7 @@ def main():
     completed_replicons = bridged_graph.completed_circular_replicons()
     if not args.no_rotate and len(completed_replicons) > 0:
         print_section_header('Rotating completed replicons', verbosity)
-        completed_replicons = sorted(completed_replicons,
+        completed_replicons = sorted(completed_replicons, reverse=True,
                                      key=lambda x: bridged_graph.segments[x].get_length())
         rotation_count = 0
         for i, completed_replicon in enumerate(completed_replicons):
@@ -222,7 +222,8 @@ def main():
                                                               args.start_gene_id,
                                                               args.start_gene_cov, args.out,
                                                               args.makeblastdb_path,
-                                                              args.tblastn_path, args.threads)
+                                                              args.tblastn_path, args.threads,
+                                                              args.verbosity)
             except CannotFindStart:
                 if verbosity > 0:
                     print('  Unable to find a starting gene')
@@ -298,7 +299,7 @@ def get_arguments():
                         help='FASTA file of genes for start point of rotated replicons')
     parser.add_argument('--start_gene_id', type=float, default=90.0,
                         help='The minimum required BLAST percent identity for a start gene search')
-    parser.add_argument('--start_gene_cov', type=float, default=99.0,
+    parser.add_argument('--start_gene_cov', type=float, default=95.0,
                         help='The minimum required BLAST percent coverage for a start gene search')
     parser.add_argument('--makeblastdb_path', type=str, default='makeblastdb',
                         help='Path to the makeblastdb executable')

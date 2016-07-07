@@ -7,14 +7,14 @@ email: rrwick@gmail.com
 
 import os
 import subprocess
-from .misc import quit_with_error, float_to_str, load_fasta
+from .misc import float_to_str, load_fasta
 
 
 class CannotFindStart(Exception):
     pass
 
 
-def find_start_gene(sequence, start_genes_fasta, identity_threshold, coverage_threshold, out_dir,
+def find_start_gene(sequence, start_genes_fasta, identity_threshold, coverage_threshold, blast_dir,
                     makeblastdb_path, tblastn_path, threads, verbosity):
     """
     This function uses tblastn to look for start genes in the sequence. It returns the first gene
@@ -35,9 +35,6 @@ def find_start_gene(sequence, start_genes_fasta, identity_threshold, coverage_th
     sequence = sequence + sequence[:dup_length]
 
     # Create a FASTA file of the replicon sequence.
-    blast_dir = os.path.join(out_dir, 'blast_temp')
-    if not os.path.exists(blast_dir):
-        os.makedirs(blast_dir)
     replicon_fasta_filename = os.path.join(blast_dir, 'replicon.fasta')
     replicon_fasta = open(replicon_fasta_filename, 'w')
     replicon_fasta.write('>replicon\n')
@@ -50,7 +47,8 @@ def find_start_gene(sequence, start_genes_fasta, identity_threshold, coverage_th
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     _, err = process.communicate()
     if err:
-        quit_with_error('makeblastdb encountered an error:\n' + err.decode())
+        print('\nmakeblastdb encountered an error:\n' + err.decode())
+        raise CannotFindStart
 
     # Run the tblastn search.
     command = [tblastn_path, '-db', replicon_fasta_filename, '-query', start_genes_fasta, '-outfmt',
@@ -91,7 +89,6 @@ def find_start_gene(sequence, start_genes_fasta, identity_threshold, coverage_th
                     return qseqid, start_pos, flip
 
     blast_error = process.stderr.readline().strip().decode()
-    if blast_error:
-        quit_with_error('BLAST encountered an error:\n' + blast_error)
-
+    if blast_error and verbosity > 1:
+        print('\nBLAST encountered an error:\n' + blast_error)
     raise CannotFindStart

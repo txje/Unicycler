@@ -22,6 +22,7 @@ from .spades_func import get_best_spades_graph
 from .blast_func import find_start_gene, CannotFindStart
 from .antpath import add_aligning_arguments, fix_up_arguments, semi_global_align_long_reads, \
     load_references, load_long_reads, AlignmentScoringScheme, load_sam_alignments
+from .pilon_func import polish_with_pilon, CannotPolish
 
 
 def main():
@@ -38,57 +39,60 @@ def main():
                              graphmap_path=(None if args.no_graphmap else args.graphmap_path),
                              makeblastdb_path=(None if args.no_rotate else args.makeblastdb_path),
                              tblastn_path=(None if args.no_rotate else args.tblastn_path),
-                             pilon_path=(None if args.no_pilon else args.pilon_path))
+                             pilon_path=(None if args.no_pilon else args.pilon_path),
+                             samtools_path=(None if args.no_pilon else args.samtools_path),
+                             bowtie2_path=(None if args.no_pilon else args.bowtie2_path),
+                             bowtie2_build_path=(None if args.no_pilon
+                                                 else args.bowtie2_build_path))
     make_output_directory(args.out, verbosity)
 
     file_num = 1
-    unbridged_graph = os.path.join(args.out, str(file_num).zfill(3) + '_unbridged_graph.gfa')
+    unbridged_graph_filename = os.path.join(args.out, str(file_num).zfill(3) +
+                                            '_unbridged_graph.gfa')
 
     # Produce a SPAdes assembly graph with a k-mer that balances contig length and connectivity.
-    if os.path.isfile(unbridged_graph):
+    if os.path.isfile(unbridged_graph_filename):
         if verbosity > 0:
             print()
             print('Unbridged graph already exists. Will use this graph instead of running SPAdes:')
-            print('  ' + unbridged_graph)
-        assembly_graph = AssemblyGraph(unbridged_graph, None)
+            print('  ' + unbridged_graph_filename)
+        unbridged_graph = AssemblyGraph(unbridged_graph_filename, None)
     else:
-        assembly_graph = get_best_spades_graph(args.short1, args.short2, args.out,
-                                               args.read_depth_filter, verbosity, args.spades_path,
-                                               args.threads, args.keep_temp, args.kmer_count,
-                                               args.min_kmer_frac, args.max_kmer_frac)
+        unbridged_graph = get_best_spades_graph(args.short1, args.short2, args.out,
+                                                args.read_depth_filter, verbosity, args.spades_path,
+                                                args.threads, args.keep_temp, args.kmer_count,
+                                                args.min_kmer_frac, args.max_kmer_frac)
 
     # Determine copy number and get single-copy segments.
-    single_copy_segments = get_single_copy_segments(assembly_graph, verbosity, 0)
-    assembly_graph.save_to_gfa(unbridged_graph, verbosity, save_copy_depth_info=True)
+    single_copy_segments = get_single_copy_segments(unbridged_graph, verbosity, 0)
+    unbridged_graph.save_to_gfa(unbridged_graph_filename, verbosity, save_copy_depth_info=True)
 
     # Make an initial set of bridges using the SPAdes contig paths.
     print_section_header('Bridging graph with SPAdes contig paths', verbosity)
-    bridges = create_spades_contig_bridges(assembly_graph, single_copy_segments, verbosity)
-    bridges += create_loop_unrolling_bridges(assembly_graph, verbosity)
-    bridged_graph = copy.deepcopy(assembly_graph)
-    seg_nums_used_in_bridges = bridged_graph.apply_bridges(bridges, verbosity,
-                                                           args.min_bridge_qual,
-                                                           single_copy_segments)
+    bridges = create_spades_contig_bridges(unbridged_graph, single_copy_segments, verbosity)
+    bridges += create_loop_unrolling_bridges(unbridged_graph, verbosity)
+    graph = copy.deepcopy(unbridged_graph)
+    seg_nums_used_in_bridges = graph.apply_bridges(bridges, verbosity, args.min_bridge_qual,
+                                                   single_copy_segments)
     file_num += 1
     spades_bridged_graph_unmerged = os.path.join(args.out, str(file_num).zfill(3) +
                                                  '_spades_bridges_applied.gfa')
-    bridged_graph.save_to_gfa(spades_bridged_graph_unmerged, verbosity, save_seg_type_info=True,
-                              single_copy_segments=single_copy_segments)
+    graph.save_to_gfa(spades_bridged_graph_unmerged, verbosity, save_seg_type_info=True,
+                      single_copy_segments=single_copy_segments)
 
     # Clean up unnecessary segments after bridging.
-    bridged_graph.clean_up_after_bridging(single_copy_segments, seg_nums_used_in_bridges,
-                                          args.min_component_size, args.min_dead_end_size,
-                                          verbosity)
+    graph.clean_up_after_bridging(single_copy_segments, seg_nums_used_in_bridges,
+                                  args.min_component_size, args.min_dead_end_size, verbosity)
     file_num += 1
     spades_bridged_graph_cleaned = os.path.join(args.out, str(file_num).zfill(3) + '_cleaned.gfa')
-    bridged_graph.save_to_gfa(spades_bridged_graph_cleaned, verbosity, save_seg_type_info=True,
-                              single_copy_segments=single_copy_segments)
+    graph.save_to_gfa(spades_bridged_graph_cleaned, verbosity, save_seg_type_info=True,
+                      single_copy_segments=single_copy_segments)
 
     # Merge the segments to simplify the graph.
-    bridged_graph.merge_all_possible()
+    graph.merge_all_possible()
     file_num += 1
     spades_bridged_graph_merged = os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa')
-    bridged_graph.save_to_gfa(spades_bridged_graph_merged, verbosity)
+    graph.save_to_gfa(spades_bridged_graph_merged, verbosity)
 
     # Prepare the directory for long read alignment.
     alignment_dir = os.path.join(args.out, 'read_alignment_temp')
@@ -97,10 +101,10 @@ def main():
     graph_fasta = os.path.join(alignment_dir, 'graph_segments.fasta')
     alignments_sam = os.path.join(alignment_dir, 'long_read_alignments.sam')
     temp_alignment_dir = os.path.join(alignment_dir, 'temp')
-    assembly_graph.save_to_fasta(graph_fasta)
+    unbridged_graph.save_to_fasta(graph_fasta)
 
     scoring_scheme = AlignmentScoringScheme(args.scores)
-    min_alignment_length = assembly_graph.overlap * 2  # TO DO: make this a parameter?
+    min_alignment_length = unbridged_graph.overlap * 2  # TO DO: make this a parameter?
 
     # If all long reads are available now, then we do the entire process in one pass.
     if args.long:
@@ -109,7 +113,7 @@ def main():
         read_dict, read_names = load_long_reads(args.long, verbosity)
 
         # Load existing alignments if available.
-        if os.path.isfile(alignments_sam) and sam_references_match(alignments_sam, assembly_graph):
+        if os.path.isfile(alignments_sam) and sam_references_match(alignments_sam, unbridged_graph):
             if verbosity > 0:
                 print('\nSAM file already exists. Will use these alignments instead of conducting '
                       'a new alignment:')
@@ -122,7 +126,7 @@ def main():
         # Conduct alignment if existing alignments are not available.
         else:
             alignments_sam_in_progress = alignments_sam + '.incomplete'
-            allowed_overlap = int(round(assembly_graph.overlap * 1.1))  # TO DO: adjust?
+            allowed_overlap = int(round(unbridged_graph.overlap * 1.1))  # TO DO: adjust?
             semi_global_align_long_reads(references, graph_fasta, read_dict, read_names,
                                          args.long, temp_alignment_dir, args.graphmap_path,
                                          args.threads, scoring_scheme, args.low_score,
@@ -130,6 +134,8 @@ def main():
                                          min_alignment_length, alignments_sam_in_progress,
                                          full_command, allowed_overlap, verbosity)
             shutil.move(alignments_sam_in_progress, alignments_sam)
+            if args.keep_temp < 1:
+                shutil.rmtree(alignment_dir)
 
         # Use the long reads which aligned entirely within contigs (which are most likely correct)
         # to determine a minimum score
@@ -147,36 +153,34 @@ def main():
 
         # Do the long read bridging - this is the good part!
         print_section_header('Building long read bridges', verbosity)
-        bridges = create_long_read_bridges(assembly_graph, read_dict, read_names,
+        bridges = create_long_read_bridges(unbridged_graph, read_dict, read_names,
                                            single_copy_segments, verbosity, bridges,
                                            min_scaled_score, args.threads, scoring_scheme,
                                            min_alignment_length)
-        bridged_graph = copy.deepcopy(assembly_graph)
+        graph = copy.deepcopy(unbridged_graph)
         print_section_header('Bridging graph with long reads', verbosity)
-        seg_nums_used_in_bridges = bridged_graph.apply_bridges(bridges, verbosity,
-                                                               args.min_bridge_qual,
-                                                               single_copy_segments)
+        seg_nums_used_in_bridges = graph.apply_bridges(bridges, verbosity, args.min_bridge_qual,
+                                                       single_copy_segments)
         file_num += 1
         read_bridged_graph_unmerged = os.path.join(args.out, str(file_num).zfill(3) +
                                                    '_long_read_bridges_applied.gfa')
-        bridged_graph.save_to_gfa(read_bridged_graph_unmerged, verbosity, save_seg_type_info=True,
-                                  single_copy_segments=single_copy_segments)
+        graph.save_to_gfa(read_bridged_graph_unmerged, verbosity, save_seg_type_info=True,
+                          single_copy_segments=single_copy_segments)
 
         # Clean up unnecessary segments after bridging.
-        bridged_graph.clean_up_after_bridging(single_copy_segments, seg_nums_used_in_bridges,
-                                              args.min_component_size, args.min_dead_end_size,
-                                              verbosity)
+        graph.clean_up_after_bridging(single_copy_segments, seg_nums_used_in_bridges,
+                                      args.min_component_size, args.min_dead_end_size, verbosity)
         file_num += 1
         read_bridged_graph_cleaned = os.path.join(args.out,
                                                   str(file_num).zfill(3) + '_cleaned.gfa')
-        bridged_graph.save_to_gfa(read_bridged_graph_cleaned, verbosity, save_seg_type_info=True,
-                                  single_copy_segments=single_copy_segments)
+        graph.save_to_gfa(read_bridged_graph_cleaned, verbosity, save_seg_type_info=True,
+                          single_copy_segments=single_copy_segments)
 
         # Merge the segments to simplify the graph.
-        bridged_graph.merge_all_possible()
+        graph.merge_all_possible()
         file_num += 1
         read_bridged_graph_merged = os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa')
-        bridged_graph.save_to_gfa(read_bridged_graph_merged, verbosity)
+        graph.save_to_gfa(read_bridged_graph_merged, verbosity)
 
     # If we are getting long reads incrementally, then we do the process iteratively.
     elif args.long_dir:
@@ -192,26 +196,29 @@ def main():
 
     # Perform a final clean on the graph, including overlap removal.
     print_section_header('Finalising graph', verbosity)
-    bridged_graph.final_clean(verbosity)
+    graph.final_clean(verbosity)
     if verbosity > 0:
         print_section_header('Final assembly graph', verbosity)
-        print(bridged_graph.get_summary(), end='')
+        print(graph.get_summary(), end='')
     file_num += 1
     cleaned_graph = os.path.join(args.out, str(file_num).zfill(3) + '_cleaned.gfa')
-    bridged_graph.save_to_gfa(cleaned_graph, verbosity)
+    graph.save_to_gfa(cleaned_graph, verbosity)
 
     # Rotate completed replicons in the graph to a standard starting gene.
-    completed_replicons = bridged_graph.completed_circular_replicons()
+    completed_replicons = graph.completed_circular_replicons()
     if not args.no_rotate and len(completed_replicons) > 0:
         print_section_header('Rotating completed replicons', verbosity)
+        blast_dir = os.path.join(args.out, 'blast_temp')
+        if not os.path.exists(blast_dir):
+            os.makedirs(blast_dir)
         completed_replicons = sorted(completed_replicons, reverse=True,
-                                     key=lambda x: bridged_graph.segments[x].get_length())
+                                     key=lambda x: graph.segments[x].get_length())
         rotation_count = 0
         for i, completed_replicon in enumerate(completed_replicons):
-            segment = bridged_graph.segments[completed_replicon]
+            segment = graph.segments[completed_replicon]
             sequence = segment.forward_sequence
-            if bridged_graph.overlap > 0:
-                sequence = sequence[:-bridged_graph.overlap]
+            if graph.overlap > 0:
+                sequence = sequence[:-graph.overlap]
             depth = segment.depth
             if verbosity > 0:
                 print('Replicon ' + str(i+1) + ':')
@@ -220,7 +227,7 @@ def main():
             try:
                 start_gene, start_pos, flip = find_start_gene(sequence, args.start_genes,
                                                               args.start_gene_id,
-                                                              args.start_gene_cov, args.out,
+                                                              args.start_gene_cov, blast_dir,
                                                               args.makeblastdb_path,
                                                               args.tblastn_path, args.threads,
                                                               args.verbosity)
@@ -231,20 +238,34 @@ def main():
                 print('  Starting gene:', start_gene)
                 strand_str = '(reverse strand)' if flip else '(forward strand)'
                 print('  Starting position:', int_to_str(start_pos), strand_str)
-                segment.rotate_sequence(start_pos, flip, bridged_graph.overlap)
+                segment.rotate_sequence(start_pos, flip, graph.overlap)
                 rotation_count += 1
-
         if rotation_count:
             file_num += 1
             rotated_graph = os.path.join(args.out, str(file_num).zfill(3) + '_rotated.gfa')
-            bridged_graph.save_to_gfa(rotated_graph, verbosity)
+            graph.save_to_gfa(rotated_graph, verbosity)
+        if args.keep_temp < 2 and os.path.exists(blast_dir):
+            shutil.rmtree(blast_dir)
 
     # Polish the final assembly!
     if not args.no_pilon:
-        pass
-
-
-
+        print_section_header('Polishing assembly with Pilon', verbosity)
+        polish_dir = os.path.join(args.out, 'polish_temp')
+        if not os.path.exists(polish_dir):
+            os.makedirs(polish_dir)
+        try:
+            polish_with_pilon(graph, args.bowtie2_path, args.bowtie2_build_path, args.pilon_path,
+                              args.samtools_path, args.min_polish_size, polish_dir, args.verbosity,
+                              args.short1, args.short2, args.threads)
+        except CannotPolish:
+            if verbosity > 0:
+                print('  Unable to polish assembly using Pilon')
+        else:
+            file_num += 1
+            polished_graph = os.path.join(args.out, str(file_num).zfill(3) + '_polished.gfa')
+            graph.save_to_gfa(polished_graph, verbosity)
+        if args.keep_temp < 2 and os.path.exists(polish_dir):
+            shutil.rmtree(polish_dir)
 
 
 def get_arguments():
@@ -310,9 +331,15 @@ def get_arguments():
                         help='Path to the tblastn executable')
     parser.add_argument('--no_pilon', action='store_true',
                         help='Do not use Pilon to polish the final assembly')
+    parser.add_argument('--bowtie2_path', type=str, default='bowtie2',
+                        help='Path to the bowtie2 executable')
+    parser.add_argument('--bowtie2_build_path', type=str, default='bowtie2-build',
+                        help='Path to the bowtie2_build executable')
+    parser.add_argument('--samtools_path', type=str, default='samtools',
+                        help='Path to the samtools executable')
     parser.add_argument('--pilon_path', type=str, default='pilon',
                         help='Path to the pilon executable')
-    parser.add_argument('--min_pilon_size', type=int, default=10000,
+    parser.add_argument('--min_polish_size', type=int, default=10000,
                         help='Sequences shorter than this value will not be polished using Pilon')
 
     # Add the arguments for the aligner, but suppress the help text.

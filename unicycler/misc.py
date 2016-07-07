@@ -49,7 +49,8 @@ def int_to_str(num, max_num=0):
 
 
 def check_files_and_programs(files, spades_path=None, graphmap_path=None, makeblastdb_path=None,
-                             tblastn_path=None, pilon_path=None):
+                             tblastn_path=None, pilon_path=None, samtools_path=None,
+                             bowtie2_path=None, bowtie2_build_path=None):
     """
     Checks to make sure all files in the list are present and either program, as needed.
     """
@@ -62,7 +63,7 @@ def check_files_and_programs(files, spades_path=None, graphmap_path=None, makebl
     if makeblastdb_path and tblastn_path:
         check_blast(makeblastdb_path, tblastn_path)
     if pilon_path:
-        check_pilon(pilon_path)
+        check_pilon(pilon_path, samtools_path, bowtie2_path, bowtie2_build_path)
 
 
 def check_file_exists(filename):  # type: (str) -> bool
@@ -122,19 +123,22 @@ def check_blast(makeblastdb_path, tblastn_path):
                         '--tblastn_path or use --no_rotate to remove BLAST dependency')
 
 
-def check_pilon(pilon_path):
+def check_pilon(pilon_path, samtools_path, bowtie2_path, bowtie2_build_path):
     """
     Makes sure the Pilon executable is available.
     """
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
+    if not find_program_with_which(pilon_path):
+        quit_with_error('could not find pilon - either specify its location using '
+                        '--pilon_path or use --no_pilon to remove Pilon dependency')
+    if not find_program_with_which(samtools_path):
+        quit_with_error('could not find samtools - either specify its location using '
+                        '--samtools_path or use --no_pilon to remove Samtools dependency')
+    if not find_program_with_which(bowtie2_path):
+        quit_with_error('could not find bowtie2 - either specify its location using '
+                        '--bowtie2_path or use --no_pilon to remove Bowtie2 dependency')
+    if not find_program_with_which(bowtie2_build_path):
+        quit_with_error('could not find bowtie2-build - either specify its location using '
+                        '--bowtie2_build_path or use --no_pilon to remove Bowtie2 dependency')
 
 
 def find_program_with_which(executable_path):

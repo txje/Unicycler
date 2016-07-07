@@ -57,17 +57,7 @@ def find_start_gene(sequence, start_genes_fasta, identity_threshold, coverage_th
                 qstart = int(parts[6])
                 query_cov = 100.0 * len(qseq) / qlen
 
-                if verbosity > 2:
-                    hit_str = qseqid + ' ' + float_to_str(query_cov, 2) + '% cov' + \
-                        float_to_str(pident, 2) + '% identity'
-
-                good_hit = pident >= identity_threshold and query_cov >= coverage_threshold and \
-                    qstart == 1
-
-                if not good_hit and verbosity > 2:
-                    print('  Insufficient BLAST hit:', hit_str, flush=True)
-
-                if good_hit:
+                if pident >= identity_threshold and query_cov >= coverage_threshold and qstart == 1:
                     if sstart <= send:
                         start_pos = sstart - 1
                         flip = False
@@ -76,6 +66,8 @@ def find_start_gene(sequence, start_genes_fasta, identity_threshold, coverage_th
                         flip = True
                     process.terminate()
                     if verbosity > 2:
+                        hit_str = qseqid + ', ' + float_to_str(query_cov, 2) + '% cov, ' + \
+                            float_to_str(pident, 2) + '% identity'
                         print('  Successful BLAST hit:', hit_str, flush=True)
                     return qseqid, start_pos, flip
 

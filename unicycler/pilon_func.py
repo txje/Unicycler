@@ -171,10 +171,14 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, samto
         seg_nums = sorted(graph.segments)
         polish_input_seg_nums = set(x.number for x in segments_to_polish)
         for seg_num in seg_nums:
-            print('Segment ' + str(seg_num) +
-                  ' (' + int_to_str(graph.segments[seg_num].get_length()) + ' bp): ', end='')
             if seg_num in polish_input_seg_nums:
-                print(int_to_str(change_count[seg_num]) + ' changes')
+                count = change_count[seg_num]
+                if count < 1:
+                    continue
+                print('Segment ' + str(seg_num) + ' (' +
+                      int_to_str(graph.segments[seg_num].get_length()) + ' bp): ' +
+                      int_to_str(count) + ' change' +
+                      ('s' if count > 1 else ''))
                 if verbosity > 2:
                     try:
                         changes = change_lines[seg_num]
@@ -184,8 +188,6 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, samto
                             print('  ' + change)
                     except (ValueError, IndexError):
                         pass
-            else:
-                print('too small to polish')
 
     # Replace segment sequences with Pilon-polished versions.
     pilon_results = load_fasta(pilon_fasta_filename)

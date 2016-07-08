@@ -11,8 +11,6 @@ import subprocess
 import random
 import math
 import gzip
-import itertools
-
 
 
 def float_to_str(num, decimals, max_num=0):
@@ -127,9 +125,9 @@ def check_pilon(pilon_path, samtools_path, bowtie2_path, bowtie2_build_path):
     """
     Makes sure the Pilon executable is available.
     """
-    if not find_program_with_which(pilon_path):
-        quit_with_error('could not find pilon - either specify its location using '
-                        '--pilon_path or use --no_pilon to remove Pilon dependency')
+    if not find_program_with_which('java'):
+        quit_with_error('could not find java - either specify its location using '
+                        '--pilon_path or use --no_pilon to remove Java dependency')
     if not find_program_with_which(samtools_path):
         quit_with_error('could not find samtools - either specify its location using '
                         '--samtools_path or use --no_pilon to remove Samtools dependency')
@@ -139,7 +137,27 @@ def check_pilon(pilon_path, samtools_path, bowtie2_path, bowtie2_build_path):
     if not find_program_with_which(bowtie2_build_path):
         quit_with_error('could not find bowtie2-build - either specify its location using '
                         '--bowtie2_build_path or use --no_pilon to remove Bowtie2 dependency')
+    if not get_pilon_jar_path(pilon_path):
+        quit_with_error('could not find pilon.jar - either specify its location using --pilon_path '
+                        'or use --no_pilon to remove Pilon dependency')
 
+
+def get_pilon_jar_path(pilon_path):
+    """
+    Returns the path to pilon.jar. If the given path is correct, it just returns that,
+    as an absolute path. Otherwise it tries to use the which command to find it.
+    """
+    if os.path.isfile(pilon_path):
+        return os.path.abspath(pilon_path)
+    try:
+        pilon_path = subprocess.check_output(['which', 'pilon.jar'],
+                                             stderr=subprocess.STDOUT).decode().strip()
+    except subprocess.CalledProcessError:
+        pass
+    if os.path.isfile(pilon_path):
+        return pilon_path
+    else:
+        return None
 
 def find_program_with_which(executable_path):
     """
@@ -279,11 +297,17 @@ def get_percentile(unsorted_list, percentile):
     Implements the nearest rank method:
     https://en.wikipedia.org/wiki/Percentile#The_Nearest_Rank_method
     """
-    if not unsorted_list:
+    return get_percentile_sorted(sorted(unsorted_list), percentile)
+
+
+def get_percentile_sorted(sorted_list, percentile):
+    """
+    Same as the above function, but assumes the list is already sorted.
+    """
+    if not sorted_list:
         return 0.0
-    sorted_list = sorted(unsorted_list)
     fraction = percentile / 100.0
-    rank = int(math.ceil(fraction * len(unsorted_list)))
+    rank = int(math.ceil(fraction * len(sorted_list)))
     if rank == 0:
         return sorted_list[0]
     return sorted_list[rank - 1]

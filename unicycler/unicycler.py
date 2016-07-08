@@ -257,9 +257,10 @@ def main():
             polish_with_pilon(graph, args.bowtie2_path, args.bowtie2_build_path, args.pilon_path,
                               args.samtools_path, args.min_polish_size, polish_dir, args.verbosity,
                               args.short1, args.short2, args.threads)
-        except CannotPolish:
+        except CannotPolish as e:
             if verbosity > 0:
-                print('  Unable to polish assembly using Pilon')
+                print('Unable to polish assembly using Pilon:\n')
+                print(e.message)
         else:
             file_num += 1
             polished_graph = os.path.join(args.out, str(file_num).zfill(3) + '_polished.gfa')
@@ -337,8 +338,8 @@ def get_arguments():
                         help='Path to the bowtie2_build executable')
     parser.add_argument('--samtools_path', type=str, default='samtools',
                         help='Path to the samtools executable')
-    parser.add_argument('--pilon_path', type=str, default='pilon',
-                        help='Path to the pilon executable')
+    parser.add_argument('--pilon_path', type=str, default='pilon.jar',
+                        help='Path to the executable Pilon Java archive file')
     parser.add_argument('--min_polish_size', type=int, default=10000,
                         help='Sequences shorter than this value will not be polished using Pilon')
 
@@ -375,8 +376,14 @@ def get_arguments():
     if args.long and args.long_dir:
         quit_with_error('--long and --long_dir cannot both be used')
 
-    # Change the output directory to a more useful full path.
+    # Change some arguments to full paths.
     args.out = os.path.abspath(args.out)
+    args.short1 = os.path.abspath(args.short1)
+    args.short2 = os.path.abspath(args.short2)
+    if args.long:
+        args.long = os.path.abspath(args.long)
+    if args.long_dir:
+        args.long_dir = os.path.abspath(args.long_dir)
 
     return args
 

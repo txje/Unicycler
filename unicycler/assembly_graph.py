@@ -2184,17 +2184,17 @@ class AssemblyGraph(object):
 
         # Now we finally do the segment trimming!
         if verbosity > 2:
-            print('               Bases     Bases')
-            print('             trimmed   trimmed')
-            print('   Segment      from      from')
-            print('    number     start       end')
+            print('             Bases     Bases')
+            print('           trimmed   trimmed')
+            print(' Segment      from      from')
+            print('  number     start       end')
         for seg_num, segment in self.segments.items():
             start_trim = large_half if seg_num in large_trim_start else small_half
             end_trim = large_half if seg_num in large_trim_end else small_half
             segment.trim_from_start(start_trim)
             segment.trim_from_end(end_trim)
             if verbosity > 2:
-                print(str(seg_num).rjust(10) + str(start_trim).rjust(10) + str(end_trim).rjust(10))
+                print(str(seg_num).rjust(8) + str(start_trim).rjust(10) + str(end_trim).rjust(10))
 
         self.overlap = 0
 

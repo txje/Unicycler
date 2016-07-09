@@ -712,6 +712,12 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
         else:
             output += '  None\n'
 
+    # Don't bother trying to align reads too short to have a good alignment.
+    if read.get_length() < min_align_length:
+        if VERBOSITY > 1:
+            output += '  too short to align\n'
+        return output
+
     # print(read, EXPECTED_SLOPE, flush=True) # TEMP
 
     results = semi_global_alignment(read.name, read.sequence, VERBOSITY,

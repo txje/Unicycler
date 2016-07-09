@@ -35,10 +35,12 @@ def main():
     full_command = ' '.join(sys.argv)
     args = get_arguments()
     verbosity = args.verbosity
-    check_files_and_programs([args.short1, args.short2, args.long], spades_path=args.spades_path,
+    check_files_and_programs([args.short1, args.short2, args.long],
+                             spades_path=args.spades_path,
                              graphmap_path=(None if args.no_graphmap else args.graphmap_path),
                              makeblastdb_path=(None if args.no_rotate else args.makeblastdb_path),
                              tblastn_path=(None if args.no_rotate else args.tblastn_path),
+                             gene_db_path=(None if args.no_rotate else args.start_genes),
                              pilon_path=(None if args.no_pilon else args.pilon_path),
                              samtools_path=(None if args.no_pilon else args.samtools_path),
                              bowtie2_path=(None if args.no_pilon else args.bowtie2_path),
@@ -230,7 +232,7 @@ def main():
                                                               args.start_gene_cov, blast_dir,
                                                               args.makeblastdb_path,
                                                               args.tblastn_path, args.threads,
-                                                              args.verbosity)
+                                                              verbosity)
             except CannotFindStart:
                 if verbosity > 0:
                     print('  Unable to find a starting gene - not rotating sequence')
@@ -255,7 +257,7 @@ def main():
             os.makedirs(polish_dir)
         try:
             polish_with_pilon(graph, args.bowtie2_path, args.bowtie2_build_path, args.pilon_path,
-                              args.samtools_path, args.min_polish_size, polish_dir, args.verbosity,
+                              args.samtools_path, args.min_polish_size, polish_dir, verbosity,
                               args.short1, args.short2, args.threads)
         except CannotPolish as e:
             if verbosity > 0:

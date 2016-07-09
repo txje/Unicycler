@@ -46,9 +46,10 @@ def int_to_str(num, max_num=0):
     return num_str.rjust(len(max_str))
 
 
-def check_files_and_programs(files, spades_path=None, graphmap_path=None, makeblastdb_path=None,
-                             tblastn_path=None, pilon_path=None, samtools_path=None,
-                             bowtie2_path=None, bowtie2_build_path=None):
+def check_files_and_programs(files, spades_path=None, graphmap_path=None,
+                             makeblastdb_path=None, tblastn_path=None, gene_db_path=None,
+                             pilon_path=None, samtools_path=None, bowtie2_path=None,
+                             bowtie2_build_path=None):
     """
     Checks to make sure all files in the list are present and either program, as needed.
     """
@@ -59,7 +60,7 @@ def check_files_and_programs(files, spades_path=None, graphmap_path=None, makebl
     if spades_path:
         check_spades(spades_path)
     if makeblastdb_path and tblastn_path:
-        check_blast(makeblastdb_path, tblastn_path)
+        check_blast(makeblastdb_path, tblastn_path, gene_db_path)
     if pilon_path:
         check_pilon(pilon_path, samtools_path, bowtie2_path, bowtie2_build_path)
 
@@ -109,7 +110,7 @@ def check_spades(spades_path):
                         '"spades.py" location, not "spades")')
 
 
-def check_blast(makeblastdb_path, tblastn_path):
+def check_blast(makeblastdb_path, tblastn_path, gene_db_path):
     """
     Makes sure the BLAST executables are available.
     """
@@ -119,6 +120,11 @@ def check_blast(makeblastdb_path, tblastn_path):
     if not find_program_with_which(tblastn_path):
         quit_with_error('could not find tblastn - either specify its location using '
                         '--tblastn_path or use --no_rotate to remove BLAST dependency')
+    if not os.path.isfile(gene_db_path):
+        quit_with_error('could not find file: ' + gene_db_path +
+                        '\neither specify a different start gene database using --start_genes '
+                        'or use --no_rotate')
+
 
 
 def check_pilon(pilon_path, samtools_path, bowtie2_path, bowtie2_build_path):
@@ -158,6 +164,7 @@ def get_pilon_jar_path(pilon_path):
         return pilon_path
     else:
         return None
+
 
 def find_program_with_which(executable_path):
     """

@@ -785,8 +785,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
                                      estimated_genome_size, verbosity)
             completed_count += 1
             if verbosity == 1:
-                print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ',
-                                    flush=True)
+                print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')
             if verbosity > 1:
                 print(output, end='', flush=True)
     else:
@@ -805,8 +804,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
         for output in imap_function(finalise_bridge, arg_list):
             completed_count += 1
             if verbosity == 1:
-                print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ',
-                                    flush=True)
+                print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')
             if verbosity > 1:
                 print(output, end='', flush=True)
 

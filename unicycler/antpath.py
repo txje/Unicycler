@@ -381,7 +381,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
                                      sam_filename, allowed_overlap, use_graphmap)
             completed_count += 1
             if VERBOSITY == 1:
-                print_progress_line(completed_count, num_realignments, prefix='Read: ', flush=True)
+                print_progress_line(completed_count, num_realignments, prefix='Read: ')
             if VERBOSITY > 1:
                 print(output, end='', flush=True)
 
@@ -404,7 +404,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         for output in imap_function(seqan_alignment_one_arg, arg_list):
             completed_count += 1
             if VERBOSITY == 1:
-                print_progress_line(completed_count, num_realignments, prefix='Read: ', flush=True)
+                print_progress_line(completed_count, num_realignments, prefix='Read: ')
             if VERBOSITY > 1:
                 print(output, end='', flush=True)
 

@@ -61,8 +61,12 @@ class UnicycleInstall(install):
 
     def run(self):
         install.run(self)  # Run original install code
-        shutil.copyfile('unicycler/cpp_functions.so',
+        shutil.copyfile(os.path.join('unicycler', 'cpp_functions.so'),
                         os.path.join(self.install_lib, 'unicycler', 'cpp_functions.so'))
+        os.makedirs(os.path.join(self.install_lib, 'unicycler', 'gene_data'))
+        shutil.copyfile(os.path.join('unicycler', 'gene_data', 'start_genes.fasta'),
+                        os.path.join(self.install_lib, 'unicycler', 'gene_data',
+                                     'start_genes.fasta'))
 
 
 class UnicycleClean(Command):

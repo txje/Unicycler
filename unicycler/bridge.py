@@ -266,7 +266,7 @@ class LongReadBridge(object):
                 output += ' (' + int_to_str(self.graph.get_path_length(path[0])) + ' bp, '
                 output += 'raw score = ' + float_to_str(path[1], 1) + ', '
                 output += 'scaled score = ' + float_to_str(path[3], 2) + ', '
-                output += 'length discrepancy = ' + str(path[2]) + ' bp)\n'
+                output += 'length discrepancy = ' + int_to_str(path[2]) + ' bp)\n'
 
         # If paths were found, use a path sequence for the bridge.
         if self.all_best_paths:
@@ -282,7 +282,7 @@ class LongReadBridge(object):
                 output += int_to_str(self.graph.get_path_length(best_path[0])) + ' bp, '
                 output += 'raw score = ' + float_to_str(best_path[1], 1) + ', '
                 output += 'scaled score = ' + float_to_str(best_path[3], 2) + ', '
-                output += 'length discrepancy = ' + str(best_path[2]) + ' bp)\n'
+                output += 'length discrepancy = ' + int_to_str(best_path[2]) + ' bp)\n'
 
             self.bridge_sequence = self.graph.get_path_sequence(self.graph_path)
             self.path_support = True

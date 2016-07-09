@@ -15,14 +15,18 @@ from .assembly_graph import AssemblyGraph
 
 
 def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity, spades_path,
-                          threads, keep_temp, kmer_count, min_kmer_frac, max_kmer_frac):
+                          threads, keep_temp, kmer_count, min_kmer_frac, max_kmer_frac,
+                          no_spades_correct):
     """
     This function tries a SPAdes assembly at different kmers and returns the best.
     'The best' is defined as the smallest dead-end count after low-depth filtering.  If multiple
     graphs have the same dead-end count (e.g. zero!) then the highest kmer is used.
     """
     spades_dir = os.path.join(out_dir, 'spades_assembly_temp')
-    reads = spades_read_correction(short1, short2, spades_dir, verbosity, threads, spades_path)
+    if no_spades_correct:
+        reads = (short1, short2, None)
+    else:
+        reads = spades_read_correction(short1, short2, spades_dir, verbosity, threads, spades_path)
     kmer_range = get_kmer_range(short1, short2, spades_dir, verbosity, kmer_count, min_kmer_frac,
                                 max_kmer_frac)
     assem_dir = os.path.join(spades_dir, 'assembly')
@@ -157,12 +161,15 @@ def spades_read_correction(short1, short2, spades_dir, verbosity, threads, spade
     if not os.path.isfile(corrected_1) or not os.path.isfile(corrected_2):
         quit_with_error('SPAdes read error correction failed')
 
+    if not os.path.isfile(corrected_u):
+        corrected_u = None
+
     if verbosity > 0:
         print()
         print('Corrected reads:')
         print('  ' + corrected_1)
         print('  ' + corrected_2)
-        if os.path.isfile(corrected_u):
+        if corrected_u:
             print('  ' + corrected_u)
 
     return corrected_1, corrected_2, corrected_u

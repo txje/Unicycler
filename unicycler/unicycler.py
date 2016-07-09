@@ -63,7 +63,8 @@ def main():
         unbridged_graph = get_best_spades_graph(args.short1, args.short2, args.out,
                                                 args.read_depth_filter, verbosity, args.spades_path,
                                                 args.threads, args.keep_temp, args.kmer_count,
-                                                args.min_kmer_frac, args.max_kmer_frac)
+                                                args.min_kmer_frac, args.max_kmer_frac,
+                                                args.no_spades_correct)
 
     # Determine copy number and get single-copy segments.
     single_copy_segments = get_single_copy_segments(unbridged_graph, verbosity, 0)
@@ -346,6 +347,8 @@ def get_arguments():
                         help='Sequences shorter than this value will not be polished using Pilon')
     parser.add_argument('--no_long', action='store_true',
                         help='Do not use any long reads - assemble with short reads only')
+    parser.add_argument('--no_spades_correct', action='store_true',
+                        help='Skip SPAdes error correction step')
 
     # Add the arguments for the aligner, but suppress the help text.
     add_aligning_arguments(parser, True)

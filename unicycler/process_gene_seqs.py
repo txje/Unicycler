@@ -56,7 +56,7 @@ def load_genes(fasta_filename):
         open_func = open
 
     genes = []
-    fasta_file = open_func(fasta_filename, 'r')
+    fasta_file = open_func(fasta_filename, 'rt')
     name = ''
     sequence = ''
     for line in fasta_file:

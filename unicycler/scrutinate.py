@@ -185,7 +185,7 @@ def get_scoring_scheme_from_sam(sam_filename):
     """
     Looks for the 'SC' tag in the SAM file to get the alignment scoring scheme.
     """
-    sam_file = open(sam_filename, 'r')
+    sam_file = open(sam_filename, 'rt')
     for line in sam_file:
         line = line.strip()
 

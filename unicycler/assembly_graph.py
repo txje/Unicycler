@@ -87,7 +87,7 @@ class AssemblyGraph(object):
         3) All link overlaps are the same (equal to the graph overlap value).
         """
         # Load in the segments.
-        gfa_file = open(filename, 'r')
+        gfa_file = open(filename, 'rt')
         for line in gfa_file:
             if line.startswith('S'):
                 line_parts = line.strip().split('\t')
@@ -102,7 +102,7 @@ class AssemblyGraph(object):
         gfa_file.close()
 
         # Load in the links.
-        gfa_file = open(filename, 'r')
+        gfa_file = open(filename, 'rt')
         for line in gfa_file:
             if line.startswith('L'):
                 line_parts = line.strip().split('\t')
@@ -118,7 +118,7 @@ class AssemblyGraph(object):
         self.sort_link_order()
 
         # Load in the paths
-        gfa_file = open(filename, 'r')
+        gfa_file = open(filename, 'rt')
         for line in gfa_file:
             if line.startswith('P'):
                 line_parts = line.strip().split('\t')
@@ -139,7 +139,7 @@ class AssemblyGraph(object):
         name = ''
         segment_string = ''
 
-        paths_file = open(filename, 'r')
+        paths_file = open(filename, 'rt')
         for line in paths_file:
             line = line.strip()
             if not line:
@@ -1288,6 +1288,7 @@ class AssemblyGraph(object):
                         best_availability = potential_path_availability
                         best_path = potential_path
                 bridge.graph_path = best_path
+                bridge.bridge_sequence = self.get_path_sequence(bridge.graph_path)
 
             # Get the pieces of the bridge which can be applied.
             pieces = get_applicable_bridge_pieces(bridge, single_copy_nums, right_bridged,
@@ -1305,9 +1306,9 @@ class AssemblyGraph(object):
                     print('Rejected', bridge)
                 continue
 
+            # If the bridge can be applied as a whole, go ahead and apply it.
             if len(pieces) == 1 and \
                     pieces[0] == [bridge.start_segment] + bridge.graph_path + [bridge.end_segment]:
-                bridge.bridge_sequence = self.get_path_sequence(bridge.graph_path)
                 bridge = self.apply_entire_bridge(bridge, verbosity, right_bridged, left_bridged,
                                                   seg_nums_used_in_bridges, single_copy_nums)
                 bridge_segs.append(bridge)
@@ -2304,6 +2305,24 @@ class AssemblyGraph(object):
         if verbosity > 0 and merged_seg_nums:
             print('\nMerged small segments:', ', '.join(str(x) for x in merged_seg_nums))
 
+    def starts_with_dead_end(self, signed_seg_num):
+        """
+        Returns whether or not the given segment (in the direction implied by the sign) is not
+        lead into by any other segments.
+        """
+        if signed_seg_num not in self.reverse_links:
+            return True
+        return not self.reverse_links[signed_seg_num]
+
+    def ends_with_dead_end(self, signed_seg_num):
+        """
+        Returns whether or not the given segment (in the direction implied by the sign) does not
+        lead to any other segments.
+        """
+        if signed_seg_num not in self.forward_links:
+            return True
+        return not self.forward_links[signed_seg_num]
+
 
 class Segment(object):
     """
@@ -2554,7 +2573,7 @@ def get_headers_and_sequences(filename):
     sequences = []
     header = ''
     sequence = ''
-    graph_file = open(filename, 'r')
+    graph_file = open(filename, 'rt')
     for line in graph_file:
         line = line.strip()
         if not line:
@@ -2879,7 +2898,7 @@ def get_overlap_from_gfa_link(filename):
     Looks for the first link line and gets the overlap. Assumes that all overlaps in the graph are
     the same.
     """
-    gfa_file = open(filename, 'r')
+    gfa_file = open(filename, 'rt')
     for line in gfa_file:
         if line.startswith('L'):
             line_parts = line.strip().split('\t')

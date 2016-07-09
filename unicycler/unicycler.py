@@ -440,7 +440,7 @@ def sam_references_match(sam_filename, assembly_graph):
     """
     Returns True if the references in the SAM header exactly match the graph segment numbers.
     """
-    sam_file = open(sam_filename, 'r')
+    sam_file = open(sam_filename, 'rt')
     ref_numbers_in_sam = []
     for line in sam_file:
         if not line.startswith('@'):

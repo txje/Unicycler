@@ -294,17 +294,52 @@ class LongReadBridge(object):
         # If a path wasn't found, the consensus sequence is the bridge (with the overlaps added).
         else:
             self.graph_path = []
+            self.path_support = False
             output += '  best path:               none found\n'
             start_overlap = \
                 self.graph.get_seq_from_signed_seg_num(self.start_segment)[-self.graph.overlap:]
             end_overlap = \
                 self.graph.get_seq_from_signed_seg_num(self.end_segment)[:self.graph.overlap]
-            self.bridge_sequence = start_overlap + self.consensus_sequence + end_overlap
-            self.path_support = False
 
-            # Non-graph-path-supported bridges are much lower quality than graph-path-supported
-            # bridges.
-            self.quality = 20.0
+            # If there is a consensus sequence, we simply tack the overlaps onto its ends.
+            if self.consensus_sequence:
+                self.bridge_sequence = start_overlap + self.consensus_sequence + end_overlap
+
+            # If there is the consensus sequence is exactly zero, then the two segments butt up
+            # exactly.
+            elif mean_overlap == 0:
+                self.bridge_sequence = start_overlap + end_overlap
+
+            # If the consensus sequence is negative, that implies the start and the end segments
+            # overlap. In this case we need to find the exact overlap. If we don't find it, we
+            # just glue the sequences together, like we did for mean_overlap == 0.
+            else:
+                larger_overlaps = list(range(abs(mean_overlap), self.graph.overlap))
+                smaller_overlaps = list(range(abs(mean_overlap) - 1, 0, -1))
+                test_overlaps = []
+                for i in range(max(len(larger_overlaps), len(smaller_overlaps))):
+                    if i < len(larger_overlaps):
+                        test_overlaps.append(larger_overlaps[i])
+                    if i < len(smaller_overlaps):
+                        test_overlaps.append(smaller_overlaps[i])
+                for test_overlap in test_overlaps:
+                    if start_overlap[-test_overlap:] == end_overlap[:test_overlap]:
+                        actual_overlap = test_overlap
+                        break
+                else:
+                    actual_overlap = 0
+                self.bridge_sequence = start_overlap + end_overlap[actual_overlap:]
+
+            # The quality of non-graph-path-supported bridges depends on the dead ends. If this
+            # bridge is connecting two dead ends, then it isn't penalised at all (because there
+            # couldn't be a graph path). If only one of the two segments is a dead end, then it gets
+            # a small penalty. If neither are a dead end, then it gets a large penalty (because in
+            # this case we'd expect a graph path).
+            self.quality = 100.0
+            if not self.graph.ends_with_dead_end(self.start_segment):
+                self.quality -= 40.0
+            if not self.graph.starts_with_dead_end(self.end_segment):
+                self.quality -= 40.0
 
         # Expected read count is determined using the read lengths and bridge size. For a given
         # read length and bridge, there are an estimable number of positions where a read of that

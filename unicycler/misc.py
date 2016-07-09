@@ -397,12 +397,12 @@ def get_sequence_file_type(filename):
         open_func = gzip.open
     else:  # plain text
         open_func = open
-    seq_file = open_func(filename, 'r')
+    seq_file = open_func(filename, 'rt')
     first_char = seq_file.read(1)
 
-    if first_char == '>' or first_char == b'>':
+    if first_char == '>':
         return 'FASTA'
-    elif first_char == '@' or first_char == b'@':
+    elif first_char == '@':
         return 'FASTQ'
     else:
         raise ValueError('File is neither FASTA or FASTQ')
@@ -449,7 +449,7 @@ def load_fasta(filename):
     Returns a list of tuples (header, seq) for each record in the fasta file.
     """
     fasta_seqs = []
-    fasta_file = open(filename, 'r')
+    fasta_file = open(filename, 'rt')
     name = ''
     sequence = ''
     for line in fasta_file:

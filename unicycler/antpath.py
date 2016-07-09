@@ -610,7 +610,7 @@ def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme,
 
     # Load the SAM lines into a list.
     sam_lines = []
-    sam_file = open(sam_filename, 'r')
+    sam_file = open(sam_filename, 'rt')
     for line in sam_file:
         line = line.strip()
         if line and not line.startswith('@') and line.split('\t', 3)[2] != '*':

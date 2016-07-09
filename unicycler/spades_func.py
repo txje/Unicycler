@@ -227,7 +227,7 @@ def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity, km
     # If the k-mer range file already exists, we use its values and proceed.
     kmer_range_filename = os.path.join(spades_dir, 'kmer_range')
     if os.path.isfile(kmer_range_filename):
-        with open(kmer_range_filename, 'r') as kmer_range_file:
+        with open(kmer_range_filename, 'rt') as kmer_range_file:
             kmer_range = kmer_range_file.readline().strip().split(', ')
         if len(kmer_range) == kmer_count:
             try:

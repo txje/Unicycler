@@ -74,7 +74,7 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, samto
 
     # Loop through alignments_raw.sam once to collect the insert sizes.
     insert_sizes = []
-    raw_sam = open(raw_sam_filename, 'r')
+    raw_sam = open(raw_sam_filename, 'rt')
     for sam_line in raw_sam:
         try:
             insert_size = float(sam_line.split('\t')[8])
@@ -100,7 +100,7 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, samto
         print('\nFiltering alignments to fragment size range:',
               float_to_str(insert_size_5th, 2) + ' to ' + float_to_str(insert_size_95th, 2))
     filtered_sam = open(filtered_sam_filename, 'w')
-    raw_sam = open(raw_sam_filename, 'r')
+    raw_sam = open(raw_sam_filename, 'rt')
     for sam_line in raw_sam:
         try:
             insert_size = abs(float(sam_line.split('\t')[8]))
@@ -155,7 +155,7 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, samto
     change_count = defaultdict(int)
     change_lines = defaultdict(list)
     total_count = 0
-    pilon_changes = open(pilon_changes_filename, 'r')
+    pilon_changes = open(pilon_changes_filename, 'rt')
     for line in pilon_changes:
         try:
             seg_num = int(line.split(':')[0])

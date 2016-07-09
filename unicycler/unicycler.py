@@ -344,6 +344,8 @@ def get_arguments():
                         help='Path to the executable Pilon Java archive file')
     parser.add_argument('--min_polish_size', type=int, default=10000,
                         help='Sequences shorter than this value will not be polished using Pilon')
+    parser.add_argument('--no_long', action='store_true',
+                        help='Do not use any long reads - assemble with short reads only')
 
     # Add the arguments for the aligner, but suppress the help text.
     add_aligning_arguments(parser, True)
@@ -373,10 +375,16 @@ def get_arguments():
     except AttributeError:
         args.keep_temp = False
 
-    if not args.long and not args.long_dir:
-        quit_with_error('either --long or --long_dir is required')
-    if args.long and args.long_dir:
-        quit_with_error('--long and --long_dir cannot both be used')
+    # Make sure that only one of the three long read arguments was used.
+    long_arg_count = 1 if args.long else 0
+    long_arg_count += 1 if args.long_dir else 0
+    long_arg_count += 1 if args.no_long else 0
+    if long_arg_count == 0:
+        quit_with_error('One of the following options is required: '
+                        '--long, --long_dir or --no_long')
+    if long_arg_count > 1:
+        quit_with_error('Only one of the following options can be used: '
+                        '--long, --long_dir or --no_long')
 
     # Change some arguments to full paths.
     args.out = os.path.abspath(args.out)

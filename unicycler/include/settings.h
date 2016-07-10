@@ -38,8 +38,8 @@
 // the entire read, then the threshold is lower (because we're probably done). If we haven't, then
 // we try harder.
 #define BAD_LINE_COUNT_SINGLE_ALIGNMENT 2
-#define BAD_LINE_COUNT_ENTIRE_READ 5
-#define BAD_LINE_COUNT_PARTIAL_READ 20
+#define BAD_LINE_COUNT_ENTIRE_READ 20
+#define BAD_LINE_COUNT_PARTIAL_READ 80
 
 // Alignment lines must reach these levels to be used.
 #define MIN_ALIGNMENT_LENGTH 40.0

@@ -35,9 +35,13 @@ def main():
     full_command = ' '.join(sys.argv)
     args = get_arguments()
     verbosity = args.verbosity
-    check_files_and_programs([args.short1, args.short2, args.long],
+    files = [args.short1, args.short2]
+    if not args.no_long:
+        files.append(args.long)
+    check_files_and_programs(files,
                              spades_path=args.spades_path,
-                             graphmap_path=(None if args.no_graphmap else args.graphmap_path),
+                             graphmap_path=(None if (args.no_graphmap or args.no_long)
+                                            else args.graphmap_path),
                              makeblastdb_path=(None if args.no_rotate else args.makeblastdb_path),
                              tblastn_path=(None if args.no_rotate else args.tblastn_path),
                              gene_db_path=(None if args.no_rotate else args.start_genes),
@@ -141,7 +145,7 @@ def main():
                 shutil.rmtree(alignment_dir)
 
         # Use the long reads which aligned entirely within contigs (which are most likely correct)
-        # to determine a minimum score
+        # to determine a minimum score.
         contained_reads = [x for x in read_dict.values() if x.has_one_contained_alignment()]
         contained_scores = []
         for read in contained_reads:

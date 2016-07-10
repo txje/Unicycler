@@ -56,7 +56,7 @@ def check_files_and_programs(files, spades_path=None, graphmap_path=None,
     for file in files:
         check_file_exists(file)
     if graphmap_path:
-        check_graphmap(check_graphmap)
+        check_graphmap(graphmap_path)
     if spades_path:
         check_spades(spades_path)
     if makeblastdb_path and tblastn_path:
@@ -85,11 +85,7 @@ def check_graphmap(graphmap_path):
     """
     Makes sure the GraphMap executable is available.
     """
-    process = subprocess.Popen(['which', graphmap_path], stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
-    out, err = process.communicate()
-    found_graphmap = bool(out) and not bool(err)
-    if not found_graphmap:
+    if not find_program_with_which(graphmap_path):
         quit_with_error('could not find GraphMap at ' + graphmap_path +
                         ', either fix path or run with --no_graphmap')
 

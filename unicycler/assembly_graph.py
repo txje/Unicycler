@@ -219,21 +219,25 @@ class AssemblyGraph(object):
         """
         return sum([x.get_length_no_overlap(self.overlap) for x in self.segments.values()])
 
-    def save_to_fasta(self, filename):
+    def save_to_fasta(self, filename, verbosity=0):
         """
         Saves whole graph (only forward sequences) to a FASTA file.
         """
         fasta = open(filename, 'w')
+        if verbosity > 0:
+            print('\nSaving', filename)
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
         for segment in sorted_segments:
             fasta.write('>' + str(segment.number) + '\n')
             fasta.write(add_line_breaks_to_sequence(segment.forward_sequence, 60))
 
-    def save_to_fastg(self, filename):
+    def save_to_fastg(self, filename, verbosity=0):
         """
         Saves whole graph to a SPAdes-style FASTG file.
         """
         fastg = open(filename, 'w')
+        if verbosity > 0:
+            print('\nSaving', filename)
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
         for segment in sorted_segments:
             fastg.write(self.get_fastg_header_with_links(segment, True))

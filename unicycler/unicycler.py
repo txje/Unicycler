@@ -205,7 +205,7 @@ def main():
     print_section_header('Finalising graph', verbosity)
     graph.final_clean(verbosity)
     if verbosity > 0:
-        print_section_header('Final assembly graph', verbosity)
+        print_section_header('Bridged assembly graph', verbosity)
         print(graph.get_summary(), end='')
     file_num += 1
     cleaned_graph = os.path.join(args.out, str(file_num).zfill(3) + '_cleaned.gfa')
@@ -274,6 +274,12 @@ def main():
             graph.save_to_gfa(polished_graph, verbosity)
         if args.keep_temp < 2 and os.path.exists(polish_dir):
             shutil.rmtree(polish_dir)
+
+    # Save the final state as both a GFA and FASTA file.
+    if verbosity > 0:
+        print_section_header('Complete', verbosity)
+    graph.save_to_gfa(os.path.join(args.out, 'assembly.gfa'), verbosity)
+    graph.save_to_fasta(os.path.join(args.out, 'assembly.fasta'), verbosity)
 
 
 def get_arguments():

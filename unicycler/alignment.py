@@ -406,16 +406,16 @@ class Alignment(object):
         read_start, read_end = self.read_start_end_positive_strand()
         return_str = 'read pos: ' + str(read_start) + '-' + str(read_end) + ', '
         if self.rev_comp:
-            return_str += '- strand, '
+            return_str += 'strand: -, '
         else:
-            return_str += '+ strand, '
+            return_str += 'strand: +, '
         return_str += 'ref name: ' + self.ref.name + ', '
-        return_str += 'ref pos: ' + str(self.ref_start_pos) + '-' + str(self.ref_end_pos) + ', '
+        return_str += 'ref pos: ' + str(self.ref_start_pos) + '-' + str(self.ref_end_pos)
         if self.scaled_score is not None:
-            return_str += ', raw score = ' + str(self.raw_score)
-            return_str += ', scaled score = ' + float_to_str(self.scaled_score, 2)
+            return_str += ', raw score: ' + str(self.raw_score)
+            return_str += ', scaled score: ' + float_to_str(self.scaled_score, 2)
         if self.percent_identity is not None:
-            return_str += ', ' + float_to_str(self.percent_identity, 2) + '% ID'
+            return_str += ', ID: ' + float_to_str(self.percent_identity, 2) + '%'
         return return_str
 
     def get_aligned_ref_length(self):

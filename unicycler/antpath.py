@@ -545,8 +545,8 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
         print(' '.join(command))
 
     # Print the GraphMap output as it comes. I gather up and display lines so I can display fewer
-    # progress lines. This helps when piping the output to file (otherwise the output can be
-    # excessively large).
+    # progress lines (only at every 0.1% of progress, instead of for every read). This helps when
+    # piping the output to file (otherwise the output can be excessively large).
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     line = ''
     last_progress = -1.0
@@ -562,7 +562,7 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
                         read_progress_started = True
                         trimmed_line = line.strip().split('] ')[2].split(', l')[0]
                         progress = float(trimmed_line.split('(')[1].split(')')[0][:-1])
-                        progress_rounded_down = float(int(progress))
+                        progress_rounded_down = float(int(10 * progress) / 10)
                         if progress_rounded_down > last_progress:
                             print('\r' + trimmed_line, end='')
                             last_progress = progress_rounded_down
@@ -748,7 +748,7 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
                       float_to_str(time.time() - start_time, 3) + ' s):\n'
             for alignment in read.alignments:
                 if alignment.alignment_type != 'SAM':
-                    output += '  ' + str(alignment) + '\n'
+                    output += '  ' + alignment.get_str_no_read_name() + '\n'
                     if VERBOSITY > 3:
                         output += alignment.cigar + '\n'
 
@@ -762,7 +762,7 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
     if VERBOSITY > 1:
         if read.alignments:
             for alignment in read.alignments:
-                output += '  ' + str(alignment) + '\n'
+                output += '  ' + alignment.get_str_no_read_name() + '\n'
         else:
             output += '  None\n'
 

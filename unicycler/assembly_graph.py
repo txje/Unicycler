@@ -785,6 +785,7 @@ class AssemblyGraph(object):
         """
         This function cleans up the final assembled graph, in preparation for saving.
         """
+        print_section_header('Finalising graph', verbosity, final_newline=False)
         if self.overlap:
             try:
                 self.remove_all_overlaps(verbosity)
@@ -1335,7 +1336,7 @@ class AssemblyGraph(object):
         Cleans up unnecessary segments to produce a clean graph. Used after bridge application.
         """
         if verbosity > 1:
-            print_section_header('Cleaning up leftover segments', verbosity)
+            print_section_header('Cleaning up leftover segments', verbosity, last_newline=False)
 
         # Graph components which contain no single-copy segments are deleted.
         single_copy_seg_nums = set(x.number for x in single_copy_segments)

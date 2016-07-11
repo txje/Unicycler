@@ -187,7 +187,7 @@ def get_mean_and_st_dev(num_list):
     return mean, st_dev
 
 
-def print_progress_line(completed, total, base_pairs=None, prefix=None):
+def print_progress_line(completed, total, base_pairs=None, prefix=None, end_newline=False):
     """
     Prints a progress line to the screen using a carriage return to overwrite the previous progress
     line.
@@ -199,7 +199,8 @@ def print_progress_line(completed, total, base_pairs=None, prefix=None):
     progress_str += ' (' + '%.1f' % (100.0 * completed / total) + '%)'
     if base_pairs is not None:
         progress_str += ' - ' + int_to_str(base_pairs) + ' bp'
-    print('\r' + progress_str, end='', flush=True)
+    end_char = '\n' if end_newline else ''
+    print('\r' + progress_str, end=end_char, flush=True)
 
 
 def get_nice_header(header):

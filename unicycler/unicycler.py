@@ -21,7 +21,8 @@ from .misc import int_to_str, float_to_str, quit_with_error, get_percentile, \
 from .spades_func import get_best_spades_graph
 from .blast_func import find_start_gene, CannotFindStart
 from .antpath import add_aligning_arguments, fix_up_arguments, semi_global_align_long_reads, \
-    load_references, load_long_reads, AlignmentScoringScheme, load_sam_alignments
+    load_references, load_long_reads, AlignmentScoringScheme, load_sam_alignments, \
+    print_alignment_summary_table
 from .pilon_func import polish_with_pilon, CannotPolish
 
 
@@ -129,6 +130,7 @@ def main():
                                              scoring_scheme, args.threads, verbosity)
             for alignment in alignments:
                 read_dict[alignment.read.name].alignments.append(alignment)
+            print_alignment_summary_table(read_dict, verbosity)
 
         # Conduct alignment if existing alignments are not available.
         else:
@@ -159,7 +161,7 @@ def main():
                   'th percentile of full read alignments:', float_to_str(min_scaled_score, 2))
 
         # Do the long read bridging - this is the good part!
-        print_section_header('Building long read bridges', verbosity)
+        print_section_header('Building long read bridges', verbosity, last_newline=(verbosity == 1))
         bridges = create_long_read_bridges(unbridged_graph, read_dict, read_names,
                                            single_copy_segments, verbosity, bridges,
                                            min_scaled_score, args.threads, scoring_scheme,
@@ -202,7 +204,6 @@ def main():
             finished = True  # TEMP
 
     # Perform a final clean on the graph, including overlap removal.
-    print_section_header('Finalising graph', verbosity)
     graph.final_clean(verbosity)
     if verbosity > 0:
         print_section_header('Bridged assembly graph', verbosity)

@@ -414,34 +414,41 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     if VERBOSITY == 1:
         print()
 
-    # Output a summary of the reads' alignments.
+    print_alignment_summary_table(read_dict, VERBOSITY)
+    return read_dict
+
+
+def print_alignment_summary_table(read_dict, verbosity):
+    """
+    Outputs a summary of the reads' alignments, grouping them by fully aligned, partially aligned
+    and unaligned.
+    """
+    if verbosity == 0:
+        return
+
     fully_aligned, partially_aligned, unaligned = group_reads_by_fraction_aligned(read_dict)
     ref_bases_aligned = 0
     for read in read_dict.values():
         ref_bases_aligned += read.get_reference_bases_aligned()
-    print_section_header('Read alignment summary', VERBOSITY)
-    if VERBOSITY > 0:
-        max_v = max(len(read_dict), ref_bases_aligned)
-        print('Total read count:       ', int_to_str(len(read_dict), max_v))
-        print('Fully aligned reads:    ', int_to_str(len(fully_aligned), max_v))
-        print('Partially aligned reads:', int_to_str(len(partially_aligned), max_v))
-        if VERBOSITY > 2 and partially_aligned:
-            print('    ' + ', '.join([x.name for x in partially_aligned]))
-        print('Unaligned reads:        ', int_to_str(len(unaligned), max_v))
-        if VERBOSITY > 2 and unaligned:
-            print('    ' + ', '.join([x.name for x in unaligned]))
-        print('Total bases aligned:    ', int_to_str(ref_bases_aligned, max_v) + ' bp')
+    print_section_header('Read alignment summary', verbosity)
+    max_v = max(len(read_dict), ref_bases_aligned)
+    print('Total read count:       ', int_to_str(len(read_dict), max_v))
+    print('Fully aligned reads:    ', int_to_str(len(fully_aligned), max_v))
+    print('Partially aligned reads:', int_to_str(len(partially_aligned), max_v))
+    if VERBOSITY > 2 and partially_aligned:
+        print('    ' + ', '.join([x.name for x in partially_aligned]))
+    print('Unaligned reads:        ', int_to_str(len(unaligned), max_v))
+    if VERBOSITY > 2 and unaligned:
+        print('    ' + ', '.join([x.name for x in unaligned]))
+    print('Total bases aligned:    ', int_to_str(ref_bases_aligned, max_v) + ' bp')
 
-        identities = []
-        lengths = []
-        for read in fully_aligned + partially_aligned:
-            identities += [x.percent_identity for x in read.alignments]
-            lengths += [x.get_aligned_ref_length() for x in read.alignments]
-        mean_identity = weighted_average_list(identities, lengths)
-        print('Mean alignment identity:', float_to_str(mean_identity, 1, max_v) + '%')
-        print()
-
-    return read_dict
+    identities = []
+    lengths = []
+    for read in fully_aligned + partially_aligned:
+        identities += [x.percent_identity for x in read.alignments]
+        lengths += [x.get_aligned_ref_length() for x in read.alignments]
+    mean_identity = weighted_average_list(identities, lengths)
+    print('Mean alignment identity:', float_to_str(mean_identity, 1, max_v) + '%')
 
 
 def print_graphmap_summary_table(graphmap_alignments, percent_id_mean, percent_id_std_dev,

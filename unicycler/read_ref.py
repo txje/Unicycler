@@ -65,8 +65,7 @@ def load_references(fasta_filename, verbosity):
             print_progress_line(len(references), num_refs, total_bases)
 
     if verbosity > 0:
-        print_progress_line(len(references), len(references), total_bases)
-        print()
+        print_progress_line(len(references), len(references), total_bases, end_newline=True)
 
     return references
 
@@ -154,8 +153,7 @@ def load_long_reads(filename, verbosity):
                 print_progress_line(len(read_dict), num_reads, total_bases)
 
     if verbosity > 0:
-        print_progress_line(len(read_dict), len(read_dict), total_bases)
-        print()
+        print_progress_line(len(read_dict), len(read_dict), total_bases, end_newline=True)
 
     return read_dict, read_names
 

@@ -301,7 +301,7 @@ def count_depth_and_errors_per_base(references, reference_dict, alignments):
                     print_progress_line(finished_bases, base_sum)
 
     if VERBOSITY > 0:
-        print_progress_line(base_sum, base_sum)
+        print_progress_line(base_sum, base_sum, end_newline=True)
         print()
 
 

@@ -149,8 +149,8 @@ std::string ScoredAlignment::getShortDisplayString() {
     std::stringstream ss;
     ss << std::fixed << std::setprecision(2) << m_scaledScore;
 
-    return m_readName + " (" + std::to_string(m_readStartPos) + "-" +  std::to_string(m_readEndPos) + ", " +
-           "strand: STRAND), " + m_refName + " (" + std::to_string(m_refStartPos) + "-" +  std::to_string(m_refEndPos) + "), " + 
+    return m_readName + " (" + std::to_string(m_readStartPos) + "-" +  std::to_string(m_readEndPos) + "), " +
+           m_refName + " (" + std::to_string(m_refStartPos) + "-" +  std::to_string(m_refEndPos) + "), " +
            "raw score = " + std::to_string(m_rawScore) + ", scaled score = " + ss.str() + ", band size = " + std::to_string(m_bandSize);
 }
 

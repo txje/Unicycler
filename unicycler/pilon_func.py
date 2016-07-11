@@ -84,8 +84,10 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, samto
             pass
     raw_sam.close()
     insert_mean = statistics.mean(insert_sizes)
+    if verbosity > 1:
+        print()
     if verbosity > 0:
-        print('\nMean fragment size = ', float_to_str(insert_mean, 2) + ' bp')
+        print('Mean fragment size = ', float_to_str(insert_mean, 2) + ' bp')
     insert_sizes = sorted(insert_sizes)
     insert_size_5th = get_percentile_sorted(insert_sizes, 5.0)
     if verbosity > 1:
@@ -115,8 +117,10 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, samto
     bam_filename = os.path.join(polish_dir, 'alignments.bam')
     samtools_sort_command = [samtools_path, 'sort', '-@', str(threads), '-o', bam_filename, '-O',
                              'bam', '-T', 'temp', filtered_sam_filename]
+    if verbosity > 1:
+        print()
     if verbosity > 0:
-        print('\nSorting and indexing alignments')
+        print('Sorting and indexing alignments')
     if verbosity > 1:
         print('  ' + ' '.join(samtools_sort_command))
     try:
@@ -136,8 +140,10 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, samto
     # Polish with Pilon.
     pilon_command = ['java', '-jar', pilon_path, '--genome', polish_input_filename, '--frags',
                      bam_filename, '--fix', 'bases', '--changes', '--outdir', polish_dir]
+    if verbosity > 1:
+        print()
     if verbosity > 0:
-        print('\nRunning Pilon')
+        print('Running Pilon')
     if verbosity > 1:
         print('  ' + ' '.join(pilon_command))
     try:
@@ -165,7 +171,7 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, samto
         except ValueError:
             pass
     if verbosity == 1:
-        print('\nNumber of Pilon changes:', int_to_str(total_count))
+        print('Number of Pilon changes:', int_to_str(total_count))
     elif verbosity > 1:
         print()
         seg_nums = sorted(graph.segments)

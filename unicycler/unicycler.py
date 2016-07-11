@@ -168,7 +168,8 @@ def main():
                                            min_scaled_score, args.threads, scoring_scheme,
                                            min_alignment_length)
         graph = copy.deepcopy(unbridged_graph)
-        print_section_header('Bridging graph with long reads', verbosity)
+        print_section_header('Bridging graph with long reads', verbosity,
+                             last_newline=(verbosity > 1))
         seg_nums_used_in_bridges = graph.apply_bridges(bridges, verbosity, args.min_bridge_qual,
                                                        single_copy_segments)
         file_num += 1

@@ -30,7 +30,7 @@ def load_references(fasta_filename, verbosity):
         open_func = open
 
     if verbosity > 0:
-        num_refs = sum(1 for line in open_func(fasta_filename) if line.startswith('>'))
+        num_refs = sum(1 for line in open_func(fasta_filename, 'rt') if line.startswith('>'))
         if not num_refs:
             quit_with_error('There are no references sequences in ' + fasta_filename)
         print_progress_line(0, num_refs)
@@ -94,9 +94,9 @@ def load_long_reads(filename, verbosity):
     last_progress = 0.0
 
     if file_type == 'FASTQ':
-        num_reads = sum(1 for _ in open_func(filename)) // 4
+        num_reads = sum(1 for _ in open_func(filename, 'rt')) // 4
     else:  # file_type == 'FASTA'
-        num_reads = sum(1 for line in open_func(filename) if line.decode().startswith('>'))
+        num_reads = sum(1 for line in open_func(filename, 'rt') if line.startswith('>'))
     if not num_reads:
         quit_with_error('There are no read sequences in ' + filename)
     if verbosity > 0:

@@ -230,13 +230,12 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     # If the user supplied a low score threshold, we use that. Otherwise, we'll use the median
     # score minus three times the MAD.
     print_section_header('Determining low-score threshold', VERBOSITY)
-    if low_score_threshold:
+    if low_score_threshold is not None:
         if VERBOSITY > 0:
-            print('Using user-supplied low score threshold: ' +
-                  float_to_str(low_score_threshold, 2) + '\n')
+            print('Using user-supplied threshold: ' + float_to_str(low_score_threshold, 2))
     else:
         if VERBOSITY > 0:
-            print('Automatically choosing a low score threshold using random alignments.\n')
+            print('Automatically choosing a threshold using random alignments.\n')
         std_devs_over_mean = 5
         low_score_threshold, rand_mean, rand_std_dev = get_auto_score_threshold(scoring_scheme,
                                                                                 std_devs_over_mean)

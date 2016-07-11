@@ -1241,6 +1241,20 @@ class AssemblyGraph(object):
                 single_copy_segments.append(segment)
         return single_copy_segments
 
+    def is_path_valid(self, path_segments):
+        """
+        Returns whether or not a path exists in the graph, i.e. an edge connects each segment in
+        the path to the next segment in the path.
+        """
+        for i, seg_num in enumerate(path_segments):
+            if abs(seg_num) not in self.segments:
+                return False
+            if i > 0:
+                prev_seg = path_segments[i - 1]
+                if seg_num not in self.get_downstream_seg_nums(prev_seg):
+                    return False
+        return True
+
     def get_path_sequence(self, path_segments):
         """
         Gets a linear (i.e. not circular) path sequence from the graph.
@@ -1293,7 +1307,8 @@ class AssemblyGraph(object):
                         best_availability = potential_path_availability
                         best_path = potential_path
                 bridge.graph_path = best_path
-                bridge.bridge_sequence = self.get_path_sequence(bridge.graph_path)
+                if self.is_path_valid(best_path):
+                    bridge.bridge_sequence = self.get_path_sequence(best_path)
 
             # Get the pieces of the bridge which can be applied.
             pieces = get_applicable_bridge_pieces(bridge, single_copy_nums, right_bridged,

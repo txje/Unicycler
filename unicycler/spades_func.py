@@ -78,7 +78,8 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
         if verbosity > 1:
             print_section_header('SPAdes k=' + int_to_str(kmer) + ' assembly graph summary',
                                  verbosity)
-            print(assembly_graph.get_summary(file=clean_graph_filename, score=score))
+            print(assembly_graph.get_summary(verbosity, file=clean_graph_filename, score=score))
+            print()
         if score >= best_score:
             best_kmer = kmer
             best_score = score

@@ -170,7 +170,9 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, samto
             change_lines[seg_num].append(line.strip())
         except ValueError:
             pass
-    if verbosity == 1:
+    if verbosity > 0 and total_count == 0:
+        print('No Pilon changes')
+    elif verbosity == 1:
         print('Number of Pilon changes:', int_to_str(total_count))
     elif verbosity > 1:
         print()

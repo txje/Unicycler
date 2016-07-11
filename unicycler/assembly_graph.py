@@ -785,7 +785,7 @@ class AssemblyGraph(object):
         """
         This function cleans up the final assembled graph, in preparation for saving.
         """
-        print_section_header('Finalising graph', verbosity, last_newline=False)
+        print_section_header('Finalising graph', verbosity, last_newline=(verbosity > 2))
         if self.overlap:
             try:
                 self.remove_all_overlaps(verbosity)
@@ -1778,7 +1778,7 @@ class AssemblyGraph(object):
             new_paths[name] = [changes[x] for x in path_nums]
         self.paths = new_paths
 
-    def get_summary(self, file=None, score=None):
+    def get_summary(self, verbosity, file=None, score=None, show_components=False):
         """
         Returns a nice table describing the graph.
         """
@@ -1792,18 +1792,24 @@ class AssemblyGraph(object):
         summary += 'links:                 ' + int_to_str(self.get_total_link_count(), max_v) + '\n'
         summary += 'total length (bp):     ' + int_to_str(total_length, max_v) + '\n'
         summary += 'N50:                   ' + int_to_str(n50, max_v) + '\n'
-        summary += 'shortest segment (bp): ' + int_to_str(shortest, max_v) + '\n'
-        summary += 'lower quartile (bp):   ' + int_to_str(lower_quartile, max_v) + '\n'
-        summary += 'median segment (bp):   ' + int_to_str(median, max_v) + '\n'
-        summary += 'upper quartile (bp):   ' + int_to_str(upper_quartile, max_v) + '\n'
+        if verbosity > 2:
+            summary += 'shortest segment (bp): ' + int_to_str(shortest, max_v) + '\n'
+            summary += 'lower quartile (bp):   ' + int_to_str(lower_quartile, max_v) + '\n'
+            summary += 'median segment (bp):   ' + int_to_str(median, max_v) + '\n'
+            summary += 'upper quartile (bp):   ' + int_to_str(upper_quartile, max_v) + '\n'
         summary += 'longest segment (bp):  ' + int_to_str(longest, max_v) + '\n'
         summary += 'dead ends:             ' + int_to_str(self.total_dead_end_count(), max_v) + '\n'
-        summary += 'connected components:  ' + \
-                   int_to_str(len(self.get_connected_components()), max_v) + '\n'
-        completed_components = self.completed_circular_replicons()
-        summary += 'completed components:  ' + int_to_str(len(completed_components), max_v) + '\n'
-        completed_length = sum(self.segments[x].get_length() for x in completed_components)
-        summary += 'completed length (bp): ' + int_to_str(completed_length, max_v) + '\n'
+        if show_components:
+            components = self.get_connected_components()
+            for i, component in enumerate(components):
+                summary += 'Component ' + str(i + 1) + ' ('
+                if self.is_component_complete(component):
+                    summary += 'complete):\n'
+                else:
+                    summary += 'incomplete):\n'
+                summary += '    segments:          ' + int_to_str(len(component), max_v) + '\n'
+                component_len = sum(self.segments[x].get_length() for x in component)
+                summary += '    length (bp):       ' + int_to_str(component_len, max_v) + '\n'
         if score:
             pad_size = len(int_to_str(max_v))
             summary += 'score:                 ' + '{:.2e}'.format(score).rjust(pad_size) + '\n'
@@ -1869,6 +1875,18 @@ class AssemblyGraph(object):
                     self.reverse_links[only_segment] == [only_segment]:
                 completed_components.append(only_segment)
         return completed_components
+
+    def is_component_complete(self, component):
+        """
+        Given a list of unsigned segment numbers, this function returns whether the component is
+        a completed circular replicon.
+        """
+        if len(component) != 1:
+            return False
+        seg = component[0]
+        if self.get_downstream_seg_nums(seg) != [seg]:
+            return False
+        return self.get_upstream_seg_nums(seg) == [seg]
 
     def get_simple_path(self, starting_seg):
         """

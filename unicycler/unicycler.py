@@ -209,7 +209,7 @@ def main():
     graph.final_clean(verbosity)
     if verbosity > 0:
         print_section_header('Bridged assembly graph', verbosity)
-        print(graph.get_summary(), end='')
+        print(graph.get_summary(verbosity, show_components=True), end='')
     file_num += 1
     cleaned_graph = os.path.join(args.out, str(file_num).zfill(3) + '_cleaned.gfa')
     graph.save_to_gfa(cleaned_graph, verbosity)

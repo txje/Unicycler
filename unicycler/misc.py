@@ -18,6 +18,8 @@ def float_to_str(num, decimals, max_num=0):
     Converts a number to a string. Will add left padding based on the max value to ensure numbers
     align well.
     """
+    if decimals == 0:
+        return int_to_str(int(round(num)), max_num=max_num)
     if num is None:
         num_str = 'n/a'
     else:

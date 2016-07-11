@@ -785,7 +785,7 @@ class AssemblyGraph(object):
         """
         This function cleans up the final assembled graph, in preparation for saving.
         """
-        print_section_header('Finalising graph', verbosity, final_newline=False)
+        print_section_header('Finalising graph', verbosity, last_newline=False)
         if self.overlap:
             try:
                 self.remove_all_overlaps(verbosity)

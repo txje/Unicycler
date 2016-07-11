@@ -88,17 +88,17 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, samto
         print('\nMean fragment size = ', float_to_str(insert_mean, 2) + ' bp')
     insert_sizes = sorted(insert_sizes)
     insert_size_5th = get_percentile_sorted(insert_sizes, 5.0)
-    if verbosity > 0:
-        print('Fragment size 5th percentile =', float_to_str(insert_size_5th, 2) + ' bp')
+    if verbosity > 1:
+        print('Fragment size 5th percentile =', float_to_str(insert_size_5th, 0) + ' bp')
     insert_size_95th = get_percentile_sorted(insert_sizes, 95.0)
-    if verbosity > 0:
-        print('Fragment size 95th percentile =', float_to_str(insert_size_95th, 2) + ' bp')
+    if verbosity > 1:
+        print('Fragment size 95th percentile =', float_to_str(insert_size_95th, 0) + ' bp')
 
     # Produce a new sam file including only the pairs with an appropriate insert size.
     filtered_sam_filename = os.path.join(polish_dir, 'alignments_filtered.sam')
     if verbosity > 0:
-        print('\nFiltering alignments to fragment size range:',
-              float_to_str(insert_size_5th, 2) + ' to ' + float_to_str(insert_size_95th, 2))
+        print('Filtering alignments to fragment size range:',
+              float_to_str(insert_size_5th, 0) + ' to ' + float_to_str(insert_size_95th, 0))
     filtered_sam = open(filtered_sam_filename, 'w')
     raw_sam = open(raw_sam_filename, 'rt')
     for sam_line in raw_sam:
@@ -165,7 +165,7 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, samto
         except ValueError:
             pass
     if verbosity == 1:
-        print('\nNumber of Pilon changes:' + int_to_str(total_count))
+        print('\nNumber of Pilon changes:', int_to_str(total_count))
     elif verbosity > 1:
         print()
         seg_nums = sorted(graph.segments)

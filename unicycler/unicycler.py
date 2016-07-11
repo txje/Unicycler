@@ -76,7 +76,8 @@ def main():
     unbridged_graph.save_to_gfa(unbridged_graph_filename, verbosity, save_copy_depth_info=True)
 
     # Make an initial set of bridges using the SPAdes contig paths.
-    print_section_header('Bridging graph with SPAdes contig paths', verbosity)
+    print_section_header('Bridging graph with SPAdes contig paths', verbosity,
+                         last_newline=(verbosity > 1))
     bridges = create_spades_contig_bridges(unbridged_graph, single_copy_segments, verbosity)
     bridges += create_loop_unrolling_bridges(unbridged_graph, verbosity)
     graph = copy.deepcopy(unbridged_graph)
@@ -215,7 +216,7 @@ def main():
     # Rotate completed replicons in the graph to a standard starting gene.
     completed_replicons = graph.completed_circular_replicons()
     if not args.no_rotate and len(completed_replicons) > 0:
-        print_section_header('Rotating completed replicons', verbosity)
+        print_section_header('Rotating completed replicons', verbosity, last_newline=False)
         blast_dir = os.path.join(args.out, 'blast_temp')
         if not os.path.exists(blast_dir):
             os.makedirs(blast_dir)
@@ -229,9 +230,8 @@ def main():
                 sequence = sequence[:-graph.overlap]
             depth = segment.depth
             if verbosity > 0:
-                print('Replicon ' + str(i+1) + ':')
-                print('  Length =', int_to_str(len(sequence)), 'bp')
-                print('  Depth =', float_to_str(depth, 2) + 'x')
+                print('\nReplicon ' + str(i+1) + ' ('+ int_to_str(len(sequence)), 'bp, ' +
+                      float_to_str(depth, 2) + 'x):')
             try:
                 start_gene, start_pos, flip = find_start_gene(sequence, args.start_genes,
                                                               args.start_gene_id,
@@ -278,7 +278,7 @@ def main():
 
     # Save the final state as both a GFA and FASTA file.
     if verbosity > 0:
-        print_section_header('Complete', verbosity)
+        print_section_header('Complete', verbosity, last_newline=False)
     graph.save_to_gfa(os.path.join(args.out, 'assembly.gfa'), verbosity)
     graph.save_to_fasta(os.path.join(args.out, 'assembly.fasta'), verbosity)
 

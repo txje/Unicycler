@@ -231,7 +231,7 @@ def main():
                 sequence = sequence[:-graph.overlap]
             depth = segment.depth
             if verbosity > 0:
-                print('\nReplicon ' + str(i+1) + ' ('+ int_to_str(len(sequence)), 'bp, ' +
+                print('\nReplicon ' + str(i+1) + ' (' + int_to_str(len(sequence)), 'bp, ' +
                       float_to_str(depth, 2) + 'x):')
             try:
                 start_gene, start_pos, flip = find_start_gene(sequence, args.start_genes,
@@ -268,7 +268,7 @@ def main():
                               args.short1, args.short2, args.threads)
         except CannotPolish as e:
             if verbosity > 0:
-                print('Unable to polish assembly using Pilon:\n')
+                print('Unable to polish assembly using Pilon: ', end='')
                 print(e.message)
         else:
             file_num += 1

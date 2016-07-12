@@ -28,11 +28,11 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, samto
     """
     pilon_path = get_pilon_jar_path(pilon_path)
     if not pilon_path:
-        raise CannotPolish('Could not find pilon.jar')
+        raise CannotPolish('could not find pilon.jar')
 
     segments_to_polish = [x for x in graph.segments.values() if x.get_length() >= min_polish_size]
     if not segments_to_polish:
-        raise CannotPolish('No segments are long enough to polish')
+        raise CannotPolish('no segments are long enough to polish')
 
     polish_input_filename = os.path.join(polish_dir, 'polish.fasta')
     polish_fasta = open(polish_input_filename, 'w')
@@ -83,6 +83,8 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, samto
         except (ValueError, IndexError):
             pass
     raw_sam.close()
+    if not insert_sizes:
+        raise CannotPolish('no read pairs aligned')
     insert_mean = statistics.mean(insert_sizes)
     if verbosity > 1:
         print()

@@ -230,7 +230,7 @@ def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity, km
     if os.path.isfile(kmer_range_filename):
         with open(kmer_range_filename, 'rt') as kmer_range_file:
             kmer_range = kmer_range_file.readline().strip().split(', ')
-        if len(kmer_range) == kmer_count:
+        if kmer_range:
             try:
                 kmer_range = [int(x) for x in kmer_range]
                 if verbosity > 0:

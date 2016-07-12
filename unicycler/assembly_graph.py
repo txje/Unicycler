@@ -920,7 +920,7 @@ class AssemblyGraph(object):
 
         # TO DO: These should be parameters, after I have them sorted out.
         initial_tolerance = 0.1
-        propagation_tolerance = 0.2
+        propagation_tolerance = 0.5
         min_half_median_for_diploid = 0.1
         min_single_copy_length = 1000
 

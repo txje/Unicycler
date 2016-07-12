@@ -104,16 +104,16 @@ def main():
     graph.save_to_gfa(spades_bridged_graph_merged, verbosity)
 
     # Prepare the directory for long read alignment.
-    alignment_dir = os.path.join(args.out, 'read_alignment_temp')
-    if not os.path.exists(alignment_dir):
-        os.makedirs(alignment_dir)
-    graph_fasta = os.path.join(alignment_dir, 'graph_segments.fasta')
-    alignments_sam = os.path.join(alignment_dir, 'long_read_alignments.sam')
-    temp_alignment_dir = os.path.join(alignment_dir, 'temp')
-    unbridged_graph.save_to_fasta(graph_fasta)
-
-    scoring_scheme = AlignmentScoringScheme(args.scores)
-    min_alignment_length = unbridged_graph.overlap * 2  # TO DO: make this a parameter?
+    if not args.no_long:
+        alignment_dir = os.path.join(args.out, 'read_alignment_temp')
+        if not os.path.exists(alignment_dir):
+            os.makedirs(alignment_dir)
+        graph_fasta = os.path.join(alignment_dir, 'graph_segments.fasta')
+        alignments_sam = os.path.join(alignment_dir, 'long_read_alignments.sam')
+        temp_alignment_dir = os.path.join(alignment_dir, 'temp')
+        unbridged_graph.save_to_fasta(graph_fasta)
+        scoring_scheme = AlignmentScoringScheme(args.scores)
+        min_alignment_length = unbridged_graph.overlap * 2  # TO DO: make this a parameter?
 
     # If all long reads are available now, then we do the entire process in one pass.
     if args.long:

@@ -12,7 +12,7 @@ Author: Ryan Wick
 email: rrwick@gmail.com
 """
 
-import random, os, subprocess, argparse, sys
+import random, os, subprocess, argparse, sys, time
 
 
 def main():
@@ -22,11 +22,15 @@ def main():
     illumina_1 = os.path.abspath('illumina_1.fastq')
     illumina_2 = os.path.abspath('illumina_2.fastq')
     if not (os.path.isfile(illumina_1) and os.path.isfile(illumina_2)):
+        print('Generating synthetic Illumina reads')
         make_fake_illumina_reads(args, illumina_1, illumina_2)
 
     # Run regular SPAdes.
-    spades_dir = 'spades_illumina_only'
-    if not os.path.isfile(os.path.join(spades_dir, 'contigs.fasta')):
+    spades_start_time = time.time()
+    spades_dir = 'spades_short_only'
+    spades_assembly = os.path.join(spades_dir, 'scaffolds.fasta')
+    if not os.path.isfile(spades_assembly):
+        print('Running SPAdes with short reads only')
         if not os.path.exists(spades_dir):
             os.makedirs(spades_dir)
         spades_command = ['spades.py', '-1', illumina_1, '-2', illumina_2, '--careful',
@@ -34,25 +38,61 @@ def main():
         try:
             subprocess.check_output(spades_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
-            quit_with_error('SPAdes encountered an error:\n' + e.output.decode())
+            quit_with_error('SPAdes encountered an error:' + e.output.decode())
+    spades_elapsed_seconds = time.time() - spades_start_time
 
     # Run QUAST for on the SPAdes results.
+    spades_quast_dir = os.path.join('quast_results', 'spades_short_only')
+    spades_quast_results = os.path.join(spades_quast_dir, 'transposed_report.tsv')
+    if not os.path.isfile(spades_quast_results):
+        quast_command = ['quast.py', spades_assembly, '-R', args.reference, '-o', spades_quast_dir]
+        try:
+            subprocess.check_output(quast_command, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            quit_with_error('QUAST encountered an error:' + e.output.decode())
+
+    # Create a table where we'll collect all QUAST results.
+    all_quast_results_filename = 'quast_results.tsv'
+    all_quast_results = open(all_quast_results_filename, 'w')
+    with open(spades_quast_results, 'rt') as f:
+        all_quast_results.write(f.readline())
+        spades_quast_line = ['SPAdes short reads only'] + f.readline().split('\t')[1:]
+        all_quast_results.write('\t'.join(spades_quast_line))
+    all_quast_results.close()
 
     # Run ALLPATHS-LG with short reads only? And if so, then QUAST.
 
     # Run Unicycler with --no_long to get a 0x value.
-    unicycler_dir = 'unicycler_illumina_only'
-    if not os.path.isfile(os.path.join(unicycler_dir, 'assembly.fasta')):
+    unicycler_start_time = time.time()
+    unicycler_dir = 'unicycler_short_only'
+    unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
+    if not os.path.isfile(unicycler_assembly):
         if not os.path.exists(unicycler_dir):
             os.makedirs(unicycler_dir)
         unicycler_command = ['unicycler', '--short1', illumina_1, '--short2', illumina_2,
-                             '--no_long', '--out', unicycler_dir]
+                             '--no_long', '--out', unicycler_dir, '--keep_temp', '0']
         try:
             subprocess.check_output(unicycler_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
-            quit_with_error('Unicycler encountered an error:\n' + e.output.decode())
+            quit_with_error('Unicycler encountered an error:' + e.output.decode())
+    unicycler_elapsed_seconds = time.time() - unicycler_start_time
 
     # Run QUAST on the Unicycler results.
+    unicycler_quast_dir = os.path.join('quast_results', 'unicycler_short_only')
+    unicycler_quast_results = os.path.join(unicycler_quast_dir, 'transposed_report.tsv')
+    if not os.path.isfile(unicycler_quast_results):
+        quast_command = ['quast.py', unicycler_assembly, '-R', args.reference, '-o',
+                         unicycler_quast_dir]
+        try:
+            subprocess.check_output(quast_command, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            quit_with_error('QUAST encountered an error:' + e.output.decode())
+    all_quast_results = open(all_quast_results_filename, 'a')
+    with open(unicycler_quast_results, 'rt') as f:
+        f.readline()
+        unicycler_quast_line = ['Unicycler short reads only'] + f.readline().split('\t')[1:]
+        all_quast_results.write('\t'.join(unicycler_quast_line))
+    all_quast_results.close()
 
     # Generate simulated long reads at a defined error rate.
 

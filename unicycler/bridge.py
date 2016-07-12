@@ -48,12 +48,20 @@ class SpadesContigBridge(object):
         self.graph_path = spades_contig_path
         self.start_segment = self.graph_path.pop(0)
         self.end_segment = self.graph_path.pop()
-        self.bridge_sequence = graph.get_path_sequence(self.graph_path)
-        start_seg = graph.segments[abs(self.start_segment)]
-        end_seg = graph.segments[abs(self.end_segment)]
+
+        # If there are segments in between the start and end (there usually will be), then they
+        # give the bridge sequence. If not (i.e. if the start and end directly connect),
+        # then the bridge sequence is just the overlapping sequence between them.
+        if self.graph_path:
+            self.bridge_sequence = graph.get_path_sequence(self.graph_path)
+        else:
+            overlap_seq = graph.get_seq_from_signed_seg_num(self.start_segment)[-graph.overlap:]
+            self.bridge_sequence = overlap_seq
 
         # The start segment and end segment should agree in depth. If they don't, that's very bad,
         # so depth_disagreement is applied to quality twice (squared effect).
+        start_seg = graph.segments[abs(self.start_segment)]
+        end_seg = graph.segments[abs(self.end_segment)]
         depth_agreement = get_num_agreement(start_seg.depth, end_seg.depth)
         self.quality *= (depth_agreement * depth_agreement)  # has squared effect on quality
         self.depth = get_mean_depth(start_seg, end_seg, graph)

@@ -96,7 +96,7 @@ def get_args():
                         help='The reference genome to shred and reassemble')
     parser.add_argument('--short_depth', type=float, default=50.0,
                         help='Base read depth for fake short reads')
-    parser.add_argument('--long_depth', type=float, default=25.0,
+    parser.add_argument('--long_depth', type=float, default=20.0,
                         help='Base read depth for fake long reads')
     parser.add_argument('--long_acc', type=float, default=80.0,
                         help='Mean accuracy for long reads')
@@ -109,7 +109,6 @@ def get_args():
                              'positions')
     parser.add_argument('--threads', type=int, required=False, default=8,
                         help='Number of CPU threads')
-
     return parser.parse_args()
 
 

@@ -9,7 +9,14 @@ Author: Ryan Wick
 email: rrwick@gmail.com
 """
 
-import random, os, subprocess, argparse, sys, time, shutil, gzip
+import random
+import os
+import subprocess
+import argparse
+import sys
+import time
+import shutil
+import gzip
 
 
 def main():
@@ -23,24 +30,24 @@ def main():
     quast_results = create_quast_results_table()
 
     # Run SPAdes and Unicycler on short read data alone.
-    spades_dir = run_regular_spades(short_1, short_2, args.reference, quast_results)
-    unicycler_no_long_dir = run_unicycler_no_long(short_1, short_2, args.reference, quast_results)
+    spades_dir = run_regular_spades(short_1, short_2, args, quast_results)
+    unicycler_no_long_dir = run_unicycler_no_long(short_1, short_2, args, quast_results)
 
     # Run Unicycler on the full set of long reads - will be the source of alignments for subsampled
     # Unicycler runs.
     long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
-    unicycler_all_long_dir = run_unicycler_all_long(short_1, short_2, long_filename, args.reference,
+    unicycler_all_long_dir = run_unicycler_all_long(short_1, short_2, long_filename, args,
                                                     long_read_count, long_read_depth,
                                                     quast_results, unicycler_no_long_dir)
 
     # Run hybridSPAdes on the full set of long reads.
-    run_hybrid_spades(short_1, short_2, long_filename, long_read_count, long_read_depth,
-                      args.reference, quast_results)
+    run_hybrid_spades(short_1, short_2, long_filename, long_read_count, long_read_depth, args,
+                      quast_results)
 
     # Run npScarf on the full set of long reads - will be the source of alignments for subsampled
     # npScarf runs.
     np_scarf_all_long_dir = run_np_scarf(long_filename, long_reads, long_read_count,
-                                         long_read_depth, args.reference, quast_results, spades_dir)
+                                         long_read_depth, args, quast_results, spades_dir)
 
     # Run Cerulean with short reads only?
 
@@ -79,8 +86,6 @@ def main():
 
         # Run Cerulean?
 
-        os.remove(subsampled_filename)
-
 
 def get_args():
     """
@@ -93,8 +98,8 @@ def get_args():
                         help='Base read depth for fake short reads')
     parser.add_argument('--long_depth', type=float, default=25.0,
                         help='Base read depth for fake long reads')
-    parser.add_argument('--long_id', type=float, default=80.0,
-                        help='Mean identity for long reads')
+    parser.add_argument('--long_acc', type=float, default=80.0,
+                        help='Mean accuracy for long reads')
     parser.add_argument('--long_len', type=int, default=10000,
                         help='Mean length for long reads')
     parser.add_argument('--model_qc', type=str, default='model_qc_clr',
@@ -102,6 +107,8 @@ def get_args():
     parser.add_argument('--rotation_count', type=int, default=100, required=False,
                         help='The number of times to run read simulators with random start '
                              'positions')
+    parser.add_argument('--threads', type=int, required=False, default=8,
+                        help='Number of CPU threads')
 
     return parser.parse_args()
 
@@ -332,11 +339,11 @@ def run_pbsim(input_fasta, depth, args, read_prefix):
     return reads
 
 
-def run_regular_spades(short_1, short_2, reference, all_quast_results):
+def run_regular_spades(short_1, short_2, args, all_quast_results):
     """
     Runs SPAdes with only short reads (i.e. not hybridSPAdes).
     """
-    run_name, spades_dir = get_run_name_and_run_dir_name('SPAdes', reference, 0.0, 0)
+    run_name, spades_dir = get_run_name_and_run_dir_name('SPAdes', args.reference, 0.0, 0)
     spades_assembly = os.path.join(spades_dir, 'scaffolds.fasta')
     if os.path.isfile(spades_assembly):
         return spades_dir
@@ -349,6 +356,7 @@ def run_regular_spades(short_1, short_2, reference, all_quast_results):
                       '-1', short_1,
                       '-2', short_2,
                       '--careful',
+                      '--threads', str(args.threads),
                       '-o', spades_dir]
     try:
         spades_out = subprocess.check_output(spades_command, stderr=subprocess.STDOUT)
@@ -358,17 +366,17 @@ def run_regular_spades(short_1, short_2, reference, all_quast_results):
         quit_with_error('SPAdes encountered an error:\n' + e.output.decode())
 
     spades_time = time.time() - spades_start_time
-    run_quast(spades_assembly, reference, all_quast_results, 'SPAdes', 0, 0.0, spades_time)
+    run_quast(spades_assembly, args, all_quast_results, 'SPAdes', 0, 0.0, spades_time)
     clean_up_spades_dir(spades_dir)
     return spades_dir
 
 
-def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, reference,
+def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args,
                       all_quast_results):
     """
     Runs hybridSPAdes using the --nanopore option.
     """
-    run_name, spades_dir = get_run_name_and_run_dir_name('SPAdes', reference, long_depth,
+    run_name, spades_dir = get_run_name_and_run_dir_name('SPAdes', args.reference, long_depth,
                                                          long_count)
     spades_assembly = os.path.join(spades_dir, 'scaffolds.fasta')
     if os.path.isfile(spades_assembly):
@@ -383,6 +391,7 @@ def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, reference,
                       '-2', short_2,
                       '--nanopore', long,
                       '--careful',
+                      '--threads', str(args.threads),
                       '-o', spades_dir]
     try:
         spades_out = subprocess.check_output(spades_command, stderr=subprocess.STDOUT)
@@ -392,11 +401,11 @@ def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, reference,
         quit_with_error('SPAdes encountered an error:\n' + e.output.decode())
 
     spades_time = time.time() - spades_start_time
-    run_quast(spades_assembly, reference, all_quast_results, 'SPAdes', long_count, long_depth,
+    run_quast(spades_assembly, args, all_quast_results, 'SPAdes', long_count, long_depth,
               spades_time)
 
 
-def run_np_scarf(long_read_file, long_reads, long_count, long_depth, reference, all_quast_results,
+def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_quast_results,
                  spades_dir, np_scarf_all_long_dir=None):
     """
     Runs npScarf using the SPAdes assembly results:
@@ -407,7 +416,7 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, reference, 
         > alignments.sam
     jsa.np.gapcloser -b alignments.sam -seq np_scarf.fasta
     """
-    run_name, np_scarf_dir = get_run_name_and_run_dir_name('npScarf', reference, long_depth,
+    run_name, np_scarf_dir = get_run_name_and_run_dir_name('npScarf', args.reference, long_depth,
                                                            long_count)
     np_scarf_assembly = os.path.join(np_scarf_dir, 'out.fin.fasta')
     if os.path.isfile(np_scarf_assembly):
@@ -442,7 +451,7 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, reference, 
         alignments_sam = open(alignments_file, 'w')
         dev_null = open(os.devnull, 'w')
         bwa_mem_command = ['bwa', 'mem',
-                           '-t', '8',
+                           '-t', str(args.threads),
                            '-k', '11',
                            '-W', '20',
                            '-r', '10',
@@ -481,15 +490,15 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, reference, 
     os.remove('out.fin.japsa')
 
     np_scarf_time = time.time() - np_scarf_start_time
-    run_quast(np_scarf_assembly, reference, all_quast_results, 'npScarf', long_count, long_depth,
+    run_quast(np_scarf_assembly, args, all_quast_results, 'npScarf', long_count, long_depth,
               np_scarf_time)
 
     clean_up_np_scarf_dir(np_scarf_dir)
     return np_scarf_dir
 
 
-def run_unicycler_no_long(short_1, short_2, reference, all_quast_results):
-    run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', reference, 0.0, 0)
+def run_unicycler_no_long(short_1, short_2, args, all_quast_results):
+    run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', args.reference, 0.0, 0)
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
 
     if os.path.isfile(unicycler_assembly):
@@ -504,7 +513,8 @@ def run_unicycler_no_long(short_1, short_2, reference, all_quast_results):
                          '--short2', short_2,
                          '--no_long',
                          '--out', unicycler_dir,
-                         '--keep_temp', '0']
+                         '--keep_temp', '0',
+                         '--threads', str(args.threads)]
     try:
         unicycler_out = subprocess.check_output(unicycler_command, stderr=subprocess.STDOUT)
         with open(os.path.join(unicycler_dir, 'unicycler.out'), 'wb') as f:
@@ -512,16 +522,16 @@ def run_unicycler_no_long(short_1, short_2, reference, all_quast_results):
     except subprocess.CalledProcessError as e:
         quit_with_error('Unicycler encountered an error:\n' + e.output.decode())
     unicycler_time = time.time() - unicycler_start_time
-    run_quast(unicycler_assembly, reference, all_quast_results, 'Unicycler', 0, 0.0,
+    run_quast(unicycler_assembly, args, all_quast_results, 'Unicycler', 0, 0.0,
               unicycler_time)
 
     clean_up_unicycler_dir(unicycler_dir)
     return unicycler_dir
 
 
-def run_unicycler_all_long(short_1, short_2, long, reference, long_read_count, long_read_depth,
+def run_unicycler_all_long(short_1, short_2, long, args, long_read_count, long_read_depth,
                            all_quast_results, unicycler_no_long_dir):
-    run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', reference,
+    run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', args.reference,
                                                             long_read_depth, long_read_count)
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
     if os.path.isfile(unicycler_assembly):
@@ -541,7 +551,8 @@ def run_unicycler_all_long(short_1, short_2, long, reference, long_read_count, l
                          '--short2', short_2,
                          '--long', long,
                          '--out', unicycler_dir,
-                         '--keep_temp', '1']
+                         '--keep_temp', '1',
+                         '--threads', str(args.threads)]
     try:
         unicycler_out = subprocess.check_output(unicycler_command, stderr=subprocess.STDOUT)
         with open(os.path.join(unicycler_dir, 'unicycler.out'), 'wb') as f:
@@ -549,17 +560,17 @@ def run_unicycler_all_long(short_1, short_2, long, reference, long_read_count, l
     except subprocess.CalledProcessError as e:
         quit_with_error('Unicycler encountered an error:\n' + e.output.decode())
     unicycler_time = time.time() - unicycler_start_time
-    run_quast(unicycler_assembly, reference, all_quast_results, 'Unicycler',
-              long_read_count, long_read_depth, unicycler_time)
+    run_quast(unicycler_assembly, args, all_quast_results, 'Unicycler', long_read_count,
+              long_read_depth, unicycler_time)
 
     clean_up_unicycler_dir(unicycler_dir)
     return unicycler_dir
 
 
 def run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled_filename,
-                                  reference, subsampled_count, subsampled_depth,
+                                  args, subsampled_count, subsampled_depth,
                                   all_quast_results, unicycler_all_long_dir):
-    run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', reference,
+    run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', args.reference,
                                                             subsampled_depth, subsampled_count)
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
     if os.path.isfile(unicycler_assembly):
@@ -591,7 +602,8 @@ def run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled
                          '--short2', short_2,
                          '--long', subsampled_filename,
                          '--out', unicycler_dir,
-                         '--keep_temp', '0']
+                         '--keep_temp', '0',
+                         '--threads', str(args.threads)]
     try:
         unicycler_out = subprocess.check_output(unicycler_command, stderr=subprocess.STDOUT)
         with open(os.path.join(unicycler_dir, 'unicycler.out'), 'wb') as f:
@@ -599,7 +611,7 @@ def run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled
     except subprocess.CalledProcessError as e:
         quit_with_error('Unicycler encountered an error:\n' + e.output.decode())
     unicycler_time = time.time() - unicycler_start_time
-    run_quast(unicycler_assembly, reference, all_quast_results, 'Unicycler', subsampled_count,
+    run_quast(unicycler_assembly, args, all_quast_results, 'Unicycler', subsampled_count,
               subsampled_depth, unicycler_time)
 
     clean_up_unicycler_dir(unicycler_dir)
@@ -611,11 +623,13 @@ def create_quast_results_table():
     if not os.path.isfile(quast_results_filename):
         quast_results = open(quast_results_filename, 'w')
         quast_results.write("Reference name\t"
-                            "Reference size\t"
+                            "Reference size (bp)\t"
                             "Reference pieces\t"
                             "Assembler\t"
                             "Long read count\t"
                             "Long read depth\t"
+                            "Long read accuracy (%)\t"
+                            "Long read mean size (bp)\t"
                             "Run time (seconds)\t"
                             "# contigs (>= 0 bp)\t"
                             "# contigs (>= 1000 bp)\t"
@@ -667,10 +681,10 @@ def create_quast_results_table():
     return quast_results_filename
 
 
-def run_quast(assembly, reference, all_quast_results, assembler_name, long_read_count,
+def run_quast(assembly, args, all_quast_results, assembler_name, long_read_count,
               long_read_depth, run_time):
-    reference_name = get_reference_name_from_filename(reference)
-    run_name, run_dir_name = get_run_name_and_run_dir_name(assembler_name, reference,
+    reference_name = get_reference_name_from_filename(args.reference)
+    run_name, run_dir_name = get_run_name_and_run_dir_name(assembler_name, args.reference,
                                                            long_read_depth, long_read_count)
     print('Running QUAST for', run_name)
     quast_dir = os.path.join('quast_results', run_dir_name)
@@ -678,7 +692,7 @@ def run_quast(assembly, reference, all_quast_results, assembler_name, long_read_
     if not os.path.isfile(this_quast_results):
         quast_command = ['quast.py',
                          assembly,
-                         '-R',reference,
+                         '-R', args.reference,
                          '-o', quast_dir,
                          '-l', '"' + run_name.replace(',', '') + '"']
         try:
@@ -689,9 +703,11 @@ def run_quast(assembly, reference, all_quast_results, assembler_name, long_read_
     with open(this_quast_results, 'rt') as results:
         results.readline()  # header line
         with open(all_quast_results, 'at') as all_results:
-            ref_length, ref_count = get_fasta_length_and_seq_count(reference)
+            ref_length, ref_count = get_fasta_length_and_seq_count(args.reference)
             quast_line = [reference_name, str(ref_length), str(ref_count), assembler_name,
-                          str(long_read_count), float_to_str(long_read_depth, 5), str(run_time)]
+                          str(long_read_count), float_to_str(long_read_depth, 5),
+                          float_to_str(100.0 * args.long_acc, 1), str(args.long_len),
+                          str(run_time)]
             quast_line += results.readline().split('\t')[1:]
             all_results.write('\t'.join(quast_line))
 

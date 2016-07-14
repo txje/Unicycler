@@ -71,17 +71,17 @@ def main():
         # can skip the short read assembly and the alignment. The polishing step still takes a
         # while, though.
         run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled_filename,
-                                      args.reference, subsampled_count, subsampled_long_read_depth,
+                                      args, subsampled_count, subsampled_long_read_depth,
                                       quast_results, unicycler_all_long_dir)
 
         # Run hybridSPAdes on the subsampled long reads.
         run_hybrid_spades(short_1, short_2, subsampled_filename, subsampled_count,
-                          subsampled_long_read_depth, args.reference, quast_results)
+                          subsampled_long_read_depth, args, quast_results)
 
         # Run npScarf on the subsampled long reads. This is very fast because we can skip the
         # alignment step.
         run_np_scarf(subsampled_filename, subsampled_reads, subsampled_count,
-                     subsampled_long_read_depth, args.reference, quast_results, spades_dir,
+                     subsampled_long_read_depth, args, quast_results, spades_dir,
                      np_scarf_all_long_dir=np_scarf_all_long_dir)
 
         # Run Cerulean?
@@ -370,8 +370,7 @@ def run_regular_spades(short_1, short_2, args, all_quast_results):
     return spades_dir
 
 
-def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args,
-                      all_quast_results):
+def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args, all_quast_results):
     """
     Runs hybridSPAdes using the --nanopore option.
     """

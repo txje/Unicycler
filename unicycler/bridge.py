@@ -286,13 +286,23 @@ class LongReadBridge(object):
             for i, best_path in enumerate(self.all_best_paths):
                 if i > 0:
                     output += '                           '
-                output += ', '.join(int_to_str(x) for x in best_path[0]) + ' ('
-                output += int_to_str(self.graph.get_path_length(best_path[0])) + ' bp, '
+                if best_path[0]:
+                    output += ', '.join(int_to_str(x) for x in best_path[0])
+                else:
+                    output += 'direct connection'
+                output += ' (' + int_to_str(self.graph.get_path_length(best_path[0])) + ' bp, '
                 output += 'raw score = ' + float_to_str(best_path[1], 1) + ', '
                 output += 'scaled score = ' + float_to_str(best_path[3], 2) + ', '
                 output += 'length discrepancy = ' + int_to_str(best_path[2]) + ' bp)\n'
 
-            self.bridge_sequence = self.graph.get_path_sequence(self.graph_path)
+            if self.graph_path:
+                self.bridge_sequence = self.graph.get_path_sequence(self.graph_path)
+            else:
+                start_overlap = \
+                    self.graph.get_seq_from_signed_seg_num(self.start_segment)[-self.graph.overlap:]
+                end_overlap = \
+                    self.graph.get_seq_from_signed_seg_num(self.end_segment)[:self.graph.overlap]
+                self.bridge_sequence = start_overlap + end_overlap
             self.path_support = True
 
             # Now we adjust the quality. It starts on the scaled score of the path alignment (which

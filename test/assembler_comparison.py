@@ -314,7 +314,7 @@ def run_pbsim(input_fasta, depth, args, read_prefix):
                      '--model_qc', args.model_qc,
                      '--length-mean', str(args.long_len),
                      '--length-sd', str(args.long_len / 10),
-                     '--accuracy-mean', str(args.long_id / 100.0),
+                     '--accuracy-mean', str(args.long_acc / 100.0),
                      '--accuracy-sd', str(0.02),
                      input_fasta]
     try:

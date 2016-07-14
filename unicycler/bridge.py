@@ -749,6 +749,13 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     new_bridges = []
     for seg_nums, span in spanning_read_seqs.items():
         start, end = seg_nums
+
+        # If the start and end are the same and already exclusively connect (i.e. if this is an
+        # already circular segment), then skip - there's no need to bridge.
+        if start == end and graph.get_downstream_seg_nums(start) == [start] and \
+                graph.get_upstream_seg_nums(start) == [start]:
+            continue
+
         for existing_bridge in existing_bridges:
             if isinstance(existing_bridge, LongReadBridge) and \
                     existing_bridge.start_segment == start and existing_bridge.end_segment == end:

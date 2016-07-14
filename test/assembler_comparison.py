@@ -55,6 +55,7 @@ def main():
     for subsampled_count in subsampled_read_counts:
 
         # Subsample the long reads.
+        print('\nSubsampling to', subsampled_count, 'reads')
         subsampled_reads = random.sample(long_reads, subsampled_count)
         subsampled_long_read_depth = get_long_read_depth(subsampled_reads, scaled_ref_length)
         subsampled_filename = ref_name + '_long_subsampled_' + str(subsampled_count) + '.fastq'
@@ -135,7 +136,9 @@ def make_fake_reads(args):
                 _ = next(fastq)
                 qualities = next(fastq).strip()
                 long_reads.append((name, sequence, '+', qualities))
+        print('\nReads already exist:', read_filename_1, read_filename_2, long_filename)
         return read_filename_1, read_filename_2, long_filename, long_reads
+
     print('\nGenerating synthetic reads', flush=True)
 
     references = load_fasta(args.reference)
@@ -344,8 +347,9 @@ def run_regular_spades(short_1, short_2, args, all_quast_results):
     """
     run_name, spades_dir = get_run_name_and_run_dir_name('SPAdes', args.reference, 0.0, 0)
     spades_assembly = os.path.join(spades_dir, 'scaffolds.fasta')
-    if os.path.isfile(spades_assembly):
-        return spades_dir
+    existing_dir = check_for_existing_assembly(spades_assembly)
+    if existing_dir:
+        return existing_dir
 
     spades_start_time = time.time()
     print('\nRunning', run_name, flush=True)
@@ -378,8 +382,9 @@ def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args, all_
     run_name, spades_dir = get_run_name_and_run_dir_name('SPAdes', args.reference, long_depth,
                                                          long_count)
     spades_assembly = os.path.join(spades_dir, 'scaffolds.fasta')
-    if os.path.isfile(spades_assembly):
-        return
+    existing_dir = check_for_existing_assembly(spades_assembly)
+    if existing_dir:
+        return existing_dir
 
     spades_start_time = time.time()
     print('\nRunning', run_name, flush=True)
@@ -419,8 +424,9 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
     run_name, np_scarf_dir = get_run_name_and_run_dir_name('npScarf', args.reference, long_depth,
                                                            long_count)
     np_scarf_assembly = os.path.join(np_scarf_dir, 'out.fin.fasta')
-    if os.path.isfile(np_scarf_assembly):
-        return np_scarf_dir
+    existing_dir = check_for_existing_assembly(np_scarf_assembly)
+    if existing_dir:
+        return existing_dir
 
     np_scarf_start_time = time.time()
     print('\nRunning', run_name, flush=True)
@@ -503,9 +509,9 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
 def run_unicycler_no_long(short_1, short_2, args, all_quast_results):
     run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', args.reference, 0.0, 0)
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
-
-    if os.path.isfile(unicycler_assembly):
-        return unicycler_dir
+    existing_dir = check_for_existing_assembly(unicycler_assembly)
+    if existing_dir:
+        return existing_dir
 
     unicycler_start_time = time.time()
     print('\nRunning', run_name, flush=True)
@@ -538,8 +544,9 @@ def run_unicycler_all_long(short_1, short_2, long, args, long_read_count, long_r
     run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', args.reference,
                                                             long_read_depth, long_read_count)
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
-    if os.path.isfile(unicycler_assembly):
-        return unicycler_dir
+    existing_dir = check_for_existing_assembly(unicycler_assembly)
+    if existing_dir:
+        return existing_dir
 
     if not os.path.exists(unicycler_dir):
         os.makedirs(unicycler_dir)
@@ -578,8 +585,9 @@ def run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled
     run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', args.reference,
                                                             subsampled_depth, subsampled_count)
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
-    if os.path.isfile(unicycler_assembly):
-        return unicycler_dir
+    existing_dir = check_for_existing_assembly(unicycler_assembly)
+    if existing_dir:
+        return existing_dir
 
     if not os.path.exists(unicycler_dir):
         os.makedirs(unicycler_dir)
@@ -875,6 +883,28 @@ def clean_up_np_scarf_dir(np_scarf_dir):
             os.remove(path)
         elif os.path.isdir(path):
             shutil.rmtree(path)
+
+
+def check_for_existing_assembly(assembly_path):
+    """
+    Checks to see if the assembly exists, and if so, returns its directory. The tricky part is
+    that it doesn't care if the depth part matches exactly, but the assembler name, sample name
+    and read count do have to match exactly.
+    """
+    assembly_path_parts = assembly_path.split('/')
+    assembly_name = assembly_path_parts[-1]
+    assembly_dir = '/'.join(assembly_path_parts[:-1])
+    assembly_dir_first_part = assembly_dir.split('_long_reads')[0]
+    for item in os.listdir('.'):
+        if os.path.isdir(item) and item.startswith(assembly_dir_first_part):
+            existing_assembly = os.path.join(item, assembly_name)
+            if os.path.isfile(existing_assembly):
+                print('\nAssembly already exists:', existing_assembly)
+                return item
+            else:
+                shutil.rmtree(item)
+                return ''
+    return ''
 
 
 if __name__ == '__main__':

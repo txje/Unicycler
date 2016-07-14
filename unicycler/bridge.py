@@ -585,22 +585,7 @@ def create_spades_contig_bridges(graph, single_copy_segments, verbosity):
         if path not in conflicting_paths_no_dups:
             conflicting_paths_no_dups.append(path)
     conflicting_paths = conflicting_paths_no_dups
-    # if verbosity > 1:
-    #     print('Bridge paths in conflict with single-copy segments: ', end='')
-    #     if conflicting_paths:
-    #         print(', '.join([str(x) for x in conflicting_paths]))
-    #     else:
-    #         print('none')
-    #     print()
-
     final_bridge_paths = [x for x in bridge_path_list if x not in conflicting_paths]
-    # if verbosity > 1:
-    #     print('Final SPAdes contig bridge paths: ', end='')
-    #     if final_bridge_paths:
-    #         print(', '.join([str(x) for x in final_bridge_paths]))
-    #     else:
-    #         print('none')
-    #     print()
 
     return [SpadesContigBridge(spades_contig_path=x, graph=graph) for x in final_bridge_paths]
 
@@ -688,15 +673,6 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
         if not alignments:
             continue
 
-        # print('\n')
-        # print('READ:', read)
-        # print('  SEQUENCE:', read.sequence)
-        # print('  SINGLE-COPY SEGMENT ALIGNMENTS:')
-        # for alignment in alignments:
-        #     print('    ', alignment)
-        # if len(alignments) > 1:
-        #     print('  BRIDGING SEQUENCES:')
-
         # If the code got here, then we have some alignments to single-copy segments. We grab
         # neighbouring pairs of alignments, starting with the highest scoring ones and work our
         # way down. This means that we should have a pair for each neighbouring alignment, but
@@ -748,9 +724,6 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
                                                          alignment_2))
                     already_added.add(seg_nums)
 
-                    # print('    ', seg_nums[0], seg_nums[1], bridge_seq)
-                    # print('    ', seg_nums[0], seg_nums[1], bridge_qual)
-
         # At this point all of the alignments have been added and we are interested in the first
         # and last alignments (which may be the same if there's only one). If the read extends
         # past these alignments, then the overlapping part might be useful for consensus sequences.
@@ -763,9 +736,6 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
             if seg_num not in overlapping_read_seqs:
                 overlapping_read_seqs[seg_num] = []
             overlapping_read_seqs[seg_num].append((seq, qual, first_alignment))
-            # print('  START OVERLAPPING SEQUENCE:')
-            # print('    ', seg_num, seq)
-            # print('    ', seg_num, qual)
         last_alignment = available_alignments[-1]
         end_overlap, end_qual = last_alignment.get_end_overlapping_read_seq()
         if end_overlap:
@@ -773,10 +743,6 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
             if seg_num not in overlapping_read_seqs:
                 overlapping_read_seqs[seg_num] = []
             overlapping_read_seqs[seg_num].append((end_overlap, end_qual, last_alignment))
-            #     print('  END OVERLAPPING SEQUENCE:')
-            #     print('    ', seg_num, end_overlap)
-            #     print('    ', seg_num, end_qual)
-            # print('\n')
 
     # If a bridge already exists for a spanning sequence, we add the sequence to the bridge. If
     # not, we create a new bridge and add it.

@@ -439,17 +439,17 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
     except subprocess.CalledProcessError as e:
         quit_with_error('jsa.seq.sort encountered an error:\n' + e.output.decode())
 
-    bwa_index_command = ['bwa', 'index',
-                         np_scarf_fasta]
-    print(' '.join(bwa_index_command))
-    try:
-        subprocess.check_output(bwa_index_command, stderr=subprocess.STDOUT)
-    except subprocess.CalledProcessError as e:
-        quit_with_error('BWA index encountered an error:\n' + e.output.decode())
-
     # If we are running npScarf with all long reads, then we run BWA Mem to get the SAM file.
     alignments_file = os.path.join(np_scarf_dir, 'alignments.sam')
     if not np_scarf_all_long_dir:
+        bwa_index_command = ['bwa', 'index',
+                             np_scarf_fasta]
+        print(' '.join(bwa_index_command))
+        try:
+            subprocess.check_output(bwa_index_command, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            quit_with_error('BWA index encountered an error:\n' + e.output.decode())
+
         alignments_sam = open(alignments_file, 'w')
         dev_null = open(os.devnull, 'w')
         bwa_mem_command = ['bwa', 'mem',
@@ -695,6 +695,13 @@ def run_quast(assembly, args, all_quast_results, assembler_name, long_read_count
     print('\nRunning QUAST for', run_name, flush=True)
     quast_dir = os.path.join('quast_results', run_dir_name)
     this_quast_results = os.path.join(quast_dir, 'transposed_report.tsv')
+
+    ref_length, ref_count = get_fasta_length_and_seq_count(args.reference)
+    quast_line = [reference_name, str(ref_length), str(ref_count), assembler_name,
+                  str(long_read_count), float_to_str(long_read_depth, 5),
+                  float_to_str(100.0 * args.long_acc, 1), str(args.long_len),
+                  str(run_time)]
+
     if not os.path.isfile(this_quast_results):
         quast_command = ['quast.py',
                          assembly,
@@ -706,17 +713,14 @@ def run_quast(assembly, args, all_quast_results, assembler_name, long_read_count
         try:
             subprocess.check_output(quast_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
-            quit_with_error('QUAST encountered an error:\n' + e.output.decode())
+            print('QUAST encountered an error:\n' + e.output.decode(), flush=True)
+            quast_line += [''] * 46
+        else:
+            with open(this_quast_results, 'rt') as results:
+                results.readline()  # header line
+                quast_line += results.readline().split('\t')[1:]
 
-    with open(this_quast_results, 'rt') as results:
-        results.readline()  # header line
         with open(all_quast_results, 'at') as all_results:
-            ref_length, ref_count = get_fasta_length_and_seq_count(args.reference)
-            quast_line = [reference_name, str(ref_length), str(ref_count), assembler_name,
-                          str(long_read_count), float_to_str(long_read_depth, 5),
-                          float_to_str(100.0 * args.long_acc, 1), str(args.long_len),
-                          str(run_time)]
-            quast_line += results.readline().split('\t')[1:]
             all_results.write('\t'.join(quast_line))
 
 

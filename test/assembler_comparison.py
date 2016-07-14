@@ -55,18 +55,20 @@ def main():
     for subsampled_count in subsampled_read_counts:
 
         # Subsample the long reads.
-        print('\nSubsampling to', subsampled_count, 'reads')
         subsampled_reads = random.sample(long_reads, subsampled_count)
         subsampled_long_read_depth = get_long_read_depth(subsampled_reads, scaled_ref_length)
         subsampled_filename = ref_name + '_long_subsampled_' + str(subsampled_count) + '.fastq'
         if os.path.isfile(subsampled_filename + '.gz'):
-            os.remove(subsampled_filename + '.gz')
-        save_long_reads_to_fastq(subsampled_reads, subsampled_filename)
-        try:
-            subprocess.check_output(['gzip', subsampled_filename], stderr=subprocess.STDOUT)
-        except subprocess.CalledProcessError as e:
-            quit_with_error('gzip encountered an error:\n' + e.output.decode())
-        subsampled_filename += '.gz'
+            subsampled_filename += '.gz'
+            print('\nSubsampled reads already exist:', subsampled_filename)
+        else:
+            print('\nSubsampling to', subsampled_count, 'reads')
+            save_long_reads_to_fastq(subsampled_reads, subsampled_filename)
+            try:
+                subprocess.check_output(['gzip', subsampled_filename], stderr=subprocess.STDOUT)
+            except subprocess.CalledProcessError as e:
+                quit_with_error('gzip encountered an error:\n' + e.output.decode())
+            subsampled_filename += '.gz'
 
         # Run Unicycler on the subsampled long reads. This should be relatively fast, because we
         # can skip the short read assembly and the alignment. The polishing step still takes a

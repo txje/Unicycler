@@ -693,7 +693,8 @@ def run_quast(assembly, args, all_quast_results, assembler_name, long_read_count
                          assembly,
                          '-R', args.reference,
                          '-o', quast_dir,
-                         '-l', '"' + run_name.replace(',', '') + '"']
+                         '-l', '"' + run_name.replace(',', '') + '"',
+                         '--threads', str(args.threads)]
         try:
             subprocess.check_output(quast_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:

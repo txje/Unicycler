@@ -166,21 +166,6 @@ class LongReadBridge(object):
         end_seg = self.graph.segments[abs(self.end_segment)]
 
         output = '\n'
-
-        # output += 'FINALISING BRIDGE\n'
-        # output += '-----------------\n'
-        # output += 'start: ' + str(self.start_segment) + '\n'
-        # output += 'end:   ' + str(self.end_segment) + '\n'
-        # output += 'start overlaps:\n'
-        # for start_only_read in self.start_only_reads:
-        #     output += '  ' + str(start_only_read) + '\n'
-        # output += 'end overlaps:\n'
-        # for end_only_read in self.end_only_reads:
-        #     output += '  ' + str(end_only_read) + '\n'
-        # output += 'full spans:\n'
-        # for full_span_read in self.full_span_reads:
-        #     output += '  ' + str(full_span_read) + '\n'
-
         output += str(self.start_segment) + ' to ' + str(self.end_segment) + ':\n'
         output += '  bridging reads:          ' + int_to_str(len(self.full_span_reads)) + '\n'
 

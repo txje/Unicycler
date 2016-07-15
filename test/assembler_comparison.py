@@ -813,7 +813,7 @@ def run_quast(assembly, args, all_quast_results, assembler_name, long_read_count
     ref_length, ref_count = get_fasta_length_and_seq_count(args.reference)
     quast_line = [reference_name, str(ref_length), str(ref_count), assembler_name,
                   str(long_read_count), float_to_str(long_read_depth, 5),
-                  float_to_str(100.0 * args.long_acc, 1), str(args.long_len),
+                  float_to_str(args.long_acc, 1), str(args.long_len),
                   str(run_time)]
 
     if assembly is None:

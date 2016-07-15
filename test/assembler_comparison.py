@@ -24,7 +24,7 @@ def main():
 
     scaled_ref_length = get_scaled_ref_length(args)
     ref_name = get_reference_name_from_filename(args.reference)
-    short_1, short_2 = make_fake_short_reads(args)
+    short_1, short_2 = make_fake_short_reads(args, starting_path, ref_name)
     quast_results = create_quast_results_table()
 
     # Run SPAdes and Unicycler on short read data alone.
@@ -137,15 +137,15 @@ class AssemblyError(Exception):
     pass
 
 
-def make_fake_short_reads(args):
+def make_fake_short_reads(args, current_path, ref_name):
     """
     Runs ART to generate fake Illumina reads. Runs ART separate for each sequence in the reference
     file (to control relative depth) and at multiple sequence rotations (to ensure circular
     assembly).
     """
-    ref_name = get_reference_name_from_filename(args.reference)
     read_filename_1 = os.path.abspath(ref_name + '_short_1.fastq')
     read_filename_2 = os.path.abspath(ref_name + '_short_2.fastq')
+
     if os.path.isfile(read_filename_1 + '.gz') and os.path.isfile(read_filename_2 + '.gz'):
         read_filename_1 += '.gz'
         read_filename_2 += '.gz'
@@ -153,6 +153,11 @@ def make_fake_short_reads(args):
         return read_filename_1, read_filename_2
 
     print('\nGenerating synthetic short reads', flush=True)
+
+    temp_dir = os.path.join(current_path, 'temp_' + ref_name)
+    if not os.path.exists(temp_dir):
+        os.makedirs(temp_dir)
+    os.chdir(temp_dir)
 
     references = load_fasta(args.reference)
     relative_depths = get_relative_depths(args.reference)
@@ -185,6 +190,8 @@ def make_fake_short_reads(args):
                                         str(read_prefix))
             os.remove(temp_fasta_filename)
             read_prefix += 1
+
+    os.chdir(current_path)
 
     random.shuffle(short_read_pairs)
     reads_1 = open(read_filename_1, 'w')

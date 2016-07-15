@@ -16,52 +16,64 @@ import argparse
 import sys
 import time
 import shutil
-import gzip
 
 
 def main():
     args = get_args()
+    starting_path = os.path.abspath('.')
+
     scaled_ref_length = get_scaled_ref_length(args)
     ref_name = get_reference_name_from_filename(args.reference)
-
-    short_1, short_2, long_filename, long_reads = make_fake_reads(args)
-    long_read_count = len(long_reads)
-
+    short_1, short_2 = make_fake_short_reads(args)
     quast_results = create_quast_results_table()
 
     # Run SPAdes and Unicycler on short read data alone.
-    spades_dir = run_regular_spades(short_1, short_2, args, quast_results)
+    short_read_only_dir = os.path.abspath('000000_only_short_reads')
+    if not os.path.exists(short_read_only_dir):
+        os.makedirs(short_read_only_dir)
+    os.chdir(short_read_only_dir)
+    spades_no_long_dir = run_regular_spades(short_1, short_2, args, quast_results)
     unicycler_no_long_dir = run_unicycler_no_long(short_1, short_2, args, quast_results)
-
-    # Run Unicycler on the full set of long reads - will be the source of alignments for subsampled
-    # Unicycler runs.
-    long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
-    unicycler_all_long_dir = run_unicycler_all_long(short_1, short_2, long_filename, args,
-                                                    long_read_count, long_read_depth,
-                                                    quast_results, unicycler_no_long_dir)
-
-    # Run hybridSPAdes on the full set of long reads.
-    run_hybrid_spades(short_1, short_2, long_filename, long_read_count, long_read_depth, args,
-                      quast_results)
-
-    # Run npScarf on the full set of long reads - will be the source of alignments for subsampled
-    # npScarf runs.
-    np_scarf_all_long_dir = run_np_scarf(long_filename, long_reads, long_read_count,
-                                         long_read_depth, args, quast_results, spades_dir)
-
     # Run Cerulean with short reads only?
+    os.chdir(starting_path)
 
-    subsampled_read_counts = subsample_counts(long_read_count)
-    for subsampled_count in subsampled_read_counts:
+    # The program runs indefinitely, always running more tests until the user kills it.
+    dir_num = 1
+    while True:
+        dir_name, dir_num = get_next_available_set_number(starting_path, dir_num)
+        new_path = os.path.join(starting_path, dir_name)
+        os.chdir(new_path)
 
-        # Subsample the long reads.
-        subsampled_reads = random.sample(long_reads, subsampled_count)
-        subsampled_long_read_depth = get_long_read_depth(subsampled_reads, scaled_ref_length)
-        subsampled_filename = ref_name + '_long_subsampled_' + str(subsampled_count) + '.fastq'
-        if os.path.isfile(subsampled_filename + '.gz'):
-            subsampled_filename += '.gz'
-            print('\nSubsampled reads already exist:', subsampled_filename)
-        else:
+        long_filename, long_reads = make_fake_long_reads(args)
+        long_read_count = len(long_reads)
+
+        # Run Unicycler on the full set of long reads - will be the source of alignments for
+        # subsampled Unicycler runs.
+        long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
+        unicycler_all_long_dir = run_unicycler_all_long(short_1, short_2, long_filename, args,
+                                                        long_read_count, long_read_depth,
+                                                        quast_results, unicycler_no_long_dir)
+
+        # Run hybridSPAdes on the full set of long reads.
+        run_hybrid_spades(short_1, short_2, long_filename, long_read_count, long_read_depth, args,
+                          quast_results, spades_no_long_dir)
+
+        # Run npScarf on the full set of long reads - will be the source of alignments for
+        # subsampled npScarf runs.
+        np_scarf_all_long_dir = run_np_scarf(long_filename, long_reads, long_read_count,
+                                             long_read_depth, args, quast_results,
+                                             spades_no_long_dir)
+
+        # Randomly subsample this read set 10 different times.
+        for _ in range(10):
+
+            # Choose a random number of reads to include in the subsample.
+            subsampled_count = random.randint(1, long_read_count - 1)
+
+            # Subsample the long reads.
+            subsampled_reads = random.sample(long_reads, subsampled_count)
+            subsampled_long_read_depth = get_long_read_depth(subsampled_reads, scaled_ref_length)
+            subsampled_filename = ref_name + '_long_subsampled_' + str(subsampled_count) + '.fastq'
             print('\nSubsampling to', subsampled_count, 'reads')
             save_long_reads_to_fastq(subsampled_reads, subsampled_filename)
             try:
@@ -70,24 +82,26 @@ def main():
                 quit_with_error('gzip encountered an error:\n' + e.output.decode())
             subsampled_filename += '.gz'
 
-        # Run Unicycler on the subsampled long reads. This should be relatively fast, because we
-        # can skip the short read assembly and the alignment. The polishing step still takes a
-        # while, though.
-        run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled_filename,
-                                      args, subsampled_count, subsampled_long_read_depth,
-                                      quast_results, unicycler_all_long_dir)
+            # Run Unicycler on the subsampled long reads. This should be relatively fast, because we
+            # can skip the short read assembly and the alignment. The polishing step still takes a
+            # while, though.
+            run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled_filename,
+                                          args, subsampled_count, subsampled_long_read_depth,
+                                          quast_results, unicycler_all_long_dir)
 
-        # Run hybridSPAdes on the subsampled long reads.
-        run_hybrid_spades(short_1, short_2, subsampled_filename, subsampled_count,
-                          subsampled_long_read_depth, args, quast_results)
+            # Run hybridSPAdes on the subsampled long reads.
+            run_hybrid_spades(short_1, short_2, subsampled_filename, subsampled_count,
+                              subsampled_long_read_depth, args, quast_results, spades_no_long_dir)
 
-        # Run npScarf on the subsampled long reads. This is very fast because we can skip the
-        # alignment step.
-        run_np_scarf(subsampled_filename, subsampled_reads, subsampled_count,
-                     subsampled_long_read_depth, args, quast_results, spades_dir,
-                     np_scarf_all_long_dir=np_scarf_all_long_dir)
+            # Run npScarf on the subsampled long reads. This is very fast because we can skip the
+            # alignment step.
+            run_np_scarf(subsampled_filename, subsampled_reads, subsampled_count,
+                         subsampled_long_read_depth, args, quast_results, spades_no_long_dir,
+                         np_scarf_all_long_dir=np_scarf_all_long_dir)
 
-        # Run Cerulean?
+            # Run Cerulean?
+
+        os.chdir(starting_path)
 
 
 def get_args():
@@ -112,10 +126,18 @@ def get_args():
                              'positions')
     parser.add_argument('--threads', type=int, required=False, default=8,
                         help='Number of CPU threads')
-    return parser.parse_args()
+
+    args = parser.parse_args()
+    args.reference = os.path.abspath(args.reference)
+    args.model_qc = os.path.abspath(args.model_qc)
+    return args
 
 
-def make_fake_reads(args):
+class AssemblyError(Exception):
+    pass
+
+
+def make_fake_short_reads(args):
     """
     Runs ART to generate fake Illumina reads. Runs ART separate for each sequence in the reference
     file (to control relative depth) and at multiple sequence rotations (to ensure circular
@@ -124,24 +146,13 @@ def make_fake_reads(args):
     ref_name = get_reference_name_from_filename(args.reference)
     read_filename_1 = os.path.abspath(ref_name + '_short_1.fastq')
     read_filename_2 = os.path.abspath(ref_name + '_short_2.fastq')
-    long_filename = os.path.abspath(ref_name + '_long.fastq')
-    if os.path.isfile(read_filename_1 + '.gz') and os.path.isfile(read_filename_2 + '.gz') and \
-            os.path.isfile(long_filename + '.gz'):
+    if os.path.isfile(read_filename_1 + '.gz') and os.path.isfile(read_filename_2 + '.gz'):
         read_filename_1 += '.gz'
         read_filename_2 += '.gz'
-        long_filename += '.gz'
-        long_reads = []
-        with gzip.open(long_filename, 'rt') as fastq:
-            for line in fastq:
-                name = line.strip()
-                sequence = next(fastq).strip()
-                _ = next(fastq)
-                qualities = next(fastq).strip()
-                long_reads.append((name, sequence, '+', qualities))
-        print('\nReads already exist:', read_filename_1, read_filename_2, long_filename)
-        return read_filename_1, read_filename_2, long_filename, long_reads
+        print('\nReads already exist:', read_filename_1, read_filename_2)
+        return read_filename_1, read_filename_2
 
-    print('\nGenerating synthetic reads', flush=True)
+    print('\nGenerating synthetic short reads', flush=True)
 
     references = load_fasta(args.reference)
     relative_depths = get_relative_depths(args.reference)
@@ -150,18 +161,11 @@ def make_fake_reads(args):
     # for the first read in the pair, the second four are for the second.
     short_read_pairs = []
 
-    # This will hold all simulated long reads. Each read is a list of 4 strings: one for each
-    # line of the FASTQ.
-    long_reads = []
-
     read_prefix = 1  # Used to prevent duplicate read names.
     for i, ref in enumerate(references):
 
         short_depth = relative_depths[i] * args.short_depth
         short_depth_per_rotation = short_depth / args.rotation_count
-
-        long_depth = relative_depths[i] * args.long_depth
-        long_depth_per_rotation = long_depth / args.rotation_count
 
         ref_seq = ref[1]
         for j in range(args.rotation_count):
@@ -179,9 +183,6 @@ def make_fake_reads(args):
 
             short_read_pairs += run_art(temp_fasta_filename, short_depth_per_rotation,
                                         str(read_prefix))
-            long_reads += run_pbsim(temp_fasta_filename, long_depth_per_rotation, args,
-                                    str(read_prefix))
-
             os.remove(temp_fasta_filename)
             read_prefix += 1
 
@@ -200,21 +201,75 @@ def make_fake_reads(args):
     reads_1.close()
     reads_2.close()
 
+    # Gzip the reads to save space.
+    try:
+        subprocess.check_output(['gzip', read_filename_1], stderr=subprocess.STDOUT)
+        subprocess.check_output(['gzip', read_filename_2], stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as e:
+        quit_with_error('gzip encountered an error:\n' + e.output.decode())
+    read_filename_1 += '.gz'
+    read_filename_2 += '.gz'
+    print(read_filename_1)
+    print(read_filename_2)
+
+    return read_filename_1, read_filename_2
+
+
+def make_fake_long_reads(args):
+    """
+    Runs pbsim to generate fake long reads. Runs pbsim separate for each sequence in the reference
+    file (to control relative depth) and at multiple sequence rotations (to ensure circular
+    assembly).
+    """
+    ref_name = get_reference_name_from_filename(args.reference)
+    long_filename = os.path.abspath(ref_name + '_long.fastq')
+    print('\nGenerating synthetic long reads', flush=True)
+
+    references = load_fasta(args.reference)
+    relative_depths = get_relative_depths(args.reference)
+
+    # This will hold all simulated long reads. Each read is a list of 4 strings: one for each
+    # line of the FASTQ.
+    long_reads = []
+
+    read_prefix = 1  # Used to prevent duplicate read names.
+    for i, ref in enumerate(references):
+
+        long_depth = relative_depths[i] * args.long_depth
+        long_depth_per_rotation = long_depth / args.rotation_count
+
+        ref_seq = ref[1]
+        for j in range(args.rotation_count):
+
+            # Randomly rotate the sequence.
+            random_start = random.randint(0, len(ref_seq) - 1)
+            rotated = ref_seq[random_start:] + ref_seq[:random_start]
+
+            # Save the rotated sequence to FASTA.
+            temp_fasta_filename = 'temp_rotated.fasta'
+            temp_fasta = open(temp_fasta_filename, 'w')
+            temp_fasta.write('>' + ref[0] + '\n')
+            temp_fasta.write(rotated + '\n')
+            temp_fasta.close()
+
+            long_reads += run_pbsim(temp_fasta_filename, long_depth_per_rotation, args,
+                                    str(read_prefix))
+
+            os.remove(temp_fasta_filename)
+            read_prefix += 1
+
     random.shuffle(long_reads)
     save_long_reads_to_fastq(long_reads, long_filename)
 
     # Gzip the reads to save space.
     try:
-        subprocess.check_output(['gzip', read_filename_1], stderr=subprocess.STDOUT)
-        subprocess.check_output(['gzip', read_filename_2], stderr=subprocess.STDOUT)
         subprocess.check_output(['gzip', long_filename], stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as e:
         quit_with_error('gzip encountered an error:\n' + e.output.decode())
-    read_filename_1 += '.gz'
-    read_filename_2 += '.gz'
     long_filename += '.gz'
 
-    return read_filename_1, read_filename_2, long_filename, long_reads
+    print(long_filename)
+    return long_filename, long_reads
 
 
 def save_long_reads_to_fastq(long_reads, fastq):
@@ -348,36 +403,50 @@ def run_regular_spades(short_1, short_2, args, all_quast_results):
     Runs SPAdes with only short reads (i.e. not hybridSPAdes).
     """
     run_name, spades_dir = get_run_name_and_run_dir_name('SPAdes', args.reference, 0.0, 0)
-    spades_assembly = os.path.join(spades_dir, 'scaffolds.fasta')
-    existing_dir = check_for_existing_assembly(spades_assembly)
+    spades_scaffolds = os.path.join(spades_dir, 'scaffolds.fasta')
+    spades_contigs = os.path.join(spades_dir, 'contigs.fasta')
+    spades_before_rr = os.path.join(spades_dir, 'before_rr.fasta')
+    existing_dir = check_for_existing_assembly(spades_scaffolds)
     if existing_dir:
-        return existing_dir
+        return os.path.abspath(existing_dir)
 
     spades_start_time = time.time()
-    print('\nRunning', run_name, flush=True)
-    if not os.path.exists(spades_dir):
-        os.makedirs(spades_dir)
-    spades_command = ['spades.py',
-                      '-1', short_1,
-                      '-2', short_2,
-                      '--careful',
-                      '--threads', str(args.threads),
-                      '-o', spades_dir]
-    print(' '.join(spades_command))
     try:
-        spades_out = subprocess.check_output(spades_command, stderr=subprocess.STDOUT)
-        with open(os.path.join(spades_dir, 'spades.out'), 'wb') as f:
-            f.write(spades_out)
-    except subprocess.CalledProcessError as e:
-        quit_with_error('SPAdes encountered an error:\n' + e.output.decode())
+        print('\nRunning', run_name, flush=True)
+        if not os.path.exists(spades_dir):
+            os.makedirs(spades_dir)
+        spades_command = ['spades.py',
+                          '-1', short_1,
+                          '-2', short_2,
+                          '--careful',
+                          '--threads', str(args.threads),
+                          '-o', spades_dir]
+        print(' '.join(spades_command))
+        try:
+            spades_out = subprocess.check_output(spades_command, stderr=subprocess.STDOUT)
+            with open(os.path.join(spades_dir, 'spades.out'), 'wb') as f:
+                f.write(spades_out)
+        except subprocess.CalledProcessError as e:
+            print('SPAdes encountered an error:\n' + e.output.decode())
+            raise AssemblyError
+
+    except AssemblyError:
+        spades_scaffolds = None
+        spades_contigs = None
+        spades_before_rr = None
 
     spades_time = time.time() - spades_start_time
-    run_quast(spades_assembly, args, all_quast_results, 'SPAdes', 0, 0.0, spades_time)
+
+    run_quast(spades_scaffolds, args, all_quast_results, 'SPAdes scaffolds', 0, 0.0, spades_time)
+    run_quast(spades_contigs, args, all_quast_results, 'SPAdes contigs', 0, 0.0, spades_time)
+    run_quast(spades_before_rr, args, all_quast_results, 'SPAdes before_rr', 0, 0.0, spades_time)
+
     clean_up_spades_dir(spades_dir)
-    return spades_dir
+    return os.path.abspath(spades_dir)
 
 
-def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args, all_quast_results):
+def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args, all_quast_results,
+                      spades_no_long_dir):
     """
     Runs hybridSPAdes using the --nanopore option.
     """
@@ -386,30 +455,55 @@ def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args, all_
     spades_assembly = os.path.join(spades_dir, 'scaffolds.fasta')
     existing_dir = check_for_existing_assembly(spades_assembly)
     if existing_dir:
-        return existing_dir
+        return os.path.abspath(existing_dir)
+
+    # If we can find corrected reads from a previous SPAdes run, use those to save time.
+    corrected_1, corrected_2, corrected_u = '', '', ''
+    corrected_dir = os.path.join(spades_no_long_dir, 'corrected')
+    for item in os.listdir(corrected_dir):
+        if item.endswith('.fastq.gz'):
+            if 'short_1' in item:
+                corrected_1 = os.path.join(corrected_dir, item)
+            elif 'short_2' in item:
+                corrected_2 = os.path.join(corrected_dir, item)
+            elif 'unpaired' in item:
+                corrected_u = os.path.join(corrected_dir, item)
 
     spades_start_time = time.time()
-    print('\nRunning', run_name, flush=True)
-    if not os.path.exists(spades_dir):
-        os.makedirs(spades_dir)
-    spades_command = ['spades.py',
-                      '-1', short_1,
-                      '-2', short_2,
-                      '--nanopore', long,
-                      '--careful',
-                      '--threads', str(args.threads),
-                      '-o', spades_dir]
-    print(' '.join(spades_command))
     try:
-        spades_out = subprocess.check_output(spades_command, stderr=subprocess.STDOUT)
-        with open(os.path.join(spades_dir, 'spades.out'), 'wb') as f:
-            f.write(spades_out)
-    except subprocess.CalledProcessError as e:
-        quit_with_error('SPAdes encountered an error:\n' + e.output.decode())
+        print('\nRunning', run_name, flush=True)
+        if not os.path.exists(spades_dir):
+            os.makedirs(spades_dir)
+        spades_command = ['spades.py']
+        if corrected_1 and corrected_2 and corrected_u:
+            spades_command += ['-1', corrected_1,
+                               '-2', corrected_2,
+                               '-s', corrected_u,
+                               '--only-assembler']
+        else:
+            spades_command += ['-1', short_1,
+                               '-2', short_2]
+        spades_command += ['--nanopore', long,
+                           '--careful',
+                           '--threads', str(args.threads),
+                           '-o', spades_dir]
+        print(' '.join(spades_command))
+        try:
+            spades_out = subprocess.check_output(spades_command, stderr=subprocess.STDOUT)
+            with open(os.path.join(spades_dir, 'spades.out'), 'wb') as f:
+                f.write(spades_out)
+        except subprocess.CalledProcessError as e:
+            print('SPAdes encountered an error:\n' + e.output.decode())
+            raise AssemblyError
+
+    except AssemblyError:
+        spades_assembly = None
 
     spades_time = time.time() - spades_start_time
-    run_quast(spades_assembly, args, all_quast_results, 'SPAdes', long_count, long_depth,
+    run_quast(spades_assembly, args, all_quast_results, 'SPAdes hybrid', long_count, long_depth,
               spades_time)
+    clean_up_spades_dir(spades_dir)
+    return os.path.abspath(spades_dir)
 
 
 def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_quast_results,
@@ -428,84 +522,94 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
     np_scarf_assembly = os.path.join(np_scarf_dir, 'out.fin.fasta')
     existing_dir = check_for_existing_assembly(np_scarf_assembly)
     if existing_dir:
-        return existing_dir
+        return os.path.abspath(existing_dir)
 
     np_scarf_start_time = time.time()
-    print('\nRunning', run_name, flush=True)
-    if not os.path.exists(np_scarf_dir):
-        os.makedirs(np_scarf_dir)
 
-    np_scarf_fasta = os.path.join(np_scarf_dir, 'np_scarf.fasta')
-    jsa_seq_sort_command = ['jsa.seq.sort',
-                            '-r',
-                            '-n',
-                            '--input', os.path.join(spades_dir, 'scaffolds.fasta'),
-                            '--output', np_scarf_fasta]
-    print(' '.join(jsa_seq_sort_command))
     try:
-        subprocess.check_output(jsa_seq_sort_command, stderr=subprocess.STDOUT)
-    except subprocess.CalledProcessError as e:
-        quit_with_error('jsa.seq.sort encountered an error:\n' + e.output.decode())
+        print('\nRunning', run_name, flush=True)
+        if not os.path.exists(np_scarf_dir):
+            os.makedirs(np_scarf_dir)
 
-    # If we are running npScarf with all long reads, then we run BWA Mem to get the SAM file.
-    alignments_file = os.path.join(np_scarf_dir, 'alignments.sam')
-    if not np_scarf_all_long_dir:
-        bwa_index_command = ['bwa', 'index',
-                             np_scarf_fasta]
-        print(' '.join(bwa_index_command))
+        np_scarf_fasta = os.path.join(np_scarf_dir, 'np_scarf.fasta')
+        jsa_seq_sort_command = ['jsa.seq.sort',
+                                '-r',
+                                '-n',
+                                '--input', os.path.join(spades_dir, 'scaffolds.fasta'),
+                                '--output', np_scarf_fasta]
+        print(' '.join(jsa_seq_sort_command))
         try:
-            subprocess.check_output(bwa_index_command, stderr=subprocess.STDOUT)
+            subprocess.check_output(jsa_seq_sort_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
-            quit_with_error('BWA index encountered an error:\n' + e.output.decode())
+            print('jsa.seq.sort encountered an error:\n' + e.output.decode(), flush=True)
+            raise AssemblyError
 
-        alignments_sam = open(alignments_file, 'w')
-        dev_null = open(os.devnull, 'w')
-        bwa_mem_command = ['bwa', 'mem',
-                           '-t', str(args.threads),
-                           '-k', '11',
-                           '-W', '20',
-                           '-r', '10',
-                           '-A', '1', '-B', '1', '-O', '1', '-E', '1', '-L', '0',
-                           '-a', '-Y',
-                           np_scarf_fasta,
-                           long_read_file]
-        print(' '.join(bwa_mem_command))
-        bwa_mem = subprocess.Popen(bwa_mem_command, stdout=alignments_sam, stderr=dev_null)
+        # If we are running npScarf with all long reads, then we run BWA Mem to get the SAM file.
+        alignments_file = os.path.join(np_scarf_dir, 'alignments.sam')
+        if not np_scarf_all_long_dir:
+            bwa_index_command = ['bwa', 'index',
+                                 np_scarf_fasta]
+            print(' '.join(bwa_index_command))
+            try:
+                subprocess.check_output(bwa_index_command, stderr=subprocess.STDOUT)
+            except subprocess.CalledProcessError as e:
+                print('BWA index encountered an error:\n' + e.output.decode())
+                raise AssemblyError
+
+            alignments_sam = open(alignments_file, 'w')
+            dev_null = open(os.devnull, 'w')
+            bwa_mem_command = ['bwa', 'mem',
+                               '-t', str(args.threads),
+                               '-k', '11',
+                               '-W', '20',
+                               '-r', '10',
+                               '-A', '1', '-B', '1', '-O', '1', '-E', '1', '-L', '0',
+                               '-a', '-Y',
+                               np_scarf_fasta,
+                               long_read_file]
+            print(' '.join(bwa_mem_command))
+            bwa_mem = subprocess.Popen(bwa_mem_command, stdout=alignments_sam, stderr=dev_null)
+            try:
+                bwa_mem.communicate()
+                bwa_mem.wait()
+            except subprocess.CalledProcessError:
+                print('BWA Mem encountered an error')
+                raise AssemblyError
+            dev_null.close()
+            alignments_sam.close()
+
+        # If we are running npScarf with a subset, there's no need to do the aligning again. Instead
+        # we can just make a SAM by sampling from the previously done full set.
+        else:
+            create_subsampled_sam(os.path.join(np_scarf_all_long_dir, 'alignments.sam'),
+                                  alignments_file, long_reads)
+
+        jsa_np_gapcloser_command = ['jsa.np.gapcloser',
+                                    '-b', alignments_file,
+                                    '-seq', np_scarf_fasta]
+        print(' '.join(jsa_np_gapcloser_command))
         try:
-            bwa_mem.communicate()
-            bwa_mem.wait()
-        except subprocess.CalledProcessError:
-            quit_with_error('BWA Mem encountered an error')
-        dev_null.close()
-        alignments_sam.close()
+            np_scarf_out = subprocess.check_output(jsa_np_gapcloser_command,
+                                                   stderr=subprocess.STDOUT)
+            with open(os.path.join(np_scarf_dir, 'np_scarf.out'), 'wb') as f:
+                f.write(np_scarf_out)
 
-    # If we are running npScarf with a subset, there's no need to do the aligning again. Instead
-    # we can just make a SAM by sampling from the previously done full set.
-    else:
-        create_subsampled_sam(os.path.join(np_scarf_all_long_dir, 'alignments.sam'),
-                              alignments_file, long_reads)
+        except subprocess.CalledProcessError as e:
+            print('jsa.np.gapcloser encountered an error:\n' + e.output.decode())
+            raise AssemblyError
 
-    jsa_np_gapcloser_command = ['jsa.np.gapcloser',
-                                '-b', alignments_file,
-                                '-seq', np_scarf_fasta]
-    print(' '.join(jsa_np_gapcloser_command))
-    try:
-        np_scarf_out = subprocess.check_output(jsa_np_gapcloser_command, stderr=subprocess.STDOUT)
-        with open(os.path.join(np_scarf_dir, 'np_scarf.out'), 'wb') as f:
-            f.write(np_scarf_out)
+        shutil.move('out.fin.fasta', np_scarf_assembly)
+        os.remove('out.fin.japsa')
 
-    except subprocess.CalledProcessError as e:
-        quit_with_error('jsa.np.gapcloser encountered an error:\n' + e.output.decode())
-
-    shutil.move('out.fin.fasta', np_scarf_assembly)
-    os.remove('out.fin.japsa')
+    except AssemblyError:
+        np_scarf_assembly = None
 
     np_scarf_time = time.time() - np_scarf_start_time
     run_quast(np_scarf_assembly, args, all_quast_results, 'npScarf', long_count, long_depth,
               np_scarf_time)
 
     clean_up_np_scarf_dir(np_scarf_dir)
-    return np_scarf_dir
+    return os.path.abspath(np_scarf_dir)
 
 
 def run_unicycler_no_long(short_1, short_2, args, all_quast_results):
@@ -513,7 +617,7 @@ def run_unicycler_no_long(short_1, short_2, args, all_quast_results):
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
     existing_dir = check_for_existing_assembly(unicycler_assembly)
     if existing_dir:
-        return existing_dir
+        return os.path.abspath(existing_dir)
 
     unicycler_start_time = time.time()
     print('\nRunning', run_name, flush=True)
@@ -525,7 +629,8 @@ def run_unicycler_no_long(short_1, short_2, args, all_quast_results):
                          '--no_long',
                          '--out', unicycler_dir,
                          '--keep_temp', '0',
-                         '--threads', str(args.threads)]
+                         '--threads', str(args.threads),
+                         '--verbosity', '2']
     print(' '.join(unicycler_command))
     try:
         unicycler_out = subprocess.check_output(unicycler_command, stderr=subprocess.STDOUT)
@@ -538,7 +643,7 @@ def run_unicycler_no_long(short_1, short_2, args, all_quast_results):
               unicycler_time)
 
     clean_up_unicycler_dir(unicycler_dir)
-    return unicycler_dir
+    return os.path.abspath(unicycler_dir)
 
 
 def run_unicycler_all_long(short_1, short_2, long, args, long_read_count, long_read_depth,
@@ -548,7 +653,7 @@ def run_unicycler_all_long(short_1, short_2, long, args, long_read_count, long_r
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
     existing_dir = check_for_existing_assembly(unicycler_assembly)
     if existing_dir:
-        return existing_dir
+        return os.path.abspath(existing_dir)
 
     if not os.path.exists(unicycler_dir):
         os.makedirs(unicycler_dir)
@@ -565,7 +670,8 @@ def run_unicycler_all_long(short_1, short_2, long, args, long_read_count, long_r
                          '--long', long,
                          '--out', unicycler_dir,
                          '--keep_temp', '1',
-                         '--threads', str(args.threads)]
+                         '--threads', str(args.threads),
+                         '--verbosity', '2']
     print(' '.join(unicycler_command))
     try:
         unicycler_out = subprocess.check_output(unicycler_command, stderr=subprocess.STDOUT)
@@ -578,7 +684,7 @@ def run_unicycler_all_long(short_1, short_2, long, args, long_read_count, long_r
               long_read_depth, unicycler_time)
 
     clean_up_unicycler_dir(unicycler_dir)
-    return unicycler_dir
+    return os.path.abspath(unicycler_dir)
 
 
 def run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled_filename,
@@ -589,7 +695,7 @@ def run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
     existing_dir = check_for_existing_assembly(unicycler_assembly)
     if existing_dir:
-        return existing_dir
+        return os.path.abspath(existing_dir)
 
     if not os.path.exists(unicycler_dir):
         os.makedirs(unicycler_dir)
@@ -618,7 +724,8 @@ def run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled
                          '--long', subsampled_filename,
                          '--out', unicycler_dir,
                          '--keep_temp', '0',
-                         '--threads', str(args.threads)]
+                         '--threads', str(args.threads),
+                         '--verbosity', '2']
     print(' '.join(unicycler_command))
     try:
         unicycler_out = subprocess.check_output(unicycler_command, stderr=subprocess.STDOUT)
@@ -631,7 +738,7 @@ def run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled
               subsampled_depth, unicycler_time)
 
     clean_up_unicycler_dir(unicycler_dir)
-    return unicycler_dir
+    return os.path.abspath(unicycler_dir)
 
 
 def create_quast_results_table():
@@ -694,7 +801,7 @@ def create_quast_results_table():
                             "LA75\t"
                             "LGA75\n")
         quast_results.close()
-    return quast_results_filename
+    return os.path.abspath(quast_results_filename)
 
 
 def run_quast(assembly, args, all_quast_results, assembler_name, long_read_count,
@@ -702,9 +809,6 @@ def run_quast(assembly, args, all_quast_results, assembler_name, long_read_count
     reference_name = get_reference_name_from_filename(args.reference)
     run_name, run_dir_name = get_run_name_and_run_dir_name(assembler_name, args.reference,
                                                            long_read_depth, long_read_count)
-    print('\nRunning QUAST for', run_name, flush=True)
-    quast_dir = os.path.join('quast_results', run_dir_name)
-    this_quast_results = os.path.join(quast_dir, 'transposed_report.tsv')
 
     ref_length, ref_count = get_fasta_length_and_seq_count(args.reference)
     quast_line = [reference_name, str(ref_length), str(ref_count), assembler_name,
@@ -712,7 +816,15 @@ def run_quast(assembly, args, all_quast_results, assembler_name, long_read_count
                   float_to_str(100.0 * args.long_acc, 1), str(args.long_len),
                   str(run_time)]
 
-    if not os.path.isfile(this_quast_results):
+    if assembly is None:
+        print('\nSkipping QUAST for', run_name, flush=True)
+        quast_line += [''] * 46
+
+    else:
+        print('\nRunning QUAST for', run_name, flush=True)
+        quast_dir = os.path.join('quast_results', run_dir_name)
+        this_quast_results = os.path.join(quast_dir, 'transposed_report.tsv')
+
         quast_command = ['quast.py',
                          assembly,
                          '-R', args.reference,
@@ -730,8 +842,8 @@ def run_quast(assembly, args, all_quast_results, assembler_name, long_read_count
                 results.readline()  # header line
                 quast_line += results.readline().split('\t')[1:]
 
-        with open(all_quast_results, 'at') as all_results:
-            all_results.write('\t'.join(quast_line))
+    with open(all_quast_results, 'at') as all_results:
+        all_results.write('\t'.join(quast_line))
 
 
 def load_fasta(filename):
@@ -776,31 +888,6 @@ def float_to_str(num, decimals):
     return format_str % num
 
 
-def subsample_counts(full_count):
-    """
-    Returns a list of number of reads to subsample from the full read count. The list is given in
-    an order which keeps subdividing the ranges tested, so the user can quit at any point and still
-    have a pretty good sweep of the range.
-    """
-    included = set()
-    counts = []
-    divisor = 2
-    while True:
-        new_counts = []
-        for i in range(1, divisor):
-            frac = i / divisor
-            count = int(round(full_count * frac))
-            if count not in included:
-                new_counts.append(count)
-                included.add(count)
-        random.shuffle(new_counts)
-        counts += new_counts
-        if len(counts) == full_count - 1:
-            break
-        divisor *= 2
-    return counts
-
-
 def get_reference_name_from_filename(reference):
     return reference.split('/')[-1].split('.')[0]
 
@@ -838,8 +925,10 @@ def clean_up_spades_dir(spades_dir):
     """
     for item in os.listdir(spades_dir):
         path = os.path.join(spades_dir, item)
-        if 'assembly_graph.fastg' in path or 'scaffolds.paths' in path or \
-                'scaffolds.fasta' in path or 'spades.out' in path:
+        if 'assembly_graph.fastg' in path or 'beforerr.fasta' in path or \
+                'scaffolds.paths' in path or 'scaffolds.fasta' in path or \
+                'contigs.paths' in path or 'contigs.fasta' in path or \
+                'spades.out' in path or 'corrected' in path:
             continue
         if os.path.isfile(path):
             os.remove(path)
@@ -907,6 +996,15 @@ def check_for_existing_assembly(assembly_path):
                 shutil.rmtree(item)
                 return ''
     return ''
+
+
+def get_next_available_set_number(starting_path, num):
+    while True:
+        dir_name = str(num).rjust(6, '0')
+        if not os.path.exists(os.path.join(starting_path, dir_name)):
+            os.makedirs(dir_name)
+            return dir_name, num
+        num += 1
 
 
 if __name__ == '__main__':

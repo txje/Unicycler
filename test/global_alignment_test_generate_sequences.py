@@ -1,10 +1,10 @@
 #!/usr/bin/env python
-'''
+"""
 This script prepares random sequences for the global_alignment_test.py script.
 
 Author: Ryan Wick
 email: rrwick@gmail.com
-'''
+"""
 
 import random
 import os
@@ -12,6 +12,7 @@ import sys
 sys.dont_write_bytecode = True
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'lib'))
 from misc import get_random_sequence, get_random_base
+
 
 def main():
     length_1 = int(sys.argv[1])
@@ -59,6 +60,7 @@ def main():
     sequence_2_file.write('>sequence_2\n')
     sequence_2_file.write(sequence_2 + '\n')
     sequence_2_file.close()
+
 
 def mutate_sequence(sequence, mutation_count, mut_type):
     for _ in range(mutation_count):

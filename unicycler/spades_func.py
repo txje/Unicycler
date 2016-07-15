@@ -54,14 +54,16 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
     best_kmer = kmer_range[0]
     best_assembly_graph = None
     for i, kmer in enumerate(kmer_range):
-        clean_graph_filename = os.path.join(spades_dir, 'k' + str(kmer) +
-                                            '_assembly_graph.gfa')
+        clean_graph_filename = os.path.join(spades_dir, 'k' + str(kmer) + '_assembly_graph.gfa')
         if files_exist:
             assembly_graph = AssemblyGraph(clean_graph_filename, kmer)
         else:
-            graph_file, paths_file = spades_assembly(reads, assem_dir, kmer_range[:i + 1],
-                                                     verbosity, threads, spades_path)
-            assembly_graph = AssemblyGraph(graph_file, kmer, paths_file=paths_file)
+            graph_file, paths_file, insert_size_mean, insert_size_deviation = \
+                    spades_assembly(reads, assem_dir, kmer_range[:i + 1], verbosity, threads,
+                                    spades_path)
+            assembly_graph = AssemblyGraph(graph_file, kmer, paths_file=paths_file,
+                                           insert_size_mean=insert_size_mean,
+                                           insert_size_deviation=insert_size_deviation)
             assembly_graph.clean(read_depth_filter)
             assembly_graph.save_to_gfa(os.path.join(spades_dir, clean_graph_filename), 0)
 
@@ -195,12 +197,20 @@ def spades_assembly(read_files, out_dir, kmers, verbosity, threads, spades_path)
             command += ['-s', unpaired]
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
+    insert_size_mean = None
+    insert_size_deviation = None
     while process.poll() is None:
         spades_output = process.stdout.readline().rstrip().decode()
         if spades_output and verbosity > 1:
             if 'Command line:' in spades_output:
                 spades_output = ' '.join(spades_output.split())
             print(spades_output, flush=True)
+        if 'Insert size =' in spades_output and 'deviation = ' in spades_output:
+            try:
+                insert_size_mean = float(spades_output.split('Insert size = ')[-1].split(',')[0])
+                insert_size_deviation = float(spades_output.split('deviation = ')[-1].split(',')[0])
+            except ValueError:
+                pass
 
     spades_error = process.stderr.readline().strip().decode()
     if spades_error:
@@ -215,7 +225,7 @@ def spades_assembly(read_files, out_dir, kmers, verbosity, threads, spades_path)
     moved_paths_file = os.path.join(parent_dir, this_kmer + '_contigs.paths')
     shutil.move(paths_file, moved_paths_file)
 
-    return moved_graph_file, moved_paths_file
+    return moved_graph_file, moved_paths_file, insert_size_mean, insert_size_deviation
 
 
 def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity, kmer_count,

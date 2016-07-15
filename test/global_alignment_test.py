@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-'''
+"""
 This script is a test of the banded global alignment in Seqan.
 You must first run global_alignment_test_generate_sequences.py to prepare the files.
 
 Author: Ryan Wick
 email: rrwick@gmail.com
-'''
+"""
 
 import os
 import sys

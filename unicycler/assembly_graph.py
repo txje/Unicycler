@@ -27,13 +27,16 @@ class AssemblyGraph(object):
     This class holds an assembly graph with segments and links.
     """
 
-    def __init__(self, filename, overlap, paths_file=None):
+    def __init__(self, filename, overlap, paths_file=None,
+                 insert_size_mean=250, insert_size_deviation=50):
         self.segments = {}  # Dict of unsigned segment number -> segment
         self.forward_links = {}  # Dict of signed segment number -> list of signed segment numbers
         self.reverse_links = {}  # Dict of signed segment number <- list of signed segment numbers
         self.copy_depths = {}  # Dict of unsigned segment number -> list of copy depths
         self.paths = {}  # Dict of path name -> list of signed segment numbers
         self.overlap = overlap
+        self.insert_size_mean = insert_size_mean
+        self.insert_size_deviation = insert_size_deviation
 
         if filename.endswith('.fastg'):
             self.load_from_fastg(filename)
@@ -99,6 +102,13 @@ class AssemblyGraph(object):
                 sequence = line_parts[2]
                 self.segments[num] = Segment(num, depth, sequence, True)
                 self.segments[num].build_other_sequence_if_necessary()
+            if line.startswith('i'):
+                line_parts = line.strip().split('\t')
+                try:
+                    self.insert_size_mean = float(line_parts[1])
+                    self.insert_size_deviation = float(line_parts[2])
+                except ValueError:
+                    pass
         gfa_file.close()
 
         # Load in the links.
@@ -284,6 +294,12 @@ class AssemblyGraph(object):
             gfa.write(','.join([int_to_signed_string(x) for x in segment_list]))
             gfa.write('\t')
             gfa.write(','.join([overlap_cigar] * (len(segment_list) - 1)))
+            gfa.write('\n')
+        if self.insert_size_mean is not None and self.insert_size_deviation is not None:
+            gfa.write('i\t')
+            gfa.write(str(self.insert_size_mean))
+            gfa.write('\t')
+            gfa.write(str(self.insert_size_deviation))
             gfa.write('\n')
         gfa.close()
 

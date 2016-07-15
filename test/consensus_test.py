@@ -1,12 +1,12 @@
 #!/usr/bin/env python
-'''
+"""
 This script is a test of the multiple sequence alignment in Seqan and the corresponding consensus
 sequence calling.
 You must first run consensus_test_generate_sequences.py to prepare the files.
 
 Author: Ryan Wick
 email: rrwick@gmail.com
-'''
+"""
 
 import os
 import sys

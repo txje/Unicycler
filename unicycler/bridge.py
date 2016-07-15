@@ -79,6 +79,19 @@ class SpadesContigBridge(object):
                 agreement = get_num_agreement(actual_depth, expected_depth)
                 self.quality *= agreement
 
+        # The quality of a SPAdes contig bridge should decline sharply if the bridging sequence
+        # is too large compared to the short read insert size. E.g. if the insert size is 500 bp
+        # and the SPAdes contig bridge is 2 kb long, we should not believe it!
+        if self.graph_path:
+            bridge_length = len(self.bridge_sequence)
+            if bridge_length <= graph.insert_size_mean:
+                bridge_length_factor = 1.0
+            else:
+                bridge_length_factor = graph.insert_size_deviation / (bridge_length -
+                                                                      graph.insert_size_mean +
+                                                                      graph.insert_size_deviation)
+            self.quality *= bridge_length_factor
+
     def __repr__(self):
         return 'SPAdes bridge: ' + get_bridge_str(self.start_segment, self.graph_path,
                                                   self.end_segment) + \

@@ -933,7 +933,7 @@ def clean_up_spades_dir(spades_dir):
     """
     for item in os.listdir(spades_dir):
         path = os.path.join(spades_dir, item)
-        if 'assembly_graph.fastg' in path or 'beforerr.fasta' in path or \
+        if 'assembly_graph.fastg' in path or 'before_rr.fasta' in path or \
                 'scaffolds.paths' in path or 'scaffolds.fasta' in path or \
                 'contigs.paths' in path or 'contigs.fasta' in path or \
                 'spades.out' in path or 'corrected' in path:

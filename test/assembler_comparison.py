@@ -219,6 +219,7 @@ def make_fake_short_reads(args, current_path, ref_name):
     print(read_filename_1)
     print(read_filename_2)
 
+    shutil.rmtree(temp_dir)
     return read_filename_1, read_filename_2
 
 

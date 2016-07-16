@@ -1659,9 +1659,9 @@ class AssemblyGraph(object):
         best_final_path_score = 0.0
         working_paths = [[x] for x in self.forward_links[start]]
 
-        print('\n\n\n\n\n\n\n')  # TEMP
-        print(start, 'to', end, 'progressive path finding:')  # TEMP
-        print('  target length:', target_length)  # TEMP
+        # print('\n\n\n\n\n\n\n')
+        # print(start, 'to', end, 'progressive path finding:')
+        # print('  target length:', target_length)
 
         while working_paths:
 
@@ -1689,11 +1689,11 @@ class AssemblyGraph(object):
                                         scaled_score = float(seqan_parts[7])
                                         best_final_path_score = max(best_final_path_score,
                                                                     scaled_score)
-                                        print('FINAL PATH:')  # TEMP
-                                        print('  ' + ','.join(str(x) for x in path) + ' (' +  # TEMP
-                                              int_to_str(self.get_path_length(
-                                                  path)) + ' bp, score = ' +  # TEMP
-                                              float_to_str(scaled_score, 2) + ')')  # TEMP
+                                        # print('FINAL PATH:')
+                                        # print('  ' + ','.join(str(x) for x in path) + ' (' +
+                                        #       int_to_str(self.get_path_length(
+                                        #           path)) + ' bp, score = ' +
+                                        #       float_to_str(scaled_score, 2) + ')')
                             else:
                                 max_allowed_count = self.max_path_segment_count(next_seg,
                                                                                 start_end_depth)
@@ -1705,39 +1705,57 @@ class AssemblyGraph(object):
                 else:
                     new_working_paths.append(path)
 
-            print('\n  Working paths:', len(new_working_paths))  # TEMP
-            for path in new_working_paths:  # TEMP
-                print('  ' + ','.join(str(x) for x in path) + ' (' +  # TEMP
-                      int_to_str(self.get_path_length(path)) + ' bp)')  # TEMP
+            # print('\n  Working paths:', len(new_working_paths))
+            # for path in new_working_paths:
+            #     print('  ' + ','.join(str(x) for x in path) + ' (' +
+            #           int_to_str(self.get_path_length(path)) + ' bp)')
 
             # If we've acquired too many working paths, cull out the worst ones.
             if len(new_working_paths) > max_working_paths:
-                print('\n  CULL\n')  # TEMP
-                scored_paths = []
-                shortest_len = min(self.get_path_length(x) for x in new_working_paths)
+                # print('\n  CULL\n')
 
                 # It's possible at this point that all of the working paths share quite a bit in
                 # common at their start. We can therefore find the common starting sequence and
                 # align to that once, and then only do separate alignments for the remainder of
                 # the paths. This can save a lot of time!
+                common_start = []
+                smallest_seg_count = min(len(x) for x in new_working_paths)
+                for i in range(smallest_seg_count):
+                    potential_common_seg = new_working_paths[0][i]
+                    for path in new_working_paths:
+                        if path[i] != potential_common_seg:
+                            break
+                    else:
+                        common_start.append(potential_common_seg)
+                        continue
+                    break
+                # print('Common path: ', common_start)
+                common_path_seq = self.get_path_sequence(common_start)[:-100]
+                path_seq_align_start = len(common_path_seq)
+                consensus_seq_align_start = 0
+                if common_path_seq:
+                    alignment_result = path_alignment(common_path_seq, sequence, scoring_scheme,
+                                                      True, 1000)
+                    # print(alignment_result)
+                    consensus_seq_align_start = int(alignment_result.split(',')[5])
+                    if consensus_seq_align_start >= len(sequence):
+                        consensus_seq_align_start = 0
+                    # print('Alignment start pos in paths:    ', path_seq_align_start)
+                    # print('Alignment start pos in consensus:', consensus_seq_align_start)
 
-
-
-
-
-
-                
-
+                scored_paths = []
+                shortest_len = min(self.get_path_length(x) for x in new_working_paths)
                 for path in new_working_paths:
-                    path_seq = self.get_path_sequence(path)[:shortest_len]
-                    alignment_result = path_alignment(path_seq, sequence, scoring_scheme, True,
-                                                      1000)
+                    path_seq = self.get_path_sequence(path)[path_seq_align_start:shortest_len]
+                    consensus_seq = sequence[consensus_seq_align_start:]
+                    alignment_result = path_alignment(path_seq, consensus_seq, scoring_scheme, True,
+                                                      500)
                     if not alignment_result:
                         continue
                     seqan_parts = alignment_result.split(',', 9)
                     scaled_score = float(seqan_parts[7])
-                    print('  ' + ','.join(str(x) for x in path) + ' (score = ' +  # TEMP
-                          float_to_str(scaled_score, 2) + ')')  # TEMP
+                    # print('  ' + ','.join(str(x) for x in path) + ' (score = ' +
+                    #       float_to_str(scaled_score, 2) + ')')
                     scored_paths.append((path, scaled_score))
                 scored_paths = sorted(scored_paths, key=lambda x: x[1], reverse=True)
 
@@ -1767,18 +1785,18 @@ class AssemblyGraph(object):
                         surviving_paths_by_terminal_seg[terminal_seg] = surviving_path
                 working_paths = list(x[0] for x in surviving_paths_by_terminal_seg.values())
 
-                print('\n  SURVIVING PATHS:', len(working_paths))  # TEMP
-                for i, path in enumerate(working_paths):  # TEMP
-                    print('  ' + ','.join(str(x) for x in path) + ' (' +  # TEMP
-                          int_to_str(self.get_path_length(path)) + ' bp, score = ' +  # TEMP
-                          int_to_str(scored_paths[i][1]) + ')')  # TEMP
+                # print('\n  SURVIVING PATHS:', len(working_paths))
+                # for i, path in enumerate(working_paths):
+                #     print('  ' + ','.join(str(x) for x in path) + ' (' +
+                #           int_to_str(self.get_path_length(path)) + ' bp, score = ' +
+                #           int_to_str(scored_paths[i][1]) + ')')
             else:
                 working_paths = new_working_paths
 
-        print('\n  FINAL PATHS:')  # TEMP
-        for path in final_paths:  # TEMP
-            print('  ' + ','.join(str(x) for x in path))  # TEMP
-        print()  # TEMP
+        # print('\n  FINAL PATHS:')
+        # for path in final_paths:
+        #     print('  ' + ','.join(str(x) for x in path))
+        # print()
 
         # Sort by length discrepancy from the target so the closest length matches come first.
         final_paths = sorted(final_paths,

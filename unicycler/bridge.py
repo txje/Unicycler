@@ -97,6 +97,14 @@ class SpadesContigBridge(object):
                                                   self.end_segment) + \
                ' (quality = ' + float_to_str(self.quality, 2) + ')'
 
+    @staticmethod
+    def get_type_score():
+        """
+        Returns a score indicating the relative importance of the bridge types:
+        LongReadBridge = 2, SpadesContigBridge = 1, LoopUnrollingBridge = 0
+        """
+        return 1
+
 
 class LongReadBridge(object):
     """
@@ -241,6 +249,8 @@ class LongReadBridge(object):
             output += '  consensus sequence:      ' + \
                       int_to_str(len(self.consensus_sequence)) + ' bp '
             output += '(' + float_to_str(consensus_time, 2) + ' sec)\n'
+            if verbosity > 3:
+                output += '                           ' + self.consensus_sequence + '\n'
 
             target_path_length = len(self.consensus_sequence) + (2 * self.graph.overlap)
 
@@ -285,7 +295,7 @@ class LongReadBridge(object):
                 if i > 0:
                     output += '                           '
                 if best_path[0]:
-                    output += ', '.join(int_to_str(x) for x in best_path[0])
+                    output += ', '.join(str(x) for x in best_path[0])
                 else:
                     output += 'direct connection'
                 output += ' (' + int_to_str(self.graph.get_path_length(best_path[0])) + ' bp, '
@@ -447,6 +457,14 @@ class LongReadBridge(object):
                 return True
         return False
 
+    @staticmethod
+    def get_type_score():
+        """
+        Returns a score indicating the relative importance of the bridge types:
+        LongReadBridge = 2, SpadesContigBridge = 1, LoopUnrollingBridge = 0
+        """
+        return 2
+
 
 class LoopUnrollingBridge(object):
     """
@@ -526,6 +544,14 @@ class LoopUnrollingBridge(object):
         return 'loop bridge: ' + get_bridge_str(self.start_segment, self.graph_path,
                                                 self.end_segment) + \
                ' (quality = ' + float_to_str(self.quality, 2) + ')'
+
+    @staticmethod
+    def get_type_score():
+        """
+        Returns a score indicating the relative importance of the bridge types:
+        LongReadBridge = 2, SpadesContigBridge = 1, LoopUnrollingBridge = 0
+        """
+        return 0
 
 
 def create_spades_contig_bridges(graph, single_copy_segments, verbosity):

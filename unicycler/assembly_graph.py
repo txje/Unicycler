@@ -1302,9 +1302,11 @@ class AssemblyGraph(object):
         right_bridged = set()
         left_bridged = set()
 
-        # Sort bridges by quality so we apply the best bridges first.
-        sorted_bridges = sorted(bridges, key=lambda x: x.quality, reverse=True)
-
+        # Sort bridges first by type: LongReadBridge, SpadesContigBridge and then
+        # LoopUnrollingBridge. Then sort by  quality so within each type we apply the best bridges
+        # first.
+        sorted_bridges = sorted(bridges, key=lambda x: (x.get_type_score(), x.quality),
+                                reverse=True)
         bridge_segs = []
         seg_nums_used_in_bridges = []
         single_copy_nums = set(x.number for x in single_copy_segments)
@@ -1654,11 +1656,12 @@ class AssemblyGraph(object):
         keep_count = 10
 
         final_paths = []
+        best_final_path_score = 0.0
         working_paths = [[x] for x in self.forward_links[start]]
 
-        # print('\n\n\n\n\n\n\n')
-        # print(start, 'to', end, 'progressive path finding:')
-        # print('  target length:', target_length)
+        print('\n\n\n\n\n\n\n')  # TEMP
+        print(start, 'to', end, 'progressive path finding:')  # TEMP
+        print('  target length:', target_length)  # TEMP
 
         while working_paths:
 
@@ -1677,6 +1680,20 @@ class AssemblyGraph(object):
                             if next_seg == end:
                                 if min_length <= path_len <= max_length:
                                     final_paths.append(path)
+                                    path_seq = self.get_path_sequence(path)
+                                    alignment_result = fully_global_alignment(path_seq, sequence,
+                                                                              scoring_scheme, True,
+                                                                              1000)
+                                    if alignment_result:
+                                        seqan_parts = alignment_result.split(',', 9)
+                                        scaled_score = float(seqan_parts[7])
+                                        best_final_path_score = max(best_final_path_score,
+                                                                    scaled_score)
+                                        print('FINAL PATH:')  # TEMP
+                                        print('  ' + ','.join(str(x) for x in path) + ' (' +  # TEMP
+                                              int_to_str(self.get_path_length(
+                                                  path)) + ' bp, score = ' +  # TEMP
+                                              float_to_str(scaled_score, 2) + ')')  # TEMP
                             else:
                                 max_allowed_count = self.max_path_segment_count(next_seg,
                                                                                 start_end_depth)
@@ -1688,16 +1705,29 @@ class AssemblyGraph(object):
                 else:
                     new_working_paths.append(path)
 
-            # print('\n  Working paths:', len(new_working_paths))
-            # for path in new_working_paths:
-            #     print('  ' + ','.join(str(x) for x in path) + ' (' +
-            #           int_to_str(self.get_path_length(path)) + ' bp)')
+            print('\n  Working paths:', len(new_working_paths))  # TEMP
+            for path in new_working_paths:  # TEMP
+                print('  ' + ','.join(str(x) for x in path) + ' (' +  # TEMP
+                      int_to_str(self.get_path_length(path)) + ' bp)')  # TEMP
 
             # If we've acquired too many working paths, cull out the worst ones.
             if len(new_working_paths) > max_working_paths:
-                # print('\n  CULL\n')
+                print('\n  CULL\n')  # TEMP
                 scored_paths = []
                 shortest_len = min(self.get_path_length(x) for x in new_working_paths)
+
+                # It's possible at this point that all of the working paths share quite a bit in
+                # common at their start. We can therefore find the common starting sequence and
+                # align to that once, and then only do separate alignments for the remainder of
+                # the paths. This can save a lot of time!
+
+
+
+
+
+
+                
+
                 for path in new_working_paths:
                     path_seq = self.get_path_sequence(path)[:shortest_len]
                     alignment_result = path_alignment(path_seq, sequence, scoring_scheme, True,
@@ -1705,25 +1735,50 @@ class AssemblyGraph(object):
                     if not alignment_result:
                         continue
                     seqan_parts = alignment_result.split(',', 9)
-                    raw_score = int(seqan_parts[6])
-                    # print('  ' + ','.join(str(x) for x in path) + ' (score = ' +
-                    #       int_to_str(raw_score) + ')')
-                    scored_paths.append((path, raw_score))
+                    scaled_score = float(seqan_parts[7])
+                    print('  ' + ','.join(str(x) for x in path) + ' (score = ' +  # TEMP
+                          float_to_str(scaled_score, 2) + ')')  # TEMP
+                    scored_paths.append((path, scaled_score))
                 scored_paths = sorted(scored_paths, key=lambda x: x[1], reverse=True)
-                working_paths = [x[0] for x in scored_paths[:keep_count]]
 
-                # print('\n  CULLED PATHS:', len(working_paths))
-                # for i, path in enumerate(working_paths):
-                #     print('  ' + ','.join(str(x) for x in path) + ' (' +
-                #           int_to_str(self.get_path_length(path)) + ' bp, score = ' +
-                #           int_to_str(scored_paths[i][1]) + ')')
+                # Keep the keep count number of paths, but go over the keep count if there's a tie.
+                # E.g. if the keep count is 12 but the top 16 paths all have the same score, keep
+                # all 16.
+                surviving_paths = []
+                if scored_paths:
+                    best_score = scored_paths[0][1]
+                    for i, scored_path in enumerate(scored_paths):
+                        if i >= keep_count and scored_paths[i][1] < best_score:
+                            break
+                        if best_final_path_score == 0.0 or \
+                                scored_paths[i][1] >= 0.75 * best_final_path_score:
+                            surviving_paths.append(scored_paths[i])
+
+                # If any of the surviving paths ends in the same segment but have different
+                # scores, only keep one with the top score. This is because the segments with a
+                # lower score will have the same future paths, and so will always be lower. And
+                # segments with the same score will have the same future paths, and so will always
+                # be the same.
+                surviving_paths_by_terminal_seg = {}
+                for surviving_path in surviving_paths:
+                    terminal_seg = surviving_path[0][-1]
+                    if terminal_seg not in surviving_paths_by_terminal_seg or \
+                            surviving_path[1] > surviving_paths_by_terminal_seg[terminal_seg][1]:
+                        surviving_paths_by_terminal_seg[terminal_seg] = surviving_path
+                working_paths = list(x[0] for x in surviving_paths_by_terminal_seg.values())
+
+                print('\n  SURVIVING PATHS:', len(working_paths))  # TEMP
+                for i, path in enumerate(working_paths):  # TEMP
+                    print('  ' + ','.join(str(x) for x in path) + ' (' +  # TEMP
+                          int_to_str(self.get_path_length(path)) + ' bp, score = ' +  # TEMP
+                          int_to_str(scored_paths[i][1]) + ')')  # TEMP
             else:
                 working_paths = new_working_paths
 
-        # print('\n  FINAL PATHS:')
-        # for path in final_paths:
-        #     print('  ' + ','.join(str(x) for x in path))
-        # print()
+        print('\n  FINAL PATHS:')  # TEMP
+        for path in final_paths:  # TEMP
+            print('  ' + ','.join(str(x) for x in path))  # TEMP
+        print()  # TEMP
 
         # Sort by length discrepancy from the target so the closest length matches come first.
         final_paths = sorted(final_paths,
@@ -1980,13 +2035,17 @@ class AssemblyGraph(object):
         segment to the end segment.
         """
         # Limit the path search to lengths near the target.
-        min_length = int(round(target_length * 0.5))  # TO DO: adjust or make these parameters?
-        max_length = int(round(target_length * 1.5))
+        min_length = int(round(target_length * 0.8))  # TO DO: adjust or make these parameters?
+        max_length = int(round(target_length * 1.2))
 
-        max_path_count = 100  # TO DO: make this a parameter?
+        # The overlap isn't present in the consensus sequence, so we need to add it on.
+        if sequence:
+            sequence = self.get_seq_from_signed_seg_num(start_seg)[-self.overlap:] + sequence + \
+                       self.get_seq_from_signed_seg_num(end_seg)[:self.overlap]
 
         # If there are few enough possible paths, we just try aligning to them all. But if there
         # are too many, we use a progressive approach to keep the number down.
+        max_path_count = 100  # TO DO: make this a parameter?
         try:
             paths = self.all_paths(start_seg, end_seg, min_length, target_length, max_length,
                                    max_path_count)
@@ -1995,11 +2054,7 @@ class AssemblyGraph(object):
                                                max_length, sequence, scoring_scheme)
 
         # We now have some paths and want to see how well the consensus sequence matches each of
-        # them. The overlap isn't present in the consensus sequence, so we need to add it on.
-        if sequence:
-            sequence = self.get_seq_from_signed_seg_num(start_seg)[-self.overlap:] + sequence + \
-                       self.get_seq_from_signed_seg_num(end_seg)[:self.overlap]
-
+        # them.
         paths_and_scores = []
         for path in paths:
             path_len = self.get_path_length(path)

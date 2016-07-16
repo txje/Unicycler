@@ -2061,15 +2061,25 @@ class AssemblyGraph(object):
             sequence = self.get_seq_from_signed_seg_num(start_seg)[-self.overlap:] + sequence + \
                        self.get_seq_from_signed_seg_num(end_seg)[:self.overlap]
 
-        # If there are few enough possible paths, we just try aligning to them all. But if there
-        # are too many, we use a progressive approach to keep the number down.
+        # If there are few enough possible paths, we just try aligning to them all.
         max_path_count = 100  # TO DO: make this a parameter?
         try:
             paths = self.all_paths(start_seg, end_seg, min_length, target_length, max_length,
                                    max_path_count)
+
+        # If there are too many paths to try exhaustively, we use a progressive approach to find
+        # the best path. The path search is done in both directions, in case one direction proves
+        # more difficult than the other.
         except TooManyPaths:
             paths = self.progressive_path_find(start_seg, end_seg, min_length, target_length,
                                                max_length, sequence, scoring_scheme)
+            rev_paths = self.progressive_path_find(-end_seg, -start_seg, min_length, target_length,
+                                                   max_length, reverse_complement(sequence),
+                                                   scoring_scheme)
+            for rev_path in rev_paths:
+                flipped_rev_path = [-x for x in rev_path[::-1]]
+                if flipped_rev_path not in paths:
+                    paths.append(flipped_rev_path)
 
         # We now have some paths and want to see how well the consensus sequence matches each of
         # them.

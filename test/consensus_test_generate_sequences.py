@@ -10,7 +10,8 @@ import random
 import os
 import sys
 sys.dont_write_bytecode = True
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'lib'))
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
+                             'unicycler'))
 from misc import get_random_sequence, get_random_base
 
 

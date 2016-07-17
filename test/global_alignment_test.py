@@ -10,7 +10,8 @@ email: rrwick@gmail.com
 import os
 import sys
 sys.dont_write_bytecode = True
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), 'lib'))
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
+                             'unicycler'))
 from alignment import AlignmentScoringScheme
 from cpp_function_wrappers import fully_global_alignment
 from read_ref import load_references

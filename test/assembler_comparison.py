@@ -543,7 +543,7 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
         jsa_seq_sort_command = ['jsa.seq.sort',
                                 '-r',
                                 '-n',
-                                '--input', os.path.join(spades_dir, 'scaffolds.fasta'),
+                                '--input', os.path.join(spades_dir, 'contigs.fasta'),
                                 '--output', np_scarf_fasta]
         print(' '.join(jsa_seq_sort_command))
         try:

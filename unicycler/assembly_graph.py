@@ -1303,7 +1303,7 @@ class AssemblyGraph(object):
         left_bridged = set()
 
         # Sort bridges first by type: LongReadBridge, SpadesContigBridge and then
-        # LoopUnrollingBridge. Then sort by  quality so within each type we apply the best bridges
+        # LoopUnrollingBridge. Then sort by quality so within each type we apply the best bridges
         # first.
         sorted_bridges = sorted(bridges, key=lambda x: (x.get_type_score(), x.quality),
                                 reverse=True)
@@ -1311,22 +1311,16 @@ class AssemblyGraph(object):
         seg_nums_used_in_bridges = []
         single_copy_nums = set(x.number for x in single_copy_segments)
 
+        partially_applicable_bridges = []
+
+        # For our first pass over the bridges, we only apply bridges which can be applied in
+        # their entirety. These are probably the good ones!
         for bridge in sorted_bridges:
 
             # If a bridge has multiple equally-good graph paths, then we can choose which one to
             # use based on the availability of the path.
             if isinstance(bridge, LongReadBridge) and len(bridge.all_best_paths) > 1:
-                best_path = bridge.all_best_paths[0][0]
-                best_availability = self.get_path_availability(best_path)
-                for i in range(1, len(bridge.all_best_paths)):
-                    potential_path = bridge.all_best_paths[i][0]
-                    potential_path_availability = self.get_path_availability(potential_path)
-                    if potential_path_availability > best_availability:
-                        best_availability = potential_path_availability
-                        best_path = potential_path
-                bridge.graph_path = best_path
-                if self.is_path_valid(best_path):
-                    bridge.bridge_sequence = self.get_path_sequence(best_path)
+                self.set_bridge_path_based_on_availability(bridge)
 
             # Get the pieces of the bridge which can be applied.
             pieces = get_applicable_bridge_pieces(bridge, single_copy_nums, right_bridged,
@@ -1350,17 +1344,27 @@ class AssemblyGraph(object):
                 bridge = self.apply_entire_bridge(bridge, verbosity, right_bridged, left_bridged,
                                                   seg_nums_used_in_bridges, single_copy_nums)
                 bridge_segs.append(bridge)
+                seg_nums_used_in_bridges = remove_dupes_preserve_order(seg_nums_used_in_bridges)
 
-            else:  # Either multiple pieces or a single piece which isn't the whole bridge.
+            # If the bridge cannot be applied as a whole, then we set it aside to try later.
+            else:
+                partially_applicable_bridges.append(bridge)
+
+        # Now that all of the fully applicable bridges have been applied, we are willing to apply
+        # parts of bridges.
+        for bridge in partially_applicable_bridges:
+
+            if isinstance(bridge, LongReadBridge) and len(bridge.all_best_paths) > 1:
+                self.set_bridge_path_based_on_availability(bridge)
+            pieces = get_applicable_bridge_pieces(bridge, single_copy_nums, right_bridged,
+                                                  left_bridged, seg_nums_used_in_bridges)
+            if pieces:
                 bridges = self.apply_bridge_in_pieces(bridge, pieces, verbosity, right_bridged,
                                                       left_bridged, seg_nums_used_in_bridges,
                                                       single_copy_nums)
                 bridge_segs += bridges
+                seg_nums_used_in_bridges = remove_dupes_preserve_order(seg_nums_used_in_bridges)
 
-            # Remove duplicates, while preserving order.
-            seen = set()
-            seg_nums_used_in_bridges = [x for x in seg_nums_used_in_bridges
-                                        if not (x in seen or seen.add(x))]
         return seg_nums_used_in_bridges
 
     def clean_up_after_bridging(self, single_copy_segments, seg_nums_used_in_bridges,
@@ -2460,6 +2464,23 @@ class AssemblyGraph(object):
             return True
         return not self.forward_links[signed_seg_num]
 
+    def set_bridge_path_based_on_availability(self, bridge):
+        """
+        Given a LongReadBridge with multiple equally-good paths, this function will change its path
+        to the most available one.
+        """
+        best_path = bridge.all_best_paths[0][0]
+        best_availability = self.get_path_availability(best_path)
+        for i in range(1, len(bridge.all_best_paths)):
+            potential_path = bridge.all_best_paths[i][0]
+            potential_path_availability = self.get_path_availability(potential_path)
+            if potential_path_availability > best_availability:
+                best_availability = potential_path_availability
+                best_path = potential_path
+        bridge.graph_path = best_path
+        if self.is_path_valid(best_path):
+            bridge.bridge_sequence = self.get_path_sequence(best_path)
+
 
 class Segment(object):
     """
@@ -3043,3 +3064,8 @@ def get_overlap_from_gfa_link(filename):
                 cigar = line_parts[5]
                 return int(cigar[:-1])
     return 0
+
+
+def remove_dupes_preserve_order(lst):
+    seen = set()
+    return [x for x in lst if not (x in seen or seen.add(x))]

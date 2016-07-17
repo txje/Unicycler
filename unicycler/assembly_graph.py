@@ -1349,6 +1349,8 @@ class AssemblyGraph(object):
             # If the bridge cannot be applied as a whole, then we set it aside to try later.
             else:
                 partially_applicable_bridges.append(bridge)
+                if verbosity > 1:
+                    print('Deferred', bridge)
 
         # Now that all of the fully applicable bridges have been applied, we are willing to apply
         # parts of bridges.
@@ -1364,6 +1366,8 @@ class AssemblyGraph(object):
                                                       single_copy_nums)
                 bridge_segs += bridges
                 seg_nums_used_in_bridges = remove_dupes_preserve_order(seg_nums_used_in_bridges)
+            elif verbosity > 1:
+                print('Unused', bridge)
 
         return seg_nums_used_in_bridges
 

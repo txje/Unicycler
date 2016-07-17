@@ -124,7 +124,6 @@ def check_blast(makeblastdb_path, tblastn_path, gene_db_path):
                         'or use --no_rotate')
 
 
-
 def check_pilon(pilon_path, samtools_path, bowtie2_path, bowtie2_build_path):
     """
     Makes sure the Pilon executable is available.

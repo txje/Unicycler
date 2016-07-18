@@ -50,6 +50,9 @@ def main():
     accuracies_and_lengths = []
     for accuracy in accuracies:
         accuracies_and_lengths += [(accuracy, length) for length in lengths]
+    print('Simulating long reads with these accuracy and length combinations:')
+    for accuracy, length in accuracies_and_lengths:
+        print(str(accuracy) + '%, ' + str(length) + ' bp')
 
     scaled_ref_length = get_scaled_ref_length(args)
     ref_name = get_reference_name_from_filename(args.reference)

@@ -443,7 +443,7 @@ def run_abyss(short_1, short_2, args, all_quast_results, simple_quast_results):
         print(abyss_command)
         try:
             abyss_out = subprocess.check_output(abyss_command, stderr=subprocess.STDOUT, shell=True)
-            with open(os.path.join(abyss_dir, 'abyss.out'), 'wb') as f:
+            with open(os.path.join('abyss.out'), 'wb') as f:
                 f.write(abyss_out)
         except subprocess.CalledProcessError as e:
             print('ABySS encountered an error:\n' + e.output.decode())
@@ -458,7 +458,7 @@ def run_abyss(short_1, short_2, args, all_quast_results, simple_quast_results):
 
     run_quast(abyss_scaffolds, args, all_quast_results, simple_quast_results, 'ABySS scaffolds',
               0, 0.0, abyss_time)
-    run_quast(abyss_contigs, args, all_quast_results, simple_quast_results, 'ABySS scaffolds',
+    run_quast(abyss_contigs, args, all_quast_results, simple_quast_results, 'ABySS contigs',
               0, 0.0, abyss_time)
 
     return os.path.abspath(abyss_dir)

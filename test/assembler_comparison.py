@@ -50,7 +50,6 @@ def main():
     accuracies_and_lengths = []
     for accuracy in accuracies:
         accuracies_and_lengths += [(accuracy, length) for length in lengths]
-    print(accuracies_and_lengths)
 
     scaled_ref_length = get_scaled_ref_length(args)
     ref_name = get_reference_name_from_filename(args.reference)

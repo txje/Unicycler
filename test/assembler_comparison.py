@@ -20,18 +20,26 @@ import shutil
 
 def main():
     # Set up environment variables for Cerulean and PBJelly.
+    if os.path.isdir('/Users/Ryan/Applications/PBSuite_15.8.24'):
+        local_pb_path = '/Users/Ryan/Applications/PBSuite_15.8.24'
+    else:
+        local_pb_path = '/vlsci/SG0006/rwick/PBSuite_15.8.24'
+    if os.path.isdir('/Users/Ryan/Applications/Cerulean/src'):
+        local_cerulean_path = '/Users/Ryan/Applications/Cerulean/src'
+    else:
+        local_cerulean_path = '/vlsci/SG0006/rwick/Cerulean/src'
     if 'SWEETPATH' not in os.environ:
-        os.environ['SWEETPATH'] = '/Users/Ryan/Applications/PBSuite_15.8.24'
+        os.environ['SWEETPATH'] = local_pb_path
     if 'PYTHONPATH' not in os.environ:
-        os.environ['PYTHONPATH'] = '/Users/Ryan/Applications/PBSuite_15.8.24'
+        os.environ['PYTHONPATH'] = local_pb_path
     elif 'PBSuite' not in os.environ['PYTHONPATH']:
-        os.environ['PYTHONPATH'] += ':/Users/Ryan/Applications/PBSuite_15.8.24'
+        os.environ['PYTHONPATH'] += ':' + local_pb_path
     if 'PBSuite' not in os.environ['PATH']:
         os.environ['PATH'] += ':' + os.environ['SWEETPATH'] + '/bin/'
     if 'JELLYPATH' not in os.environ:
-        os.environ['JELLYPATH'] = '/Users/Ryan/Applications/PBSuite_15.8.24'
+        os.environ['JELLYPATH'] = local_pb_path
     if 'CERULEANPATH' not in os.environ:
-        os.environ['CERULEANPATH'] = '/Users/Ryan/Applications/Cerulean/src'
+        os.environ['CERULEANPATH'] = local_cerulean_path
 
     args = get_args()
     starting_path = os.path.abspath('.')

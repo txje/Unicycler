@@ -25,15 +25,18 @@ def main():
     scaled_ref_length = get_scaled_ref_length(args)
     ref_name = get_reference_name_from_filename(args.reference)
     short_1, short_2 = make_fake_short_reads(args, starting_path, ref_name)
-    quast_results = create_quast_results_table()
+    quast_results, simple_quast_results = create_quast_results_tables()
 
     # Run SPAdes and Unicycler on short read data alone.
     short_read_only_dir = os.path.abspath('000000_only_short_reads')
     if not os.path.exists(short_read_only_dir):
         os.makedirs(short_read_only_dir)
     os.chdir(short_read_only_dir)
-    spades_no_long_dir = run_regular_spades(short_1, short_2, args, quast_results)
-    unicycler_no_long_dir = run_unicycler_no_long(short_1, short_2, args, quast_results)
+    abyss_dir = run_abyss(short_1, short_2, args, quast_results, simple_quast_results)
+    spades_no_long_dir = run_regular_spades(short_1, short_2, args, quast_results,
+                                            simple_quast_results)
+    unicycler_no_long_dir = run_unicycler_no_long(short_1, short_2, args, quast_results,
+                                                  simple_quast_results)
     # Run Cerulean with short reads only?
     os.chdir(starting_path)
 
@@ -52,17 +55,18 @@ def main():
         long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
         unicycler_all_long_dir = run_unicycler_all_long(short_1, short_2, long_filename, args,
                                                         long_read_count, long_read_depth,
-                                                        quast_results, unicycler_no_long_dir)
+                                                        quast_results, simple_quast_results,
+                                                        unicycler_no_long_dir)
 
         # Run hybridSPAdes on the full set of long reads.
         run_hybrid_spades(short_1, short_2, long_filename, long_read_count, long_read_depth, args,
-                          quast_results, spades_no_long_dir)
+                          quast_results, simple_quast_results, spades_no_long_dir)
 
         # Run npScarf on the full set of long reads - will be the source of alignments for
         # subsampled npScarf runs.
         np_scarf_all_long_dir = run_np_scarf(long_filename, long_reads, long_read_count,
                                              long_read_depth, args, quast_results,
-                                             spades_no_long_dir)
+                                             simple_quast_results, spades_no_long_dir)
 
         # Randomly subsample this read set 10 different times.
         for _ in range(10):
@@ -87,17 +91,19 @@ def main():
             # while, though.
             run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled_filename,
                                           args, subsampled_count, subsampled_long_read_depth,
-                                          quast_results, unicycler_all_long_dir)
+                                          quast_results, simple_quast_results,
+                                          unicycler_all_long_dir)
 
             # Run hybridSPAdes on the subsampled long reads.
             run_hybrid_spades(short_1, short_2, subsampled_filename, subsampled_count,
-                              subsampled_long_read_depth, args, quast_results, spades_no_long_dir)
+                              subsampled_long_read_depth, args, quast_results, simple_quast_results,
+                              spades_no_long_dir)
 
             # Run npScarf on the subsampled long reads. This is very fast because we can skip the
             # alignment step.
             run_np_scarf(subsampled_filename, subsampled_reads, subsampled_count,
-                         subsampled_long_read_depth, args, quast_results, spades_no_long_dir,
-                         np_scarf_all_long_dir=np_scarf_all_long_dir)
+                         subsampled_long_read_depth, args, quast_results, simple_quast_results,
+                         spades_no_long_dir, np_scarf_all_long_dir=np_scarf_all_long_dir)
 
             # Run Cerulean?
 
@@ -406,7 +412,59 @@ def run_pbsim(input_fasta, depth, args, read_prefix):
     return reads
 
 
-def run_regular_spades(short_1, short_2, args, all_quast_results):
+def run_abyss(short_1, short_2, args, all_quast_results, simple_quast_results):
+    """
+    Runs ABySS on the short reads to compare with SPAdes.
+    """
+    run_name, abyss_dir = get_run_name_and_run_dir_name('ABySS', args.reference, 0.0, 0)
+    abyss_contigs = os.path.join(abyss_dir, 'run-contigs.fa')
+    abyss_scaffolds = os.path.join(abyss_dir, 'run-scaffolds.fa')
+    existing_dir = check_for_existing_assembly(abyss_scaffolds)
+    if existing_dir:
+        return os.path.abspath(existing_dir)
+    starting_path = os.path.abspath('.')
+
+    abyss_start_time = time.time()
+    try:
+        print('\nRunning', run_name, flush=True)
+        if not os.path.exists(abyss_dir):
+            os.makedirs(abyss_dir)
+        shutil.copyfile(short_1, os.path.join(abyss_dir, 'reads_1.fastq.gz'))
+        shutil.copyfile(short_2, os.path.join(abyss_dir, 'reads_2.fastq.gz'))
+        os.chdir(abyss_dir)
+        try:
+            subprocess.check_output(['gunzip', 'reads_1.fastq.gz'], stderr=subprocess.STDOUT)
+            subprocess.check_output(['gunzip', 'reads_2.fastq.gz'], stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            quit_with_error('gzip encountered an error:\n' + e.output.decode())
+
+        abyss_command = "abyss-pe k=64 j=" + str(args.threads) + \
+                        " in='reads_1.fastq reads_2.fastq' name=run"
+        print(abyss_command)
+        try:
+            abyss_out = subprocess.check_output(abyss_command, stderr=subprocess.STDOUT, shell=True)
+            with open(os.path.join(abyss_dir, 'abyss.out'), 'wb') as f:
+                f.write(abyss_out)
+        except subprocess.CalledProcessError as e:
+            print('ABySS encountered an error:\n' + e.output.decode())
+            raise AssemblyError
+
+    except AssemblyError:
+        abyss_scaffolds = None
+        abyss_contigs = None
+
+    abyss_time = time.time() - abyss_start_time
+    os.chdir(starting_path)
+
+    run_quast(abyss_scaffolds, args, all_quast_results, simple_quast_results, 'ABySS scaffolds',
+              0, 0.0, abyss_time)
+    run_quast(abyss_contigs, args, all_quast_results, simple_quast_results, 'ABySS scaffolds',
+              0, 0.0, abyss_time)
+
+    return os.path.abspath(abyss_dir)
+
+
+def run_regular_spades(short_1, short_2, args, all_quast_results, simple_quast_results):
     """
     Runs SPAdes with only short reads (i.e. not hybridSPAdes).
     """
@@ -445,16 +503,19 @@ def run_regular_spades(short_1, short_2, args, all_quast_results):
 
     spades_time = time.time() - spades_start_time
 
-    run_quast(spades_scaffolds, args, all_quast_results, 'SPAdes scaffolds', 0, 0.0, spades_time)
-    run_quast(spades_contigs, args, all_quast_results, 'SPAdes contigs', 0, 0.0, spades_time)
-    run_quast(spades_before_rr, args, all_quast_results, 'SPAdes before_rr', 0, 0.0, spades_time)
+    run_quast(spades_scaffolds, args, all_quast_results, simple_quast_results, 'SPAdes scaffolds',
+              0, 0.0, spades_time)
+    run_quast(spades_contigs, args, all_quast_results, simple_quast_results, 'SPAdes contigs',
+              0, 0.0, spades_time)
+    run_quast(spades_before_rr, args, all_quast_results, simple_quast_results, 'SPAdes before_rr',
+              0, 0.0, spades_time)
 
     clean_up_spades_dir(spades_dir)
     return os.path.abspath(spades_dir)
 
 
 def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args, all_quast_results,
-                      spades_no_long_dir):
+                      simple_quast_results, spades_no_long_dir):
     """
     Runs hybridSPAdes using the --nanopore option.
     """
@@ -508,14 +569,14 @@ def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args, all_
         spades_assembly = None
 
     spades_time = time.time() - spades_start_time
-    run_quast(spades_assembly, args, all_quast_results, 'SPAdes hybrid', long_count, long_depth,
-              spades_time)
+    run_quast(spades_assembly, args, all_quast_results, simple_quast_results, 'SPAdes hybrid',
+              long_count, long_depth, spades_time)
     clean_up_spades_dir(spades_dir)
     return os.path.abspath(spades_dir)
 
 
 def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_quast_results,
-                 spades_dir, np_scarf_all_long_dir=None):
+                 simple_quast_results, spades_dir, np_scarf_all_long_dir=None):
     """
     Runs npScarf using the SPAdes assembly results:
 
@@ -613,14 +674,14 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
         np_scarf_assembly = None
 
     np_scarf_time = time.time() - np_scarf_start_time
-    run_quast(np_scarf_assembly, args, all_quast_results, 'npScarf', long_count, long_depth,
-              np_scarf_time)
+    run_quast(np_scarf_assembly, args, all_quast_results, simple_quast_results, 'npScarf',
+              long_count, long_depth, np_scarf_time)
 
     clean_up_np_scarf_dir(np_scarf_dir)
     return os.path.abspath(np_scarf_dir)
 
 
-def run_unicycler_no_long(short_1, short_2, args, all_quast_results):
+def run_unicycler_no_long(short_1, short_2, args, all_quast_results, simple_quast_results):
     run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', args.reference, 0.0, 0)
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
     existing_dir = check_for_existing_assembly(unicycler_assembly)
@@ -647,15 +708,15 @@ def run_unicycler_no_long(short_1, short_2, args, all_quast_results):
     except subprocess.CalledProcessError as e:
         quit_with_error('Unicycler encountered an error:\n' + e.output.decode())
     unicycler_time = time.time() - unicycler_start_time
-    run_quast(unicycler_assembly, args, all_quast_results, 'Unicycler', 0, 0.0,
-              unicycler_time)
+    run_quast(unicycler_assembly, args, all_quast_results, simple_quast_results, 'Unicycler',
+              0, 0.0, unicycler_time)
 
     clean_up_unicycler_dir(unicycler_dir)
     return os.path.abspath(unicycler_dir)
 
 
 def run_unicycler_all_long(short_1, short_2, long, args, long_read_count, long_read_depth,
-                           all_quast_results, unicycler_no_long_dir):
+                           all_quast_results, simple_quast_results, unicycler_no_long_dir):
     run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', args.reference,
                                                             long_read_depth, long_read_count)
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
@@ -688,8 +749,8 @@ def run_unicycler_all_long(short_1, short_2, long, args, long_read_count, long_r
     except subprocess.CalledProcessError as e:
         quit_with_error('Unicycler encountered an error:\n' + e.output.decode())
     unicycler_time = time.time() - unicycler_start_time
-    run_quast(unicycler_assembly, args, all_quast_results, 'Unicycler', long_read_count,
-              long_read_depth, unicycler_time)
+    run_quast(unicycler_assembly, args, all_quast_results, simple_quast_results, 'Unicycler',
+              long_read_count, long_read_depth, unicycler_time)
 
     clean_up_unicycler_dir(unicycler_dir)
     return os.path.abspath(unicycler_dir)
@@ -697,7 +758,7 @@ def run_unicycler_all_long(short_1, short_2, long, args, long_read_count, long_r
 
 def run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled_filename,
                                   args, subsampled_count, subsampled_depth,
-                                  all_quast_results, unicycler_all_long_dir):
+                                  all_quast_results, simple_quast_results, unicycler_all_long_dir):
     run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', args.reference,
                                                             subsampled_depth, subsampled_count)
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
@@ -742,15 +803,29 @@ def run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled
     except subprocess.CalledProcessError as e:
         quit_with_error('Unicycler encountered an error:\n' + e.output.decode())
     unicycler_time = time.time() - unicycler_start_time
-    run_quast(unicycler_assembly, args, all_quast_results, 'Unicycler', subsampled_count,
-              subsampled_depth, unicycler_time)
+    run_quast(unicycler_assembly, args, all_quast_results, simple_quast_results, 'Unicycler',
+              subsampled_count, subsampled_depth, unicycler_time)
 
     clean_up_unicycler_dir(unicycler_dir)
     return os.path.abspath(unicycler_dir)
 
 
-def create_quast_results_table():
+def create_quast_results_tables():
     quast_results_filename = 'quast_results.tsv'
+    simple_quast_results_filename = 'quast_results_simple.tsv'
+
+    if not os.path.isfile(simple_quast_results_filename):
+        simple_quast_results = open(simple_quast_results_filename, 'w')
+        simple_quast_results.write("Reference name\t"
+                                   "Assembler\t"
+                                   "Long read depth\t"
+                                   "Long read accuracy (%)\t"
+                                   "Long read mean size (bp)\t"
+                                   "Completeness (%)\t"
+                                   "# misassemblies\t"
+                                   "# mismatches and indels per 100 kbp\n")
+        simple_quast_results.close()
+
     if not os.path.isfile(quast_results_filename):
         quast_results = open(quast_results_filename, 'w')
         quast_results.write("Reference name\t"
@@ -800,6 +875,11 @@ def create_quast_results_table():
                             "# mismatches per 100 kbp\t"
                             "# indels per 100 kbp\t"
                             "Largest alignment\t"
+                            "Reference lengths\t"
+                            "Largest alignment per reference\t"
+                            "Largest alignment per reference sum\t"
+                            "Percent complete per reference\t"
+                            "Percent complete total\t"
                             "NA50\t"
                             "NGA50\t"
                             "NA75\t"
@@ -809,11 +889,11 @@ def create_quast_results_table():
                             "LA75\t"
                             "LGA75\n")
         quast_results.close()
-    return os.path.abspath(quast_results_filename)
+    return os.path.abspath(quast_results_filename), os.path.abspath(simple_quast_results_filename)
 
 
-def run_quast(assembly, args, all_quast_results, assembler_name, long_read_count,
-              long_read_depth, run_time):
+def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler_name,
+              long_read_count, long_read_depth, run_time):
     reference_name = get_reference_name_from_filename(args.reference)
     run_name, run_dir_name = get_run_name_and_run_dir_name(assembler_name, args.reference,
                                                            long_read_depth, long_read_count)
@@ -823,10 +903,13 @@ def run_quast(assembly, args, all_quast_results, assembler_name, long_read_count
                   str(long_read_count), float_to_str(long_read_depth, 5),
                   float_to_str(args.long_acc, 1), str(args.long_len),
                   str(run_time)]
+    simple_quast_line = [reference_name, assembler_name, float_to_str(long_read_depth, 5),
+                         float_to_str(args.long_acc, 1), str(args.long_len)]
 
     if assembly is None:
         print('\nSkipping QUAST for', run_name, flush=True)
-        quast_line += [''] * 46
+        quast_line += [''] * 51
+        simple_quast_line += [''] * 3
 
     else:
         print('\nRunning QUAST for', run_name, flush=True)
@@ -844,14 +927,23 @@ def run_quast(assembly, args, all_quast_results, assembler_name, long_read_count
             subprocess.check_output(quast_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
             print('QUAST encountered an error:\n' + e.output.decode(), flush=True)
-            quast_line += [''] * 46
+            quast_line += [''] * 51
+            simple_quast_line += [''] * 3
         else:
             with open(this_quast_results, 'rt') as results:
                 results.readline()  # header line
-                quast_line += results.readline().split('\t')[1:]
+                result_parts = results.readline().split('\t')
+                quast_line += result_parts[1:]
+                simple_quast_line.append(result_parts[43])
+                simple_quast_line.append(result_parts[27])
+                simple_quast_line.append(str(float(result_parts[36]) + float(result_parts[37])) +
+                                         '\n')
 
     with open(all_quast_results, 'at') as all_results:
         all_results.write('\t'.join(quast_line))
+
+    with open(simple_quast_results, 'at') as simple_results:
+        simple_results.write('\t'.join(simple_quast_line))
 
 
 def load_fasta(filename):

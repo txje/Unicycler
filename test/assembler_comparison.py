@@ -19,6 +19,17 @@ import shutil
 
 
 def main():
+    # Set up environment variables for Cerulean and PBJelly.
+    os.environ['SWEETPATH'] = '/Users/Ryan/Applications/PBSuite_15.8.24'
+    try:
+        os.environ['PYTHONPATH'] = os.environ['PYTHONPATH'] + ':' + \
+            '/Users/Ryan/Applications/PBSuite_15.8.24'
+    except KeyError:
+        os.environ['PYTHONPATH'] = '/Users/Ryan/Applications/PBSuite_15.8.24'
+    os.environ['PATH'] = os.environ['PATH'] + ':' + os.environ['SWEETPATH'] + '/bin/'
+    os.environ['JELLYPATH'] = '/Users/Ryan/Applications/PBSuite_15.8.24'
+    os.environ['CERULEANPATH'] = '/Users/Ryan/Applications/Cerulean/src'
+
     args = get_args()
     starting_path = os.path.abspath('.')
 
@@ -27,7 +38,7 @@ def main():
     short_1, short_2 = make_fake_short_reads(args, starting_path, ref_name)
     quast_results, simple_quast_results = create_quast_results_tables()
 
-    # Run SPAdes and Unicycler on short read data alone.
+    # Run ABySS, SPAdes and Unicycler on short read data alone.
     short_read_only_dir = os.path.abspath('000000_only_short_reads')
     if not os.path.exists(short_read_only_dir):
         os.makedirs(short_read_only_dir)
@@ -37,7 +48,6 @@ def main():
                                             simple_quast_results)
     unicycler_no_long_dir = run_unicycler_no_long(short_1, short_2, args, quast_results,
                                                   simple_quast_results)
-    # Run Cerulean with short reads only?
     os.chdir(starting_path)
 
     # The program runs indefinitely, always running more tests until the user kills it.
@@ -49,10 +59,10 @@ def main():
 
         long_filename, long_reads = make_fake_long_reads(args)
         long_read_count = len(long_reads)
+        long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
 
         # Run Unicycler on the full set of long reads - will be the source of alignments for
         # subsampled Unicycler runs.
-        long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
         unicycler_all_long_dir = run_unicycler_all_long(short_1, short_2, long_filename, args,
                                                         long_read_count, long_read_depth,
                                                         quast_results, simple_quast_results,
@@ -67,6 +77,12 @@ def main():
         np_scarf_all_long_dir = run_np_scarf(long_filename, long_reads, long_read_count,
                                              long_read_depth, args, quast_results,
                                              simple_quast_results, spades_no_long_dir)
+
+        # Run Cerulean on the full set of long reads - will be the source of alignments for
+        # subsampled Cerulean runs.
+        cerulean_all_long_dir = run_cerulean(long_filename, long_reads, long_read_count,
+                                             long_read_depth, args, quast_results,
+                                             simple_quast_results, abyss_dir)
 
         # Randomly subsample this read set 10 different times.
         for _ in range(10):
@@ -105,7 +121,11 @@ def main():
                          subsampled_long_read_depth, args, quast_results, simple_quast_results,
                          spades_no_long_dir, np_scarf_all_long_dir=np_scarf_all_long_dir)
 
-            # Run Cerulean?
+            # Run Cerulean on the subsampled long reads. The BLASR alignments can be subsampled
+            # from the full long read run, which saves some time.
+            run_cerulean(long_filename, long_reads, long_read_count, long_read_depth, args,
+                         quast_results, simple_quast_results, abyss_dir,
+                         cerulean_all_long_dir=cerulean_all_long_dir)
 
         os.chdir(starting_path)
 
@@ -325,6 +345,18 @@ def create_subsampled_sam(full_sam_file, subsampled_sam_file, subsampled_long_re
                     read_name = line.split('\t')[0]
                     if read_name in subsampled_read_names:
                         subsampled_sam.write(line)
+
+
+def create_subsampled_m4(full_m4_file, subsampled_m4_file, subsampled_long_reads):
+    subsampled_read_names = set()
+    for read in subsampled_long_reads:
+        subsampled_read_names.add(read[0][1:])
+    with open(full_m4_file, 'rt') as full_m4:
+        with open(subsampled_m4_file, 'w') as subsampled_m4:
+            for line in full_m4:
+                read_name = line.split()[0]
+                if read_name in subsampled_read_names:
+                    subsampled_m4.write(line)
 
 
 def run_art(input_fasta, depth, read_prefix):
@@ -681,6 +713,168 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
     return os.path.abspath(np_scarf_dir)
 
 
+def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_quast_results,
+                 simple_quast_results, abyss_dir, cerulean_all_long_dir=None):
+    run_name, cerulean_dir = get_run_name_and_run_dir_name('Cerulean', args.reference, long_depth,
+                                                           long_count)
+    starting_path = os.path.abspath('.')
+    cerulean_assembly = os.path.join(cerulean_dir, 'cerulean_final.fasta')
+    existing_dir = check_for_existing_assembly(cerulean_assembly)
+    if existing_dir:
+        return os.path.abspath(existing_dir)
+
+    print('\nRunning', run_name, flush=True)
+    if not os.path.exists(cerulean_dir):
+        os.makedirs(cerulean_dir)
+
+    cerulean_start_time = time.time()
+    shutil.copy(os.path.join(abyss_dir, 'run-contigs.fa'),
+                os.path.join(cerulean_dir, 'run-contigs.fa'))
+    shutil.copy(os.path.join(abyss_dir, 'run-contigs.dot'),
+                os.path.join(cerulean_dir, 'run-contigs.dot'))
+
+    shutil.copyfile(long_read_file, os.path.join(cerulean_dir, 'long_reads.fastq.gz'))
+    os.chdir(cerulean_dir)
+    try:
+        subprocess.check_output(['gunzip', 'long_reads.fastq.gz'], stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as e:
+        quit_with_error('gzip encountered an error:\n' + e.output.decode())
+
+    try:
+        try:
+            jelly_path = os.environ['JELLYPATH']
+            fakequals_path = os.path.join(jelly_path, 'bin', 'fakeQuals.py')
+            jelly_py_path = os.path.join(jelly_path, 'bin', 'Jelly.py')
+        except KeyError:
+            print('JELLYPATH not set', flush=True)
+            raise AssemblyError
+        try:
+            cerulean_path = os.path.join(os.environ['CERULEANPATH'], 'Cerulean.py')
+        except KeyError:
+            print('CERULEANPATH not set', flush=True)
+            raise AssemblyError
+        try:
+            sawriter_command = ['sawriter', 'run-contigs.fa']
+            print(' '.join(sawriter_command))
+            subprocess.check_output(sawriter_command, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            print('sawriter encountered an error:\n' + e.output.decode(), flush=True)
+            raise AssemblyError
+        try:
+            fastq_to_fasta_command = ['fastq_to_fasta', '-i', 'long_reads.fastq', '-o',
+                                     'long_reads.fasta']
+            print(' '.join(fastq_to_fasta_command))
+            subprocess.check_output(fastq_to_fasta_command, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            print('fastq_to_fasta encountered an error:\n' + e.output.decode(), flush=True)
+            raise AssemblyError
+        os.remove('long_reads.fastq')
+        if cerulean_all_long_dir:
+            create_subsampled_m4(os.path.join(cerulean_all_long_dir,
+                                              'run_pacbio_contigs_mapping.fasta.m4'),
+                                 os.path.join(cerulean_dir, 'run_pacbio_contigs_mapping.fasta.m4'),
+                                 long_reads)
+        else:
+            try:
+                blasr_command = ['blasr',
+                                 'long_reads.fasta',
+                                 'run-contigs.fa',
+                                 '-minMatch', '10',
+                                 '-minPctIdentity', '70',
+                                 '-bestn', '30',
+                                 '-nCandidates', '30',
+                                 '-maxScore', '500',
+                                 '-nproc', str(args.threads),
+                                 '-noSplitSubreads',
+                                 '-out', 'long_reads_contigs_mapping.fasta.m4']
+                print(' '.join(blasr_command))
+                subprocess.check_output(blasr_command, stderr=subprocess.STDOUT)
+            except subprocess.CalledProcessError as e:
+                print('blasr encountered an error:\n' + e.output.decode(), flush=True)
+                raise AssemblyError
+            os.rename('long_reads_contigs_mapping.fasta.m4', 'run_pacbio_contigs_mapping.fasta.m4')
+        try:
+            cerulean_command = ['python', cerulean_path,
+                                '--dataname', 'run',
+                                '--basedir', '.',
+                                '--nproc', str(args.threads)]
+            print(' '.join(cerulean_command))
+            subprocess.check_output(cerulean_command, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            print('Cerulean.py encountered an error:\n' + e.output.decode(), flush=True)
+            raise AssemblyError
+        try:
+            fakequals_command = ['python', fakequals_path, 'run_cerulean.fasta',
+                                 'run_cerulean.qual']
+            print(' '.join(fakequals_command))
+            subprocess.check_output(fakequals_command, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            print('fakeQuals.py encountered an error:\n' + e.output.decode(), flush=True)
+            raise AssemblyError
+        try:
+            fakequals_command = ['python', fakequals_path, 'long_reads.fasta', 'long_reads.qual']
+            print(' '.join(fakequals_command))
+            subprocess.check_output(fakequals_command, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            print('fakeQuals.py encountered an error:\n' + e.output.decode(), flush=True)
+            raise AssemblyError
+        if not os.path.exists('PBJelly'):
+            os.makedirs('PBJelly')
+        this_dir = os.path.abspath('.')
+        template_protocol = open(os.path.join(jelly_path, 'docs', 'jellyExample', 'Protocol.xml'),
+                                 'rt')
+        this_protocol = open('Protocol.xml', 'wt')
+        for line in template_protocol:
+            line = line.replace('<reference>/__PATH__/_TO_/jellyExample/data/reference/lambda.fasta',
+                                '<reference>' + os.path.join(this_dir, 'run_cerulean.fasta'))
+            line = line.replace('<outputDir>/__PATH__/_TO_/jellyExample/',
+                                '<outputDir>' + os.path.join(this_dir, 'PBJelly') + '/')
+            line = line.replace('-nproc 4',
+                                '-nproc ' + str(args.threads))
+            line = line.replace('baseDir="/__PATH__/_TO_/jellyExample/data/reads/"',
+                                'baseDir="' + this_dir + '/"')
+            line = line.replace('filtered_subreads.fastq', 'long_reads.fasta')
+            this_protocol.write(line)
+        this_protocol.close()
+        template_protocol.close()
+        try:
+            setup_command = ['python', jelly_py_path, 'setup', 'Protocol.xml']
+            mapping_command = ['python', jelly_py_path, 'mapping', 'Protocol.xml']
+            support_command = ['python', jelly_py_path, 'support', 'Protocol.xml']
+            extraction_command = ['python', jelly_py_path, 'extraction', 'Protocol.xml']
+            assembly_command = ['python', jelly_py_path, 'assembly', 'Protocol.xml']
+            output_command = ['python', jelly_py_path, 'output', 'Protocol.xml']
+            print(' '.join(setup_command))
+            subprocess.check_output(setup_command, stderr=subprocess.STDOUT)
+            print(' '.join(mapping_command))
+            subprocess.check_output(mapping_command, stderr=subprocess.STDOUT)
+            print(' '.join(support_command))
+            subprocess.check_output(support_command, stderr=subprocess.STDOUT)
+            print(' '.join(extraction_command))
+            subprocess.check_output(extraction_command, stderr=subprocess.STDOUT)
+            print(' '.join(assembly_command))
+            subprocess.check_output(assembly_command, stderr=subprocess.STDOUT)
+            print(' '.join(output_command))
+            subprocess.check_output(output_command, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as e:
+            print('Jelly.py encountered an error:\n' + e.output.decode(), flush=True)
+            raise AssemblyError
+        shutil.copy(os.path.join(cerulean_dir, 'PBJelly', 'jelly.out.fasta'),
+                    cerulean_assembly)
+
+    except AssemblyError:
+        cerulean_assembly = None
+
+    cerulean_time = time.time() - cerulean_start_time
+
+    os.chdir(starting_path)
+    run_quast(cerulean_assembly, args, all_quast_results, simple_quast_results, 'Cerulean',
+              long_count, long_depth, cerulean_time)
+
+    clean_up_cerulean_dir(cerulean_dir)
+    return os.path.abspath(cerulean_dir)
+
+
 def run_unicycler_no_long(short_1, short_2, args, all_quast_results, simple_quast_results):
     run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', args.reference, 0.0, 0)
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
@@ -932,18 +1126,19 @@ def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler
         else:
             with open(this_quast_results, 'rt') as results:
                 results.readline()  # header line
-                result_parts = results.readline().split('\t')
-                quast_line += result_parts[1:]
-                simple_quast_line.append(result_parts[43])
-                simple_quast_line.append(result_parts[27])
-                simple_quast_line.append(str(float(result_parts[36]) + float(result_parts[37])) +
-                                         '\n')
+                parts = results.readline().strip().split('\t')
+                quast_line += parts[1:]
+                simple_quast_line.append(parts[43])
+                simple_quast_line.append(parts[27])
+                simple_quast_line.append(str(float(parts[36]) + float(parts[37])))
 
+    all_results_line = '\t'.join(quast_line) + '\n'
     with open(all_quast_results, 'at') as all_results:
-        all_results.write('\t'.join(quast_line))
+        all_results.write(all_results_line)
 
+    simple_results_line = '\t'.join(simple_quast_line) + '\n'
     with open(simple_quast_results, 'at') as simple_results:
-        simple_results.write('\t'.join(simple_quast_line))
+        simple_results.write(simple_results_line)
 
 
 def load_fasta(filename):
@@ -1029,6 +1224,20 @@ def clean_up_spades_dir(spades_dir):
                 'scaffolds.paths' in path or 'scaffolds.fasta' in path or \
                 'contigs.paths' in path or 'contigs.fasta' in path or \
                 'spades.out' in path or 'corrected' in path:
+            continue
+        if os.path.isfile(path):
+            os.remove(path)
+        elif os.path.isdir(path):
+            shutil.rmtree(path)
+
+
+def clean_up_cerulean_dir(cerulean_dir):
+    """
+    Deletes everything in cerulean_dir except for cerulean_final.fasta and m4 files.
+    """
+    for item in os.listdir(cerulean_dir):
+        path = os.path.join(cerulean_dir, item)
+        if 'cerulean_final.fasta' in path or '.m4' in path:
             continue
         if os.path.isfile(path):
             os.remove(path)

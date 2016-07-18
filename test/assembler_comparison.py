@@ -1123,7 +1123,8 @@ def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler
 
     else:
         print('\nRunning QUAST for', run_name, flush=True)
-        quast_dir = os.path.join('quast_results', run_dir_name)
+        quast_dir = os.path.join(os.path.dirname(os.path.normpath(run_dir_name)), 'quast_results',
+                                 os.path.basename(os.path.normpath(run_dir_name)))
         this_quast_results = os.path.join(quast_dir, 'transposed_report.tsv')
 
         quast_command = ['quast.py',

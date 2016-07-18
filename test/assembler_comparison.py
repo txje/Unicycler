@@ -36,6 +36,14 @@ def main():
     args = get_args()
     starting_path = os.path.abspath('.')
 
+    # Set up each read accuracy-length combination.
+    accuracies = [float(x) for x in args.long_accs.split(',')]
+    lengths = [int(x) for x in args.long_lens.split(',')]
+    accuracies_and_lengths = []
+    for accuracy in accuracies:
+        accuracies_and_lengths += [(accuracy, length) for length in lengths]
+    print(accuracies_and_lengths)
+
     scaled_ref_length = get_scaled_ref_length(args)
     ref_name = get_reference_name_from_filename(args.reference)
     short_1, short_2 = make_fake_short_reads(args, starting_path, ref_name)
@@ -55,7 +63,9 @@ def main():
 
     # The program runs indefinitely, always running more tests until the user kills it.
     dir_num = 1
-    while True:
+    for i in range(1000000):
+        args.long_acc, args.long_len = accuracies_and_lengths[i % 6]
+
         dir_name, dir_num = get_next_available_set_number(starting_path, dir_num)
         new_path = os.path.join(starting_path, dir_name)
         os.chdir(new_path)
@@ -126,9 +136,9 @@ def main():
 
             # Run Cerulean on the subsampled long reads. The BLASR alignments can be subsampled
             # from the full long read run, which saves some time.
-            run_cerulean(long_filename, long_reads, long_read_count, long_read_depth, args,
-                         quast_results, simple_quast_results, abyss_dir,
-                         cerulean_all_long_dir=cerulean_all_long_dir)
+            run_cerulean(subsampled_filename, subsampled_reads, subsampled_count,
+                         subsampled_long_read_depth, args, quast_results, simple_quast_results,
+                         abyss_dir, cerulean_all_long_dir=cerulean_all_long_dir)
 
         os.chdir(starting_path)
 
@@ -144,10 +154,10 @@ def get_args():
                         help='Base read depth for fake short reads')
     parser.add_argument('--long_depth', type=float, default=20.0,
                         help='Base read depth for fake long reads')
-    parser.add_argument('--long_acc', type=float, default=80.0,
-                        help='Mean accuracy for long reads')
-    parser.add_argument('--long_len', type=int, default=10000,
-                        help='Mean length for long reads')
+    parser.add_argument('--long_accs', type=str, default='90,75,60',
+                        help='Mean accuracies for long reads (comma delimited)')
+    parser.add_argument('--long_lens', type=str, default='10000,25000',
+                        help='Mean lengths for long reads (comma delimited)')
     parser.add_argument('--model_qc', type=str, default='model_qc_clr',
                         help='Model QC file for pbsim')
     parser.add_argument('--rotation_count', type=int, default=100, required=False,
@@ -260,7 +270,8 @@ def make_fake_long_reads(args):
     """
     ref_name = get_reference_name_from_filename(args.reference)
     long_filename = os.path.abspath(ref_name + '_long.fastq')
-    print('\nGenerating synthetic long reads', flush=True)
+    print('\nGenerating synthetic long reads:', str(args.long_acc) + '% accuracy,',
+          str(args.long_len) + ' bp', flush=True)
 
     references = load_fasta(args.reference)
     relative_depths = get_relative_depths(args.reference)
@@ -765,7 +776,7 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
             raise AssemblyError
         try:
             fastq_to_fasta_command = ['fastq_to_fasta', '-i', 'long_reads.fastq', '-o',
-                                     'long_reads.fasta']
+                                      'long_reads.fasta']
             print(' '.join(fastq_to_fasta_command))
             subprocess.check_output(fastq_to_fasta_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
@@ -867,14 +878,14 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
 
     except AssemblyError:
         cerulean_assembly = None
+    else:
+        clean_up_cerulean_dir(cerulean_dir)
 
     cerulean_time = time.time() - cerulean_start_time
-
     os.chdir(starting_path)
     run_quast(cerulean_assembly, args, all_quast_results, simple_quast_results, 'Cerulean',
               long_count, long_depth, cerulean_time)
 
-    clean_up_cerulean_dir(cerulean_dir)
     return os.path.abspath(cerulean_dir)
 
 
@@ -1015,9 +1026,9 @@ def create_quast_results_tables():
         simple_quast_results = open(simple_quast_results_filename, 'w')
         simple_quast_results.write("Reference name\t"
                                    "Assembler\t"
-                                   "Long read depth\t"
                                    "Long read accuracy (%)\t"
-                                   "Long read mean size (bp)\t"
+                                   "Long read mean length (bp)\t"
+                                   "Long read depth\t"
                                    "Completeness (%)\t"
                                    "# misassemblies\t"
                                    "# mismatches and indels per 100 kbp\n")
@@ -1029,10 +1040,10 @@ def create_quast_results_tables():
                             "Reference size (bp)\t"
                             "Reference pieces\t"
                             "Assembler\t"
-                            "Long read count\t"
-                            "Long read depth\t"
                             "Long read accuracy (%)\t"
-                            "Long read mean size (bp)\t"
+                            "Long read mean length (bp)\t"
+                            "Long read depth\t"
+                            "Long read count\t"
                             "Run time (seconds)\t"
                             "# contigs (>= 0 bp)\t"
                             "# contigs (>= 1000 bp)\t"
@@ -1095,13 +1106,15 @@ def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler
     run_name, run_dir_name = get_run_name_and_run_dir_name(assembler_name, args.reference,
                                                            long_read_depth, long_read_count)
 
+    long_read_acc = float_to_str(args.long_acc, 1) if long_read_count > 0 else ''
+    long_read_len = str(args.long_len) if long_read_count > 0 else ''
+
     ref_length, ref_count = get_fasta_length_and_seq_count(args.reference)
     quast_line = [reference_name, str(ref_length), str(ref_count), assembler_name,
-                  str(long_read_count), float_to_str(long_read_depth, 5),
-                  float_to_str(args.long_acc, 1), str(args.long_len),
-                  str(run_time)]
-    simple_quast_line = [reference_name, assembler_name, float_to_str(long_read_depth, 5),
-                         float_to_str(args.long_acc, 1), str(args.long_len)]
+                  long_read_acc, long_read_len, float_to_str(long_read_depth, 5),
+                  str(long_read_count), str(run_time)]
+    simple_quast_line = [reference_name, assembler_name, long_read_acc, long_read_len,
+                         float_to_str(long_read_depth, 5)]
 
     if assembly is None:
         print('\nSkipping QUAST for', run_name, flush=True)
@@ -1213,7 +1226,7 @@ def get_run_name_and_run_dir_name(assembler_name, reference, long_read_depth, lo
     run_name = ref_name + ', ' + assembler_name + ', ' + str(long_read_count) + ' long reads, ' + \
         float_to_str(long_read_depth, 2) + 'x'
     run_dir_name = run_name.replace(', ', '_').replace(' ', '_').replace('.', '_')
-    return run_name, run_dir_name
+    return run_name, os.path.abspath(run_dir_name)
 
 
 def clean_up_spades_dir(spades_dir):
@@ -1290,24 +1303,14 @@ def clean_up_np_scarf_dir(np_scarf_dir):
 
 def check_for_existing_assembly(assembly_path):
     """
-    Checks to see if the assembly exists, and if so, returns its directory. The tricky part is
-    that it doesn't care if the depth part matches exactly, but the assembler name, sample name
-    and read count do have to match exactly.
+    Checks to see if the assembly exists, and if so, returns its directory.
     """
-    assembly_path_parts = assembly_path.split('/')
-    assembly_name = assembly_path_parts[-1]
-    assembly_dir = '/'.join(assembly_path_parts[:-1])
-    assembly_dir_first_part = assembly_dir.split('_long_reads')[0]
-    for item in os.listdir('.'):
-        if os.path.isdir(item) and item.startswith(assembly_dir_first_part):
-            existing_assembly = os.path.join(item, assembly_name)
-            if os.path.isfile(existing_assembly):
-                print('\nAssembly already exists:', existing_assembly)
-                return item
-            else:
-                shutil.rmtree(item)
-                return ''
-    return ''
+    if os.path.isfile(assembly_path):
+        assembly_path_parts = assembly_path.split('/')
+        assembly_dir = '/'.join(assembly_path_parts[:-1])
+        return assembly_dir
+    else:
+        return ''
 
 
 def get_next_available_set_number(starting_path, num):

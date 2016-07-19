@@ -849,7 +849,8 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
                                  'rt')
         this_protocol = open('Protocol.xml', 'wt')
         for line in template_protocol:
-            line = line.replace('<reference>/__PATH__/_TO_/jellyExample/data/reference/lambda.fasta',
+            line = line.replace('<reference>/__PATH__/_TO_/jellyExample/data/reference/'
+                                'lambda.fasta',
                                 '<reference>' + os.path.join(this_dir, 'run_cerulean.fasta'))
             line = line.replace('<outputDir>/__PATH__/_TO_/jellyExample/',
                                 '<outputDir>' + os.path.join(this_dir, 'PBJelly') + '/')
@@ -1152,12 +1153,19 @@ def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler
             simple_quast_line += [''] * 3
         else:
             with open(this_quast_results, 'rt') as results:
-                results.readline()  # header line
-                parts = results.readline().strip().split('\t')
-                quast_line += parts[1:]
-                simple_quast_line.append(parts[43])
-                simple_quast_line.append(parts[27])
-                simple_quast_line.append(str(float(parts[36]) + float(parts[37])))
+                headers = results.readline().strip().split('\t')
+                results = results.readline().strip().split('\t')
+                quast_line += results[1:]
+                simple_quast_line.append(get_quast_result(headers, results,
+                                                          'Percent complete total'))
+                simple_quast_line.append(get_quast_result(headers, results, '# misassemblies'))
+                try:
+                    mismatches = float(get_quast_result(headers, results,
+                                                        '# mismatches per 100 kbp'))
+                    indels = float(get_quast_result(headers, results, '# indels per 100 kbp'))
+                    simple_quast_line.append(str(mismatches + indels))
+                except ValueError:
+                    simple_quast_line.append('')
 
     all_results_line = '\t'.join(quast_line) + '\n'
     with open(all_quast_results, 'at') as all_results:
@@ -1166,6 +1174,13 @@ def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler
     simple_results_line = '\t'.join(simple_quast_line) + '\n'
     with open(simple_quast_results, 'at') as simple_results:
         simple_results.write(simple_results_line)
+
+
+def get_quast_result(headers, results, column_name):
+    try:
+        return results[headers.index(column_name)]
+    except ValueError:
+        return ''
 
 
 def load_fasta(filename):

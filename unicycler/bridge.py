@@ -459,6 +459,7 @@ class LongReadBridge(object):
         """
         best_path = self.all_best_paths[0][0]
         best_availability = graph.get_path_availability(best_path)
+        best_sequence = self.all_bridge_sequences[0]
         for i in range(1, len(self.all_best_paths)):
             potential_path = self.all_best_paths[i][0]
             potential_path_availability = graph.get_path_availability(potential_path)

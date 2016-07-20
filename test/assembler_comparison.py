@@ -74,12 +74,12 @@ def main():
     # The program runs indefinitely, always running more tests until the user kills it.
     dir_num = 1
     for i in range(1000000):
-        args.long_acc, args.long_len = accuracies_and_lengths[i % 6]
-
         dir_name, dir_num = get_next_available_set_number(starting_path, dir_num)
         new_path = os.path.join(starting_path, dir_name)
+        print('\nChanging to new directory:', new_path)
         os.chdir(new_path)
 
+        args.long_acc, args.long_len = accuracies_and_lengths[i % 6]
         long_filename, long_reads = make_fake_long_reads(args)
         long_read_count = len(long_reads)
         long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
@@ -107,11 +107,9 @@ def main():
                                              long_read_depth, args, quast_results,
                                              simple_quast_results, abyss_dir)
 
-        # Randomly subsample this read set 10 different times.
-        for _ in range(10):
-
-            # Choose a random number of reads to include in the subsample.
-            subsampled_count = random.randint(1, long_read_count - 1)
+        # Randomly subsample this read set.
+        subsampled_counts = subsample(long_read_count, 5)
+        for subsampled_count in subsampled_counts:
 
             # Subsample the long reads.
             subsampled_reads = random.sample(long_reads, subsampled_count)
@@ -1346,6 +1344,19 @@ def get_next_available_set_number(starting_path, num):
             os.makedirs(dir_name)
             return dir_name, num
         num += 1
+
+
+def subsample(full_count, subsample_times):
+    subsample_counts = []
+    long_read_count_interval = full_count / subsample_times
+    for j in reversed(range(subsample_times)):
+        subsampled_count = int(round(long_read_count_interval * j))
+        next_subsampled_count = int(round(long_read_count_interval * (j+1)))
+        subsampled_count += int(round(random.uniform(0.0, long_read_count_interval)))
+        subsampled_count = min(next_subsampled_count - 1, subsampled_count)
+        subsampled_count = max(1, subsampled_count)
+        subsample_counts.append(subsampled_count)
+    return subsample_counts
 
 
 if __name__ == '__main__':

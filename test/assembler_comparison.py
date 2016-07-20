@@ -56,99 +56,103 @@ def main():
 
     scaled_ref_length = get_scaled_ref_length(args)
     ref_name = get_reference_name_from_filename(args.reference)
-    short_1, short_2 = make_fake_short_reads(args, starting_path, ref_name)
     quast_results, simple_quast_results = create_quast_results_tables()
-
-    # Run ABySS, SPAdes and Unicycler on short read data alone.
-    short_read_only_dir = os.path.abspath('000000_only_short_reads')
-    if not os.path.exists(short_read_only_dir):
-        os.makedirs(short_read_only_dir)
-    os.chdir(short_read_only_dir)
-    abyss_dir = run_abyss(short_1, short_2, args, quast_results, simple_quast_results)
-    spades_no_long_dir = run_regular_spades(short_1, short_2, args, quast_results,
-                                            simple_quast_results)
-    unicycler_no_long_dir = run_unicycler_no_long(short_1, short_2, args, quast_results,
-                                                  simple_quast_results)
-    os.chdir(starting_path)
 
     # The program runs indefinitely, always running more tests until the user kills it.
     dir_num = 1
     for i in range(1000000):
-        dir_name, dir_num = get_next_available_set_number(starting_path, dir_num)
-        new_path = os.path.join(starting_path, dir_name)
-        print('\nChanging to new directory:', new_path)
-        os.chdir(new_path)
-
-        args.long_acc, args.long_len = accuracies_and_lengths[i % 6]
-        long_filename, long_reads = make_fake_long_reads(args)
-        long_read_count = len(long_reads)
-        long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
-
-        # Run Unicycler on the full set of long reads - will be the source of alignments for
-        # subsampled Unicycler runs.
-        unicycler_all_long_dir = run_unicycler_all_long(short_1, short_2, long_filename, args,
-                                                        long_read_count, long_read_depth,
-                                                        quast_results, simple_quast_results,
-                                                        unicycler_no_long_dir)
-
-        # Run hybridSPAdes on the full set of long reads.
-        run_hybrid_spades(short_1, short_2, long_filename, long_read_count, long_read_depth, args,
-                          quast_results, simple_quast_results, spades_no_long_dir)
-
-        # Run npScarf on the full set of long reads - will be the source of alignments for
-        # subsampled npScarf runs.
-        np_scarf_all_long_dir = run_np_scarf(long_filename, long_reads, long_read_count,
-                                             long_read_depth, args, quast_results,
-                                             simple_quast_results, spades_no_long_dir)
-
-        # Run Cerulean on the full set of long reads - will be the source of alignments for
-        # subsampled Cerulean runs.
-        cerulean_all_long_dir = run_cerulean(long_filename, long_reads, long_read_count,
-                                             long_read_depth, args, quast_results,
-                                             simple_quast_results, abyss_dir)
-
-        # Randomly subsample this read set.
-        subsampled_counts = subsample(long_read_count, 5)
-        for subsampled_count in subsampled_counts:
-
-            # Subsample the long reads.
-            subsampled_reads = random.sample(long_reads, subsampled_count)
-            subsampled_long_read_depth = get_long_read_depth(subsampled_reads, scaled_ref_length)
-            subsampled_filename = ref_name + '_long_subsampled_' + str(subsampled_count) + '.fastq'
-            print('\nSubsampling to', subsampled_count, 'reads')
-            save_long_reads_to_fastq(subsampled_reads, subsampled_filename)
-            try:
-                subprocess.check_output(['gzip', subsampled_filename], stderr=subprocess.STDOUT)
-            except subprocess.CalledProcessError as e:
-                quit_with_error('gzip encountered an error:\n' + e.output.decode())
-            subsampled_filename += '.gz'
-
-            # Run Unicycler on the subsampled long reads. This should be relatively fast, because we
-            # can skip the short read assembly and the alignment. The polishing step still takes a
-            # while, though.
-            run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled_filename,
-                                          args, subsampled_count, subsampled_long_read_depth,
-                                          quast_results, simple_quast_results,
-                                          unicycler_all_long_dir)
-
-            # Run hybridSPAdes on the subsampled long reads.
-            run_hybrid_spades(short_1, short_2, subsampled_filename, subsampled_count,
-                              subsampled_long_read_depth, args, quast_results, simple_quast_results,
-                              spades_no_long_dir)
-
-            # Run npScarf on the subsampled long reads. This is very fast because we can skip the
-            # alignment step.
-            run_np_scarf(subsampled_filename, subsampled_reads, subsampled_count,
-                         subsampled_long_read_depth, args, quast_results, simple_quast_results,
-                         spades_no_long_dir, np_scarf_all_long_dir=np_scarf_all_long_dir)
-
-            # Run Cerulean on the subsampled long reads. The BLASR alignments can be subsampled
-            # from the full long read run, which saves some time.
-            run_cerulean(subsampled_filename, subsampled_reads, subsampled_count,
-                         subsampled_long_read_depth, args, quast_results, simple_quast_results,
-                         abyss_dir, cerulean_all_long_dir=cerulean_all_long_dir)
-
         os.chdir(starting_path)
+
+        # Make new short reads every time through this loop.
+        short_1, short_2 = make_fake_short_reads(args, starting_path, ref_name)
+
+        # Run ABySS, SPAdes and Unicycler on short read data alone.
+        short_read_only_dir = os.path.abspath('000000_only_short_reads')
+        if not os.path.exists(short_read_only_dir):
+            os.makedirs(short_read_only_dir)
+        os.chdir(short_read_only_dir)
+        abyss_dir = run_abyss(short_1, short_2, args, quast_results, simple_quast_results)
+        spades_no_long_dir = run_regular_spades(short_1, short_2, args, quast_results,
+                                                simple_quast_results)
+        unicycler_no_long_dir = run_unicycler_no_long(short_1, short_2, args, quast_results,
+                                                      simple_quast_results)
+
+        for accuracy, length in accuracies_and_lengths:
+            dir_name, dir_num = get_next_available_set_number(starting_path, dir_num)
+            new_path = os.path.join(starting_path, dir_name)
+            print('\nChanging to new directory:', new_path)
+            os.chdir(new_path)
+
+            args.long_acc, args.long_len = accuracy, length
+            long_filename, long_reads = make_fake_long_reads(args)
+            long_read_count = len(long_reads)
+            long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
+
+            # Run Unicycler on the full set of long reads - will be the source of alignments for
+            # subsampled Unicycler runs.
+            unicycler_all_long_dir = run_unicycler_all_long(short_1, short_2, long_filename, args,
+                                                            long_read_count, long_read_depth,
+                                                            quast_results, simple_quast_results,
+                                                            unicycler_no_long_dir)
+
+            # Run hybridSPAdes on the full set of long reads.
+            run_hybrid_spades(short_1, short_2, long_filename, long_read_count, long_read_depth,
+                              args, quast_results, simple_quast_results, spades_no_long_dir)
+
+            # Run npScarf on the full set of long reads - will be the source of alignments for
+            # subsampled npScarf runs.
+            np_scarf_all_long_dir = run_np_scarf(long_filename, long_reads, long_read_count,
+                                                 long_read_depth, args, quast_results,
+                                                 simple_quast_results, spades_no_long_dir)
+
+            # Run Cerulean on the full set of long reads - will be the source of alignments for
+            # subsampled Cerulean runs.
+            cerulean_all_long_dir = run_cerulean(long_filename, long_reads, long_read_count,
+                                                 long_read_depth, args, quast_results,
+                                                 simple_quast_results, abyss_dir)
+
+            # Randomly subsample this read set.
+            subsampled_counts = subsample(long_read_count, 5)
+            for subsampled_count in subsampled_counts:
+
+                # Subsample the long reads.
+                subsampled_reads = random.sample(long_reads, subsampled_count)
+                subsampled_long_read_depth = get_long_read_depth(subsampled_reads,
+                                                                 scaled_ref_length)
+                subsampled_filename = ref_name + '_long_subsampled_' + str(subsampled_count) + \
+                    '.fastq'
+                print('\nSubsampling to', subsampled_count, 'reads')
+                save_long_reads_to_fastq(subsampled_reads, subsampled_filename)
+                try:
+                    subprocess.check_output(['gzip', subsampled_filename], stderr=subprocess.STDOUT)
+                except subprocess.CalledProcessError as e:
+                    quit_with_error('gzip encountered an error:\n' + e.output.decode())
+                subsampled_filename += '.gz'
+
+                # Run Unicycler on the subsampled long reads. This should be relatively fast,
+                # because we can skip the short read assembly and the alignment. The polishing
+                # step still takes a while, though.
+                run_unicycler_subsampled_long(short_1, short_2, subsampled_reads,
+                                              subsampled_filename, args, subsampled_count,
+                                              subsampled_long_read_depth, quast_results,
+                                              simple_quast_results, unicycler_all_long_dir)
+
+                # Run hybridSPAdes on the subsampled long reads.
+                run_hybrid_spades(short_1, short_2, subsampled_filename, subsampled_count,
+                                  subsampled_long_read_depth, args, quast_results,
+                                  simple_quast_results, spades_no_long_dir)
+
+                # Run npScarf on the subsampled long reads. This is very fast because we can skip
+                # the alignment step.
+                run_np_scarf(subsampled_filename, subsampled_reads, subsampled_count,
+                             subsampled_long_read_depth, args, quast_results, simple_quast_results,
+                             spades_no_long_dir, np_scarf_all_long_dir=np_scarf_all_long_dir)
+
+                # Run Cerulean on the subsampled long reads. The BLASR alignments can be subsampled
+                # from the full long read run, which saves some time.
+                run_cerulean(subsampled_filename, subsampled_reads, subsampled_count,
+                             subsampled_long_read_depth, args, quast_results, simple_quast_results,
+                             abyss_dir, cerulean_all_long_dir=cerulean_all_long_dir)
 
 
 def get_args():
@@ -193,11 +197,14 @@ def make_fake_short_reads(args, current_path, ref_name):
     read_filename_1 = os.path.abspath(ref_name + '_short_1.fastq')
     read_filename_2 = os.path.abspath(ref_name + '_short_2.fastq')
 
-    if os.path.isfile(read_filename_1 + '.gz') and os.path.isfile(read_filename_2 + '.gz'):
-        read_filename_1 += '.gz'
-        read_filename_2 += '.gz'
-        print('\nReads already exist:', read_filename_1, read_filename_2)
-        return read_filename_1, read_filename_2
+    if os.path.isfile(read_filename_1):
+        os.remove(read_filename_1)
+    if os.path.isfile(read_filename_2):
+        os.remove(read_filename_2)
+    if os.path.isfile(read_filename_1 + '.gz'):
+        os.remove(read_filename_1 + '.gz')
+    if os.path.isfile(read_filename_2 + '.gz'):
+        os.remove(read_filename_2 + '.gz')
 
     print('\nGenerating synthetic short reads', flush=True)
 

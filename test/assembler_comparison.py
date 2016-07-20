@@ -789,14 +789,7 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
         except subprocess.CalledProcessError as e:
             print('sawriter encountered an error:\n' + e.output.decode(), flush=True)
             raise AssemblyError
-        try:
-            fastq_to_fasta_command = ['fastq_to_fasta', '-i', 'long_reads.fastq', '-o',
-                                      'long_reads.fasta']
-            print(' '.join(fastq_to_fasta_command))
-            subprocess.check_output(fastq_to_fasta_command, stderr=subprocess.STDOUT)
-        except subprocess.CalledProcessError as e:
-            print('fastq_to_fasta encountered an error:\n' + e.output.decode(), flush=True)
-            raise AssemblyError
+        fastq_to_fasta('long_reads.fastq', 'long_reads.fasta')
         os.remove('long_reads.fastq')
         if cerulean_all_long_dir:
             create_subsampled_m4(os.path.join(cerulean_all_long_dir,
@@ -1364,6 +1357,16 @@ def subsample(full_count, subsample_times):
         subsampled_count = max(1, subsampled_count)
         subsample_counts.append(subsampled_count)
     return subsample_counts
+
+
+def fastq_to_fasta(fastq_filename, fasta_filename):
+    with open(fastq_filename, 'rt') as fastq:
+        with open(fasta_filename, 'wt') as fasta:
+            for line in fastq:
+                fasta.write('>' + line[1:])
+                fasta.write(next(fastq))
+                next(fastq)
+                next(fastq)
 
 
 if __name__ == '__main__':

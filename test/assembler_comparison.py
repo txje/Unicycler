@@ -42,7 +42,6 @@ def main():
         os.environ['CERULEANPATH'] = local_cerulean_path
 
     args = get_args()
-    starting_path = os.path.abspath('.')
 
     # Set up each read accuracy-length combination.
     accuracies = [float(x) for x in args.long_accs.split(',')]
@@ -58,19 +57,26 @@ def main():
     ref_name = get_reference_name_from_filename(args.reference)
     quast_results, simple_quast_results = create_quast_results_tables()
 
+    # Make a directory for this ref, if necessary.
+    ref_dir = os.path.abspath(ref_name)
+    if not os.path.exists(ref_dir):
+        os.makedirs(ref_dir)
+    os.chdir(ref_dir)
+
     # The program runs indefinitely, always running more tests until the user kills it.
     dir_num = 1
     for i in range(1000000):
-        os.chdir(starting_path)
+
+        # Create and move into a directory for this iteration.
+        dir_name, dir_num = get_next_available_set_number(ref_dir, dir_num)
+        iter_dir = os.path.join(ref_dir, dir_name)
+        print('\nChanging to new directory:', iter_dir)
+        os.chdir(iter_dir)
 
         # Make new short reads every time through this loop.
-        short_1, short_2 = make_fake_short_reads(args, starting_path, ref_name)
+        short_1, short_2 = make_fake_short_reads(args)
 
         # Run ABySS, SPAdes and Unicycler on short read data alone.
-        short_read_only_dir = os.path.abspath('000000_only_short_reads')
-        if not os.path.exists(short_read_only_dir):
-            os.makedirs(short_read_only_dir)
-        os.chdir(short_read_only_dir)
         abyss_dir = run_abyss(short_1, short_2, args, quast_results, simple_quast_results)
         spades_no_long_dir = run_regular_spades(short_1, short_2, args, quast_results,
                                                 simple_quast_results)
@@ -78,11 +84,6 @@ def main():
                                                       simple_quast_results)
 
         for accuracy, length in accuracies_and_lengths:
-            dir_name, dir_num = get_next_available_set_number(starting_path, dir_num)
-            new_path = os.path.join(starting_path, dir_name)
-            print('\nChanging to new directory:', new_path)
-            os.chdir(new_path)
-
             args.long_acc, args.long_len = accuracy, length
             long_filename, long_reads = make_fake_long_reads(args)
             long_read_count = len(long_reads)
@@ -119,8 +120,11 @@ def main():
                 subsampled_reads = random.sample(long_reads, subsampled_count)
                 subsampled_long_read_depth = get_long_read_depth(subsampled_reads,
                                                                  scaled_ref_length)
-                subsampled_filename = ref_name + '_long_subsampled_' + str(subsampled_count) + \
-                    '.fastq'
+                subsampled_filename = 'long_subsampled_' + str(args.long_acc) + '_' + \
+                                      str(args.long_len) + '_' + str(subsampled_count)
+                subsampled_filename = subsampled_filename.replace('.', '_')
+                subsampled_filename = os.path.abspath(subsampled_filename + '.fastq')
+
                 print('\nSubsampling to', subsampled_count, 'reads')
                 save_long_reads_to_fastq(subsampled_reads, subsampled_filename)
                 try:
@@ -188,14 +192,14 @@ class AssemblyError(Exception):
     pass
 
 
-def make_fake_short_reads(args, current_path, ref_name):
+def make_fake_short_reads(args):
     """
     Runs ART to generate fake Illumina reads. Runs ART separate for each sequence in the reference
     file (to control relative depth) and at multiple sequence rotations (to ensure circular
     assembly).
     """
-    read_filename_1 = os.path.abspath(ref_name + '_short_1.fastq')
-    read_filename_2 = os.path.abspath(ref_name + '_short_2.fastq')
+    read_filename_1 = os.path.abspath('short_1.fastq')
+    read_filename_2 = os.path.abspath('short_2.fastq')
 
     if os.path.isfile(read_filename_1):
         os.remove(read_filename_1)
@@ -207,11 +211,6 @@ def make_fake_short_reads(args, current_path, ref_name):
         os.remove(read_filename_2 + '.gz')
 
     print('\nGenerating synthetic short reads', flush=True)
-
-    temp_dir = os.path.join(current_path, 'temp_' + ref_name)
-    if not os.path.exists(temp_dir):
-        os.makedirs(temp_dir)
-    os.chdir(temp_dir)
 
     references = load_fasta(args.reference)
     relative_depths = get_relative_depths(args.reference)
@@ -245,8 +244,6 @@ def make_fake_short_reads(args, current_path, ref_name):
             os.remove(temp_fasta_filename)
             read_prefix += 1
 
-    os.chdir(current_path)
-
     random.shuffle(short_read_pairs)
     reads_1 = open(read_filename_1, 'w')
     reads_2 = open(read_filename_2, 'w')
@@ -273,7 +270,6 @@ def make_fake_short_reads(args, current_path, ref_name):
     print(read_filename_1)
     print(read_filename_2)
 
-    shutil.rmtree(temp_dir)
     return read_filename_1, read_filename_2
 
 
@@ -283,8 +279,9 @@ def make_fake_long_reads(args):
     file (to control relative depth) and at multiple sequence rotations (to ensure circular
     assembly).
     """
-    ref_name = get_reference_name_from_filename(args.reference)
-    long_filename = os.path.abspath(ref_name + '_long.fastq')
+    long_filename = 'long_' + str(args.long_acc) + '_' + str(args.long_len)
+    long_filename = long_filename.replace('.', '_')
+    long_filename = os.path.abspath(long_filename + '.fastq')
     print('\nGenerating synthetic long reads:', str(args.long_acc) + '% accuracy,',
           str(args.long_len) + ' bp', flush=True)
 
@@ -1247,9 +1244,11 @@ def get_relative_depths(reference):
 
 def get_run_name_and_run_dir_name(assembler_name, reference, long_read_depth, long_read_count):
     ref_name = get_reference_name_from_filename(reference)
+    random_run_num = str(random.randint(1000000, 9999999))
     run_name = ref_name + ', ' + assembler_name + ', ' + str(long_read_count) + ' long reads, ' + \
-        float_to_str(long_read_depth, 2) + 'x'
-    run_dir_name = run_name.replace(', ', '_').replace(' ', '_').replace('.', '_')
+        float_to_str(long_read_depth, 3) + 'x'
+    run_dir_name = assembler_name + '_' + float_to_str(long_read_depth, 3) + 'x_' + random_run_num
+    run_dir_name = run_dir_name.replace(',', '_').replace(' ', '_').replace('.', '_')
     return run_name, os.path.abspath(run_dir_name)
 
 

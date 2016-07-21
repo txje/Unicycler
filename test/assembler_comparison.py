@@ -77,6 +77,7 @@ def main():
         short_1, short_2 = make_fake_short_reads(args)
 
         # Run ABySS, SPAdes and Unicycler on short read data alone.
+        args.long_acc, args.long_len = 0.0, 0
         abyss_dir = run_abyss(short_1, short_2, args, quast_results, simple_quast_results)
         spades_no_long_dir = run_regular_spades(short_1, short_2, args, quast_results,
                                                 simple_quast_results)
@@ -110,10 +111,10 @@ def main():
             # subsampled Cerulean runs.
             cerulean_all_long_dir = run_cerulean(long_filename, long_reads, long_read_count,
                                                  long_read_depth, args, quast_results,
-                                                 simple_quast_results, abyss_dir)
+                                                 simple_quast_results, abyss_dir, i)
 
             # Randomly subsample this read set.
-            subsampled_counts = subsample(long_read_count, 5)
+            subsampled_counts = subsample(long_read_count, args.subsample_count)
             for subsampled_count in subsampled_counts:
 
                 # Subsample the long reads.
@@ -170,7 +171,7 @@ def get_args():
                         help='Base read depth for fake short reads')
     parser.add_argument('--long_depth', type=float, default=20.0,
                         help='Base read depth for fake long reads')
-    parser.add_argument('--long_accs', type=str, default='90,75,60',
+    parser.add_argument('--long_accs', type=str, default='75,90,60',
                         help='Mean accuracies for long reads (comma delimited)')
     parser.add_argument('--long_lens', type=str, default='10000,25000',
                         help='Mean lengths for long reads (comma delimited)')
@@ -181,6 +182,8 @@ def get_args():
                              'positions')
     parser.add_argument('--threads', type=int, required=False, default=8,
                         help='Number of CPU threads')
+    parser.add_argument('--subsample_count', type=int, required=False, default=4,
+                        help='Number of times to subsample long reads')
 
     args = parser.parse_args()
     args.reference = os.path.abspath(args.reference)
@@ -474,12 +477,9 @@ def run_abyss(short_1, short_2, args, all_quast_results, simple_quast_results):
     """
     Runs ABySS on the short reads to compare with SPAdes.
     """
-    run_name, abyss_dir = get_run_name_and_run_dir_name('ABySS', args.reference, 0.0, 0)
+    run_name, abyss_dir = get_run_name_and_run_dir_name('ABySS', args.reference, 0.0, args)
     abyss_contigs = os.path.join(abyss_dir, 'run-contigs.fa')
     abyss_scaffolds = os.path.join(abyss_dir, 'run-scaffolds.fa')
-    existing_dir = check_for_existing_assembly(abyss_scaffolds)
-    if existing_dir:
-        return os.path.abspath(existing_dir)
     starting_path = os.path.abspath('.')
 
     abyss_start_time = time.time()
@@ -515,9 +515,9 @@ def run_abyss(short_1, short_2, args, all_quast_results, simple_quast_results):
     os.chdir(starting_path)
 
     run_quast(abyss_scaffolds, args, all_quast_results, simple_quast_results, 'ABySS scaffolds',
-              0, 0.0, abyss_time)
+              0, 0.0, abyss_time, run_name, abyss_dir)
     run_quast(abyss_contigs, args, all_quast_results, simple_quast_results, 'ABySS contigs',
-              0, 0.0, abyss_time)
+              0, 0.0, abyss_time, run_name, abyss_dir)
 
     return os.path.abspath(abyss_dir)
 
@@ -526,13 +526,10 @@ def run_regular_spades(short_1, short_2, args, all_quast_results, simple_quast_r
     """
     Runs SPAdes with only short reads (i.e. not hybridSPAdes).
     """
-    run_name, spades_dir = get_run_name_and_run_dir_name('SPAdes', args.reference, 0.0, 0)
+    run_name, spades_dir = get_run_name_and_run_dir_name('SPAdes', args.reference, 0.0, args)
     spades_scaffolds = os.path.join(spades_dir, 'scaffolds.fasta')
     spades_contigs = os.path.join(spades_dir, 'contigs.fasta')
     spades_before_rr = os.path.join(spades_dir, 'before_rr.fasta')
-    existing_dir = check_for_existing_assembly(spades_scaffolds)
-    if existing_dir:
-        return os.path.abspath(existing_dir)
 
     spades_start_time = time.time()
     try:
@@ -545,7 +542,7 @@ def run_regular_spades(short_1, short_2, args, all_quast_results, simple_quast_r
                           '--careful',
                           '--threads', str(args.threads),
                           '-o', spades_dir]
-        print(' '.join(spades_command))
+        print(' '.join(spades_command), flush=True)
         try:
             spades_out = subprocess.check_output(spades_command, stderr=subprocess.STDOUT)
             with open(os.path.join(spades_dir, 'spades.out'), 'wb') as f:
@@ -562,11 +559,11 @@ def run_regular_spades(short_1, short_2, args, all_quast_results, simple_quast_r
     spades_time = time.time() - spades_start_time
 
     run_quast(spades_scaffolds, args, all_quast_results, simple_quast_results, 'SPAdes scaffolds',
-              0, 0.0, spades_time)
+              0, 0.0, spades_time, run_name, spades_dir)
     run_quast(spades_contigs, args, all_quast_results, simple_quast_results, 'SPAdes contigs',
-              0, 0.0, spades_time)
+              0, 0.0, spades_time, run_name, spades_dir)
     run_quast(spades_before_rr, args, all_quast_results, simple_quast_results, 'SPAdes before_rr',
-              0, 0.0, spades_time)
+              0, 0.0, spades_time, run_name, spades_dir)
 
     clean_up_spades_dir(spades_dir)
     return os.path.abspath(spades_dir)
@@ -577,12 +574,8 @@ def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args, all_
     """
     Runs hybridSPAdes using the --nanopore option.
     """
-    run_name, spades_dir = get_run_name_and_run_dir_name('SPAdes', args.reference, long_depth,
-                                                         long_count)
+    run_name, spades_dir = get_run_name_and_run_dir_name('SPAdes', args.reference, long_depth, args)
     spades_assembly = os.path.join(spades_dir, 'scaffolds.fasta')
-    existing_dir = check_for_existing_assembly(spades_assembly)
-    if existing_dir:
-        return os.path.abspath(existing_dir)
 
     # If we can find corrected reads from a previous SPAdes run, use those to save time.
     corrected_1, corrected_2, corrected_u = '', '', ''
@@ -614,7 +607,7 @@ def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args, all_
                            '--careful',
                            '--threads', str(args.threads),
                            '-o', spades_dir]
-        print(' '.join(spades_command))
+        print(' '.join(spades_command), flush=True)
         try:
             spades_out = subprocess.check_output(spades_command, stderr=subprocess.STDOUT)
             with open(os.path.join(spades_dir, 'spades.out'), 'wb') as f:
@@ -628,7 +621,7 @@ def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args, all_
 
     spades_time = time.time() - spades_start_time
     run_quast(spades_assembly, args, all_quast_results, simple_quast_results, 'SPAdes hybrid',
-              long_count, long_depth, spades_time)
+              long_count, long_depth, spades_time, run_name, spades_dir)
     clean_up_spades_dir(spades_dir)
     return os.path.abspath(spades_dir)
 
@@ -645,14 +638,10 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
     jsa.np.gapcloser -b alignments.sam -seq np_scarf.fasta
     """
     run_name, np_scarf_dir = get_run_name_and_run_dir_name('npScarf', args.reference, long_depth,
-                                                           long_count)
+                                                           args)
     np_scarf_assembly = os.path.join(np_scarf_dir, 'out.fin.fasta')
-    existing_dir = check_for_existing_assembly(np_scarf_assembly)
-    if existing_dir:
-        return os.path.abspath(existing_dir)
 
     np_scarf_start_time = time.time()
-
     try:
         print('\nRunning', run_name, flush=True)
         if not os.path.exists(np_scarf_dir):
@@ -664,7 +653,7 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
                                 '-n',
                                 '--input', os.path.join(spades_dir, 'contigs.fasta'),
                                 '--output', np_scarf_fasta]
-        print(' '.join(jsa_seq_sort_command))
+        print(' '.join(jsa_seq_sort_command), flush=True)
         try:
             subprocess.check_output(jsa_seq_sort_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
@@ -676,7 +665,7 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
         if not np_scarf_all_long_dir:
             bwa_index_command = ['bwa', 'index',
                                  np_scarf_fasta]
-            print(' '.join(bwa_index_command))
+            print(' '.join(bwa_index_command), flush=True)
             try:
                 subprocess.check_output(bwa_index_command, stderr=subprocess.STDOUT)
             except subprocess.CalledProcessError as e:
@@ -694,7 +683,7 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
                                '-a', '-Y',
                                np_scarf_fasta,
                                long_read_file]
-            print(' '.join(bwa_mem_command))
+            print(' '.join(bwa_mem_command), flush=True)
             bwa_mem = subprocess.Popen(bwa_mem_command, stdout=alignments_sam, stderr=dev_null)
             try:
                 bwa_mem.communicate()
@@ -714,7 +703,7 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
         jsa_np_gapcloser_command = ['jsa.np.gapcloser',
                                     '-b', alignments_file,
                                     '-seq', np_scarf_fasta]
-        print(' '.join(jsa_np_gapcloser_command))
+        print(' '.join(jsa_np_gapcloser_command), flush=True)
         try:
             np_scarf_out = subprocess.check_output(jsa_np_gapcloser_command,
                                                    stderr=subprocess.STDOUT)
@@ -733,7 +722,7 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
 
     np_scarf_time = time.time() - np_scarf_start_time
     run_quast(np_scarf_assembly, args, all_quast_results, simple_quast_results, 'npScarf',
-              long_count, long_depth, np_scarf_time)
+              long_count, long_depth, np_scarf_time, run_name, np_scarf_dir)
 
     clean_up_np_scarf_dir(np_scarf_dir)
     return os.path.abspath(np_scarf_dir)
@@ -742,12 +731,9 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
 def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_quast_results,
                  simple_quast_results, abyss_dir, cerulean_all_long_dir=None):
     run_name, cerulean_dir = get_run_name_and_run_dir_name('Cerulean', args.reference, long_depth,
-                                                           long_count)
+                                                           args)
     starting_path = os.path.abspath('.')
     cerulean_assembly = os.path.join(cerulean_dir, 'cerulean_final.fasta')
-    existing_dir = check_for_existing_assembly(cerulean_assembly)
-    if existing_dir:
-        return os.path.abspath(existing_dir)
 
     print('\nRunning', run_name, flush=True)
     if not os.path.exists(cerulean_dir):
@@ -781,7 +767,7 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
             raise AssemblyError
         try:
             sawriter_command = ['sawriter', 'run-contigs.fa']
-            print(' '.join(sawriter_command))
+            print(' '.join(sawriter_command), flush=True)
             subprocess.check_output(sawriter_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
             print('sawriter encountered an error:\n' + e.output.decode(), flush=True)
@@ -806,7 +792,7 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
                                  '-nproc', str(args.threads),
                                  '-noSplitSubreads',
                                  '-out', 'long_reads_contigs_mapping.fasta.m4']
-                print(' '.join(blasr_command))
+                print(' '.join(blasr_command), flush=True)
                 subprocess.check_output(blasr_command, stderr=subprocess.STDOUT)
             except subprocess.CalledProcessError as e:
                 print('blasr encountered an error:\n' + e.output.decode(), flush=True)
@@ -817,7 +803,7 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
                                 '--dataname', 'run',
                                 '--basedir', '.',
                                 '--nproc', str(args.threads)]
-            print(' '.join(cerulean_command))
+            print(' '.join(cerulean_command), flush=True)
             subprocess.check_output(cerulean_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
             print('Cerulean.py encountered an error:\n' + e.output.decode(), flush=True)
@@ -825,14 +811,14 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
         try:
             fakequals_command = ['python', fakequals_path, 'run_cerulean.fasta',
                                  'run_cerulean.qual']
-            print(' '.join(fakequals_command))
+            print(' '.join(fakequals_command), flush=True)
             subprocess.check_output(fakequals_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
             print('fakeQuals.py encountered an error:\n' + e.output.decode(), flush=True)
             raise AssemblyError
         try:
             fakequals_command = ['python', fakequals_path, 'long_reads.fasta', 'long_reads.qual']
-            print(' '.join(fakequals_command))
+            print(' '.join(fakequals_command), flush=True)
             subprocess.check_output(fakequals_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
             print('fakeQuals.py encountered an error:\n' + e.output.decode(), flush=True)
@@ -864,17 +850,17 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
             extraction_command = ['python', jelly_py_path, 'extraction', 'Protocol.xml']
             assembly_command = ['python', jelly_py_path, 'assembly', 'Protocol.xml']
             output_command = ['python', jelly_py_path, 'output', 'Protocol.xml']
-            print(' '.join(setup_command))
+            print(' '.join(setup_command), flush=True)
             subprocess.check_output(setup_command, stderr=subprocess.STDOUT)
-            print(' '.join(mapping_command))
+            print(' '.join(mapping_command), flush=True)
             subprocess.check_output(mapping_command, stderr=subprocess.STDOUT)
-            print(' '.join(support_command))
+            print(' '.join(support_command), flush=True)
             subprocess.check_output(support_command, stderr=subprocess.STDOUT)
-            print(' '.join(extraction_command))
+            print(' '.join(extraction_command), flush=True)
             subprocess.check_output(extraction_command, stderr=subprocess.STDOUT)
-            print(' '.join(assembly_command))
+            print(' '.join(assembly_command), flush=True)
             subprocess.check_output(assembly_command, stderr=subprocess.STDOUT)
-            print(' '.join(output_command))
+            print(' '.join(output_command), flush=True)
             subprocess.check_output(output_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
             print('Jelly.py encountered an error:\n' + e.output.decode(), flush=True)
@@ -890,17 +876,14 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
     cerulean_time = time.time() - cerulean_start_time
     os.chdir(starting_path)
     run_quast(cerulean_assembly, args, all_quast_results, simple_quast_results, 'Cerulean',
-              long_count, long_depth, cerulean_time)
+              long_count, long_depth, cerulean_time, run_name, cerulean_dir)
 
     return os.path.abspath(cerulean_dir)
 
 
 def run_unicycler_no_long(short_1, short_2, args, all_quast_results, simple_quast_results):
-    run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', args.reference, 0.0, 0)
+    run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', args.reference, 0.0, args)
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
-    existing_dir = check_for_existing_assembly(unicycler_assembly)
-    if existing_dir:
-        return os.path.abspath(existing_dir)
 
     unicycler_start_time = time.time()
     print('\nRunning', run_name, flush=True)
@@ -914,7 +897,7 @@ def run_unicycler_no_long(short_1, short_2, args, all_quast_results, simple_quas
                          '--keep_temp', '0',
                          '--threads', str(args.threads),
                          '--verbosity', '2']
-    print(' '.join(unicycler_command))
+    print(' '.join(unicycler_command), flush=True)
     try:
         unicycler_out = subprocess.check_output(unicycler_command, stderr=subprocess.STDOUT)
         with open(os.path.join(unicycler_dir, 'unicycler.out'), 'wb') as f:
@@ -923,7 +906,7 @@ def run_unicycler_no_long(short_1, short_2, args, all_quast_results, simple_quas
         quit_with_error('Unicycler encountered an error:\n' + e.output.decode())
     unicycler_time = time.time() - unicycler_start_time
     run_quast(unicycler_assembly, args, all_quast_results, simple_quast_results, 'Unicycler',
-              0, 0.0, unicycler_time)
+              0, 0.0, unicycler_time, run_name, unicycler_dir)
 
     clean_up_unicycler_dir(unicycler_dir)
     return os.path.abspath(unicycler_dir)
@@ -932,11 +915,8 @@ def run_unicycler_no_long(short_1, short_2, args, all_quast_results, simple_quas
 def run_unicycler_all_long(short_1, short_2, long, args, long_read_count, long_read_depth,
                            all_quast_results, simple_quast_results, unicycler_no_long_dir):
     run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', args.reference,
-                                                            long_read_depth, long_read_count)
+                                                            long_read_depth, args)
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
-    existing_dir = check_for_existing_assembly(unicycler_assembly)
-    if existing_dir:
-        return os.path.abspath(existing_dir)
 
     if not os.path.exists(unicycler_dir):
         os.makedirs(unicycler_dir)
@@ -955,7 +935,7 @@ def run_unicycler_all_long(short_1, short_2, long, args, long_read_count, long_r
                          '--keep_temp', '1',
                          '--threads', str(args.threads),
                          '--verbosity', '2']
-    print(' '.join(unicycler_command))
+    print(' '.join(unicycler_command), flush=True)
     try:
         unicycler_out = subprocess.check_output(unicycler_command, stderr=subprocess.STDOUT)
         with open(os.path.join(unicycler_dir, 'unicycler.out'), 'wb') as f:
@@ -964,21 +944,18 @@ def run_unicycler_all_long(short_1, short_2, long, args, long_read_count, long_r
         quit_with_error('Unicycler encountered an error:\n' + e.output.decode())
     unicycler_time = time.time() - unicycler_start_time
     run_quast(unicycler_assembly, args, all_quast_results, simple_quast_results, 'Unicycler',
-              long_read_count, long_read_depth, unicycler_time)
+              long_read_count, long_read_depth, unicycler_time, run_name, unicycler_dir)
 
     clean_up_unicycler_dir(unicycler_dir)
     return os.path.abspath(unicycler_dir)
 
 
 def run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled_filename,
-                                  args, subsampled_count, subsampled_depth,
-                                  all_quast_results, simple_quast_results, unicycler_all_long_dir):
+                                  args, subsampled_count, subsampled_depth, all_quast_results,
+                                  simple_quast_results, unicycler_all_long_dir):
     run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', args.reference,
-                                                            subsampled_depth, subsampled_count)
+                                                            subsampled_depth, args)
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
-    existing_dir = check_for_existing_assembly(unicycler_assembly)
-    if existing_dir:
-        return os.path.abspath(existing_dir)
 
     if not os.path.exists(unicycler_dir):
         os.makedirs(unicycler_dir)
@@ -1009,7 +986,7 @@ def run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled
                          '--keep_temp', '0',
                          '--threads', str(args.threads),
                          '--verbosity', '2']
-    print(' '.join(unicycler_command))
+    print(' '.join(unicycler_command), flush=True)
     try:
         unicycler_out = subprocess.check_output(unicycler_command, stderr=subprocess.STDOUT)
         with open(os.path.join(unicycler_dir, 'unicycler.out'), 'wb') as f:
@@ -1018,7 +995,7 @@ def run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled
         quit_with_error('Unicycler encountered an error:\n' + e.output.decode())
     unicycler_time = time.time() - unicycler_start_time
     run_quast(unicycler_assembly, args, all_quast_results, simple_quast_results, 'Unicycler',
-              subsampled_count, subsampled_depth, unicycler_time)
+              subsampled_count, subsampled_depth, unicycler_time, run_name, unicycler_dir)
 
     clean_up_unicycler_dir(unicycler_dir)
     return os.path.abspath(unicycler_dir)
@@ -1107,11 +1084,8 @@ def create_quast_results_tables():
 
 
 def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler_name,
-              long_read_count, long_read_depth, run_time):
+              long_read_count, long_read_depth, run_time, run_name, run_dir_name):
     reference_name = get_reference_name_from_filename(args.reference)
-    run_name, run_dir_name = get_run_name_and_run_dir_name(assembler_name, args.reference,
-                                                           long_read_depth, long_read_count)
-
     long_read_acc = float_to_str(args.long_acc, 1) if long_read_count > 0 else ''
     long_read_len = str(args.long_len) if long_read_count > 0 else ''
 
@@ -1139,7 +1113,7 @@ def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler
                          '-o', quast_dir,
                          '-l', '"' + run_name.replace(',', '') + '"',
                          '--threads', str(args.threads)]
-        print(' '.join(quast_command))
+        print(' '.join(quast_command), flush=True)
         try:
             subprocess.check_output(quast_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
@@ -1242,13 +1216,19 @@ def get_relative_depths(reference):
     return [x / longest_depth for x in relative_depths]
 
 
-def get_run_name_and_run_dir_name(assembler_name, reference, long_read_depth, long_read_count):
+def get_run_name_and_run_dir_name(assembler_name, reference, long_read_depth, args):
     ref_name = get_reference_name_from_filename(reference)
-    random_run_num = str(random.randint(1000000, 9999999))
-    run_name = ref_name + ', ' + assembler_name + ', ' + str(long_read_count) + ' long reads, ' + \
-        float_to_str(long_read_depth, 3) + 'x'
-    run_dir_name = assembler_name + '_' + float_to_str(long_read_depth, 3) + 'x_' + random_run_num
-    run_dir_name = run_dir_name.replace(',', '_').replace(' ', '_').replace('.', '_')
+    read_accuracy = '{0:g}'.format(args.long_acc)
+    read_length = '{0:g}'.format(args.long_len)
+    read_depth = '{:0>5.2f}'.format(long_read_depth)
+    run_name = ref_name + ', ' + assembler_name
+    run_dir_name = assembler_name
+    if long_read_depth > 0.0:
+        run_name += ', ' + read_accuracy + '%, ' + read_length + ' bp'
+        run_dir_name += '_' + read_accuracy + '_' + read_length
+    run_name += ', ' + read_depth + 'x'
+    run_dir_name += '_' + read_depth + 'x'
+    run_dir_name = run_dir_name.replace(',', '_').replace(' ', '_')
     return run_name, os.path.abspath(run_dir_name)
 
 
@@ -1291,7 +1271,7 @@ def clean_up_unicycler_dir(unicycler_dir):
     """
     for item in os.listdir(unicycler_dir):
         path = os.path.join(unicycler_dir, item)
-        if 'assembly.gfa' in path or 'assembly.fasta' in path or 'read_alignment_temp' in path or \
+        if 'gfa' in path or 'assembly.fasta' in path or 'read_alignment_temp' in path or \
                 '001_unbridged_graph.gfa' in path or 'unicycler.out' in path:
             continue
         if os.path.isfile(path):
@@ -1339,9 +1319,10 @@ def check_for_existing_assembly(assembly_path):
 def get_next_available_set_number(starting_path, num):
     while True:
         dir_name = str(num).rjust(6, '0')
-        if not os.path.exists(os.path.join(starting_path, dir_name)):
-            os.makedirs(dir_name)
-            return dir_name, num
+        full_dir_path = os.path.join(starting_path, dir_name)
+        if not os.path.exists(full_dir_path):
+            os.makedirs(full_dir_path)
+            return full_dir_path, num
         num += 1
 
 

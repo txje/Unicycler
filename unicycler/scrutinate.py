@@ -54,7 +54,7 @@ def main():
                                      args.temp_dir, args.graphmap_path, args.threads,
                                      scoring_scheme, args.low_score, not args.no_graphmap,
                                      args.keep_bad, args.kmer, args.min_len, args.sam,
-                                     full_command, VERBOSITY)
+                                     full_command, False, VERBOSITY)
 
     alignments = load_sam_alignments(args.sam, read_dict, reference_dict, scoring_scheme,
                                      args.threads, VERBOSITY)

@@ -240,6 +240,19 @@ class AssemblyGraph(object):
             fasta.write('>' + str(segment.number) + '\n')
             fasta.write(add_line_breaks_to_sequence(segment.forward_sequence, 60))
 
+    @staticmethod
+    def save_specific_segments_to_fasta(filename, segments, verbosity=0):
+        """
+        Saves the given segments (only forward sequences) to a FASTA file.
+        """
+        fasta = open(filename, 'w')
+        if verbosity > 0:
+            print('\nSaving', filename)
+        sorted_segments = sorted(segments, key=lambda x: x.number)
+        for segment in sorted_segments:
+            fasta.write('>' + str(segment.number) + '\n')
+            fasta.write(add_line_breaks_to_sequence(segment.forward_sequence, 60))
+
     def save_to_fastg(self, filename, verbosity=0):
         """
         Saves whole graph to a SPAdes-style FASTG file.

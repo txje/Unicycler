@@ -17,7 +17,23 @@
 char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
                            double expectedSlope, KmerPositions * refKmerPositions,
                            int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore,
-                           double lowScoreThreshold, bool returnBad, int kSize) {
+                           double lowScoreThreshold, bool returnBad, int kSize,
+                           bool extraSensitive) {
+    // Choose settings based on the sensitivity.
+    int badLineCountSingleAlignment;
+    int badLineCountEntireRead;
+    int badLineCountPartialRead;
+    if (extraSensitive) {
+        badLineCountSingleAlignment = BAD_LINE_COUNT_SINGLE_ALIGNMENT_EXTRA_SENSITIVE;
+        badLineCountEntireRead = BAD_LINE_COUNT_ENTIRE_READ_EXTRA_SENSITIVE;
+        badLineCountPartialRead = BAD_LINE_COUNT_PARTIAL_READ_EXTRA_SENSITIVE;
+    }
+    else {
+        badLineCountSingleAlignment = BAD_LINE_COUNT_SINGLE_ALIGNMENT;
+        badLineCountEntireRead = BAD_LINE_COUNT_ENTIRE_READ;
+        badLineCountPartialRead = BAD_LINE_COUNT_PARTIAL_READ;
+    }
+
     // This string will collect all of the console output for the alignment.
     std::string output;
 
@@ -178,13 +194,13 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
         }
 
         if (oneAlignmentWholeRead)
-            needMoreAlignments = (badAlignmentCount < BAD_LINE_COUNT_SINGLE_ALIGNMENT);
+            needMoreAlignments = (badAlignmentCount < badLineCountSingleAlignment);
         else {
             entireReadAligned = (fractionOfReadAligned(goodAlignments) == 1.0);
             if (entireReadAligned)
-                needMoreAlignments = (badAlignmentCount < BAD_LINE_COUNT_ENTIRE_READ);
+                needMoreAlignments = (badAlignmentCount < badLineCountEntireRead);
             else
-                needMoreAlignments = (badAlignmentCount < BAD_LINE_COUNT_PARTIAL_READ);
+                needMoreAlignments = (badAlignmentCount < badLineCountPartialRead);
         }
     }
 

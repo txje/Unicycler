@@ -19,29 +19,30 @@ C_LIB = CDLL(SO_FILE_FULL)
 # This is the big semi-global C++ Seqan alignment function at the heart of the aligner.
 C_LIB.semiGlobalAlignment.argtypes = [c_char_p,  # Read name
                                       c_char_p,  # Read sequence
-                                      c_int,  # Verbosity
+                                      c_int,     # Verbosity
                                       c_double,  # Expected slope
                                       c_void_p,  # KmerPositions pointer
-                                      c_int,  # Match score
-                                      c_int,  # Mismatch score
-                                      c_int,  # Gap open score
-                                      c_int,  # Gap extension score
+                                      c_int,     # Match score
+                                      c_int,     # Mismatch score
+                                      c_int,     # Gap open score
+                                      c_int,     # Gap extension score
                                       c_double,  # Low score threshold
-                                      c_bool,  # Return bad alignments
-                                      c_int]  # K-mer size
-C_LIB.semiGlobalAlignment.restype = c_void_p  # String describing alignments
+                                      c_bool,    # Return bad alignments
+                                      c_int,     # K-mer size
+                                      c_bool]    # Perform slow but extra sensitive alignment
+C_LIB.semiGlobalAlignment.restype = c_void_p     # String describing alignments
 
 
 def semi_global_alignment(read_name, read_sequence, verbosity, expected_slope, kmer_positions_ptr,
                           match_score, mismatch_score, gap_open_score, gap_extend_score,
-                          low_score_threshold, keep_bad, kmer_size):
+                          low_score_threshold, keep_bad, kmer_size, extra_sensitive):
     """
     Python wrapper for semiGlobalAlignment C++ function.
     """
     ptr = C_LIB.semiGlobalAlignment(read_name.encode('utf-8'), read_sequence.encode('utf-8'),
                                     verbosity, expected_slope, kmer_positions_ptr,
                                     match_score, mismatch_score, gap_open_score, gap_extend_score,
-                                    low_score_threshold, keep_bad, kmer_size)
+                                    low_score_threshold, keep_bad, kmer_size, extra_sensitive)
     return c_string_to_python_string(ptr)
 
 

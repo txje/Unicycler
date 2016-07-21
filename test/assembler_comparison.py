@@ -78,11 +78,16 @@ def main():
 
         # Run ABySS, SPAdes and Unicycler on short read data alone.
         args.long_acc, args.long_len = 0.0, 0
-        abyss_dir = run_abyss(short_1, short_2, args, quast_results, simple_quast_results)
-        spades_no_long_dir = run_regular_spades(short_1, short_2, args, quast_results,
-                                                simple_quast_results)
-        unicycler_no_long_dir = run_unicycler_no_long(short_1, short_2, args, quast_results,
-                                                      simple_quast_results)
+        if not args.no_cerulean:
+            abyss_dir = run_abyss(short_1, short_2, args, quast_results, simple_quast_results)
+        if not args.no_spades:
+            spades_no_long_dir = run_regular_spades(short_1, short_2, args, quast_results,
+                                                    simple_quast_results)
+        if not args.no_unicycler:
+            unicycler_no_long_dir = run_unicycler_no_long(short_1, short_2, args, quast_results,
+                                                          simple_quast_results)
+        else:
+            unicycler_no_long_dir = None
 
         for accuracy, length in accuracies_and_lengths:
             args.long_acc, args.long_len = accuracy, length
@@ -92,26 +97,37 @@ def main():
 
             # Run Unicycler on the full set of long reads - will be the source of alignments for
             # subsampled Unicycler runs.
-            unicycler_all_long_dir = run_unicycler_all_long(short_1, short_2, long_filename, args,
-                                                            long_read_count, long_read_depth,
-                                                            quast_results, simple_quast_results,
-                                                            unicycler_no_long_dir)
+            if not args.no_unicycler:
+                unicycler_all_long_dir = run_unicycler_all_long(short_1, short_2, long_filename,
+                                                                args, long_read_count,
+                                                                long_read_depth, quast_results,
+                                                                simple_quast_results,
+                                                                unicycler_no_long_dir)
+            else:
+                unicycler_all_long_dir = None
 
             # Run hybridSPAdes on the full set of long reads.
-            run_hybrid_spades(short_1, short_2, long_filename, long_read_count, long_read_depth,
-                              args, quast_results, simple_quast_results, spades_no_long_dir)
+            if not args.no_spades:
+                run_hybrid_spades(short_1, short_2, long_filename, long_read_count, long_read_depth,
+                                  args, quast_results, simple_quast_results, spades_no_long_dir)
 
             # Run npScarf on the full set of long reads - will be the source of alignments for
             # subsampled npScarf runs.
-            np_scarf_all_long_dir = run_np_scarf(long_filename, long_reads, long_read_count,
-                                                 long_read_depth, args, quast_results,
-                                                 simple_quast_results, spades_no_long_dir)
+            if not args.no_npscarf:
+                np_scarf_all_long_dir = run_np_scarf(long_filename, long_reads, long_read_count,
+                                                     long_read_depth, args, quast_results,
+                                                     simple_quast_results, spades_no_long_dir)
+            else:
+                np_scarf_all_long_dir = None
 
             # Run Cerulean on the full set of long reads - will be the source of alignments for
             # subsampled Cerulean runs.
-            cerulean_all_long_dir = run_cerulean(long_filename, long_reads, long_read_count,
-                                                 long_read_depth, args, quast_results,
-                                                 simple_quast_results, abyss_dir, i)
+            if not args.no_cerulean:
+                cerulean_all_long_dir = run_cerulean(long_filename, long_reads, long_read_count,
+                                                     long_read_depth, args, quast_results,
+                                                     simple_quast_results, abyss_dir, i)
+            else:
+                cerulean_all_long_dir = None
 
             # Randomly subsample this read set.
             subsampled_counts = subsample(long_read_count, args.subsample_count)
@@ -137,27 +153,33 @@ def main():
                 # Run Unicycler on the subsampled long reads. This should be relatively fast,
                 # because we can skip the short read assembly and the alignment. The polishing
                 # step still takes a while, though.
-                run_unicycler_subsampled_long(short_1, short_2, subsampled_reads,
-                                              subsampled_filename, args, subsampled_count,
-                                              subsampled_long_read_depth, quast_results,
-                                              simple_quast_results, unicycler_all_long_dir)
+                if not args.no_unicycler:
+                    run_unicycler_subsampled_long(short_1, short_2, subsampled_reads,
+                                                  subsampled_filename, args, subsampled_count,
+                                                  subsampled_long_read_depth, quast_results,
+                                                  simple_quast_results, unicycler_all_long_dir)
 
                 # Run hybridSPAdes on the subsampled long reads.
-                run_hybrid_spades(short_1, short_2, subsampled_filename, subsampled_count,
-                                  subsampled_long_read_depth, args, quast_results,
-                                  simple_quast_results, spades_no_long_dir)
+                if not args.no_spades:
+                    run_hybrid_spades(short_1, short_2, subsampled_filename, subsampled_count,
+                                      subsampled_long_read_depth, args, quast_results,
+                                      simple_quast_results, spades_no_long_dir)
 
                 # Run npScarf on the subsampled long reads. This is very fast because we can skip
                 # the alignment step.
-                run_np_scarf(subsampled_filename, subsampled_reads, subsampled_count,
-                             subsampled_long_read_depth, args, quast_results, simple_quast_results,
-                             spades_no_long_dir, np_scarf_all_long_dir=np_scarf_all_long_dir)
+                if not args.no_npscarf:
+                    run_np_scarf(subsampled_filename, subsampled_reads, subsampled_count,
+                                 subsampled_long_read_depth, args, quast_results,
+                                 simple_quast_results, spades_no_long_dir,
+                                 np_scarf_all_long_dir=np_scarf_all_long_dir)
 
                 # Run Cerulean on the subsampled long reads. The BLASR alignments can be subsampled
                 # from the full long read run, which saves some time.
-                run_cerulean(subsampled_filename, subsampled_reads, subsampled_count,
-                             subsampled_long_read_depth, args, quast_results, simple_quast_results,
-                             abyss_dir, cerulean_all_long_dir=cerulean_all_long_dir)
+                if not args.no_cerulean:
+                    run_cerulean(subsampled_filename, subsampled_reads, subsampled_count,
+                                 subsampled_long_read_depth, args, quast_results,
+                                 simple_quast_results, abyss_dir,
+                                 cerulean_all_long_dir=cerulean_all_long_dir)
 
 
 def get_args():
@@ -184,6 +206,14 @@ def get_args():
                         help='Number of CPU threads')
     parser.add_argument('--subsample_count', type=int, required=False, default=4,
                         help='Number of times to subsample long reads')
+    parser.add_argument('--no_cerulean', action='store_true',
+                        help='Skips Cerulean and ABySS assemblies')
+    parser.add_argument('--no_npscarf', action='store_true',
+                        help='Skips npScarf assemblies')
+    parser.add_argument('--no_spades', action='store_true',
+                        help='Skips SPAdes and hybridSPAdes assemblies')
+    parser.add_argument('--no_unicycler', action='store_true',
+                        help='Skips Unicycler assemblies')
 
     args = parser.parse_args()
     args.reference = os.path.abspath(args.reference)

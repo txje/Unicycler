@@ -88,7 +88,7 @@ def main():
                                  args.temp_dir, args.graphmap_path, args.threads, scoring_scheme,
                                  args.low_score, not args.no_graphmap, args.keep_bad, args.kmer,
                                  args.min_len, args.sam, full_command, args.allowed_overlap,
-                                 VERBOSITY)
+                                 args.extra_sensitive, VERBOSITY)
     sys.exit(0)
 
 
@@ -106,9 +106,11 @@ def get_arguments():
                         help='FASTQ or FASTA file of long reads')
     parser.add_argument('--sam', type=str, required=True, default=argparse.SUPPRESS,
                         help='SAM file of resulting alignments')
-
-    add_aligning_arguments(parser, False)
-
+    parser.add_argument('--extra_sensitive', action='store_true',
+                        help='Perform slow but very sensitive alignment')
+    parser.add_argument('--threads', type=int, required=False, default=argparse.SUPPRESS,
+                        help='Number of CPU threads used to align (default: the number of '
+                             'available CPUs)')
     parser.add_argument('--threads', type=int, required=False, default=argparse.SUPPRESS,
                         help='Number of CPU threads used to align (default: the number of '
                              'available CPUs)')
@@ -214,7 +216,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
                                  temp_dir, graphmap_path, threads, scoring_scheme,
                                  low_score_threshold, use_graphmap, keep_bad, kmer_size,
                                  min_align_length, sam_filename, full_command, allowed_overlap,
-                                 verbosity=None):
+                                 extra_sensitive, verbosity=None):
     """
     This function does the primary work of this module: aligning long reads to references in an
     end-gap-free, semi-global manner. It returns a list of Read objects which contain their
@@ -377,7 +379,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         for read in reads_to_align:
             output = seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
                                      low_score_threshold, keep_bad, kmer_size, min_align_length,
-                                     sam_filename, allowed_overlap, use_graphmap)
+                                     sam_filename, allowed_overlap, use_graphmap, extra_sensitive)
             completed_count += 1
             if VERBOSITY == 1:
                 print_progress_line(completed_count, num_realignments, prefix='Read: ')
@@ -391,7 +393,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         for read in reads_to_align:
             arg_list.append((read, reference_dict, scoring_scheme, kmer_positions_ptr,
                              low_score_threshold, keep_bad, kmer_size, min_align_length,
-                             sam_filename, allowed_overlap, use_graphmap))
+                             sam_filename, allowed_overlap, use_graphmap, extra_sensitive))
 
         # If the verbosity is 1, then the order doesn't matter, so use imap_unordered to deliver
         # the results evenly. If the verbosity is higher, deliver the results in order with imap.
@@ -688,15 +690,16 @@ def seqan_alignment_one_arg(all_args):
     in a thread pool.
     """
     read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold, keep_bad, \
-        kmer_size, min_align_length, sam_filename, allowed_overlap, used_graphmap = all_args
+        kmer_size, min_align_length, sam_filename, allowed_overlap, used_graphmap, \
+        extra_sensitive = all_args
     return seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
                            low_score_threshold, keep_bad, kmer_size, min_align_length,
-                           sam_filename, allowed_overlap, used_graphmap)
+                           sam_filename, allowed_overlap, used_graphmap, extra_sensitive)
 
 
 def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold,
                     keep_bad, kmer_size, min_align_length, sam_filename, allowed_overlap,
-                    used_graphmap):
+                    used_graphmap, extra_sensitive):
     """
     Aligns a single read against all reference sequences using Seqan.
     """
@@ -730,7 +733,8 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
                                     EXPECTED_SLOPE, kmer_positions_ptr,
                                     scoring_scheme.match, scoring_scheme.mismatch,
                                     scoring_scheme.gap_open, scoring_scheme.gap_extend,
-                                    low_score_threshold, keep_bad, kmer_size).split(';')
+                                    low_score_threshold, keep_bad, kmer_size,
+                                    extra_sensitive).split(';')
     alignment_strings = results[:-1]
     output += results[-1]
 

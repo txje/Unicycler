@@ -107,10 +107,13 @@ def main():
         alignment_dir = os.path.join(args.out, 'read_alignment_temp')
         if not os.path.exists(alignment_dir):
             os.makedirs(alignment_dir)
-        graph_fasta = os.path.join(alignment_dir, 'graph_segments.fasta')
+        graph_fasta = os.path.join(alignment_dir, 'all_segments.fasta')
+        single_copy_segments_fasta = os.path.join(alignment_dir, 'single_copy_segments.fasta')
         alignments_sam = os.path.join(alignment_dir, 'long_read_alignments.sam')
         temp_alignment_dir = os.path.join(alignment_dir, 'temp')
         unbridged_graph.save_to_fasta(graph_fasta)
+        unbridged_graph.save_specific_segments_to_fasta(single_copy_segments_fasta,
+                                                        single_copy_segments)
         scoring_scheme = AlignmentScoringScheme(args.scores)
         min_alignment_length = unbridged_graph.overlap * 2  # TO DO: make this a parameter?
 
@@ -142,6 +145,7 @@ def main():
                                          not args.no_graphmap, False, args.kmer,
                                          min_alignment_length, alignments_sam_in_progress,
                                          full_command, allowed_overlap, verbosity)
+
             shutil.move(alignments_sam_in_progress, alignments_sam)
             if args.keep_temp < 1:
                 shutil.rmtree(alignment_dir)

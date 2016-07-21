@@ -102,20 +102,20 @@ def main():
     spades_bridged_graph_merged = os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa')
     graph.save_to_gfa(spades_bridged_graph_merged, verbosity)
 
-    # Prepare the directory for long read alignment.
+    # Prepare for long read alignment.
+    alignment_dir = os.path.join(args.out, 'read_alignment_temp')
+    graph_fasta = os.path.join(alignment_dir, 'all_segments.fasta')
+    single_copy_segments_fasta = os.path.join(alignment_dir, 'single_copy_segments.fasta')
+    alignments_sam = os.path.join(alignment_dir, 'long_read_alignments.sam')
+    temp_alignment_dir = os.path.join(alignment_dir, 'temp')
+    scoring_scheme = AlignmentScoringScheme(args.scores)
+    min_alignment_length = unbridged_graph.overlap * 2  # TO DO: make this a parameter?
     if not args.no_long:
-        alignment_dir = os.path.join(args.out, 'read_alignment_temp')
         if not os.path.exists(alignment_dir):
             os.makedirs(alignment_dir)
-        graph_fasta = os.path.join(alignment_dir, 'all_segments.fasta')
-        single_copy_segments_fasta = os.path.join(alignment_dir, 'single_copy_segments.fasta')
-        alignments_sam = os.path.join(alignment_dir, 'long_read_alignments.sam')
-        temp_alignment_dir = os.path.join(alignment_dir, 'temp')
         unbridged_graph.save_to_fasta(graph_fasta)
         unbridged_graph.save_specific_segments_to_fasta(single_copy_segments_fasta,
                                                         single_copy_segments)
-        scoring_scheme = AlignmentScoringScheme(args.scores)
-        min_alignment_length = unbridged_graph.overlap * 2  # TO DO: make this a parameter?
 
     # If all long reads are available now, then we do the entire process in one pass.
     if args.long:
@@ -137,16 +137,35 @@ def main():
 
         # Conduct alignment if existing alignments are not available.
         else:
-            alignments_sam_in_progress = alignments_sam + '.incomplete'
+            alignments_in_progress = alignments_sam + '.incomplete'
             allowed_overlap = int(round(unbridged_graph.overlap * 1.1))  # TO DO: adjust?
             semi_global_align_long_reads(references, graph_fasta, read_dict, read_names,
                                          args.long, temp_alignment_dir, args.graphmap_path,
                                          args.threads, scoring_scheme, args.low_score,
                                          not args.no_graphmap, False, args.kmer,
-                                         min_alignment_length, alignments_sam_in_progress,
-                                         full_command, allowed_overlap, verbosity)
+                                         min_alignment_length, alignments_in_progress,
+                                         full_command, allowed_overlap, False, verbosity)
 
-            shutil.move(alignments_sam_in_progress, alignments_sam)
+            # Look for all reads which have overlapping alignments and run them again with extra
+            # sensitivity against only the single-copy segments.
+            overlapping_reads = [x for x in read_dict.values()
+                                 if not x.has_one_contained_alignment()]
+            if overlapping_reads:
+                alignments_in_progress_2 = alignments_sam + '_2.incomplete'
+                semi_global_align_long_reads(references, single_copy_segments_fasta, read_dict,
+                                             read_names, args.long, temp_alignment_dir,
+                                             args.graphmap_path, args.threads, scoring_scheme,
+                                             args.low_score, not args.no_graphmap, False, args.kmer,
+                                             min_alignment_length, alignments_in_progress_2,
+                                             full_command, allowed_overlap, True, verbosity)
+                with open(alignments_in_progress, 'at') as alignments_1:
+                    with open(alignments_in_progress_2, 'rt') as alignments_2:
+                        for line in alignments_2:
+                            if not line.startswith('@'):
+                                alignments_1.write(line)
+                os.remove(alignments_in_progress_2)
+
+            shutil.move(alignments_in_progress, alignments_sam)
             if args.keep_temp < 1:
                 shutil.rmtree(alignment_dir)
 

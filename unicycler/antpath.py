@@ -106,11 +106,11 @@ def get_arguments():
                         help='FASTQ or FASTA file of long reads')
     parser.add_argument('--sam', type=str, required=True, default=argparse.SUPPRESS,
                         help='SAM file of resulting alignments')
+
+    add_aligning_arguments(parser, False)
+
     parser.add_argument('--extra_sensitive', action='store_true',
                         help='Perform slow but very sensitive alignment')
-    parser.add_argument('--threads', type=int, required=False, default=argparse.SUPPRESS,
-                        help='Number of CPU threads used to align (default: the number of '
-                             'available CPUs)')
     parser.add_argument('--threads', type=int, required=False, default=argparse.SUPPRESS,
                         help='Number of CPU threads used to align (default: the number of '
                              'available CPUs)')

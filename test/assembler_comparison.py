@@ -199,7 +199,7 @@ def get_args():
                         help='Mean lengths for long reads (comma delimited)')
     parser.add_argument('--model_qc', type=str, default='model_qc_clr',
                         help='Model QC file for pbsim')
-    parser.add_argument('--rotation_count', type=int, default=100, required=False,
+    parser.add_argument('--rotation_count', type=int, default=20, required=False,
                         help='The number of times to run read simulators with random start '
                              'positions')
     parser.add_argument('--threads', type=int, required=False, default=8,
@@ -327,26 +327,42 @@ def make_fake_long_reads(args):
 
     read_prefix = 1  # Used to prevent duplicate read names.
     for i, ref in enumerate(references):
-
+        ref_seq = ref[1]
+        ref_len = len(ref_seq)
         long_depth = relative_depths[i] * args.long_depth
-        long_depth_per_rotation = long_depth / args.rotation_count
+
+        rotation_count = args.rotation_count
+        long_depth_per_rotation = long_depth / rotation_count
+
+        while long_depth_per_rotation * ref_len < args.long_len and rotation_count > 1:
+            rotation_count = max(1, rotation_count // 2)
+            long_depth_per_rotation = long_depth / rotation_count
 
         ref_seq = ref[1]
-        for j in range(args.rotation_count):
+        for j in range(rotation_count):
 
             # Randomly rotate the sequence.
-            random_start = random.randint(0, len(ref_seq) - 1)
+            random_start = random.randint(0, ref_len - 1)
             rotated = ref_seq[random_start:] + ref_seq[:random_start]
+
+            # If the sequence is very short compared to the read length, then we duplicate the
+            # sequence. This is because PBSIM does weird stuff when you, for example, ask for 25 kb
+            # reads from an 8 kb sequence.
+            copy_adjusted_depth = long_depth_per_rotation
+            copy_adjusted_sequence = rotated
+            while len(copy_adjusted_sequence) < 5 * args.long_len:
+                copy_adjusted_sequence += copy_adjusted_sequence
+                copy_adjusted_depth /= 2.0
 
             # Save the rotated sequence to FASTA.
             temp_fasta_filename = 'temp_rotated.fasta'
             temp_fasta = open(temp_fasta_filename, 'w')
             temp_fasta.write('>' + ref[0] + '\n')
-            temp_fasta.write(rotated + '\n')
+            temp_fasta.write(copy_adjusted_sequence + '\n')
             temp_fasta.close()
 
-            long_reads += run_pbsim(temp_fasta_filename, long_depth_per_rotation, args,
-                                    str(read_prefix))
+            long_reads += run_pbsim(temp_fasta_filename, copy_adjusted_depth, args,
+                                    str(read_prefix), ref_len)
 
             os.remove(temp_fasta_filename)
             read_prefix += 1
@@ -469,18 +485,24 @@ def run_art(input_fasta, depth, read_prefix):
     return read_pairs
 
 
-def run_pbsim(input_fasta, depth, args, read_prefix):
+def run_pbsim(input_fasta, depth, args, read_prefix, seq_length):
+
+    # Reduce the max and mean sequence lengths when the reference sequence is short.
+    max_length = min(100000, seq_length)
+    mean_length = min(args.long_len, seq_length)
+
     pbsim_command = ['pbsim',
                      '--depth', str(depth),
                      '--length-min', '100',
-                     '--length-max', '100000',
+                     '--length-max', str(max_length),
                      '--accuracy-min', '0.5',
                      '--accuracy-max', '1.0',
                      '--model_qc', args.model_qc,
-                     '--length-mean', str(args.long_len),
-                     '--length-sd', str(args.long_len / 10),
+                     '--length-mean', str(mean_length),
+                     '--length-sd', str(mean_length / 10),
                      '--accuracy-mean', str(args.long_acc / 100.0),
-                     '--accuracy-sd', str(0.02),
+                     '--accuracy-sd', '0.02',
+                     '--seed', str(random.randint(0, 1000000)),
                      input_fasta]
     try:
         subprocess.check_output(pbsim_command, stderr=subprocess.STDOUT)

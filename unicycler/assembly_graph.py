@@ -9,7 +9,7 @@ import math
 from collections import deque, defaultdict
 from .misc import int_to_str, float_to_str, weighted_average, weighted_average_list, \
     print_section_header, get_num_agreement, reverse_complement
-from .bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge, get_bridge_str
+from .bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge
 from .cpp_function_wrappers import fully_global_alignment, path_alignment
 
 
@@ -243,7 +243,7 @@ class AssemblyGraph(object):
     @staticmethod
     def save_specific_segments_to_fasta(filename, segments, verbosity=0):
         """
-        Saves the given segments (only forward sequences) to a FASTA file.
+        Saves single copy segments (only forward sequences) to a FASTA file.
         """
         fasta = open(filename, 'w')
         if verbosity > 0:
@@ -1119,6 +1119,7 @@ class AssemblyGraph(object):
                 continue
 
             lowest_error = float('inf')
+            best_arrangement = None
             for i, arrangement in enumerate(arrangements):
                 error = self.get_error_for_multiple_segments_and_depths(connections, arrangement)
                 if i == 0 or error < lowest_error:
@@ -1406,6 +1407,12 @@ class AssemblyGraph(object):
         if verbosity > 1:
             print_section_header('Cleaning up leftover segments', verbosity, last_newline=False)
 
+        # For the purposes of this function, a graph segment which is a bridge counts as a graph
+        # segment used in a bridge.
+        for seg_num, seg in self.segments.items():
+            if seg.bridge is not None:
+                seg_nums_used_in_bridges.append(seg_num)
+
         # Graph components which contain no single-copy segments are deleted.
         single_copy_seg_nums = set(x.number for x in single_copy_segments)
         segment_nums_to_remove = []
@@ -1426,8 +1433,7 @@ class AssemblyGraph(object):
         connected_components = self.get_connected_components()
         for component_nums in connected_components:
             for seg_num in component_nums:
-                seg_is_not_bridge = self.segments[abs(seg_num)].bridge is None
-                if seg_is_not_bridge and abs(seg_num) not in seg_nums_used_in_bridges:
+                if abs(seg_num) not in seg_nums_used_in_bridges:
                     break
             else:
                 segment_nums_to_remove += component_nums
@@ -1484,21 +1490,6 @@ class AssemblyGraph(object):
                         break
             else:
                 break
-
-        # Clean up connected components which have been entirely used in bridges.
-        segment_nums_to_remove = []
-        connected_components = self.get_connected_components()
-        for component in connected_components:
-            component_seg_nums = [self.segments[x].number for x in component]
-            for component_seg_num in component_seg_nums:
-                if component_seg_num not in seg_nums_used_in_bridges:
-                    break
-            else:
-                segment_nums_to_remove += component_seg_nums
-        self.remove_segments(segment_nums_to_remove)
-        removed_segments += segment_nums_to_remove
-        if verbosity > 1 and segment_nums_to_remove:
-            print('\nRemoved segments used in bridges', ', '.join(str(x) for x in removed_segments))
 
         self.remove_small_components(min_component_size, verbosity)
         self.remove_small_dead_ends(min_dead_end_size, verbosity)
@@ -1943,8 +1934,8 @@ class AssemblyGraph(object):
     def get_simple_path(self, starting_seg):
         """
         Starting with the given segment, this function tries to expand outward as far as possible
-        while maintaining a simple (i.e. mergeable) path. If it can't expand at all, it will just
-        return a list of the starting segment.
+        while maintaining a simple (i.e. can be merged) path. If it can't expand at all, it will
+        just return a list of the starting segment.
         """
         simple_path = [starting_seg]
 
@@ -2929,7 +2920,7 @@ def find_replace_one_val_in_list(lst, val, replacement):
 
 def split_path(path, seg):
     """
-    If val is in the list, it returns multiple lists split at that point, excluding val.
+    If seg is in the path, it returns multiple paths split at that point, excluding seg.
     Sort of like the string split function, but it throws out lists of 1 (because they aren't
     useful as paths).
     """
@@ -2945,7 +2936,7 @@ def split_path(path, seg):
 
 def split_path_multiple(path, segs):
     """
-    Like split_path, but vals is a list of vals, all of which split the list.
+    Like split_path, but segs is a list, all of which split the path.
     """
     path_parts = [path]
     for seg in segs:

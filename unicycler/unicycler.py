@@ -148,14 +148,14 @@ def main():
 
             # Look for all reads which have overlapping alignments and run them again with extra
             # sensitivity against only the single-copy segments.
-            overlapping_reads = [x for x in read_dict.values()
-                                 if not x.has_one_contained_alignment()]
-            if overlapping_reads:
+            overlapping_read_names = [x.name for x in read_dict.values()
+                                      if not x.has_one_contained_alignment()]
+            if overlapping_read_names:
                 alignments_in_progress_2 = alignments_sam + '_2.incomplete'
                 semi_global_align_long_reads(references, single_copy_segments_fasta, read_dict,
-                                             read_names, args.long, temp_alignment_dir,
+                                             overlapping_read_names, args.long, temp_alignment_dir,
                                              args.graphmap_path, args.threads, scoring_scheme,
-                                             args.low_score, not args.no_graphmap, False, args.kmer,
+                                             args.low_score, False, False, args.kmer,
                                              min_alignment_length, alignments_in_progress_2,
                                              full_command, allowed_overlap, True, verbosity)
                 with open(alignments_in_progress, 'at') as alignments_1:

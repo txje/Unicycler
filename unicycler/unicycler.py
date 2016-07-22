@@ -153,12 +153,14 @@ def main():
                                          stdout_header='Aligning reads (first pass)')
             shutil.move(alignments_1_in_progress, alignments_1_sam)
 
-            # Run partially aligned reads again using more sensitive settings.
-            overlapping_read_names = [x.name for x in read_dict.values()
-                                      if x.get_fraction_aligned() < 1.0]
-            if overlapping_read_names:
+            # Reads with a lot of unaligned parts are tried again, this time on extra sensitive
+            # mode.
+            low_fraction_threshold = 0.9  # TO DO: MAKE THIS A PARAMETER?
+            low_fraction_read_names = [x.name for x in read_dict.values()
+                                       if x.get_fraction_aligned() < low_fraction_threshold]
+            if low_fraction_read_names:
                 semi_global_align_long_reads(references, single_copy_segments_fasta, read_dict,
-                                             overlapping_read_names, args.long, temp_alignment_dir,
+                                             low_fraction_read_names, args.long, temp_alignment_dir,
                                              args.graphmap_path, args.threads, scoring_scheme,
                                              low_score_threshold, False, False, args.kmer,
                                              min_alignment_length, alignments_2_in_progress,
@@ -170,7 +172,7 @@ def main():
                 # Now we have to put together a final SAM file. If a read is in the second pass,
                 # then we use the alignments from that SAM. Otherwise we take the alignments from
                 # the first SAM.
-                overlapping_read_names = set(overlapping_read_names)
+                low_fraction_read_names = set(low_fraction_read_names)
                 with open(alignments_sam, 'wt') as alignments_file:
                     with open(alignments_1_sam, 'rt') as alignments_1:
                         for line in alignments_1:
@@ -178,15 +180,15 @@ def main():
                                 alignments_file.write(line)
                             else:
                                 read_name = line.split('\t', 1)[0]
-                                if read_name not in overlapping_read_names:
+                                if read_name not in low_fraction_read_names:
                                     alignments_file.write(line)
                     with open(alignments_2_sam, 'rt') as alignments_2:
                         for line in alignments_2:
                             if not line.startswith('@'):
                                 alignments_file.write(line)
 
-            # If there are no overlapping alignments (that's unfortunate) we just rename the
-            # first pass SAM to the final SAM.
+            # If there are no low fraction reads, we can just rename the first pass SAM to the
+            # final SAM.
             else:
                 shutil.move(alignments_1_sam, alignments_sam)
 

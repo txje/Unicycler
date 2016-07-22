@@ -86,7 +86,7 @@ def main():
 
     semi_global_align_long_reads(references, args.ref, read_dict, read_names, args.reads,
                                  args.temp_dir, args.graphmap_path, args.threads, scoring_scheme,
-                                 args.low_score, not args.no_graphmap, args.keep_bad, args.kmer,
+                                 [args.low_score], not args.no_graphmap, args.keep_bad, args.kmer,
                                  args.min_len, args.sam, full_command, args.allowed_overlap,
                                  args.extra_sensitive, VERBOSITY)
     sys.exit(0)
@@ -214,9 +214,10 @@ def fix_up_arguments(args):
 
 def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, reads_fastq,
                                  temp_dir, graphmap_path, threads, scoring_scheme,
-                                 low_score_threshold, use_graphmap, keep_bad, kmer_size,
+                                 low_score_threshold_list, use_graphmap, keep_bad, kmer_size,
                                  min_align_length, sam_filename, full_command, allowed_overlap,
-                                 extra_sensitive, verbosity=None):
+                                 extra_sensitive, verbosity=None, stdout_header='Aligning reads',
+                                 display_low_score=True):
     """
     This function does the primary work of this module: aligning long reads to references in an
     end-gap-free, semi-global manner. It returns a list of Read objects which contain their
@@ -224,6 +225,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     If seqan_all is True, then every Alignment object will be refined by using Seqan.
     If seqan_all is False, then only the overlap alignments and a small set of long contained
     alignments will be run through Seqan.
+    The low score threshold is taken as a list so the function can alter it and the caller can
+    get the altered value.
     """
     if verbosity:
         global VERBOSITY
@@ -231,17 +234,20 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
 
     # If the user supplied a low score threshold, we use that. Otherwise, we'll use the median
     # score minus three times the MAD.
-    print_section_header('Determining low-score threshold', VERBOSITY)
+    if display_low_score:
+        print_section_header('Determining low-score threshold', VERBOSITY)
+    low_score_threshold = low_score_threshold_list[0]
     if low_score_threshold is not None:
-        if VERBOSITY > 0:
+        if VERBOSITY > 0 and display_low_score:
             print('Using user-supplied threshold: ' + float_to_str(low_score_threshold, 2))
     else:
-        if VERBOSITY > 0:
+        if VERBOSITY > 0 and display_low_score:
             print('Automatically choosing a threshold using random alignments.\n')
         std_devs_over_mean = 5
         low_score_threshold, rand_mean, rand_std_dev = get_auto_score_threshold(scoring_scheme,
                                                                                 std_devs_over_mean)
-        if VERBOSITY > 0:
+        low_score_threshold_list[0] = low_score_threshold
+        if VERBOSITY > 0 and display_low_score:
             print('Random alignment mean score: ' + float_to_str(rand_mean, 2))
             print('         standard deviation: ' + float_to_str(rand_std_dev, 2, rand_mean))
             print()
@@ -361,12 +367,12 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     else:
         reads_to_align = [read_dict[x] for x in read_names]
 
+    num_alignments = len(reads_to_align)
     if VERBOSITY > 0:
         if VERBOSITY < 3:
-            print_section_header('Aligning reads', VERBOSITY, last_newline=(VERBOSITY == 1))
+            print_section_header(stdout_header, VERBOSITY, last_newline=(VERBOSITY == 1))
     if VERBOSITY == 1:
-        num_realignments = len(reads_to_align)
-        print_progress_line(0, num_realignments, prefix='Read: ')
+        print_progress_line(0, num_alignments, prefix='Read: ')
     completed_count = 0
 
     # Create a C++ KmerPositions object and add each reference sequence.
@@ -382,9 +388,10 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
                                      sam_filename, allowed_overlap, use_graphmap, extra_sensitive)
             completed_count += 1
             if VERBOSITY == 1:
-                print_progress_line(completed_count, num_realignments, prefix='Read: ')
+                print_progress_line(completed_count, num_alignments, prefix='Read: ')
             if VERBOSITY > 1:
-                print(output, end='', flush=True)
+                fraction = str(completed_count) + '/' + str(num_alignments) + ': '
+                print('\n' + fraction + output[1:], end='', flush=True)
 
     # If multi-threaded, use a thread pool.
     else:
@@ -405,9 +412,10 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         for output in imap_function(seqan_alignment_one_arg, arg_list):
             completed_count += 1
             if VERBOSITY == 1:
-                print_progress_line(completed_count, num_realignments, prefix='Read: ')
+                print_progress_line(completed_count, num_alignments, prefix='Read: ')
             if VERBOSITY > 1:
-                print(output, end='', flush=True)
+                fraction = str(completed_count) + '/' + str(num_alignments) + ': '
+                print('\n' + fraction + output[1:], end='', flush=True)
 
     # We're done with the C++ KmerPositions object, so delete it now.
     delete_all_kmer_positions(kmer_positions_ptr)

@@ -52,7 +52,7 @@ def main():
     if must_perform_alignment:
         semi_global_align_long_reads(references, args.ref, read_dict, read_names, args.reads,
                                      args.temp_dir, args.graphmap_path, args.threads,
-                                     scoring_scheme, args.low_score, not args.no_graphmap,
+                                     scoring_scheme, [args.low_score], not args.no_graphmap,
                                      args.keep_bad, args.kmer, args.min_len, args.sam,
                                      full_command, False, VERBOSITY)
 

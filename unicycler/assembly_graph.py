@@ -1323,12 +1323,15 @@ class AssemblyGraph(object):
                                 reverse=True)
         for bridge in sorted_bridges:
 
-            # Is the bridge available to be applied? The only criterion is that neither the start
-            # nor end have been bridged in the proposed direction. It's okay if the bridge contains
-            # a single-copy segment which has already been used, because it's possible that the
-            # segment really isn't single-copy and should actually be used again.
+            # Is the bridge available to be applied? There are two criteria:
+            #   1) Neither the start nor end have been bridged in the proposed direction
+            #   2) Neither the start nor end have been used in another bridge
+            # It's okay if the bridge contains a single-copy segment which has already been used,
+            # because it's possible that the segment really isn't single-copy and should actually
+            # be used again.
             if self.start_end_available_to_bridge(bridge.start_segment, bridge.end_segment,
-                                                  right_bridged, left_bridged):
+                                                  right_bridged, left_bridged,
+                                                  seg_nums_used_in_bridges):
 
                 # If a bridge has multiple equally-good graph paths, then we can choose which one to
                 # use based on the availability of the path.
@@ -1384,11 +1387,14 @@ class AssemblyGraph(object):
         seg_nums_used_in_bridges.extend([abs(x) for x in bridge.graph_path])
 
     @staticmethod
-    def start_end_available_to_bridge(start, end, right_bridged, left_bridged):
+    def start_end_available_to_bridge(start, end, right_bridged, left_bridged,
+                                      seg_nums_used_in_bridges):
         """
         Checks whether the start and end segments can be bridged together (i.e. that they are both
-        unbridged on the relevant sides).
+        unbridged on the relevant sides and not yet used in a bridge).
         """
+        if abs(start) in seg_nums_used_in_bridges or abs(end) in seg_nums_used_in_bridges:
+            return False
         if start > 0 and start in right_bridged:
             return False
         if start < 0 and -start in left_bridged:

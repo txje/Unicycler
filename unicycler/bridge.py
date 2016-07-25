@@ -752,9 +752,16 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
                 if i < len(available_alignments) - 1:
                     alignment_1 = available_alignments[i]
                     alignment_2 = available_alignments[i + 1]
-                else:  # i == len(available_alignments) - 1
+
+                # Special case: when the first and last alignments are to the same graph segment,
+                # make a bridge for them, even if they aren't a particularly high scoring pair of
+                # alignments. This can help to circularise plasmids which are very tied up with
+                # other, similar plasmids.
+                elif available_alignments[0].ref.name == available_alignments[-1].ref.name:
                     alignment_1 = available_alignments[0]
                     alignment_2 = available_alignments[-1]
+                else:
+                    continue
 
                 # Standardise the order so we don't end up with both directions (e.g. 5 to -6 and
                 # 6 to -5) in spanning_read_seqs.

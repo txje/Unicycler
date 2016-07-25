@@ -1315,6 +1315,7 @@ class AssemblyGraph(object):
         right_bridged = set()
         left_bridged = set()
         seg_nums_used_in_bridges = []
+        applied_bridges = []
 
         # Sort bridges first by type: LongReadBridge, SpadesContigBridge and then
         # LoopUnrollingBridge. Then sort by quality so within each type we apply the best bridges
@@ -1323,26 +1324,51 @@ class AssemblyGraph(object):
                                 reverse=True)
         for bridge in sorted_bridges:
 
-            # Is the bridge available to be applied? There are two criteria:
-            #   1) Neither the start nor end have been bridged in the proposed direction
-            #   2) Neither the start nor end have been used in another bridge
-            # It's okay if the bridge contains a single-copy segment which has already been used,
-            # because it's possible that the segment really isn't single-copy and should actually
-            # be used again.
-            if self.start_end_available_to_bridge(bridge.start_segment, bridge.end_segment,
-                                                  right_bridged, left_bridged,
-                                                  seg_nums_used_in_bridges):
-
-                # If a bridge has multiple equally-good graph paths, then we can choose which one to
-                # use based on the availability of the path.
+            # Is the bridge available to be applied? The first criterion is simple: neither the
+            # start nor end can have already been bridged in the proposed direction.
+            can_use_bridge = self.start_end_available_to_bridge(bridge.start_segment,
+                                                                bridge.end_segment,
+                                                                right_bridged, left_bridged)
+            if can_use_bridge:
+                # If a bridge has multiple equally-good graph paths, then we can choose which one
+                # to use based on the availability of the path.
                 if isinstance(bridge, LongReadBridge) and len(bridge.all_best_paths) > 1:
                     bridge.set_path_based_on_availability(self)
 
-                # If the bridge's quality is high enough, apply it!
+                # The second criterion for whether the bridge can be applied is a bit trickier. We
+                # need to check whether either the start or end segment has already been used the
+                # path of a different bridge. That alone isn't necessarily a problem, and since
+                # single-copy determination can make mistakes we want to allow for this sort of
+                # thing. But it is a problem if the start or end segment has been used in a
+                # bridge that happens starts or ends in this bridge. That arrangement (two bridges,
+                # each of which end inside the other's path) can break up the graph if they are
+                # both applied, so don't apply this bridge if such a case exists.
+                bridges_using_this_segment = []
+                if abs(bridge.start_segment) in seg_nums_used_in_bridges:
+                    for applied_bridge in applied_bridges:
+                        segs_in_applied_bridge_path = set(abs(x) for x in applied_bridge.graph_path)
+                        if abs(bridge.start_segment) in segs_in_applied_bridge_path:
+                            bridges_using_this_segment.append(applied_bridge)
+                if abs(bridge.end_segment) in seg_nums_used_in_bridges:
+                    for applied_bridge in applied_bridges:
+                        segs_in_applied_bridge_path = set(abs(x) for x in applied_bridge.graph_path)
+                        if abs(bridge.end_segment) in segs_in_applied_bridge_path:
+                            bridges_using_this_segment.append(applied_bridge)
+                if bridges_using_this_segment:
+                    segs_in_path = set(abs(x) for x in bridge.graph_path)
+                    for bridge_using_this_segment in bridges_using_this_segment:
+                        if abs(bridge_using_this_segment.start_segment) in segs_in_path or \
+                                abs(bridge_using_this_segment.end_segment) in segs_in_path:
+                            can_use_bridge = False
+
+            if can_use_bridge:
+                # Even if there's no conflict with other bridges, the quality still needs to be
+                # high enough for this bridge to be applicable.
                 if bridge.quality >= min_bridge_qual:
                     self.apply_bridge(bridge, verbosity, right_bridged, left_bridged,
                                       seg_nums_used_in_bridges)
                     seg_nums_used_in_bridges = remove_dupes_preserve_order(seg_nums_used_in_bridges)
+                    applied_bridges.append(bridge)
                 elif verbosity > 1:
                     print('Rejected', bridge)
             elif verbosity > 1:
@@ -1387,14 +1413,11 @@ class AssemblyGraph(object):
         seg_nums_used_in_bridges.extend([abs(x) for x in bridge.graph_path])
 
     @staticmethod
-    def start_end_available_to_bridge(start, end, right_bridged, left_bridged,
-                                      seg_nums_used_in_bridges):
+    def start_end_available_to_bridge(start, end, right_bridged, left_bridged):
         """
         Checks whether the start and end segments can be bridged together (i.e. that they are both
         unbridged on the relevant sides and not yet used in a bridge).
         """
-        if abs(start) in seg_nums_used_in_bridges or abs(end) in seg_nums_used_in_bridges:
-            return False
         if start > 0 and start in right_bridged:
             return False
         if start < 0 and -start in left_bridged:

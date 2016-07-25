@@ -451,6 +451,8 @@ class LongReadBridge(object):
             output += '  end length factor:       ' + float_to_str(end_length_factor, 2) + '\n'
             output += '  smaller_length_factor:   ' + float_to_str(smaller_length_factor, 2) + '\n'
             output += '  final quality:           ' + float_to_str(self.quality, 2) + '\n'
+        if verbosity == 2:
+            output += '  quality:                 ' + float_to_str(self.quality, 2) + '\n'
         return output
 
     def set_path_based_on_availability(self, graph):

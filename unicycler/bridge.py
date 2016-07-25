@@ -255,6 +255,7 @@ class LongReadBridge(object):
                 output += '                           ' + self.consensus_sequence + '\n'
 
             target_path_length = len(self.consensus_sequence) + (2 * self.graph.overlap)
+            mean_overlap = 0
 
         # For full spans without sequence, we simply need a mean distance.
         else:
@@ -629,11 +630,11 @@ def create_spades_contig_bridges(graph, single_copy_segments):
     for grouped_paths in bridge_paths_by_end.values():
         if len(grouped_paths) > 1:
             conflicting_paths += grouped_paths
-    conflicting_paths_no_dups = []
+    conflicting_paths_no_dupes = []
     for path in conflicting_paths:
-        if path not in conflicting_paths_no_dups:
-            conflicting_paths_no_dups.append(path)
-    conflicting_paths = conflicting_paths_no_dups
+        if path not in conflicting_paths_no_dupes:
+            conflicting_paths_no_dupes.append(path)
+    conflicting_paths = conflicting_paths_no_dupes
     final_bridge_paths = [x for x in bridge_path_list if x not in conflicting_paths]
 
     return [SpadesContigBridge(spades_contig_path=x, graph=graph) for x in final_bridge_paths]
@@ -706,19 +707,17 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     # Key = tuple of signed segment numbers (the segments being bridged)
     # Value = list of tuples containing the bridging sequence and the single-copy segment
     #         alignments.
-    spanning_read_seqs = {}
+    spanning_read_seqs = defaultdict(list)
 
     # This dictionary will collect all of the read sequences which don't manage to span between
     # two single-copy segments, but they do overlap one single-copy segment and can therefore be
     # useful for generating consensus sequences in a bridge.
     # Key = signed segment number, Value = list of tuples containing the sequence and alignment
-    overlapping_read_seqs = {}
+    overlapping_read_seqs = defaultdict(list)
 
-    allowed_overlap = round(int(1.1 * graph.overlap))
     for read_name in read_names:
         read = read_dict[read_name]
-        alignments = get_single_copy_alignments(read, single_copy_seg_num_set, allowed_overlap,
-                                                min_scaled_score)
+        alignments = get_single_copy_alignments(read, single_copy_seg_num_set, min_scaled_score)
         if not alignments:
             continue
 
@@ -744,9 +743,16 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
             available_alignments.append(alignment)
             available_alignments = sorted(available_alignments,
                                           key=lambda x: x.read_start_positive_strand())
-            for i in range(len(available_alignments) - 1):
-                alignment_1 = available_alignments[i]
-                alignment_2 = available_alignments[i + 1]
+            if len(available_alignments) < 2:
+                continue
+
+            for i in range(len(available_alignments)):
+                if i < len(available_alignments) - 1:
+                    alignment_1 = available_alignments[i]
+                    alignment_2 = available_alignments[i + 1]
+                else:  # i == len(available_alignments) - 1
+                    alignment_1 = available_alignments[0]
+                    alignment_2 = available_alignments[-1]
 
                 # Standardise the order so we don't end up with both directions (e.g. 5 to -6 and
                 # 6 to -5) in spanning_read_seqs.
@@ -765,9 +771,6 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
                     else:
                         bridge_seq = bridge_end - bridge_start  # 0 or a negative number
                         bridge_qual = ''
-
-                    if seg_nums not in spanning_read_seqs:
-                        spanning_read_seqs[seg_nums] = []
 
                     spanning_read_seqs[seg_nums].append((bridge_seq, bridge_qual, alignment_1,
                                                          alignment_2))
@@ -789,8 +792,6 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
         end_overlap, end_qual = last_alignment.get_end_overlapping_read_seq()
         if end_overlap:
             seg_num = last_alignment.get_signed_ref_num()
-            if seg_num not in overlapping_read_seqs:
-                overlapping_read_seqs[seg_num] = []
             overlapping_read_seqs[seg_num].append((end_overlap, end_qual, last_alignment))
 
     # If a bridge already exists for a spanning sequence, we add the sequence to the bridge. If
@@ -916,7 +917,7 @@ def path_is_self_contained(path, start, end, graph):
     return True
 
 
-def get_single_copy_alignments(read, single_copy_num_set, allowed_overlap, min_scaled_score):
+def get_single_copy_alignments(read, single_copy_num_set, min_scaled_score):
     """
     Returns a list of single-copy segment alignments for the read.
     """

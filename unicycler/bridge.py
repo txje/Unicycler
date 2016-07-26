@@ -11,7 +11,7 @@ from multiprocessing.dummy import Pool as ThreadPool
 import time
 from collections import defaultdict
 from .misc import int_to_str, float_to_str, reverse_complement, print_progress_line, \
-    weighted_average, get_num_agreement, flip_number_order
+    weighted_average, get_num_agreement, flip_number_order, score_function
 from .cpp_function_wrappers import multiple_sequence_alignment
 
 
@@ -963,16 +963,6 @@ def finalise_bridge(all_args):
         all_args
     return bridge.finalise(scoring_scheme, min_alignment_length, read_lengths,
                            estimated_genome_size, verbosity)
-
-
-def score_function(val, half_score_val):
-    """
-    For inputs of 0.0 and greater, this function returns a value between 0.0 and 1.0, approaching
-    1.0 with large values. The half_score_val argument is the point at which the function returns
-    0.5. If it's large the function approaches 1.0 more slowly, if it's small the function
-    approaches 1.0 more quickly.
-    """
-    return 1.0 - (half_score_val / (half_score_val + val))
 
 
 def get_bridge_str(start, middle, end):

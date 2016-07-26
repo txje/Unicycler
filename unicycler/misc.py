@@ -465,3 +465,13 @@ def load_fasta(filename):
         fasta_seqs.append((name.split()[0], sequence))
     fasta_file.close()
     return fasta_seqs
+
+
+def score_function(val, half_score_val):
+    """
+    For inputs of 0.0 and greater, this function returns a value between 0.0 and 1.0, approaching
+    1.0 with large values. The half_score_val argument is the point at which the function returns
+    0.5. If it's large the function approaches 1.0 more slowly, if it's small the function
+    approaches 1.0 more quickly.
+    """
+    return 1.0 - (half_score_val / (half_score_val + val))

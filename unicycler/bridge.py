@@ -118,10 +118,8 @@ class LongReadBridge(object):
         self.end_segment = end
 
         # The individual reads contributing to the bridge. The sequences/qualities are not for the
-        # entire read, just the part in the bridge. The lengths are stored separately because
-        # negative bridge lengths are possible (when the start and end segment alignments overlap).
-        # In these cases we don't have any read sequences but will still need to know the lengths
-        # (which will be negative).
+        # entire read, just the part in the bridge. In the case of overlapping alignments, this has
+        # the overlap size instead of the sequence.
         self.full_span_reads = []
 
         # The bridge can also contain incomplete read sequences which don't bridge the entire span
@@ -164,6 +162,17 @@ class LongReadBridge(object):
         return 'long read bridge: ' + get_bridge_str(self.start_segment, self.graph_path,
                                                      self.end_segment) + \
                ' (quality = ' + float_to_str(self.quality, 2) + ')'
+
+    def get_total_full_span_seq_length(self):
+        """
+        Returns the sum of all available read sequences. This is used to prioritise the bridge
+        finalisation.
+        """
+        total_full_span_seq_length = 0
+        for full_span in self.full_span_reads:
+            if not isinstance(full_span[0], int):
+                total_full_span_seq_length += len(full_span[0])
+        return total_full_span_seq_length
 
     def finalise(self, scoring_scheme, min_alignment_length, read_lengths, estimated_genome_size,
                  verbosity):
@@ -809,8 +818,8 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     for seg_nums, span in spanning_read_seqs.items():
         start, end = seg_nums
 
-        # If the start and end are the same and already exclusively connect (i.e. if this is an
-        # already circular segment), then skip - there's no need to bridge.
+        # If the start and end are the same and already exclusively connect (i.e. if this segment
+        # is already circular), then skip - there's no need to bridge.
         if start == end and graph.get_downstream_seg_nums(start) == [start] and \
                 graph.get_upstream_seg_nums(start) == [start]:
             continue
@@ -876,6 +885,14 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     else:
         pool = ThreadPool(threads)
         arg_list = []
+
+        # Sort the bridges based on their size, with longer spanning sequences coming first. This
+        # will make the big ones runs first which helps to more efficiently use the CPU cores.
+        # E.g. if the biggest bridge was at the end, we'd be left waiting for it to finish with
+        # only one core (bad), but if it was at the start, other work could be done in parallel.
+        long_read_bridges = sorted(long_read_bridges, reverse=True,
+                                   key=lambda x: x.get_total_full_span_seq_length())
+
         for bridge in long_read_bridges:
             arg_list.append((bridge, scoring_scheme, min_alignment_length, read_lengths,
                              estimated_genome_size, verbosity))

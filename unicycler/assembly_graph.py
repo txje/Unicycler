@@ -479,16 +479,16 @@ class AssemblyGraph(object):
 
     def merge_all_possible(self):
         """
-        This function merges segments which are in a simple, unbranching path.
+        This function merges segments which are in a simple, unbranching path. It produces and
+        returns a dictionary of new segment numbers to old segment numbers.
         """
         while True:
             # Sort the segment numbers first so we apply the merging in a consistent order.
             seg_nums = sorted(list(self.segments.keys()))
             for num in seg_nums:
                 path = self.get_simple_path(num)
-                if len(path) <= 1:
-                    continue
-                else:
+                assert len(path) > 0
+                if len(path) > 1:
                     self.merge_simple_path(path)
                     break
             else:
@@ -502,14 +502,7 @@ class AssemblyGraph(object):
         """
         start = merge_path[0]
         end = merge_path[-1]
-
-        # The merged sequence depth is the weighted mean of the components.
-        depths = [self.segments[abs(x)].depth for x in merge_path]
-        lengths = [self.segments[abs(x)].get_length() - self.overlap for x in merge_path]
-        if sum(lengths) > 0.0:
-            mean_depth = weighted_average_list(depths, lengths)
-        else:
-            mean_depth = 1.0
+        mean_depth = self.get_mean_path_depth(merge_path)
 
         new_seg_num = self.get_next_available_seg_number()
         merged_forward_seq = self.get_path_sequence(merge_path)
@@ -556,6 +549,22 @@ class AssemblyGraph(object):
                 for i, path in enumerate(split_paths):
                     new_paths[path_name + '_' + str(i + 1)] = path
         self.paths = new_paths
+
+        return new_seg_num
+
+    def get_mean_path_depth(self, path):
+        """
+        Returns the mean depth for the path. If any segments in the path are bridges, their depth
+        isn't counted because bridges got their depth from the segments they are bridging, so to
+        count them would be to count that depth twice.
+        """
+        non_bridge_seg_nums = [abs(x) for x in path if self.segments[abs(x)].bridge is None]
+        depths = [self.segments[x].depth for x in non_bridge_seg_nums]
+        lengths = [self.segments[x].get_length() - self.overlap for x in non_bridge_seg_nums]
+        if sum(lengths) > 0.0:
+            return weighted_average_list(depths, lengths)
+        else:
+            return 1.0
 
     def add_link(self, start, end):
         """
@@ -1428,15 +1437,16 @@ class AssemblyGraph(object):
             return False
         return True
 
-    def clean_up_after_bridging(self, single_copy_segments, seg_nums_used_in_bridges,
-                                min_component_size, min_dead_end_size, verbosity):
+    def clean_up_after_bridging_1(self, single_copy_segments, seg_nums_used_in_bridges, verbosity):
         """
-        Cleans up unnecessary segments to produce a clean graph. Used after bridge application.
+        This function is run after bridge application to clean up necessary segments. This is the
+        first of two such functions, and this one takes care of the simpler aspects of cleaning.
         """
         if verbosity > 1:
             print_section_header('Cleaning up leftover segments', verbosity, last_newline=False)
+        print('\nSEGMENTS USED IN BRIDGES:', seg_nums_used_in_bridges)  # TEMP
 
-        # For the purposes of this function, a graph segment which is a bridge counts as a graph
+        # For the purposes of cleaning up, a graph segment which is a bridge counts as a graph
         # segment used in a bridge.
         for seg_num, seg in self.segments.items():
             if seg.bridge is not None:
@@ -1485,43 +1495,119 @@ class AssemblyGraph(object):
                   ', '.join(str(x) for x in segment_nums_to_remove))
         self.remove_segments(segment_nums_to_remove)
 
-        # Remove segments used in bridges, if doing do would not break up the graph.
+    def clean_up_after_bridging_2(self, seg_nums_used_in_bridges, min_component_size,
+                                  min_dead_end_size, verbosity, unbridged_graph):
+        """
+        This is the second of two post-bridging cleaning functions, and it takes care of the more
+        complex aspects of cleaning: deleting segments that were used in bridges but are still
+        part of important areas in the graph. This is critically important for areas in the graph
+        which didn't get directly bridged. If all goes well, such areas will be cleaned up to the
+        best possible paths - no more (which would be redundant) and no less (which could either
+        break up the graph or lead to its oversimplification and a misassembly).
+        Ideally, we should be deleting segments that are all 'used up' - i.e. they have been used
+        bridges the same number of times as their copy number. This can be hard to get just
+        right, however, because copy number determination and bridge paths aren't perfect.
+        """
+        # For the first pass, we just remove segments that are used in bridges and have dead
+        # ends. This is repeated until it's no longer able to remove any.
         removed_segments = []
         while True:
             for seg_num in seg_nums_used_in_bridges:
-                if seg_num not in self.segments:
-                    continue
-
-                # If the segment already has a dead end, just go ahead and delete it.
-                if self.dead_end_count(seg_num) > 0:
+                if seg_num in self.segments and self.dead_end_count(seg_num) > 0:
                     self.remove_segments([seg_num])
                     removed_segments.append(seg_num)
+                    print('DELETED BECAUSE HAS DEAD END:', seg_num)  # TEMP
                     break
-
-                # If deleting the segment would not lead to an increase in dead ends, go ahead and
-                # delete it.
-                elif self.dead_end_change_if_deleted(seg_num) <= 0:
-                    self.remove_segments([seg_num])
-                    removed_segments.append(seg_num)
-                    break
-
-                # It's possible that a group of segments have all been used and they form a simple
-                # path. Deleting the whole path would not create a dead end (but deleting any one
-                # segment would), so we look for these and delete them all together.
-                else:
-                    path = self.get_simple_path(seg_num)
-                    unsigned_path = [abs(x) for x in path]
-                    if len(path) > 1 and \
-                            all(x in seg_nums_used_in_bridges for x in unsigned_path) and \
-                            self.dead_end_change_if_path_deleted(path) <= 0:
-                        self.remove_segments(unsigned_path)
-                        removed_segments += unsigned_path
-                        break
             else:
                 break
 
+        # Get all usedupness scores once, outside the loop, to save time in the loop.
+        usedupness_scores = {}
+        for seg_num in seg_nums_used_in_bridges:
+            if seg_num in self.segments:
+                usedupness_scores[seg_num] = self.get_usedupness_score(seg_num, unbridged_graph)
+
+        # For the second pass, we also remove segments (or simple paths of segments) which can be
+        # removed without creating any dead ends.
+        while True:
+
+            # Group the segments based on simple paths. Segments not on a simple path will be in
+            # their own group.
+            path_groups = []
+            segs_in_path_groups = set()
+            for seg_num in seg_nums_used_in_bridges:
+                if seg_num in self.segments and seg_num not in segs_in_path_groups:
+                    path = self.get_simple_path(seg_num)
+                    path_groups.append(path)
+                    segs_in_path_groups.update(path)
+
+            # Sort the path groups by how likely it is that they are truly all 'used up'. These are
+            # the ones we would like to delete first. Each segment in the path is scored on its
+            # 'usedupness', and the path gets the lowest score of its constituent segments.
+            scored_path_groups = []
+            for path_group in path_groups:
+                min_score = usedupness_scores[path_group[0]]
+                for path_seg in path_group[1:]:
+                    min_score = min(min_score, usedupness_scores[path_seg])
+                scored_path_groups.append((min_score, path_group))
+            scored_path_groups = sorted(scored_path_groups, reverse=True, key=lambda x: x[0])
+
+            for _, path in scored_path_groups:
+                if self.dead_end_change_if_path_deleted(path) <= 0:
+                    unsigned_path = [abs(x) for x in path]
+                    self.remove_segments(unsigned_path)
+                    print('DELETED BECAUSE WOULD NOT INCREASE DEAD ENDS:', unsigned_path)  # TEMP
+                    removed_segments += unsigned_path
+                    break
+            else:
+                break
+        if verbosity > 1 and removed_segments:
+            removed_segments = sorted(list(set(removed_segments)))
+            print('\nRemoved segments used in bridges:',
+                  ', '.join(str(x) for x in removed_segments))
+
         self.remove_small_components(min_component_size, verbosity)
         self.remove_small_dead_ends(min_dead_end_size, verbosity)
+
+    def get_usedupness_score(self, seg_num, unbridged_graph):
+        """
+        Returns a score for the segment which reflects how likely it is that the segment has been
+        'used up' in bridges. E.g. a segment which has a copy number of 2 and has been used in 2
+        bridges is used up, but if it was only used in one bridge, it's not used up.
+        This is easier to determine if the segment has copy depths assigned to it. When that is the
+        case, this function simply checks to see how much the copy depths are exhausted. In the
+        more complex case of when copy depths were not assigned, then this function uses both the
+        original segment depth and the current segment depth to make a score. Low current depth
+        gives a higher usedupness score. Low original depth also gives a higher score (because
+        it's harder to tell, for example, if a 20 copy segment is used up than a 2 copy segment).
+        """
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
+        # TO DO
 
     def find_all_simple_loops(self):
         """

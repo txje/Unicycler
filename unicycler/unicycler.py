@@ -89,18 +89,24 @@ def main():
                       single_copy_segments=single_copy_segments)
 
     # Clean up unnecessary segments after bridging.
-    graph.clean_up_after_bridging(single_copy_segments, seg_nums_used_in_bridges,
-                                  args.min_component_size, args.min_dead_end_size, verbosity)
-    file_num += 1
-    spades_bridged_graph_cleaned = os.path.join(args.out, str(file_num).zfill(3) + '_cleaned.gfa')
-    graph.save_to_gfa(spades_bridged_graph_cleaned, verbosity, save_seg_type_info=True,
-                      single_copy_segments=single_copy_segments)
-
-    # Merge the segments to simplify the graph.
+    graph.clean_up_after_bridging_1(single_copy_segments, seg_nums_used_in_bridges, verbosity)
+    if args.keep_temp > 1:
+        file_num += 1
+        graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +
+                                       '_cleaned_first_pass.gfa'), verbosity,
+                          save_seg_type_info=True, single_copy_segments=single_copy_segments)
+    graph.clean_up_after_bridging_2(seg_nums_used_in_bridges, args.min_component_size,
+                                    args.min_dead_end_size, verbosity, unbridged_graph)
+    if args.keep_temp > 1:
+        file_num += 1
+        graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +
+                                       '_cleaned_second_pass.gfa'), verbosity,
+                          save_seg_type_info=True, single_copy_segments=single_copy_segments)
     graph.merge_all_possible()
-    file_num += 1
-    spades_bridged_graph_merged = os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa')
-    graph.save_to_gfa(spades_bridged_graph_merged, verbosity)
+    if args.keep_temp > 1:
+        file_num += 1
+        graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa'),
+                          verbosity)
 
     # Prepare for long read alignment.
     alignment_dir = os.path.join(args.out, 'read_alignment_temp')
@@ -234,19 +240,25 @@ def main():
                           single_copy_segments=single_copy_segments)
 
         # Clean up unnecessary segments after bridging.
-        graph.clean_up_after_bridging(single_copy_segments, seg_nums_used_in_bridges,
-                                      args.min_component_size, args.min_dead_end_size, verbosity)
-        file_num += 1
-        read_bridged_graph_cleaned = os.path.join(args.out,
-                                                  str(file_num).zfill(3) + '_cleaned.gfa')
-        graph.save_to_gfa(read_bridged_graph_cleaned, verbosity, save_seg_type_info=True,
-                          single_copy_segments=single_copy_segments)
-
-        # Merge the segments to simplify the graph.
+        graph.clean_up_after_bridging_1(single_copy_segments, seg_nums_used_in_bridges, verbosity)
+        if args.keep_temp > 1:
+            file_num += 1
+            graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +
+                                           '_cleaned_first_pass.gfa'), verbosity,
+                              save_seg_type_info=True, single_copy_segments=single_copy_segments)
+        graph.clean_up_after_bridging_2(seg_nums_used_in_bridges, args.min_component_size,
+                                        args.min_dead_end_size, verbosity, unbridged_graph)
+        if args.keep_temp > 1:
+            file_num += 1
+            graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +
+                                           '_cleaned_second_pass.gfa'), verbosity,
+                              save_seg_type_info=True,
+                              single_copy_segments=single_copy_segments)
         graph.merge_all_possible()
-        file_num += 1
-        read_bridged_graph_merged = os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa')
-        graph.save_to_gfa(read_bridged_graph_merged, verbosity)
+        if args.keep_temp > 1:
+            file_num += 1
+            graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa'),
+                              verbosity)
 
     # If we are getting long reads incrementally, then we do the process iteratively.
     elif args.long_dir:
@@ -266,7 +278,7 @@ def main():
         print_section_header('Bridged assembly graph', verbosity)
         print(graph.get_summary(verbosity, show_components=True), end='')
     file_num += 1
-    cleaned_graph = os.path.join(args.out, str(file_num).zfill(3) + '_cleaned.gfa')
+    cleaned_graph = os.path.join(args.out, str(file_num).zfill(3) + '_final_clean.gfa')
     graph.save_to_gfa(cleaned_graph, verbosity)
 
     # Rotate completed replicons in the graph to a standard starting gene.

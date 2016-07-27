@@ -163,16 +163,30 @@ class LongReadBridge(object):
                                                      self.end_segment) + \
                ' (quality = ' + float_to_str(self.quality, 2) + ')'
 
-    def get_total_full_span_seq_length(self):
+    def predicted_time_to_finalise(self):
         """
-        Returns the sum of all available read sequences. This is used to prioritise the bridge
-        finalisation.
+        This function very roughly predicts how long the bridge will take to finalise. It's not
+        meant to be particularly accurate, but can hopefully be used to roughly order the bridges
+        from slow to fast.
         """
         total_full_span_seq_length = 0
+        full_span_seq_count = 0
         for full_span in self.full_span_reads:
             if not isinstance(full_span[0], int):
                 total_full_span_seq_length += len(full_span[0])
-        return total_full_span_seq_length
+                full_span_seq_count += 1
+        if not full_span_seq_count:
+            mean_full_span_seq_length = 0.0
+        else:
+            mean_full_span_seq_length = total_full_span_seq_length / full_span_seq_count
+
+        if full_span_seq_count > 1:
+            predicted_consensus_time = 0.0005657 * total_full_span_seq_length
+        else:
+            predicted_consensus_time = 0.0
+        predicted_path_time = 0.0024605 * mean_full_span_seq_length
+
+        return predicted_consensus_time + predicted_path_time
 
     def finalise(self, scoring_scheme, min_alignment_length, read_lengths, estimated_genome_size,
                  verbosity):
@@ -181,11 +195,11 @@ class LongReadBridge(object):
         assigns a quality score to the bridge. This is the performance-intensive step of long read
         bridging.
         """
+        start_time = time.time()
         start_seg = self.graph.segments[abs(self.start_segment)]
         end_seg = self.graph.segments[abs(self.end_segment)]
 
-        output = '\n'
-        output += str(self.start_segment) + ' to ' + str(self.end_segment) + ':\n'
+        output = str(self.start_segment) + ' to ' + str(self.end_segment) + ':\n'
         output += '  bridging reads:          ' + int_to_str(len(self.full_span_reads)) + '\n'
 
         # Partition the full span reads into two groups: those with negative numbers (implying that
@@ -462,6 +476,10 @@ class LongReadBridge(object):
             output += '  final quality:           ' + float_to_str(self.quality, 2) + '\n'
         if verbosity == 2:
             output += '  quality:                 ' + float_to_str(self.quality, 2) + '\n'
+
+        full_time = time.time() - start_time
+        output += '  total time:              ' + float_to_str(full_time, 2) + ' sec\n'
+
         return output
 
     def set_path_based_on_availability(self, graph):
@@ -886,12 +904,12 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
         pool = ThreadPool(threads)
         arg_list = []
 
-        # Sort the bridges based on their size, with longer spanning sequences coming first. This
-        # will make the big ones runs first which helps to more efficiently use the CPU cores.
+        # Sort the bridges based on how long they're predicted to take to finalise. This will make
+        # the big ones runs first which helps to more efficiently use the CPU cores.
         # E.g. if the biggest bridge was at the end, we'd be left waiting for it to finish with
         # only one core (bad), but if it was at the start, other work could be done in parallel.
         long_read_bridges = sorted(long_read_bridges, reverse=True,
-                                   key=lambda x: x.get_total_full_span_seq_length())
+                                   key=lambda x: x.predicted_time_to_finalise())
 
         for bridge in long_read_bridges:
             arg_list.append((bridge, scoring_scheme, min_alignment_length, read_lengths,
@@ -902,7 +920,8 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
             if verbosity == 1:
                 print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')
             if verbosity > 1:
-                print(output, end='', flush=True)
+                fraction = str(completed_count) + '/' + str(num_long_read_bridges) + ': '
+                print('\n' + fraction + output, end='', flush=True)
 
     if verbosity == 1:
         print()

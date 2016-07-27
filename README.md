@@ -1,15 +1,15 @@
 # Unicycler
 
 This repository contains three separate (but related) tools:
-* Unicycler: a bacterial genome assembler for hybrid read sets
-* Antpath: a sensitive, semi-global long read aligner
-* Scrutinate: an assembly checker
+* `unicycler`: a bacterial genome assembler for hybrid read sets
+* `unicycler_align`: a sensitive, semi-global long read aligner
+* `unicycler_check`: an assembly checker
 
 
 
 # Installation
 
-Unicycler, Antpath and Scrutinate are all built/installed together. Simply run: `python3 setup.py install`.
+`unicycler`, `unicycler_align` and `unicycler_check` are all built/installed together. Simply run: `python3 setup.py install`.
 
 
 
@@ -25,9 +25,9 @@ The long reads, however, can be of any depth. Moderate long read depth should be
 
 
 
-# Antpath
+# Aligner
 
-Antpath sensitively aligns error-prone long reads (e.g. PacBio or Nanopore) to one or more references in a semi-global manner.
+The command `unicycler_align` will sensitively align error-prone long reads (e.g. PacBio or Nanopore) to one or more references in a semi-global manner.
 
 Semi-global alignment does not penalise end gaps, but the alignment will continue until one of the two sequences ends. This includes cases where the two sequences overlap and cases where one sequence is contained within the other:
 
@@ -37,7 +37,7 @@ Semi-global alignment does not penalise end gaps, but the alignment will continu
 BBBBBBBBB        BBBBBBB       BBBBBBBBB           BBBBBBBBB
 ```
 
-Antpath is intended for cases where the reads and reference are expected to match perfectly (or at least as perfectly as error-prone long reads can match). An example of an appropriate case would be if the reference sequences are assembled contigs of a bacterial strain and the long reads are from the same strain.
+`unicycler_align` is intended for cases where the reads and reference are expected to match perfectly (or at least as perfectly as error-prone long reads can match). An example of an appropriate case would be if the reference sequences are assembled contigs of a bacterial strain and the long reads are from the same strain.
 
 Required inputs:
   1) FASTA file of one or more reference sequences
@@ -60,6 +60,6 @@ Output: SAM file of alignments
 
 
 
-# Scrutinate
+# Assembly checker
 
-Scrutinate allows a user to assess whether a completed bacterial genome assembly is correct, using long reads. It requires long read alignments (produced by `semi_global_long_read_aligner.py`) and produces summary tables and plots.
+The command `unicycler_check` allows a user to assess whether a completed bacterial genome assembly is correct, using long reads. It requires long read alignments (produced by `semi_global_long_read_aligner.py`) and produces summary tables and plots.

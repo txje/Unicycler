@@ -141,8 +141,7 @@ void depthFirstSearch(TPredecessorMap & predecessor,
     }
     TSize time = 0;
 
-    // We do the DFS non-recursively using a stack. The stack holds two
-    // possible tasks:
+    // We do the DFS non-recursively using a stack. The stack holds two possible tasks:
     //   EXPLORE, which means we must follow that vertex's edges
     //   FINISH, which means the vertex just needs a finish time
     std::vector<StackItem> vStack;
@@ -153,8 +152,9 @@ void depthFirstSearch(TPredecessorMap & predecessor,
 
         // If the vertex has already been visited, skip it.
         TVertexDescriptor v = getValue(it);
-        if (getProperty(tokenMap, v))
+        if (getProperty(tokenMap, v)) {
             continue;
+        }
 
         vStack.clear();
         vStack.push_back(StackItem(v, EXPLORE));
@@ -165,20 +165,19 @@ void depthFirstSearch(TPredecessorMap & predecessor,
             vStack.pop_back();
             TVertexDescriptor v = stackItem.first;
 
-            if (stackItem.second == FINISH)
+            if (stackItem.second == FINISH) {
                 assignProperty(finish, v, ++time);
+            }
 
             // If the task is EXPLORE and the vertex is not visited...
             else if (!getProperty(tokenMap, v)) {
-                assignProperty(tokenMap, v, true); // label as visited
-                assignProperty(disc, v, ++time); // set discovery time
-                vStack.push_back(StackItem(v, FINISH));
+                assignProperty(tokenMap, v, true);      // label as visited
+                assignProperty(disc, v, ++time);        // set discovery time
+                vStack.push_back(StackItem(v, FINISH)); // add a task to the stack so the vertex will get a finish time
 
-                // Add EXPLORE tasks to the stack for each unvisited adjacent
-                // vertex. They are added in reverse order so the first adjacent
-                // vertex will be the first to come off the stack. This is to
-                // mimic the behaviour of the original recursive implementation
-                // of this function.
+                // Add EXPLORE tasks to the stack for each unvisited adjacent vertex. They are added in reverse order
+                // so the first adjacent vertex will be the first to come off the stack. This is to mimic the behaviour
+                // of the original recursive implementation of this function.
                 TAdjacencyIterator itad(g, v);
                 goEnd(itad);
                 while (!atBegin(itad)) {

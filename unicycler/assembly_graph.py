@@ -204,6 +204,46 @@ class AssemblyGraph(object):
                 return segment.depth
         return 0.0
 
+    def reassign_read_depths(self):
+        """
+        This function looks for segments which have an unoriginal read depth. If they are connected
+        to segments with original read depths, these neighbours will be used to reassign depth.
+        """
+        while True:
+            for seg_num, segment in self.segments.items():
+                if not segment.original_depth:
+
+                    new_depth_downstream = None
+                    downstream_seg_nums = self.get_exclusive_outputs(seg_num)
+                    if downstream_seg_nums:
+                        downstream_segs = [self.segments[abs(x)] for x in downstream_seg_nums]
+                        if all(x.original_depth for x in downstream_segs):
+                            new_depth_downstream = sum(x.depth for x in downstream_segs)
+
+                    new_depth_upstream = None
+                    upstream_seg_nums = self.get_exclusive_inputs(seg_num)
+                    if upstream_seg_nums:
+                        upstream_segs = [self.segments[abs(x)] for x in upstream_seg_nums]
+                        if all(x.original_depth for x in upstream_segs):
+                            new_depth_upstream = sum(x.depth for x in upstream_segs)
+
+                    # If both an upstream and downstream depth is available, use the mean of the
+                    # two. If only one is available, just use that.
+                    if new_depth_downstream and new_depth_upstream:
+                        new_depth = (new_depth_downstream + new_depth_upstream) / 2.0
+                    elif new_depth_downstream:
+                        new_depth = new_depth_downstream
+                    elif new_depth_upstream:
+                        new_depth = new_depth_upstream
+                    else:
+                        new_depth = None
+                    if new_depth:
+                        segment.depth = new_depth
+                        segment.original_depth = True
+                        break
+            else:
+                break
+
     def normalise_read_depths(self):
         """
         For every segment in the graph, divide its depth by the graph's median.
@@ -502,11 +542,12 @@ class AssemblyGraph(object):
         """
         start = merge_path[0]
         end = merge_path[-1]
-        mean_depth = self.get_mean_path_depth(merge_path)
+        mean_depth, original_depth = self.get_mean_path_depth(merge_path)
 
         new_seg_num = self.get_next_available_seg_number()
         merged_forward_seq = self.get_path_sequence(merge_path)
-        new_seg = Segment(new_seg_num, mean_depth, merged_forward_seq, True)
+        new_seg = Segment(new_seg_num, mean_depth, merged_forward_seq, True,
+                          original_depth=original_depth)
         new_seg.build_other_sequence_if_necessary()
 
         # Save some info that we'll need, and then delete the old segments.
@@ -559,12 +600,26 @@ class AssemblyGraph(object):
         count them would be to count that depth twice.
         """
         non_bridge_seg_nums = [abs(x) for x in path if self.segments[abs(x)].bridge is None]
-        depths = [self.segments[x].depth for x in non_bridge_seg_nums]
-        lengths = [self.segments[x].get_length() - self.overlap for x in non_bridge_seg_nums]
-        if sum(lengths) > 0.0:
-            return weighted_average_list(depths, lengths)
+
+        # If possible, we'd like to only use the depth from segments which haven't had their depth
+        # altered by being used in bridges. But if none are available (i.e. all segments have been
+        # used in bridges), then we go ahead and use them anyway.
+        original_depth_seg_nums = [x for x in non_bridge_seg_nums
+                                   if self.segments[x].original_depth]
+        if original_depth_seg_nums:
+            segs_nums_for_depth = original_depth_seg_nums
+            original_depth = True
         else:
-            return 1.0
+            segs_nums_for_depth = non_bridge_seg_nums
+            original_depth = False
+
+        depths = [self.segments[x].depth for x in segs_nums_for_depth]
+        lengths = [self.segments[x].get_length() - self.overlap for x in segs_nums_for_depth]
+        if sum(lengths) > 0.0:
+            new_depth = weighted_average_list(depths, lengths)
+        else:
+            new_depth = 1.0
+        return new_depth, original_depth
 
     def add_link(self, start, end):
         """
@@ -833,6 +888,7 @@ class AssemblyGraph(object):
                     print('\nUnable to remove graph overlaps')
         self.remove_zero_length_segs(verbosity)
         self.merge_small_segments(verbosity, 5)
+        self.reassign_read_depths()
         self.normalise_read_depths()
         self.renumber_segments()
         self.sort_link_order()
@@ -1445,6 +1501,7 @@ class AssemblyGraph(object):
         """
         seg_num = seg.number
         seg.depth -= depth_to_remove
+        seg.original_depth = False
         if seg_num in self.copy_depths and self.copy_depths[seg_num]:
             closest_depth = min(self.copy_depths[seg_num], key=lambda x: abs(x - depth_to_remove))
             del self.copy_depths[seg_num][self.copy_depths[seg_num].index(closest_depth)]
@@ -1479,7 +1536,6 @@ class AssemblyGraph(object):
             if seg.bridge is not None:
                 seg_nums_used_in_bridges.add(seg_num)
 
-        print('\nSEGMENTS USED IN BRIDGES:', sorted(list(seg_nums_used_in_bridges)))  # TEMP
         single_copy_seg_nums = set(x.number for x in single_copy_segments)
         self.remove_components_without_single_copy_segments(single_copy_seg_nums, verbosity)
         self.remove_components_entirely_used_in_bridges(seg_nums_used_in_bridges, verbosity)
@@ -1517,7 +1573,6 @@ class AssemblyGraph(object):
                     if seg_num in self.segments and self.dead_end_count(seg_num) > 0:
                         self.remove_segments([seg_num])
                         removed_segments.append(seg_num)
-                        print('DELETED BECAUSE HAS DEAD END:', seg_num)  # TEMP
                         break
                 else:
                     break
@@ -1553,7 +1608,6 @@ class AssemblyGraph(object):
                 if self.dead_end_change_if_path_deleted(path) <= 0:
                     unsigned_path = [abs(x) for x in path]
                     self.remove_segments(unsigned_path)
-                    print('DELETED BECAUSE WOULD NOT INCREASE DEAD ENDS:', unsigned_path)  # TEMP
                     removed_segments += unsigned_path
                     break
             else:
@@ -1635,10 +1689,8 @@ class AssemblyGraph(object):
         current_depth = self.segments[seg_num].depth
         depth_used = original_depth - current_depth
 
-        # Since segment depths can get negative, depth_fraction_used can exceed 1.0 and
-        # depth_fraction_unused can drop below 0.0.
+        # Since segment depths can get negative, depth_fraction_used can exceed 1.0.
         depth_fraction_used = depth_used / original_depth
-        depth_fraction_unused = 1.0 - depth_fraction_used
 
         # A score penalty is applied based on the original depth. For example, a segment that
         # originally had 20x depth and is now down to 2x is less confidently used up than a segment
@@ -2573,9 +2625,11 @@ class Segment(object):
     This hold a graph segment with a number, depth, direction and sequence.
     """
 
-    def __init__(self, number, depth, sequence, positive, bridge=None, graph_path=None):
+    def __init__(self, number, depth, sequence, positive, bridge=None, graph_path=None,
+                 original_depth=True):
         self.number = number
         self.depth = depth
+        self.original_depth = original_depth
         self.forward_sequence = ''
         self.reverse_sequence = ''
         self.bridge = bridge

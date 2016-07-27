@@ -897,13 +897,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
             arg_list.append((bridge, scoring_scheme, min_alignment_length, read_lengths,
                              estimated_genome_size, verbosity))
 
-        # If the verbosity is 1, then the order doesn't matter, so use imap_unordered to deliver
-        # the results evenly. If the verbosity is higher, deliver the results in order with imap.
-        if verbosity > 1:
-            imap_function = pool.imap
-        else:
-            imap_function = pool.imap_unordered
-        for output in imap_function(finalise_bridge, arg_list):
+        for output in pool.imap_unordered(finalise_bridge, arg_list):
             completed_count += 1
             if verbosity == 1:
                 print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')

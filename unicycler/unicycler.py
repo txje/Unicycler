@@ -96,7 +96,8 @@ def main():
                                        '_cleaned_first_pass.gfa'), verbosity,
                           save_seg_type_info=True, single_copy_segments=single_copy_segments)
     graph.clean_up_after_bridging_2(seg_nums_used_in_bridges, args.min_component_size,
-                                    args.min_dead_end_size, verbosity, unbridged_graph)
+                                    args.min_dead_end_size, verbosity, unbridged_graph,
+                                    single_copy_segments)
     if args.keep_temp > 1:
         file_num += 1
         graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +
@@ -247,7 +248,8 @@ def main():
                                            '_cleaned_first_pass.gfa'), verbosity,
                               save_seg_type_info=True, single_copy_segments=single_copy_segments)
         graph.clean_up_after_bridging_2(seg_nums_used_in_bridges, args.min_component_size,
-                                        args.min_dead_end_size, verbosity, unbridged_graph)
+                                        args.min_dead_end_size, verbosity, unbridged_graph,
+                                        single_copy_segments)
         if args.keep_temp > 1:
             file_num += 1
             graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +

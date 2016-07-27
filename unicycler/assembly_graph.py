@@ -1368,7 +1368,7 @@ class AssemblyGraph(object):
             elif verbosity > 1:
                 print('Unused', bridge)
 
-        return seg_nums_used_in_bridges
+        return set(seg_nums_used_in_bridges)
 
     def apply_bridge(self, bridge, verbosity, right_bridged, left_bridged,
                      seg_nums_used_in_bridges):
@@ -1441,14 +1441,13 @@ class AssemblyGraph(object):
 
     def subtract_depth_from_segment(self, seg, depth_to_remove):
         """
-        Removes the given depth from the segment.
+        Removes the given depth from the segment. Allows depths to go into the negative.
         """
         seg_num = seg.number
+        seg.depth -= depth_to_remove
         if seg_num in self.copy_depths and self.copy_depths[seg_num]:
             closest_depth = min(self.copy_depths[seg_num], key=lambda x: abs(x - depth_to_remove))
             del self.copy_depths[seg_num][self.copy_depths[seg_num].index(closest_depth)]
-            depth_to_remove = closest_depth
-        seg.depth = max(0.0, seg.depth - depth_to_remove)
 
     @staticmethod
     def start_end_available_to_bridge(start, end, right_bridged, left_bridged):
@@ -1473,59 +1472,22 @@ class AssemblyGraph(object):
         """
         if verbosity > 1:
             print_section_header('Cleaning up leftover segments', verbosity, last_newline=False)
-        print('\nSEGMENTS USED IN BRIDGES:', seg_nums_used_in_bridges)  # TEMP
 
         # For the purposes of cleaning up, a graph segment which is a bridge counts as a graph
         # segment used in a bridge.
         for seg_num, seg in self.segments.items():
             if seg.bridge is not None:
-                seg_nums_used_in_bridges.append(seg_num)
+                seg_nums_used_in_bridges.add(seg_num)
 
-        # Graph components which contain no single-copy segments are deleted.
+        print('\nSEGMENTS USED IN BRIDGES:', sorted(list(seg_nums_used_in_bridges)))  # TEMP
         single_copy_seg_nums = set(x.number for x in single_copy_segments)
-        segment_nums_to_remove = []
-        connected_components = self.get_connected_components()
-        for component_nums in connected_components:
-            for seg_num in component_nums:
-                if abs(seg_num) in single_copy_seg_nums:
-                    break
-            else:
-                segment_nums_to_remove += component_nums
-        if verbosity > 1 and segment_nums_to_remove:
-            print('\nRemoved components with no single-copy segments:',
-                  ', '.join(str(x) for x in segment_nums_to_remove))
-        self.remove_segments(segment_nums_to_remove)
-
-        # Graph components which have been entirely used in bridges are deleted.
-        segment_nums_to_remove = []
-        connected_components = self.get_connected_components()
-        for component_nums in connected_components:
-            for seg_num in component_nums:
-                if abs(seg_num) not in seg_nums_used_in_bridges:
-                    break
-            else:
-                segment_nums_to_remove += component_nums
-        if verbosity > 1 and segment_nums_to_remove:
-            print('\nRemoved components used in bridges:',
-                  ', '.join(str(x) for x in segment_nums_to_remove))
-        self.remove_segments(segment_nums_to_remove)
-
-        # Any multi-copy segments which cannot possibly connect two single-copy segments are
-        # deleted.
-        segment_nums_to_remove = []
-        for seg_num in self.segments:
-            if seg_num in single_copy_seg_nums:
-                continue
-            if not (self.search(seg_num, single_copy_seg_nums) and
-                    self.search(-seg_num, single_copy_seg_nums)):
-                segment_nums_to_remove.append(seg_num)
-        if verbosity > 1 and segment_nums_to_remove:
-            print('\nRemoved unbridging segments:',
-                  ', '.join(str(x) for x in segment_nums_to_remove))
-        self.remove_segments(segment_nums_to_remove)
+        self.remove_components_without_single_copy_segments(single_copy_seg_nums, verbosity)
+        self.remove_components_entirely_used_in_bridges(seg_nums_used_in_bridges, verbosity)
+        self.remove_unbridging_segments(single_copy_seg_nums, verbosity)
 
     def clean_up_after_bridging_2(self, seg_nums_used_in_bridges, min_component_size,
-                                  min_dead_end_size, verbosity, unbridged_graph):
+                                  min_dead_end_size, verbosity, unbridged_graph,
+                                  single_copy_segments):
         """
         This is the second of two post-bridging cleaning functions, and it takes care of the more
         complex aspects of cleaning: deleting segments that were used in bridges but are still
@@ -1582,8 +1544,8 @@ class AssemblyGraph(object):
             for path_group in path_groups:
                 min_score = 100.0
                 for path_seg in path_group:
-                    if path_seg in usedupness_scores:
-                        min_score = min(min_score, usedupness_scores[path_seg])
+                    if abs(path_seg) in usedupness_scores:
+                        min_score = min(min_score, usedupness_scores[abs(path_seg)])
                 scored_path_groups.append((min_score, path_group))
             scored_path_groups = sorted(scored_path_groups, reverse=True, key=lambda x: x[0])
 
@@ -1601,51 +1563,89 @@ class AssemblyGraph(object):
             print('\nRemoved segments used in bridges:',
                   ', '.join(str(x) for x in removed_segments))
 
+        # Now that clean up is finished, we no longer want to allow segment depths below zero.
+        for segment in self.segments.values():
+            segment.depth = max(0.0, segment.depth)
+
+        single_copy_seg_nums = set(x.number for x in single_copy_segments)
+        self.remove_components_without_single_copy_segments(single_copy_seg_nums, verbosity)
+        self.remove_components_entirely_used_in_bridges(seg_nums_used_in_bridges, verbosity)
+        self.remove_unbridging_segments(single_copy_seg_nums, verbosity)
         self.remove_small_components(min_component_size, verbosity)
         self.remove_small_dead_ends(min_dead_end_size, verbosity)
+
+    def remove_components_without_single_copy_segments(self, single_copy_seg_nums, verbosity):
+        """
+        Deletes all graph components that contain no single copy segments.
+        """
+        segment_nums_to_remove = []
+        connected_components = self.get_connected_components()
+        for component_nums in connected_components:
+            for seg_num in component_nums:
+                if abs(seg_num) in single_copy_seg_nums:
+                    break
+            else:
+                segment_nums_to_remove += component_nums
+        if verbosity > 1 and segment_nums_to_remove:
+            print('\nRemoved components with no single-copy segments:',
+                  ', '.join(str(x) for x in segment_nums_to_remove))
+        self.remove_segments(segment_nums_to_remove)
+
+    def remove_components_entirely_used_in_bridges(self, seg_nums_used_in_bridges, verbosity):
+        """
+        Deletes all graph components which have been entirely used in bridges.
+        """
+        segment_nums_to_remove = []
+        connected_components = self.get_connected_components()
+        for component_nums in connected_components:
+            for seg_num in component_nums:
+                if abs(seg_num) not in seg_nums_used_in_bridges:
+                    break
+            else:
+                segment_nums_to_remove += component_nums
+        if verbosity > 1 and segment_nums_to_remove:
+            print('\nRemoved components used in bridges:',
+                  ', '.join(str(x) for x in segment_nums_to_remove))
+        self.remove_segments(segment_nums_to_remove)
+
+    def remove_unbridging_segments(self, single_copy_seg_nums, verbosity):
+        """
+        Deletes any multi-copy segments which cannot possibly connect two single-copy segments.
+        """
+        segment_nums_to_remove = []
+        for seg_num in self.segments:
+            if seg_num in single_copy_seg_nums:
+                continue
+            if not (self.search(seg_num, single_copy_seg_nums) and
+                    self.search(-seg_num, single_copy_seg_nums)):
+                segment_nums_to_remove.append(seg_num)
+        if verbosity > 1 and segment_nums_to_remove:
+            print('\nRemoved unbridging segments:',
+                  ', '.join(str(x) for x in segment_nums_to_remove))
+        self.remove_segments(segment_nums_to_remove)
 
     def get_usedupness_score(self, seg_num, unbridged_graph):
         """
         Returns a score for the segment which reflects how likely it is that the segment has been
-        'used up' in bridges. E.g. a segment which has a copy number of 2 and has been used in 2
-        bridges is used up, but if it was only used in one bridge, it's not used up.
+        'used up' in bridges. E.g. a segment which originally had a depth of 2.0 and now has a
+        depth of 0.03 is probably used up, but if its depth is now 0.94, it's less likely that
+        it's used up.
         """
         original_depth = unbridged_graph.segments[seg_num].depth
         current_depth = self.segments[seg_num].depth
         depth_used = original_depth - current_depth
+
+        # Since segment depths can get negative, depth_fraction_used can exceed 1.0 and
+        # depth_fraction_unused can drop below 0.0.
         depth_fraction_used = depth_used / original_depth
         depth_fraction_unused = 1.0 - depth_fraction_used
 
-        # If the segment originally had copy depths assigned, then we use those to determine the
-        # usedupness score.
-        if seg_num in unbridged_graph.copy_depths and unbridged_graph.copy_depths[seg_num]:
-            original_copy_depth_count = len(unbridged_graph.copy_depths[seg_num])
-            if seg_num in self.copy_depths and self.copy_depths[seg_num]:
-                current_copy_depth_count = len(self.copy_depths[seg_num])
-            else:
-                current_copy_depth_count = 0
+        # A score penalty is applied based on the original depth. For example, a segment that
+        # originally had 20x depth and is now down to 2x is less confidently used up than a segment
+        # which originally had 2x depth and is now down to 0.2x.
+        penalty = score_function(original_depth, 4.0)
 
-            # If no copy depths are remaining, that means the segment is quite used up. It's given
-            # a score between 2 and 4, with higher scores for lower original copy depths. This is
-            # because, for example, 0/2 is more reliable than 0/20. The unused depth fraction is
-            # subtracted from the score as a penalty, which helps to break ties.
-            if not current_copy_depth_count:
-                return 2.0 + (1.0 / original_copy_depth_count) - depth_fraction_unused
-
-            # If there are copy depths remaining, then the score is between 0 and 1.
-            else:
-                used_copy_depth_count = original_copy_depth_count - current_copy_depth_count
-                return used_copy_depth_count / original_copy_depth_count
-
-        # If the segment never had copy depths assigned, then we can only work with the segment's
-        # depth. A score penalty is applied based on the original depth. For example, a segment
-        # that originally had 20x depth and is now down to 2x is less confidently used up than a
-        # segment which originally had 2x depth and is now down to 0.2x. The score is between 0
-        # and 2.
-        else:
-            penalty = score_function(original_depth, 4.0)
-            score = (2.0 * depth_fraction_used) - penalty
-            return max(0.0, score)
+        return (2.0 * depth_fraction_used) - penalty
 
     def find_all_simple_loops(self):
         """

@@ -3,7 +3,7 @@
 Convenience wrapper for running Antpath directly from source tree.
 """
 
-from unicycler.antpath import main
+from unicycler.unicycler_align import main
  
 if __name__ == '__main__':
     main()

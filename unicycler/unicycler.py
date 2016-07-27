@@ -20,7 +20,8 @@ from .misc import int_to_str, float_to_str, quit_with_error, get_percentile, \
     print_section_header, check_files_and_programs
 from .spades_func import get_best_spades_graph
 from .blast_func import find_start_gene, CannotFindStart
-from .antpath import add_aligning_arguments, fix_up_arguments, semi_global_align_long_reads, \
+from .unicycler_align import add_aligning_arguments, fix_up_arguments, \
+    semi_global_align_long_reads, \
     load_references, load_long_reads, AlignmentScoringScheme, load_sam_alignments, \
     print_alignment_summary_table
 from .pilon_func import polish_with_pilon, CannotPolish

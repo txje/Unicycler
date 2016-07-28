@@ -41,8 +41,9 @@ class SpadesContigBridge(object):
         # The bridge depth, a weighted mean of the start and end depths.
         self.depth = 0.0
 
-        # A score used to determine the order of bridge application.
-        self.quality = 40.0
+        # A score used to determine the order of bridge application. SPAdes contig bridges don't
+        # start at 1.0 and so cannot get as high as long read bridges potentially can.
+        self.quality = 0.4
 
         # The first and last values in spades_contig_path are the start and end segments. The
         # values in between are the path.
@@ -63,8 +64,7 @@ class SpadesContigBridge(object):
         # so depth_disagreement is applied to quality twice (squared effect).
         start_seg = graph.segments[abs(self.start_segment)]
         end_seg = graph.segments[abs(self.end_segment)]
-        depth_agreement = get_num_agreement(start_seg.depth, end_seg.depth)
-        self.quality *= (depth_agreement * depth_agreement)  # has squared effect on quality
+        self.quality *= get_depth_agreement_factor(start_seg.depth, end_seg.depth)
         self.depth = get_mean_depth(start_seg, end_seg, graph)
 
         # If the segments in the path exclusively lead to the start and end segments (i.e they
@@ -92,6 +92,10 @@ class SpadesContigBridge(object):
                                                                       graph.insert_size_mean +
                                                                       graph.insert_size_deviation)
             self.quality *= bridge_length_factor
+
+        # We finalise the quality to a range of 0 to 100. We also use the sqrt function to pull
+        # the scores up a bit (otherwise they tend to hang near the bottom of the range).
+        self.quality = 100.0 * math.sqrt(self.quality)
 
     def __repr__(self):
         return 'SPAdes bridge: ' + get_bridge_str(self.start_segment, self.graph_path,
@@ -426,24 +430,7 @@ class LongReadBridge(object):
 
         # The start segment and end segment should agree in depth. If they don't, that's very bad,
         # as it implies that they aren't actually single-copy or on the same piece of DNA.
-        # The function is set up such that:
-        #   * equal depths give a depth_agreement_factor of 1.0
-        #   * similar depths give a depth_agreement_factor of near 1.0
-        #   * more divergent depths have a much lower depth_agreement_factor:
-        #       a ratio of 1.35 results in a depth_agreement_factor of about 0.5
-        #       a ratio of 2.06 results in a depth_agreement_factor of about 0.1
-        # https://www.desmos.com/calculator
-        #     y=\frac{1}{1+10^{2\left(\log \left(x-1\right)+0.45\right)}}
-        #     y=\frac{1}{1+10^{2\left(\log \left(\frac{1}{x}-1\right)+0.45\right)}}
-        larger_depth = max(start_seg.depth, end_seg.depth)
-        smaller_depth = min(start_seg.depth, end_seg.depth)
-        if larger_depth == 0.0 or smaller_depth == 0.0:
-            depth_agreement_factor = 0.0
-        elif larger_depth == smaller_depth:
-            depth_agreement_factor = 1.0
-        else:
-            ratio = larger_depth / smaller_depth
-            depth_agreement_factor = 1.0 / (1.0 + 10.0 ** (2 * (math.log10(ratio - 1.0) + 0.45)))
+        depth_agreement_factor = get_depth_agreement_factor(start_seg.depth, end_seg.depth)
         self.quality *= depth_agreement_factor
 
         # The number of reads which contribute to a bridge is a big deal, so the read count factor
@@ -574,7 +561,7 @@ class LoopUnrollingBridge(object):
 
         # A score used to determine the order of bridge application. This value starts at the
         # maximum for a loop unrolling bridge and can only decrease as the constructor continues.
-        self.quality = 30.0
+        self.quality = 0.4
 
         # Get the actual segments from the numbers. Since we are assuming they do form a simple
         # loop, we don't care about directionality.
@@ -585,8 +572,7 @@ class LoopUnrollingBridge(object):
 
         # The start segment and end segment should agree in depth. If they don't, that's very bad,
         # so depth_disagreement is applied to quality twice (squared effect).
-        depth_agreement = get_num_agreement(start_seg.depth, end_seg.depth)
-        self.quality *= (depth_agreement * depth_agreement)  # has squared effect on quality
+        self.quality *= get_depth_agreement_factor(start_seg.depth, end_seg.depth)
 
         # We'll use a mean loop count that's weighted by the middle and repeat segment lengths.
         self.depth = get_mean_depth(start_seg, end_seg, graph)
@@ -597,7 +583,7 @@ class LoopUnrollingBridge(object):
                                            repeat_seg.get_length_no_overlap(graph.overlap))
 
         # If the average loop count is near a whole number, that's better. If it's near 0.5, that's
-        # very bad!
+        # very bad because we don't know whether to round up or down.
         if mean_loop_count < 1.0:
             loop_count = 1
             closeness_to_whole_num = mean_loop_count
@@ -616,6 +602,10 @@ class LoopUnrollingBridge(object):
         for _ in range(loop_count):
             self.graph_path += [middle, repeat]
         self.bridge_sequence = graph.get_path_sequence(self.graph_path)
+
+        # We finalise the quality to a range of 0 to 100. We also use the sqrt function to pull
+        # the scores up a bit (otherwise they tend to hang near the bottom of the range).
+        self.quality = 100.0 * math.sqrt(self.quality)
 
     def __repr__(self):
         return 'loop bridge: ' + get_bridge_str(self.start_segment, self.graph_path,
@@ -1021,3 +1011,27 @@ def reduce_expected_count(expected_count, a, b):
     y=x\cdot \left(\left(\frac{a}{a+x}\right)\cdot \left(1-b\right)+b\right)
     """
     return expected_count * ((a / (a + expected_count)) * (1.0 - b) + b)
+
+
+def get_depth_agreement_factor(start_seg_depth, end_seg_depth):
+    """
+    This function is set up such that:
+      * equal depths return 1.0
+      * similar depths return a value near 1.0
+      * more divergent depths return a much lower value:
+          a ratio of 1.35 return a value of about 0.5
+          a ratio of 2.06 return a value of about 0.1
+      * very different depths return a value near 0.0
+    https://www.desmos.com/calculator
+        y=\frac{1}{1+10^{2\left(\log \left(x-1\right)+0.45\right)}}
+        y=\frac{1}{1+10^{2\left(\log \left(\frac{1}{x}-1\right)+0.45\right)}}
+    """
+    larger_depth = max(start_seg_depth, end_seg_depth)
+    smaller_depth = min(start_seg_depth, end_seg_depth)
+    if larger_depth == 0.0 or smaller_depth == 0.0:
+        return 0.0
+    elif larger_depth == smaller_depth:
+        return 1.0
+    else:
+        ratio = larger_depth / smaller_depth
+        return 1.0 / (1.0 + 10.0 ** (2 * (math.log10(ratio - 1.0) + 0.45)))

@@ -892,6 +892,7 @@ class AssemblyGraph(object):
         self.normalise_read_depths()
         self.renumber_segments()
         self.sort_link_order()
+        self.paths = {}  # Don't need the paths anymore
 
     def repair_multi_way_junctions(self):
         """
@@ -1356,7 +1357,7 @@ class AssemblyGraph(object):
             prev_segment_number = seg_num
         return path_sequence
 
-    def apply_bridges(self, bridges, verbosity, min_bridge_qual):
+    def apply_bridges(self, bridges, verbosity, min_bridge_qual, unbridged_graph):
         """
         Uses the supplied bridges to simplify the graph.
         """
@@ -1382,8 +1383,8 @@ class AssemblyGraph(object):
             if can_use_bridge:
                 # If a bridge has multiple equally-good graph paths, then we can choose which one
                 # to use based on the availability of the path.
-                if isinstance(bridge, LongReadBridge) and len(bridge.all_best_paths) > 1:
-                    bridge.set_path_based_on_availability(self)
+                if isinstance(bridge, LongReadBridge) and len(bridge.all_paths) > 1:
+                    bridge.set_path_based_on_availability(self, unbridged_graph)
 
                 # The second criterion for whether the bridge can be applied is a bit trickier. We
                 # need to check whether either the start or end segment has already been used the
@@ -1558,7 +1559,7 @@ class AssemblyGraph(object):
         removed_segments = []
 
         # Get all usedupness scores once, outside the loop, to save time in the loop.
-        usedupness_scores = {}
+        usedupness_scores = defaultdict(float)
         for seg_num in seg_nums_used_in_bridges:
             if seg_num in self.segments and seg_num in unbridged_graph.segments:
                 usedupness_scores[seg_num] = self.get_usedupness_score(seg_num, unbridged_graph)
@@ -1599,8 +1600,7 @@ class AssemblyGraph(object):
             for path_group in path_groups:
                 min_score = 100.0
                 for path_seg in path_group:
-                    if abs(path_seg) in usedupness_scores:
-                        min_score = min(min_score, usedupness_scores[abs(path_seg)])
+                    min_score = min(min_score, usedupness_scores[abs(path_seg)])
                 scored_path_groups.append((min_score, path_group))
             scored_path_groups = sorted(scored_path_groups, reverse=True, key=lambda x: x[0])
 
@@ -1612,12 +1612,34 @@ class AssemblyGraph(object):
                     break
             else:
                 break
+
+        # It's possible at this point that there are bubbles remaining in the graph which are
+        # mostly used up. If we can delete them without introducing dead ends, we do so.
+        usedupness_threshold = 0.5  # TO DO: make this a parameter?
+        while True:
+            potentially_deletable_paths = []
+            for seg_num in self.segments:
+                path = self.get_simple_path(seg_num)
+                path_lengths = [self.segments[abs(x)].get_length() - self.overlap for x in path]
+                path_usedupness = [usedupness_scores[abs(x)] for x in path]
+                average_usedupness = weighted_average_list(path_usedupness, path_lengths)
+                potentially_deletable_paths.append((average_usedupness, path))
+            for usedupness, path in potentially_deletable_paths:
+                if usedupness > usedupness_threshold and \
+                        self.dead_end_change_if_path_deleted(path) <= 0:
+                    unsigned_path = [abs(x) for x in path]
+                    self.remove_segments(unsigned_path)
+                    removed_segments += unsigned_path
+                    break
+            else:
+                break
+
         if verbosity > 1 and removed_segments:
             removed_segments = sorted(list(set(removed_segments)))
             print('\nRemoved segments used in bridges:',
                   ', '.join(str(x) for x in removed_segments))
 
-        # Now that clean up is finished, we no longer want to allow segment depths below zero.
+        # Now that clean up is finished, we no longer want to allow depths below zero.
         for segment in self.segments.values():
             segment.depth = max(0.0, segment.depth)
 
@@ -1697,7 +1719,7 @@ class AssemblyGraph(object):
         # which originally had 2x depth and is now down to 0.2x.
         penalty = score_function(original_depth, 4.0)
 
-        return (2.0 * depth_fraction_used) - penalty
+        return depth_fraction_used - (penalty / 2.0)
 
     def find_all_simple_loops(self):
         """
@@ -2208,7 +2230,7 @@ class AssemblyGraph(object):
 
     def get_best_paths_for_seq(self, start_seg, end_seg, target_length, sequence, scoring_scheme):
         """
-        Given a sequence and target length, this function finds the best path from the start
+        Given a sequence and target length, this function finds the best paths from the start
         segment to the end segment.
         """
         # Limit the path search to lengths near the target.
@@ -2269,46 +2291,30 @@ class AssemblyGraph(object):
 
         # Sort the paths from highest to lowest quality.
         paths_and_scores = sorted(paths_and_scores, key=lambda x: (-x[1], x[2], -x[3]))
-
-        # Only keep the paths which tie for the top slot. This will usually mean only one path,
-        # but could be multiple paths that tie.
-        if not paths_and_scores:
-            return [], []
-        best_path = paths_and_scores[0]
-        best_paths = [best_path]
-        for i in range(1, len(paths_and_scores)):
-            potential_best = paths_and_scores[i]
-            if potential_best[1:4] == best_path[1:4]:
-                best_paths.append(potential_best)
-            else:
-                break
-
-        return paths_and_scores, best_paths
+        return paths_and_scores
 
     def get_path_availability(self, path):
         """
         Given a path, this function returns the fraction that is available. A segment is considered
-        unavailable if it has no more copy depth or has a depth of below 0.5.
+        fully available it has a depth of above 0.5. Below that, availability drops towards 0. A
+        single segment can have negative availability (if it has negative depth), but this function
+        will only return a number from 0 to 1.
         """
         total_bases = 0
-        available_bases = 0
+        available_bases = 0.0
         for seg_num in path:
-            abs_seg_num = abs(seg_num)
-            seg = self.segments[abs_seg_num]
-            if abs_seg_num in self.copy_depths and len(self.copy_depths[abs_seg_num]) == 0:
-                available = False
-            elif seg.depth < 0.5:
-                available = False
+            seg = self.segments[abs(seg_num)]
+            if seg.depth >= 0.5:
+                seg_availability = 1.0
             else:
-                available = True
+                seg_availability = 2 * seg.depth
             seg_len = seg.get_length() - self.overlap
             total_bases += seg_len
-            if available:
-                available_bases += seg_len
+            available_bases += seg_len * seg_availability
         if total_bases == 0:
             return 1.0
         else:
-            return available_bases / total_bases
+            return max(0.0, available_bases / total_bases)
 
     def get_estimated_sequence_len(self):
         """

@@ -82,7 +82,8 @@ def main():
     bridges = create_spades_contig_bridges(unbridged_graph, single_copy_segments)
     bridges += create_loop_unrolling_bridges(unbridged_graph)
     graph = copy.deepcopy(unbridged_graph)
-    seg_nums_used_in_bridges = graph.apply_bridges(bridges, verbosity, args.min_bridge_qual)
+    seg_nums_used_in_bridges = graph.apply_bridges(bridges, verbosity, args.min_bridge_qual,
+                                                   unbridged_graph)
     file_num += 1
     spades_bridged_graph_unmerged = os.path.join(args.out, str(file_num).zfill(3) +
                                                  '_spades_bridges_applied.gfa')
@@ -234,7 +235,8 @@ def main():
         graph = copy.deepcopy(unbridged_graph)
         print_section_header('Bridging graph with long reads', verbosity,
                              last_newline=(verbosity > 1))
-        seg_nums_used_in_bridges = graph.apply_bridges(bridges, verbosity, args.min_bridge_qual)
+        seg_nums_used_in_bridges = graph.apply_bridges(bridges, verbosity, args.min_bridge_qual,
+                                                       unbridged_graph)
         file_num += 1
         read_bridged_graph_unmerged = os.path.join(args.out, str(file_num).zfill(3) +
                                                    '_long_read_bridges_applied.gfa')

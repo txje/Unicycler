@@ -142,13 +142,11 @@ class LongReadBridge(object):
 
         # The path through the unbridged graph, if one was found.
         self.graph_path = []
-        self.all_best_paths = []
+        self.all_paths = []
 
         # The bridge sequence, gotten from the graph path if a good path was found. Otherwise it's
-        # from the consensus sequence. If there are multiple best paths, then all_bridge_sequences
-        # will contain the sequence for each.
+        # from the consensus sequence.
         self.bridge_sequence = ''
-        self.all_bridge_sequences = []
 
         # The bridge depth, a weighted mean of the start and end depths.
         self.depth = get_mean_depth(graph.segments[abs(self.start_segment)],
@@ -296,17 +294,15 @@ class LongReadBridge(object):
         output += '  target path length:      ' + int_to_str(target_path_length) + ' bp\n'
 
         path_start_time = time.time()
-        all_paths, self.all_best_paths = self.graph.get_best_paths_for_seq(self.start_segment,
-                                                                           self.end_segment,
-                                                                           target_path_length,
-                                                                           self.consensus_sequence,
-                                                                           scoring_scheme)
+        self.all_paths = self.graph.get_best_paths_for_seq(self.start_segment, self.end_segment,
+                                                           target_path_length,
+                                                           self.consensus_sequence, scoring_scheme)
         path_time = time.time() - path_start_time
 
-        output += '  path count:              ' + int_to_str(len(all_paths)) + ' '
+        output += '  path count:              ' + int_to_str(len(self.all_paths)) + ' '
         output += '(' + float_to_str(path_time, 2) + ' sec)\n'
         if verbosity > 2:
-            for i, path in enumerate(all_paths):
+            for i, path in enumerate(self.all_paths):
                 label = '  path ' + str(i + 1) + ':'
                 label = label.ljust(27)
                 output += label + ', '.join(str(x) for x in path[0])
@@ -316,42 +312,23 @@ class LongReadBridge(object):
                 output += 'length discrepancy = ' + int_to_str(path[2]) + ' bp)\n'
 
         # If paths were found, use a path sequence for the bridge.
-        if self.all_best_paths:
-
-            if len(self.all_best_paths) == 1:
-                output += '  best path:               '
+        if self.all_paths:
+            output += '  best path:               '
+            if self.all_paths[0][0]:
+                output += ', '.join(str(x) for x in self.all_paths[0][0])
             else:
-                output += '  best paths:              '
-            for i, best_path in enumerate(self.all_best_paths):
-                if i > 0:
-                    output += '                           '
-                if best_path[0]:
-                    output += ', '.join(str(x) for x in best_path[0])
-                else:
-                    output += 'direct connection'
-                output += ' (' + int_to_str(self.graph.get_path_length(best_path[0])) + ' bp, '
-                output += 'raw score = ' + float_to_str(best_path[1], 1) + ', '
-                output += 'scaled score = ' + float_to_str(best_path[3], 2) + ', '
-                output += 'length discrepancy = ' + int_to_str(best_path[2]) + ' bp)\n'
+                output += 'direct connection'
+            output += ' (' + int_to_str(self.graph.get_path_length(self.all_paths[0][0])) + ' bp, '
+            output += 'raw score = ' + float_to_str(self.all_paths[0][1], 1) + ', '
+            output += 'scaled score = ' + float_to_str(self.all_paths[0][3], 2) + ', '
+            output += 'length discrepancy = ' + int_to_str(self.all_paths[0][2]) + ' bp)\n'
 
-            for best_path in self.all_best_paths:
-                path = best_path[0]
-                if path:
-                    path_sequence = self.graph.get_path_sequence(path)
-                else:  # No path implies a direction connection between the start and end segments.
-                    start_overlap = \
-                        self.graph.seq_from_signed_seg_num(self.start_segment)[-self.graph.overlap:]
-                    end_overlap = \
-                        self.graph.seq_from_signed_seg_num(self.end_segment)[:self.graph.overlap]
-                    path_sequence = start_overlap + end_overlap
-                self.all_bridge_sequences.append(path_sequence)
-
-            self.graph_path = self.all_best_paths[0][0]
-            self.bridge_sequence = self.all_bridge_sequences[0]
+            self.graph_path = self.all_paths[0][0]
+            self.bridge_sequence = self.graph.get_path_sequence(self.graph_path)
             self.path_support = True
 
             # Start the quality on the scaled score of the path alignment (which maxes at 100.0).
-            self.quality = self.all_best_paths[0][3] / 100.0
+            self.quality = self.all_paths[0][3] / 100.0
 
         # If a path wasn't found, the consensus sequence is the bridge (with the overlaps added).
         else:
@@ -491,21 +468,46 @@ class LongReadBridge(object):
 
         return output
 
-    def set_path_based_on_availability(self, graph):
+    def set_path_based_on_availability(self, graph, unbridged_graph):
         """
-        If this bridge has multiple equally-good paths, this will change its path to the one most
-        available in the graph.
+        This function will change a bridge's graph path based on what's currently available. This
+        is to handle the case where a bridge has multiple possible graph paths, but its first
+        choice isn't available anymore (because other bridges used up those segments).
+        It has to balance the path quality with the path availability to make a choice.
         """
-        best_path = self.all_best_paths[0][0]
+        best_path = self.all_paths[0][0]
+        best_sequence = unbridged_graph.get_path_sequence(best_path)
+        best_scaled_score = self.all_paths[0][3]
         best_availability = graph.get_path_availability(best_path)
-        best_sequence = self.all_bridge_sequences[0]
-        for i in range(1, len(self.all_best_paths)):
-            potential_path = self.all_best_paths[i][0]
-            potential_path_availability = graph.get_path_availability(potential_path)
-            if potential_path_availability > best_availability:
-                best_availability = potential_path_availability
+        for i in range(1, len(self.all_paths)):
+            potential_path = self.all_paths[i][0]
+            potential_scaled_score = self.all_paths[i][3]
+            potential_availability = graph.get_path_availability(potential_path)
+
+            # relative_score measures how much worse this path aligned than the current best.
+            # Differences matter more close to scores of 100. E.g. 99 to 97 is a big drop in
+            # score, but 79 to 77 is not as large of a drop.
+            assert potential_scaled_score <= best_scaled_score
+            if potential_scaled_score == 100.0 and best_scaled_score == 100.0:
+                relative_score = 1.0
+            else:
+                relative_score = (100.0 - best_scaled_score) / (100.0 - potential_scaled_score)
+
+            # relative_availability measures how much more available this path is than the current
+            # best it ranges from 0 to 2.
+            if best_availability == 0.0:
+                if potential_availability == 0.0:
+                    relative_availability = 1.0
+                else:
+                    relative_availability = 2.0
+            else:
+                relative_availability = min(2.0, potential_availability / best_availability)
+
+            if relative_score * relative_availability > 1.0:
                 best_path = potential_path
-                best_sequence = self.all_bridge_sequences[i]
+                best_sequence = unbridged_graph.get_path_sequence(potential_path)
+                best_scaled_score = potential_scaled_score
+                best_availability = potential_availability
         self.graph_path = best_path
         self.bridge_sequence = best_sequence
 

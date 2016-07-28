@@ -249,6 +249,7 @@ class LongReadBridge(object):
             max_partial = min(5, len(full_span_seqs))  # TO DO: make this a parameter?
             if len(full_span_seqs) == max_full_span:
                 max_partial = 0
+            max_partial = 0  # TEMP
             if len(self.start_only_reads) <= max_partial:
                 start_only_seqs = [x[0] for x in self.start_only_reads]
                 start_only_quals = [x[1] for x in self.start_only_reads]
@@ -487,30 +488,17 @@ class LongReadBridge(object):
             # relative_score measures how much worse this path aligned than the current best.
             # Differences matter more close to scores of 100. E.g. 99 to 97 is a big drop in
             # score, but 79 to 77 is not as large of a drop.
-            assert potential_scaled_score <= best_scaled_score
-            if potential_scaled_score == 100.0 and best_scaled_score == 100.0:
+            if potential_scaled_score == 100.0:
                 relative_score = 1.0
             else:
                 relative_score = (100.0 - best_scaled_score) / (100.0 - potential_scaled_score)
+                relative_score = min(1.0, relative_score)
 
             # relative_availability measures how much more available this path is than the current
-            # best.
-            if best_availability == 0.0:
-                if potential_availability == 0.0:
-                    relative_availability = 1.0
-                else:
-                    relative_availability = 2.0
-            if potential_availability == 1.0 and best_availability == 1.0:
-                relative_score = 1.0
-            elif potential_availability == 1.0 and best_availability < 1.0:
-                relative_availability = 2.0
-            else:
-                relative_availability = (1.0 - best_availability) / (1.0 - potential_availability)
-                relative_availability = min(2.0, relative_availability)
-
-            # Reduce the availability effect (because score is more important).
-            if relative_availability > 1.0:
-                relative_availability = 1.0 + (relative_availability - 1.0) / 2.0
+            # best. We use 1.1 (instead of 1.0) in the equation to attenuate the affect of
+            # availability a bit (because score is more important).
+            relative_availability = (1.1 - best_availability) / (1.1 - potential_availability)
+            relative_availability = min(2.0, relative_availability)
 
             # If this path looks better than our current best (considering both score and
             # availability), then it becomes the new best.

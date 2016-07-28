@@ -9,6 +9,7 @@ email: rrwick@gmail.com
 
 from multiprocessing.dummy import Pool as ThreadPool
 import time
+import math
 from collections import defaultdict
 from .misc import int_to_str, float_to_str, reverse_complement, print_progress_line, \
     weighted_average, get_num_agreement, flip_number_order, score_function
@@ -346,7 +347,7 @@ class LongReadBridge(object):
             self.path_support = True
 
             # Start the quality on the scaled score of the path alignment (which maxes at 100.0).
-            self.quality = self.all_best_paths[0][3]
+            self.quality = self.all_best_paths[0][3] / 100.0
 
         # If a path wasn't found, the consensus sequence is the bridge (with the overlaps added).
         else:
@@ -392,11 +393,11 @@ class LongReadBridge(object):
             # couldn't be a graph path). If only one of the two segments is a dead end, then it gets
             # a small penalty. If neither are a dead end, then it gets a large penalty (because in
             # this case we'd expect a graph path).
-            self.quality = 100.0
+            self.quality = 1.0
             if not self.graph.ends_with_dead_end(self.start_segment):
-                self.quality -= 40.0
+                self.quality -= 0.4
             if not self.graph.starts_with_dead_end(self.end_segment):
-                self.quality -= 40.0
+                self.quality -= 0.4
 
         # Expected read count is determined using the read lengths and bridge size. For a given
         # read length and bridge, there are an estimable number of positions where a read of that
@@ -421,11 +422,28 @@ class LongReadBridge(object):
 
         if verbosity > 2:
             output += '  expected bridging reads: ' + float_to_str(expected_read_count, 2) + '\n'
-            output += '  starting quality:        ' + float_to_str(self.quality, 2) + '\n'
+            output += '  path factor:             ' + float_to_str(self.quality, 2) + '\n'
 
         # The start segment and end segment should agree in depth. If they don't, that's very bad,
         # as it implies that they aren't actually single-copy or on the same piece of DNA.
-        depth_agreement_factor = get_num_agreement(start_seg.depth, end_seg.depth) ** 2
+        # The function is set up such that:
+        #   * equal depths give a depth_agreement_factor of 1.0
+        #   * similar depths give a depth_agreement_factor of near 1.0
+        #   * more divergent depths have a much lower depth_agreement_factor:
+        #       a ratio of 1.35 results in a depth_agreement_factor of about 0.5
+        #       a ratio of 2.06 results in a depth_agreement_factor of about 0.1
+        # https://www.desmos.com/calculator
+        #     y=\frac{1}{1+10^{2\left(\log \left(x-1\right)+0.45\right)}}
+        #     y=\frac{1}{1+10^{2\left(\log \left(\frac{1}{x}-1\right)+0.45\right)}}
+        larger_depth = max(start_seg.depth, end_seg.depth)
+        smaller_depth = min(start_seg.depth, end_seg.depth)
+        if larger_depth == 0.0 or smaller_depth == 0.0:
+            depth_agreement_factor = 0.0
+        elif larger_depth == smaller_depth:
+            depth_agreement_factor = 1.0
+        else:
+            ratio = larger_depth / smaller_depth
+            depth_agreement_factor = 1.0 / (1.0 + 10.0 ** (2 * (math.log10(ratio - 1.0) + 0.45)))
         self.quality *= depth_agreement_factor
 
         # The number of reads which contribute to a bridge is a big deal, so the read count factor
@@ -464,6 +482,10 @@ class LongReadBridge(object):
         self.quality *= end_length_factor
         smaller_length_factor = min(start_length_factor, end_length_factor)
         self.quality *= smaller_length_factor
+
+        # We finalise the quality to a range of 0 to 100. We also use the sqrt function to pull
+        # the scores up a bit (otherwise they tend to hang near the bottom of the range).
+        self.quality = 100.0 * math.sqrt(self.quality)
 
         if verbosity > 2:
             output += '  depth agreement factor:  ' + float_to_str(depth_agreement_factor, 2) + '\n'

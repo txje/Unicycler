@@ -414,8 +414,8 @@ def get_num_agreement(num_1, num_2):
     if num_1 == 0.0 and num_2 == 0.0:
         return 1.0
     if num_1 < 0.0 and num_2 < 0.0:
-        num_1 = -num_1
-        num_2 = -num_2
+        num_1 *= -1
+        num_2 *= -1
     if num_1 * num_2 < 0.0:
         return 0.0
     return min(num_1, num_2) / max(num_1, num_2)

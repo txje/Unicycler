@@ -494,20 +494,32 @@ class LongReadBridge(object):
                 relative_score = (100.0 - best_scaled_score) / (100.0 - potential_scaled_score)
 
             # relative_availability measures how much more available this path is than the current
-            # best it ranges from 0 to 2.
+            # best.
             if best_availability == 0.0:
                 if potential_availability == 0.0:
                     relative_availability = 1.0
                 else:
                     relative_availability = 2.0
+            if potential_availability == 1.0 and best_availability == 1.0:
+                relative_score = 1.0
+            elif potential_availability == 1.0 and best_availability < 1.0:
+                relative_availability = 2.0
             else:
-                relative_availability = min(2.0, potential_availability / best_availability)
+                relative_availability = (1.0 - best_availability) / (1.0 - potential_availability)
+                relative_availability = min(2.0, relative_availability)
 
+            # Reduce the availability effect (because score is more important).
+            if relative_availability > 1.0:
+                relative_availability = 1.0 + (relative_availability - 1.0) / 2.0
+
+            # If this path looks better than our current best (considering both score and
+            # availability), then it becomes the new best.
             if relative_score * relative_availability > 1.0:
                 best_path = potential_path
                 best_sequence = unbridged_graph.get_path_sequence(potential_path)
                 best_scaled_score = potential_scaled_score
                 best_availability = potential_availability
+
         self.graph_path = best_path
         self.bridge_sequence = best_sequence
 

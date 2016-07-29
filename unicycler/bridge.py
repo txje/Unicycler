@@ -249,7 +249,6 @@ class LongReadBridge(object):
             max_partial = min(5, len(full_span_seqs))  # TO DO: make this a parameter?
             if len(full_span_seqs) == max_full_span:
                 max_partial = 0
-            max_partial = 0  # TEMP
             if len(self.start_only_reads) <= max_partial:
                 start_only_seqs = [x[0] for x in self.start_only_reads]
                 start_only_quals = [x[1] for x in self.start_only_reads]

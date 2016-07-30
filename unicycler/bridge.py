@@ -227,9 +227,9 @@ class LongReadBridge(object):
         if full_spans_with_seq:
 
             # Full-span sequences are faster in the MSA and are very useful for the consensus
-            # sequence, so we want to use a lot! But we still set an upper limit for cases of
-            # very high read depth, as getting the consensus sequence will be very slow if there
-            # are too many reads.
+            # sequence, so we want to use a lot! But we still set an upper limit for cases of very
+            # high read depth, as getting the consensus sequence will be slow if there are too many
+            # reads.
             max_full_span = 25  # TO DO: make this a parameter?
             if len(full_spans_with_seq) <= max_full_span:
                 full_span_seqs = [x[0] for x in full_spans_with_seq]
@@ -244,10 +244,10 @@ class LongReadBridge(object):
             # Start-only and end-only sequences make the MSA a lot slower, contribute less to the
             # consensus and can screw up the MSA if they are too abundant. So if there are too many
             # of them, we only include the ones with the best alignments.
-            # Also, if we have a LOT of full span reads, there's no need to include any partial
+            # Also, if we have a lot of full span reads, there's no need to include any partial
             # sequences at all.
-            max_partial = min(5, len(full_span_seqs))  # TO DO: make this a parameter?
-            if len(full_span_seqs) == max_full_span:
+            max_partial = min(3, len(full_span_seqs))  # TO DO: make this a parameter?
+            if len(full_span_seqs) > max_full_span / 2:
                 max_partial = 0
             if len(self.start_only_reads) <= max_partial:
                 start_only_seqs = [x[0] for x in self.start_only_reads]
@@ -494,9 +494,9 @@ class LongReadBridge(object):
                 relative_score = min(1.0, relative_score)
 
             # relative_availability measures how much more available this path is than the current
-            # best. We use 1.1 (instead of 1.0) in the equation to attenuate the affect of
+            # best. We use 1.2 (instead of 1.0) in the equation to attenuate the affect of
             # availability a bit (because score is more important).
-            relative_availability = (1.1 - best_availability) / (1.1 - potential_availability)
+            relative_availability = (1.2 - best_availability) / (1.2 - potential_availability)
             relative_availability = min(2.0, relative_availability)
 
             # If this path looks better than our current best (considering both score and

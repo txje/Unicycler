@@ -494,9 +494,9 @@ class LongReadBridge(object):
                 relative_score = min(1.0, relative_score)
 
             # relative_availability measures how much more available this path is than the current
-            # best. We use 1.2 (instead of 1.0) in the equation to attenuate the affect of
+            # best. We use 1.1 (instead of 1.0) in the equation to attenuate the affect of
             # availability a bit (because score is more important).
-            relative_availability = (1.2 - best_availability) / (1.2 - potential_availability)
+            relative_availability = (1.1 - best_availability) / (1.1 - potential_availability)
             relative_availability = min(2.0, relative_availability)
 
             # If this path looks better than our current best (considering both score and

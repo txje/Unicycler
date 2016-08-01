@@ -204,7 +204,7 @@ class LongReadBridge(object):
         end_seg = self.graph.segments[abs(self.end_segment)]
 
         output = str(self.start_segment) + ' to ' + str(self.end_segment) + ':\n'
-        output += '  bridging reads:          ' + int_to_str(len(self.full_span_reads)) + '\n'
+        output += '  bridging reads:            ' + int_to_str(len(self.full_span_reads)) + '\n'
 
         # Partition the full span reads into two groups: those with negative numbers (implying that
         # the two segments overlap) and those with actual sequences.
@@ -242,14 +242,14 @@ class LongReadBridge(object):
                 full_span_seqs = [x[0] for x in sorted_full_span[:max_full_span]]
                 full_span_quals = [x[1] for x in sorted_full_span[:max_full_span]]
 
-            # Start-only and end-only sequences make the MSA a lot slower, contribute less to the
-            # consensus and can screw up the MSA if they are too abundant. So if there are too many
-            # of them, we only include the ones with the best alignments.
-            # Also, if we have a lot of full span reads, there's no need to include any partial
-            # sequences at all.
-            max_partial = min(3, len(full_span_seqs))  # TO DO: make this a parameter?
-            if len(full_span_seqs) > max_full_span / 2:
-                max_partial = 0
+            # # Start-only and end-only sequences make the MSA a lot slower, contribute less to the
+            # # consensus and can screw up the MSA if they are too abundant. So if there are too
+            # # many of them, we only include the ones with the best alignments.
+            # # Also, if we have a lot of full span reads, there's no need to include any partial
+            # # sequences at all.
+            # max_partial = min(3, len(full_span_seqs))  # TO DO: make this a parameter?
+            # if len(full_span_seqs) > max_full_span / 2:
+            #     max_partial = 0
 
             # TEMP - turning partial sequences off to test the effect. If I decided to turn them
             # permanently off, I can simplify quite a lot of code.
@@ -280,7 +280,7 @@ class LongReadBridge(object):
                                                                   scoring_scheme)[0]
             consensus_time = time.time() - consensus_start_time
 
-            output += '  consensus sequence:      ' + \
+            output += '  consensus sequence:        ' + \
                       int_to_str(len(self.consensus_sequence)) + ' bp '
             output += '(' + float_to_str(consensus_time, 2) + ' sec)\n'
             if verbosity > 3:
@@ -294,23 +294,28 @@ class LongReadBridge(object):
             self.consensus_sequence = ''
             mean_overlap = int(round(sum(x[0] for x in full_spans_without_seq) /
                                      len(full_spans_without_seq)))
-            output += '  mean overlap:            ' + int_to_str(abs(mean_overlap)) + '\n'
+            output += '  mean overlap:              ' + int_to_str(abs(mean_overlap)) + '\n'
             target_path_length = mean_overlap + (2 * self.graph.overlap)
 
-        output += '  target path length:      ' + int_to_str(target_path_length) + ' bp\n'
+        output += '  target path length:        ' + int_to_str(target_path_length) + ' bp\n'
 
         path_start_time = time.time()
-        self.all_paths = self.graph.get_best_paths_for_seq(self.start_segment, self.end_segment,
-                                                           target_path_length,
-                                                           self.consensus_sequence, scoring_scheme)
+        self.all_paths, progressive_path_search = \
+            self.graph.get_best_paths_for_seq(self.start_segment, self.end_segment,
+                                              target_path_length, self.consensus_sequence,
+                                              scoring_scheme)
         path_time = time.time() - path_start_time
 
-        output += '  path count:              ' + int_to_str(len(self.all_paths)) + ' '
-        output += '(' + float_to_str(path_time, 2) + ' sec)\n'
+        output += '  path count:                ' + int_to_str(len(self.all_paths)) + ' '
+        output += '(' + float_to_str(path_time, 2) + ' sec'
+        if progressive_path_search:
+            output += ', progressive search)\n'
+        else:
+            output += ', exhaustive search)\n'
         if verbosity > 2:
             for i, path in enumerate(self.all_paths):
                 label = '  path ' + str(i + 1) + ':'
-                label = label.ljust(27)
+                label = label.ljust(29)
                 output += label + ', '.join(str(x) for x in path[0])
                 output += ' (' + int_to_str(self.graph.get_path_length(path[0])) + ' bp, '
                 output += 'raw score = ' + float_to_str(path[1], 1) + ', '
@@ -319,7 +324,7 @@ class LongReadBridge(object):
 
         # If paths were found, use a path sequence for the bridge.
         if self.all_paths:
-            output += '  best path:               '
+            output += '  best path:                 '
             if self.all_paths[0][0]:
                 output += ', '.join(str(x) for x in self.all_paths[0][0])
             else:
@@ -365,13 +370,13 @@ class LongReadBridge(object):
                                      (1.0 + 2.0 ** (expected_scaled_score - actual_scaled_score)))
 
             if verbosity > 2:
-                output += '  mean alignment score:    ' + \
+                output += '  path score factor:         ' + float_to_str(self.quality, 2) + '\n'
+                output += '    mean alignment score:    ' + \
                           float_to_str(mean_alignment_scaled_score, 2) + '\n'
-                output += '  expected scaled score:   ' + \
+                output += '    expected scaled score:   ' + \
                           float_to_str(expected_scaled_score, 2) + '\n'
-                output += '  actual scaled score:     ' + \
+                output += '    actual scaled score:     ' + \
                           float_to_str(actual_scaled_score, 2) + '\n'
-                output += '  path score factor:       ' + float_to_str(self.quality, 2) + '\n'
 
         # If a path wasn't found, the consensus sequence is the bridge (with the overlaps added).
         else:
@@ -497,20 +502,22 @@ class LongReadBridge(object):
         self.quality = 100.0 * math.sqrt(self.quality)
 
         if verbosity > 2:
-            output += '  depth agreement factor:  ' + float_to_str(depth_agreement_factor, 2) + '\n'
-            output += '  expected bridging reads: ' + float_to_str(expected_read_count, 2) + '\n'
-            output += '  read count factor:       ' + float_to_str(read_count_factor, 2) + '\n'
-            output += '  alignment length factor: ' + float_to_str(align_length_factor, 2) + '\n'
-            output += '  alignment score factor:  ' + float_to_str(align_score_factor, 2) + '\n'
-            output += '  start length factor:     ' + float_to_str(start_length_factor, 2) + '\n'
-            output += '  end length factor:       ' + float_to_str(end_length_factor, 2) + '\n'
-            output += '  smaller_length_factor:   ' + float_to_str(smaller_length_factor, 2) + '\n'
-            output += '  final quality:           ' + float_to_str(self.quality, 2) + '\n'
-        if verbosity == 2:
-            output += '  quality:                 ' + float_to_str(self.quality, 2) + '\n'
+            output += '  depth agreement factor:    ' + float_to_str(depth_agreement_factor, 2) + \
+                      '\n'
+            output += '  read count factor:         ' + float_to_str(read_count_factor, 2) + '\n'
+            output += '    expected bridging reads: ' + float_to_str(expected_read_count, 2) + '\n'
+            output += '    actual bridging reads:   ' + int_to_str(actual_read_count) + '\n'
+            output += '  alignment length factor:   ' + float_to_str(align_length_factor, 2) + '\n'
+            output += '  alignment score factor:    ' + float_to_str(align_score_factor, 2) + '\n'
+            output += '  start length factor:       ' + float_to_str(start_length_factor, 2) + '\n'
+            output += '  end length factor:         ' + float_to_str(end_length_factor, 2) + '\n'
+            output += '  smaller_length_factor:     ' + float_to_str(smaller_length_factor, 2) + \
+                      '\n'
+        output += '  quality:                   ' + float_to_str(self.quality, 2) + '\n'
 
-        full_time = time.time() - start_time
-        output += '  total time:              ' + float_to_str(full_time, 2) + ' sec\n'
+        if verbosity > 2:
+            full_time = time.time() - start_time
+            output += '  total time:                ' + float_to_str(full_time, 2) + ' sec\n'
 
         return output
 

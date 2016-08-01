@@ -517,16 +517,22 @@ class AssemblyGraph(object):
         if verbosity > 1 and removed_segments:
             print('\nRemoved small dead ends: ', ', '.join(str(x) for x in removed_segments))
 
-    def merge_all_possible(self):
+    def merge_all_possible(self, only_singles_and_bridges=False,
+                           single_copy_segments=None):
         """
         This function merges segments which are in a simple, unbranching path. It produces and
         returns a dictionary of new segment numbers to old segment numbers.
         """
+        if single_copy_segments:
+            single_copy_seg_nums = [x.number for x in single_copy_segments]
+        else:
+            single_copy_seg_nums = None
         while True:
             # Sort the segment numbers first so we apply the merging in a consistent order.
             seg_nums = sorted(list(self.segments.keys()))
             for num in seg_nums:
-                path = self.get_simple_path(num)
+                path = self.get_simple_path(num, only_singles_and_bridges=only_singles_and_bridges,
+                                            single_copy_seg_nums=single_copy_seg_nums)
                 assert len(path) > 0
                 if len(path) > 1:
                     self.merge_simple_path(path)
@@ -1409,7 +1415,7 @@ class AssemblyGraph(object):
                     segs_in_path = set(abs(x) for x in bridge.graph_path)
                     for bridge_using_this_segment in bridges_using_this_segment:
                         if abs(bridge_using_this_segment.start_segment) in segs_in_path or \
-                                abs(bridge_using_this_segment.end_segment) in segs_in_path:
+                                        abs(bridge_using_this_segment.end_segment) in segs_in_path:
                             can_use_bridge = False
 
             if can_use_bridge:
@@ -1630,7 +1636,7 @@ class AssemblyGraph(object):
                 potentially_deletable_paths.append((average_usedupness, path))
             for usedupness, path in potentially_deletable_paths:
                 if usedupness > usedupness_threshold and \
-                        self.dead_end_change_if_path_deleted(path) <= 0:
+                                self.dead_end_change_if_path_deleted(path) <= 0:
                     unsigned_path = [abs(x) for x in path]
                     self.remove_segments(unsigned_path)
                     removed_segments += unsigned_path
@@ -1936,8 +1942,8 @@ class AssemblyGraph(object):
                     consensus_seq_align_start = int(alignment_result.split(',')[5])
                     if consensus_seq_align_start >= len(sequence):
                         consensus_seq_align_start = 0
-                    # print('Alignment start pos in paths:    ', path_seq_align_start)
-                    # print('Alignment start pos in consensus:', consensus_seq_align_start)
+                        # print('Alignment start pos in paths:    ', path_seq_align_start)
+                        # print('Alignment start pos in consensus:', consensus_seq_align_start)
 
                 scored_paths = []
                 shortest_len = min(self.get_path_length(x) for x in new_working_paths)
@@ -2173,7 +2179,8 @@ class AssemblyGraph(object):
             return False
         return self.get_upstream_seg_nums(seg) == [seg]
 
-    def get_simple_path(self, starting_seg):
+    def get_simple_path(self, starting_seg, only_singles_and_bridges=False,
+                        single_copy_seg_nums=None):
         """
         Starting with the given segment, this function tries to expand outward as far as possible
         while maintaining a simple (i.e. can be merged) path. If it can't expand at all, it will
@@ -2189,6 +2196,9 @@ class AssemblyGraph(object):
             potential = self.forward_links[simple_path[-1]][0]
             if potential in simple_path or -potential in simple_path:
                 break
+            if only_singles_and_bridges and \
+                    not self.is_single_copy_or_bridge(potential, single_copy_seg_nums):
+                break
             if len(self.reverse_links[potential]) == 1 and \
                     self.reverse_links[potential][0] == simple_path[-1]:
                 simple_path.append(potential)
@@ -2202,6 +2212,9 @@ class AssemblyGraph(object):
                 break
             potential = self.reverse_links[simple_path[0]][0]
             if potential in simple_path or -potential in simple_path:
+                break
+            if only_singles_and_bridges and \
+                    not self.is_single_copy_or_bridge(potential, single_copy_seg_nums):
                 break
             if len(self.forward_links[potential]) == 1 and \
                     self.forward_links[potential][0] == simple_path[0]:
@@ -2258,15 +2271,17 @@ class AssemblyGraph(object):
                        self.seq_from_signed_seg_num(end_seg)[:self.overlap]
 
         # If there are few enough possible paths, we just try aligning to them all.
-        max_path_count = 100  # TO DO: make this a parameter?
+        max_path_count = 250  # TO DO: make this a parameter?
         try:
             paths = self.all_paths(start_seg, end_seg, min_length, target_length, max_length,
                                    max_path_count)
+            progressive_path_search = False
 
         # If there are too many paths to try exhaustively, we use a progressive approach to find
         # the best path. The path search is done in both directions, in case one direction proves
         # more difficult than the other.
         except TooManyPaths:
+            progressive_path_search = True
             paths = self.progressive_path_find(start_seg, end_seg, min_length, target_length,
                                                max_length, sequence, scoring_scheme)
             rev_paths = self.progressive_path_find(-end_seg, -start_seg, min_length, target_length,
@@ -2306,7 +2321,7 @@ class AssemblyGraph(object):
 
         # Sort the paths from highest to lowest quality.
         paths_and_scores = sorted(paths_and_scores, key=lambda x: (-x[1], x[2], -x[3]))
-        return paths_and_scores
+        return paths_and_scores, progressive_path_search
 
     def get_path_availability(self, path):
         """
@@ -2639,6 +2654,13 @@ class AssemblyGraph(object):
         if signed_seg_num not in self.forward_links:
             return True
         return not self.forward_links[signed_seg_num]
+
+    def is_single_copy_or_bridge(self, seg_num, single_copy_seg_nums):
+        """
+        Returns True if the given segment number is for a single copy segment or a bridge segment.
+        """
+        abs_seg_num = abs(seg_num)
+        return abs_seg_num in single_copy_seg_nums or self.segments[abs_seg_num].bridge
 
 
 class Segment(object):

@@ -314,7 +314,7 @@ class LongReadBridge(object):
             output += ', exhaustive search)\n'
         if verbosity > 2:
             for i, path in enumerate(self.all_paths):
-                label = '  path ' + str(i + 1) + ':'
+                label = '    path ' + str(i + 1) + ':'
                 label = label.ljust(29)
                 output += label + ', '.join(str(x) for x in path[0])
                 output += ' (' + int_to_str(self.graph.get_path_length(path[0])) + ' bp, '
@@ -505,8 +505,8 @@ class LongReadBridge(object):
             output += '  depth agreement factor:    ' + float_to_str(depth_agreement_factor, 2) + \
                       '\n'
             output += '  read count factor:         ' + float_to_str(read_count_factor, 2) + '\n'
-            output += '    expected bridging reads: ' + float_to_str(expected_read_count, 2) + '\n'
-            output += '    actual bridging reads:   ' + int_to_str(actual_read_count) + '\n'
+            output += '    expected read count:     ' + float_to_str(expected_read_count, 2) + '\n'
+            output += '    actual read count:       ' + int_to_str(actual_read_count) + '\n'
             output += '  alignment length factor:   ' + float_to_str(align_length_factor, 2) + '\n'
             output += '  alignment score factor:    ' + float_to_str(align_score_factor, 2) + '\n'
             output += '  start length factor:       ' + float_to_str(start_length_factor, 2) + '\n'

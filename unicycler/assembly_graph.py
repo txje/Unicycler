@@ -517,22 +517,16 @@ class AssemblyGraph(object):
         if verbosity > 1 and removed_segments:
             print('\nRemoved small dead ends: ', ', '.join(str(x) for x in removed_segments))
 
-    def merge_all_possible(self, only_singles_and_bridges=False,
-                           single_copy_segments=None):
+    def merge_all_possible(self, only_singles_and_bridges=False):
         """
         This function merges segments which are in a simple, unbranching path. It produces and
         returns a dictionary of new segment numbers to old segment numbers.
         """
-        if single_copy_segments:
-            single_copy_seg_nums = [x.number for x in single_copy_segments]
-        else:
-            single_copy_seg_nums = None
         while True:
             # Sort the segment numbers first so we apply the merging in a consistent order.
             seg_nums = sorted(list(self.segments.keys()))
             for num in seg_nums:
-                path = self.get_simple_path(num, only_singles_and_bridges=only_singles_and_bridges,
-                                            single_copy_seg_nums=single_copy_seg_nums)
+                path = self.get_simple_path(num, only_singles_and_bridges=only_singles_and_bridges)
                 assert len(path) > 0
                 if len(path) > 1:
                     self.merge_simple_path(path)
@@ -2179,8 +2173,7 @@ class AssemblyGraph(object):
             return False
         return self.get_upstream_seg_nums(seg) == [seg]
 
-    def get_simple_path(self, starting_seg, only_singles_and_bridges=False,
-                        single_copy_seg_nums=None):
+    def get_simple_path(self, starting_seg, only_singles_and_bridges=False):
         """
         Starting with the given segment, this function tries to expand outward as far as possible
         while maintaining a simple (i.e. can be merged) path. If it can't expand at all, it will
@@ -2197,7 +2190,7 @@ class AssemblyGraph(object):
             if potential in simple_path or -potential in simple_path:
                 break
             if only_singles_and_bridges and \
-                    not self.is_single_copy_or_bridge(potential, single_copy_seg_nums):
+                    not self.is_single_copy_or_bridge(potential):
                 break
             if len(self.reverse_links[potential]) == 1 and \
                     self.reverse_links[potential][0] == simple_path[-1]:
@@ -2214,7 +2207,7 @@ class AssemblyGraph(object):
             if potential in simple_path or -potential in simple_path:
                 break
             if only_singles_and_bridges and \
-                    not self.is_single_copy_or_bridge(potential, single_copy_seg_nums):
+                    not self.is_single_copy_or_bridge(potential):
                 break
             if len(self.forward_links[potential]) == 1 and \
                     self.forward_links[potential][0] == simple_path[0]:
@@ -2655,12 +2648,17 @@ class AssemblyGraph(object):
             return True
         return not self.forward_links[signed_seg_num]
 
-    def is_single_copy_or_bridge(self, seg_num, single_copy_seg_nums):
+    def is_single_copy_or_bridge(self, seg_num):
         """
-        Returns True if the given segment number is for a single copy segment or a bridge segment.
+        Returns True if the given segment number is a single copy segment or a bridge segment. For
+        this function, being a 'single copy segment' doesn't just mean segments which were labelled
+        as single copy at the end of copy depth determination. It also includes segments that have
+        ended up as single copy. E.g. a two-copy segment which has been used in a bridge once.
         """
         abs_seg_num = abs(seg_num)
-        return abs_seg_num in single_copy_seg_nums or self.segments[abs_seg_num].bridge
+        if self.segments[abs_seg_num].bridge is not None:
+            return True
+        return abs_seg_num in self.copy_depths and len(self.copy_depths[abs_seg_num]) == 1
 
 
 class Segment(object):

@@ -105,8 +105,7 @@ def main():
         graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +
                                        '_cleaned_second_pass.gfa'), verbosity,
                           save_seg_type_info=True, single_copy_segments=single_copy_segments)
-    graph.merge_all_possible(only_singles_and_bridges=True,
-                             single_copy_segments=single_copy_segments)
+    graph.merge_all_possible(only_singles_and_bridges=True)
     if args.keep_temp > 1:
         file_num += 1
         graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa'),
@@ -260,8 +259,7 @@ def main():
                                            '_cleaned_second_pass.gfa'), verbosity,
                               save_seg_type_info=True,
                               single_copy_segments=single_copy_segments)
-        graph.merge_all_possible(only_singles_and_bridges=True,
-                                 single_copy_segments=single_copy_segments)
+        graph.merge_all_possible(only_singles_and_bridges=True)
         if args.keep_temp > 1:
             file_num += 1
             graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa'),

@@ -10,6 +10,7 @@ email: rrwick@gmail.com
 from multiprocessing.dummy import Pool as ThreadPool
 import time
 import math
+import statistics
 from collections import defaultdict
 from .misc import int_to_str, float_to_str, reverse_complement, print_progress_line, \
     weighted_average, get_num_agreement, flip_number_order, score_function
@@ -249,6 +250,11 @@ class LongReadBridge(object):
             max_partial = min(3, len(full_span_seqs))  # TO DO: make this a parameter?
             if len(full_span_seqs) > max_full_span / 2:
                 max_partial = 0
+
+            # TEMP - turning partial sequences off to test the effect. If I decided to turn them
+            # permanently off, I can simplify quite a lot of code.
+            max_partial = 0
+
             if len(self.start_only_reads) <= max_partial:
                 start_only_seqs = [x[0] for x in self.start_only_reads]
                 start_only_quals = [x[1] for x in self.start_only_reads]
@@ -327,8 +333,45 @@ class LongReadBridge(object):
             self.bridge_sequence = self.graph.get_path_sequence(self.graph_path)
             self.path_support = True
 
-            # Start the quality on the scaled score of the path alignment (which maxes at 100.0).
-            self.quality = self.all_paths[0][3] / 100.0
+            # We get the average alignment scaled score for the alignments which contributed to
+            # this bridge. This will give us an idea of how good our consensus sequence should look.
+            alignment_scaled_scores = [x[2].scaled_score for x in self.full_span_reads]
+            alignment_scaled_scores += [x[2].scaled_score for x in self.full_span_reads]
+            mean_alignment_scaled_score = statistics.mean(alignment_scaled_scores)
+
+            # We now make an expected scaled score of the consensus alignment using the read
+            # alignments. This goes up with alignment scores (better alignment scores implies better
+            # read sequences) and read count (more reads can give a better consensus).
+            #     https://www.desmos.com/calculator
+            #     y=100\cdot \left(\left(1-\frac{a}{100}\right)
+            #       \left(1-\frac{3}{2+x}\right)+\frac{a}{100}\right)
+            #     y = expected_scaled_score, x = num_span_reads, a = mean_alignment_scaled_score
+            num_span_reads = len(self.full_span_reads)
+            expected_scaled_score = 100.0 * ((1.0 - mean_alignment_scaled_score/100.0) *
+                                             (1.0 - (3.0 / (2.0 + num_span_reads))) +
+                                             mean_alignment_scaled_score/100.0)
+
+            # Now we can start this bridge's quality using a function that takes into account the
+            # actual, expected and minimum acceptable scores. If the actual scaled score is 100,
+            # this function gives 1. If it is the expected value, this function gives a number
+            # around 0.7. Then as the actual score approaches the minimum acceptable score, this
+            # function approaches 0.
+            #     https://www.desmos.com/calculator
+            #     y=\left(\frac{1}{1+2^{a-x}}\right)^{0.5}
+            #     y = self.quality, x = actual_scaled_score, a = expected_scaled_score,
+            #     b = min_acceptable_scaled_score
+            actual_scaled_score = self.all_paths[0][3]
+            self.quality = math.sqrt(1.0 /
+                                     (1.0 + 2.0 ** (expected_scaled_score - actual_scaled_score)))
+
+            if verbosity > 2:
+                output += '  mean alignment score:    ' + \
+                          float_to_str(mean_alignment_scaled_score, 2) + '\n'
+                output += '  expected scaled score:   ' + \
+                          float_to_str(expected_scaled_score, 2) + '\n'
+                output += '  actual scaled score:     ' + \
+                          float_to_str(actual_scaled_score, 2) + '\n'
+                output += '  path score factor:       ' + float_to_str(self.quality, 2) + '\n'
 
         # If a path wasn't found, the consensus sequence is the bridge (with the overlaps added).
         else:
@@ -374,11 +417,17 @@ class LongReadBridge(object):
             # couldn't be a graph path). If only one of the two segments is a dead end, then it gets
             # a small penalty. If neither are a dead end, then it gets a large penalty (because in
             # this case we'd expect a graph path).
-            self.quality = 1.0
-            if not self.graph.ends_with_dead_end(self.start_segment):
-                self.quality -= 0.4
-            if not self.graph.starts_with_dead_end(self.end_segment):
-                self.quality -= 0.4
+            dead_end_count = 0
+            if self.graph.ends_with_dead_end(self.start_segment):
+                dead_end_count += 1
+            if self.graph.starts_with_dead_end(self.end_segment):
+                dead_end_count += 1
+            if dead_end_count == 0:
+                self.quality = 1.0
+            elif dead_end_count == 1:
+                self.quality = 0.7
+            else:  # dead_end_count == 2
+                self.quality = 0.25
 
         # Expected read count is determined using the read lengths and bridge size. For a given
         # read length and bridge, there are an estimable number of positions where a read of that
@@ -400,10 +449,6 @@ class LongReadBridge(object):
         # Adjust the expected read count down, especially for higher values.
         # TO DO: reevaluate this step - is it necessary?
         expected_read_count = reduce_expected_count(expected_read_count, 30, 0.5)
-
-        if verbosity > 2:
-            output += '  expected bridging reads: ' + float_to_str(expected_read_count, 2) + '\n'
-            output += '  path factor:             ' + float_to_str(self.quality, 2) + '\n'
 
         # The start segment and end segment should agree in depth. If they don't, that's very bad,
         # as it implies that they aren't actually single-copy or on the same piece of DNA.
@@ -453,6 +498,7 @@ class LongReadBridge(object):
 
         if verbosity > 2:
             output += '  depth agreement factor:  ' + float_to_str(depth_agreement_factor, 2) + '\n'
+            output += '  expected bridging reads: ' + float_to_str(expected_read_count, 2) + '\n'
             output += '  read count factor:       ' + float_to_str(read_count_factor, 2) + '\n'
             output += '  alignment length factor: ' + float_to_str(align_length_factor, 2) + '\n'
             output += '  alignment score factor:  ' + float_to_str(align_score_factor, 2) + '\n'

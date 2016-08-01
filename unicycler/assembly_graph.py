@@ -1634,6 +1634,17 @@ class AssemblyGraph(object):
             else:
                 break
 
+        # It's also possible for entire graph components to be mostly used up, in which case we can
+        # delete those as well.
+        connected_components = self.get_connected_components()
+        for component_nums in connected_components:
+            component_lengths = [self.segments[abs(x)].get_length() for x in component_nums]
+            component_usedupness = [usedupness_scores[abs(x)] for x in component_nums]
+            average_usedupness = weighted_average_list(component_usedupness, component_lengths)
+            if average_usedupness > usedupness_threshold:
+                self.remove_segments(component_nums)
+                removed_segments += component_nums
+
         if verbosity > 1 and removed_segments:
             removed_segments = sorted(list(set(removed_segments)))
             print('\nRemoved segments used in bridges:',

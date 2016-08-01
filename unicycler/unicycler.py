@@ -384,12 +384,12 @@ def get_arguments():
     parser.add_argument('--keep_temp', type=int, default=1,
                         help='0 = keep only main checkpoints, 1 = keep some temporary files, '
                              'including alignment SAM, 2 = keep all temporary files')
-    parser.add_argument('--min_bridge_qual', type=float, default=25.0,
+    parser.add_argument('--min_bridge_qual', type=float, default=10.0,
                         help='Bridges with a quality below this value will not be applied)')
-    parser.add_argument('--min_component_size', type=int, default=1000,
+    parser.add_argument('--min_component_size', type=int, default=500,
                         help='Unbridged graph components smaller than this size will be removed '
                              'from the final graph')
-    parser.add_argument('--min_dead_end_size', type=int, default=1000,
+    parser.add_argument('--min_dead_end_size', type=int, default=500,
                         help='Graph dead ends smaller than this size will be removed from the '
                              'final graph')
     parser.add_argument('--spades_path', type=str, default='spades.py',

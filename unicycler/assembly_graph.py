@@ -1798,7 +1798,7 @@ class AssemblyGraph(object):
         start_end_depth = weighted_average(start_seg.depth, end_seg.depth,
                                            start_seg.get_length_no_overlap(self.overlap),
                                            end_seg.get_length_no_overlap(self.overlap))
-        max_working_paths = 1000  # TO DO: make this a parameter?
+        max_working_paths = 10000  # TO DO: make this a parameter?
         working_paths = [[x] for x in self.forward_links[start]]
         final_paths = []
         while working_paths:
@@ -1955,7 +1955,7 @@ class AssemblyGraph(object):
                     scored_paths.append((path, scaled_score))
                 scored_paths = sorted(scored_paths, key=lambda x: x[1], reverse=True)
 
-                # Keep the keep count number of paths, but go over the keep count if there's a tie.
+                # Keep the keep_count number of paths, but go over the keep_count if there's a tie.
                 # E.g. if the keep count is 12 but the top 16 paths all have the same score, keep
                 # all 16.
                 surviving_paths = []
@@ -1969,17 +1969,27 @@ class AssemblyGraph(object):
                             surviving_paths.append(scored_paths[i])
 
                 # If any of the surviving paths ends in the same segment but have different
-                # scores, only keep one with the top score. This is because the segments with a
-                # lower score will have the same future paths, and so will always be lower. And
-                # segments with the same score will have the same future paths, and so will always
-                # be the same.
+                # scores, only keep the ones with the top score. This is because the segments with a
+                # lower score will have the same future paths, and so will always be lower.
                 surviving_paths_by_terminal_seg = {}
                 for surviving_path in surviving_paths:
                     terminal_seg = surviving_path[0][-1]
-                    if terminal_seg not in surviving_paths_by_terminal_seg or \
-                            surviving_path[1] > surviving_paths_by_terminal_seg[terminal_seg][1]:
-                        surviving_paths_by_terminal_seg[terminal_seg] = surviving_path
-                working_paths = list(x[0] for x in surviving_paths_by_terminal_seg.values())
+                    if terminal_seg not in surviving_paths_by_terminal_seg:
+                        surviving_paths_by_terminal_seg[terminal_seg] = [surviving_path]
+                    elif surviving_path[1] > surviving_paths_by_terminal_seg[terminal_seg][0][1]:
+                        surviving_paths_by_terminal_seg[terminal_seg] = [surviving_path]
+                    elif surviving_path[1] == surviving_paths_by_terminal_seg[terminal_seg][0][1]:
+                        surviving_paths_by_terminal_seg[terminal_seg].append(surviving_path)
+                working_paths = []
+                for best_paths_for_terminal_seg in surviving_paths_by_terminal_seg.values():
+                    working_paths += list(x[0] for x in best_paths_for_terminal_seg)
+
+                # If at this point the number of working paths has gotten too close to
+                # max_working_paths, that's a problem because it means we'll be due for another
+                # cull very soon, perhaps on the next iteration. To prevent overly frequent
+                # culling, we increase max_working_paths.
+                if len(working_paths) > 0.95 * max_working_paths:
+                    max_working_paths *= 2
 
                 # print('\n  SURVIVING PATHS:', len(working_paths))
                 # for i, path in enumerate(working_paths):

@@ -11,6 +11,7 @@ from .misc import int_to_str, float_to_str, weighted_average, weighted_average_l
     print_section_header, get_num_agreement, reverse_complement, score_function
 from .bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge
 from .cpp_function_wrappers import fully_global_alignment, path_alignment
+from . import settings
 
 
 class TooManyPaths(Exception):
@@ -1012,12 +1013,6 @@ class AssemblyGraph(object):
         # Reset any existing copy depths.
         self.copy_depths = {}
 
-        # TO DO: These should be parameters, after I have them sorted out.
-        initial_tolerance = 0.1
-        propagation_tolerance = 0.5
-        min_half_median_for_diploid = 0.1
-        min_single_copy_length = 1000
-
         # Determine the single-copy read depth for the graph. In haploid and some diploid cases,
         # this will be the median depth. But in some diploid cases, the single-copy depth may at
         # about half the median (because the median depth holds the sequences shared between sister
@@ -1035,7 +1030,7 @@ class AssemblyGraph(object):
         half_median_frac = bases_near_half_median / total_graph_bases
         double_median_frac = bases_near_double_median / total_graph_bases
         if half_median_frac > double_median_frac and \
-                half_median_frac >= min_half_median_for_diploid:
+                half_median_frac >= settings.MIN_HALF_MEDIAN_FOR_DIPLOID:
             single_copy_depth = median_depth / 2.0
         else:
             single_copy_depth = median_depth
@@ -1043,7 +1038,7 @@ class AssemblyGraph(object):
             print('Single-copy depth:', float_to_str(median_depth, 3))
 
         # Assign single-copy status to segments within the tolerance of the single-copy depth.
-        max_depth = single_copy_depth + initial_tolerance
+        max_depth = single_copy_depth + settings.INITIAL_SINGLE_COPY_TOLERANCE
         initial_single_copy_segments = []
         for seg_num, segment in self.segments.items():
             if segment.depth <= max_depth and \
@@ -1060,12 +1055,12 @@ class AssemblyGraph(object):
             print_section_header('Propagating copy numbers', verbosity)
 
         # Propagate copy depth as possible using those initial assignments.
-        self.determine_copy_depth_part_2(propagation_tolerance, verbosity)
+        self.determine_copy_depth_part_2(settings.COPY_PROPAGATION_TOLERANCE, verbosity)
 
         # Assign single-copy to the largest available segment, propagate and repeat.
         while True:
-            assignments = self.assign_single_copy_depth(verbosity, min_single_copy_length)
-            self.determine_copy_depth_part_2(propagation_tolerance, verbosity)
+            assignments = self.assign_single_copy_depth(verbosity, settings.MIN_SINGLE_COPY_LENGTH)
+            self.determine_copy_depth_part_2(settings.COPY_PROPAGATION_TOLERANCE, verbosity)
             if not assignments:
                 break
 
@@ -1177,7 +1172,7 @@ class AssemblyGraph(object):
             # For cases where there are many copy depths being distributed to many segments, there
             # will be too many combinations, so we don't bother trying.
             arrangement_count = len(bins) ** len(copy_depths)
-            if arrangement_count > 10000:  # TO DO: choose this cutoff more carefully?
+            if arrangement_count > settings.MAX_COPY_DEPTH_DISTRIBUTION_ARRANGEMENTS:
                 continue
 
             arrangements = shuffle_into_bins(copy_depths, bins, targets)
@@ -1578,6 +1573,7 @@ class AssemblyGraph(object):
                     if seg_num in self.segments and self.dead_end_count(seg_num) > 0:
                         self.remove_segments([seg_num])
                         removed_segments.append(seg_num)
+                        print('HAS DEAD END:', seg_num)  # TEMP
                         break
                 else:
                     break
@@ -1613,13 +1609,13 @@ class AssemblyGraph(object):
                     unsigned_path = [abs(x) for x in path]
                     self.remove_segments(unsigned_path)
                     removed_segments += unsigned_path
+                    print('DELETION WILL NOT MAKE DEAD END:', unsigned_path)  # TEMP
                     break
             else:
                 break
 
         # It's possible at this point that there are bubbles remaining in the graph which are
         # mostly used up. If we can delete them without introducing dead ends, we do so.
-        usedupness_threshold = 0.5  # TO DO: make this a parameter?
         while True:
             potentially_deletable_paths = []
             for seg_num in self.segments:
@@ -1629,11 +1625,12 @@ class AssemblyGraph(object):
                 average_usedupness = weighted_average_list(path_usedupness, path_lengths)
                 potentially_deletable_paths.append((average_usedupness, path))
             for usedupness, path in potentially_deletable_paths:
-                if usedupness > usedupness_threshold and \
+                if usedupness > settings.CLEANING_USEDUPNESS_THRESHOLD and \
                                 self.dead_end_change_if_path_deleted(path) <= 0:
                     unsigned_path = [abs(x) for x in path]
                     self.remove_segments(unsigned_path)
                     removed_segments += unsigned_path
+                    print('USED UP BUBBLE:', unsigned_path)  # TEMP
                     break
             else:
                 break
@@ -1645,8 +1642,9 @@ class AssemblyGraph(object):
             component_lengths = [self.segments[abs(x)].get_length() for x in component_nums]
             component_usedupness = [usedupness_scores[abs(x)] for x in component_nums]
             average_usedupness = weighted_average_list(component_usedupness, component_lengths)
-            if average_usedupness > usedupness_threshold:
+            if average_usedupness > settings.CLEANING_USEDUPNESS_THRESHOLD:
                 self.remove_segments(component_nums)
+                print('USED UP COMPONENT:', component_nums)  # TEMP
                 removed_segments += component_nums
 
         if verbosity > 1 and removed_segments:
@@ -1780,7 +1778,7 @@ class AssemblyGraph(object):
             simple_loops.append((start, end, middle, repeat))
         return simple_loops
 
-    def all_paths(self, start, end, min_length, target_length, max_length, max_path_count):
+    def all_paths(self, start, end, min_length, target_length, max_length):
         """
         Returns a list of all paths which connect the starting segment to the ending segment and
         are within the length bounds. The start and end segments are not themselves included in the
@@ -1788,7 +1786,7 @@ class AssemblyGraph(object):
         Loops in the graph (especially loops of short segments which don't add much to the path
         length) can result in very large numbers of potential paths in complex areas. To somewhat
         manage this, we exclude paths which include too many copies of a segment. 'Too many copies'
-        is defined as double the copy depth count or the depth to start/end count.
+        is defined as double the copy depth count or the double the depth over start/end depth.
         """
         if start not in self.forward_links:
             return []
@@ -1798,7 +1796,6 @@ class AssemblyGraph(object):
         start_end_depth = weighted_average(start_seg.depth, end_seg.depth,
                                            start_seg.get_length_no_overlap(self.overlap),
                                            end_seg.get_length_no_overlap(self.overlap))
-        max_working_paths = 10000  # TO DO: make this a parameter?
         working_paths = [[x] for x in self.forward_links[start]]
         final_paths = []
         while working_paths:
@@ -1809,7 +1806,7 @@ class AssemblyGraph(object):
                     potential_result = working_path[:-1]
                     if self.get_path_length(potential_result) >= min_length:
                         final_paths.append(potential_result)
-                        if len(final_paths) > max_path_count:
+                        if len(final_paths) > settings.ALL_PATH_SEARCH_MAX_FINAL_PATHS:
                             raise TooManyPaths
                 elif self.get_path_length(working_path) <= max_length and \
                         last_seg in self.forward_links:
@@ -1820,7 +1817,7 @@ class AssemblyGraph(object):
                             new_working_paths.append(working_path + [next_seg])
 
             # If the number of working paths is too high, we give up.
-            if len(working_paths) > max_working_paths:
+            if len(working_paths) > settings.ALL_PATH_SEARCH_MAX_WORKING_PATHS:
                 raise TooManyPaths
             working_paths = new_working_paths
 
@@ -1848,8 +1845,8 @@ class AssemblyGraph(object):
 
         # When the number of paths exceeds max_working_paths, they are all evaluated and the best
         # keep_count paths will be kept.
-        max_working_paths = 100
-        keep_count = 10
+        max_working_paths = settings.PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS
+        keep_count = settings.PROGRESSIVE_PATH_SEARCH_KEEP_COUNT
 
         final_paths = []
         best_final_path_score = 0.0
@@ -1983,13 +1980,6 @@ class AssemblyGraph(object):
                 working_paths = []
                 for best_paths_for_terminal_seg in surviving_paths_by_terminal_seg.values():
                     working_paths += list(x[0] for x in best_paths_for_terminal_seg)
-
-                # If at this point the number of working paths has gotten too close to
-                # max_working_paths, that's a problem because it means we'll be due for another
-                # cull very soon, perhaps on the next iteration. To prevent overly frequent
-                # culling, we increase max_working_paths.
-                if len(working_paths) > 0.95 * max_working_paths:
-                    max_working_paths *= 2
 
                 # print('\n  SURVIVING PATHS:', len(working_paths))
                 # for i, path in enumerate(working_paths):
@@ -2265,8 +2255,8 @@ class AssemblyGraph(object):
         segment to the end segment.
         """
         # Limit the path search to lengths near the target.
-        min_length = int(round(target_length * 0.8))  # TO DO: adjust or make these parameters?
-        max_length = int(round(target_length * 1.2))
+        min_length = int(round(target_length * settings.MIN_RELATIVE_PATH_LENGTH))
+        max_length = int(round(target_length * settings.MAX_RELATIVE_PATH_LENGTH))
 
         # The overlap isn't present in the consensus sequence, so we need to add it on.
         if sequence:
@@ -2274,10 +2264,8 @@ class AssemblyGraph(object):
                        self.seq_from_signed_seg_num(end_seg)[:self.overlap]
 
         # If there are few enough possible paths, we just try aligning to them all.
-        max_path_count = 250  # TO DO: make this a parameter?
         try:
-            paths = self.all_paths(start_seg, end_seg, min_length, target_length, max_length,
-                                   max_path_count)
+            paths = self.all_paths(start_seg, end_seg, min_length, target_length, max_length)
             progressive_path_search = False
 
         # If there are too many paths to try exhaustively, we use a progressive approach to find

@@ -25,6 +25,7 @@ from .unicycler_align import add_aligning_arguments, fix_up_arguments, \
     load_references, load_long_reads, AlignmentScoringScheme, load_sam_alignments, \
     print_alignment_summary_table
 from .pilon_func import polish_with_pilon, CannotPolish
+from . import settings
 
 
 def main():
@@ -118,7 +119,8 @@ def main():
     alignments_sam = os.path.join(alignment_dir, 'long_read_alignments.sam')
     temp_alignment_dir = os.path.join(alignment_dir, 'temp')
     scoring_scheme = AlignmentScoringScheme(args.scores)
-    min_alignment_length = unbridged_graph.overlap * 2  # TO DO: make this a parameter?
+    min_alignment_length = unbridged_graph.overlap * \
+        settings.MIN_ALIGNMENT_LENGTH_RELATIVE_TO_GRAPH_OVERLAP
     if not args.no_long:
         if not os.path.exists(alignment_dir):
             os.makedirs(alignment_dir)
@@ -151,7 +153,8 @@ def main():
             alignments_2_sam = os.path.join(alignment_dir, 'long_read_alignments_pass_2.sam')
             alignments_2_in_progress = alignments_2_sam + '.incomplete'
 
-            allowed_overlap = int(round(unbridged_graph.overlap * 1.1))  # TO DO: adjust?
+            allowed_overlap = int(round(unbridged_graph.overlap *
+                                        settings.ALLOWED_ALIGNMENT_OVERLAP))
             low_score_threshold = [args.low_score]
             semi_global_align_long_reads(references, graph_fasta, read_dict, read_names,
                                          args.long, temp_alignment_dir, args.graphmap_path,
@@ -164,12 +167,11 @@ def main():
 
             # Reads with a lot of unaligned parts are tried again, this time on extra sensitive
             # mode.
-            low_fraction_threshold = 0.9  # TO DO: MAKE THIS A PARAMETER?
-            low_fraction_read_names = [x.name for x in read_dict.values()
-                                       if x.get_fraction_aligned() < low_fraction_threshold]
-            if low_fraction_read_names:
+            retry_read_names = [x.name for x in read_dict.values()
+                                if x.get_fraction_aligned() < settings.MIN_READ_FRACTION_ALIGNED]
+            if retry_read_names:
                 semi_global_align_long_reads(references, single_copy_segments_fasta, read_dict,
-                                             low_fraction_read_names, args.long, temp_alignment_dir,
+                                             retry_read_names, args.long, temp_alignment_dir,
                                              args.graphmap_path, args.threads, scoring_scheme,
                                              low_score_threshold, False, False, args.kmer,
                                              min_alignment_length, alignments_2_in_progress,
@@ -181,7 +183,7 @@ def main():
                 # Now we have to put together a final SAM file. If a read is in the second pass,
                 # then we use the alignments from that SAM. Otherwise we take the alignments from
                 # the first SAM.
-                low_fraction_read_names = set(low_fraction_read_names)
+                retry_read_names = set(retry_read_names)
                 with open(alignments_sam, 'wt') as alignments_file:
                     with open(alignments_1_sam, 'rt') as alignments_1:
                         for line in alignments_1:
@@ -189,7 +191,7 @@ def main():
                                 alignments_file.write(line)
                             else:
                                 read_name = line.split('\t', 1)[0]
-                                if read_name not in low_fraction_read_names:
+                                if read_name not in retry_read_names:
                                     alignments_file.write(line)
                     with open(alignments_2_sam, 'rt') as alignments_2:
                         for line in alignments_2:
@@ -218,12 +220,11 @@ def main():
         contained_scores = []
         for read in contained_reads:
             contained_scores += [x.scaled_score for x in read.alignments]
-        min_scaled_score_percentile = 5.0  # TO DO: make this a parameter?
-        min_scaled_score = get_percentile(contained_scores, min_scaled_score_percentile)
+        min_scaled_score = get_percentile(contained_scores, settings.MIN_SCALED_SCORE_PERCENTILE)
 
         if verbosity > 1:
             print('\nSetting the minimum scaled score to the ' +
-                  float_to_str(min_scaled_score_percentile, 1) +
+                  float_to_str(settings.MIN_SCALED_SCORE_PERCENTILE, 1) +
                   'th percentile of full read alignments:', float_to_str(min_scaled_score, 2))
 
         # Do the long read bridging - this is the good part!

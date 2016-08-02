@@ -15,6 +15,7 @@ from collections import defaultdict
 from .misc import int_to_str, float_to_str, reverse_complement, print_progress_line, \
     weighted_average, get_num_agreement, flip_number_order, score_function
 from .cpp_function_wrappers import multiple_sequence_alignment
+from . import settings
 
 
 class SpadesContigBridge(object):
@@ -231,7 +232,7 @@ class LongReadBridge(object):
             # sequence, so we want to use a lot! But we still set an upper limit for cases of very
             # high read depth, as getting the consensus sequence will be slow if there are too many
             # reads.
-            max_full_span = 25  # TO DO: make this a parameter?
+            max_full_span = settings.MAX_READS_FOR_CONSENSUS
             if len(full_spans_with_seq) <= max_full_span:
                 full_span_seqs = [x[0] for x in full_spans_with_seq]
                 full_span_quals = [x[1] for x in full_spans_with_seq]

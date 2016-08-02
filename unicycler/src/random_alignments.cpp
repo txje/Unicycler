@@ -35,7 +35,7 @@ char * getRandomSequenceAlignmentScores(int seqLength, int n,
         }
     }
 
-    double mean, stdev;
+    double mean = 0.0, stdev = 0.0;
     getMeanAndStDev(scores, mean, stdev);
     return cppStringToCString(std::to_string(mean) + "," + std::to_string(stdev));
 }

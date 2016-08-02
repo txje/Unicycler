@@ -27,6 +27,20 @@ ALLOWED_ALIGNMENT_OVERLAP = 1.1
 # percentile scaled score will be thrown out.
 MIN_SCALED_SCORE_PERCENTILE = 5.0
 
+# This setting is used by Unicycler-align when processing GraphMap alignments. If a GraphMap
+# alignment is nearly semi-global, Unicycler-align will just extend the alignment to the ends.
+# But if it's not close enough to being semi-global, Unicycler-align will just do the entire
+# alignment itself. This setting is the number of bases short of semi-global that is acceptable
+# to extend. GraphMap alignments with more missing bases will be redone by Unicycler-align.
+ALLOWED_MISSING_GRAPHMAP_BASES = 100
+
+# Unicycler-align can automatically determine a low score threshold. It does this by randomly
+# aligning 100 bp sequences with the current scoring scheme and determining the mean and standard
+# deviation of such random alignments. The threshold is then set to a certain number of standard
+# deviations above the mean (this setting). This should ensure that any alignment which passes
+# the threshold is at least a little bit better than a random sequence alignment.
+AUTO_SCORE_STDEV_ABOVE_RANDOM_ALIGNMENT_MEAN = 5
+
 # When Unicycler is searching for paths connecting two graph segments which matches a read
 # consensus sequence, it will only consider paths which have a length similar to the consensus
 # sequence. These settings define the acceptable range. E.g. if they are 0.7 and 1.3, Unicycler

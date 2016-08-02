@@ -43,6 +43,7 @@ from .cpp_function_wrappers import semi_global_alignment, new_kmer_positions, ad
     get_random_sequence_alignment_mean_and_std_dev
 from .read_ref import load_references, load_long_reads
 from .alignment import Alignment, AlignmentScoringScheme
+from . import settings
 
 # Used to ensure that multiple threads writing to the same SAM file don't write at the same time.
 SAM_WRITE_LOCK = threading.Lock()
@@ -243,7 +244,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     else:
         if VERBOSITY > 0 and display_low_score:
             print('Automatically choosing a threshold using random alignments.\n')
-        std_devs_over_mean = 5
+        std_devs_over_mean = settings.AUTO_SCORE_STDEV_ABOVE_RANDOM_ALIGNMENT_MEAN
         low_score_threshold, rand_mean, rand_std_dev = get_auto_score_threshold(scoring_scheme,
                                                                                 std_devs_over_mean)
         low_score_threshold_list[0] = low_score_threshold
@@ -504,7 +505,6 @@ def extend_to_semi_global(alignments, scoring_scheme):
     if VERBOSITY > 3 and alignments:
         print_section_header('Extending alignments', VERBOSITY, last_newline=False)
 
-    allowed_missing_bases = 100  # TO DO: MAKE THIS A PARAMETER
     semi_global_alignments = []
     for alignment in alignments:
         total_missing_bases = alignment.get_total_missing_bases()
@@ -515,7 +515,7 @@ def extend_to_semi_global(alignments, scoring_scheme):
 
         # If an input alignment is almost semi-global (below a threshold), and not too close to the
         # end of the reference, then it is extended to make it semi-global.
-        elif total_missing_bases <= allowed_missing_bases:
+        elif total_missing_bases <= settings.ALLOWED_MISSING_GRAPHMAP_BASES:
             missing_start = alignment.get_missing_bases_at_start()
             missing_end = alignment.get_missing_bases_at_end()
             if missing_start and alignment.ref_start_pos >= 2 * missing_start:
@@ -817,13 +817,48 @@ def get_auto_score_threshold(scoring_scheme, std_devs_over_mean):
     This function determines a good low score threshold for the alignments. To do this it examines
     the distribution of scores acquired by aligning random sequences.
     """
-    # TO DO: make the random alignments run in separate threads to be a bit faster
-    mean, std_dev = get_random_sequence_alignment_mean_and_std_dev(100, 10000, scoring_scheme)
+    # If the scoring scheme is a typical one, don't actually do the random alignments now - just
+    # use precomputed values (made with a lot of iterations so they should be pretty good).
+    scoring_scheme_str = str(scoring_scheme)
+    if scoring_scheme_str == '1,0,0,0':
+        mean, std_dev = 50.225667, 2.467919
+    elif scoring_scheme_str == '0,-1,-1,-1':
+        mean, std_dev = 49.024927, 2.724548
+    elif scoring_scheme_str == '1,-1,-1,-1':
+        mean, std_dev = 51.741783, 2.183467
+    elif scoring_scheme_str == '5,-4,-8,-6':   # GraphMap
+        mean, std_dev = 42.707636, 2.435548
+    elif scoring_scheme_str == '5,-6,-10,0':   # BLASR
+        mean, std_dev = 58.65047, 0.853201
+    elif scoring_scheme_str == '2,-5,-2,-1':   # BWA-MEM
+        mean, std_dev = 72.712148, 0.95266
+    elif scoring_scheme_str == '1,-3,-5,-2':   # CUSHAW2 / blastn-short
+        mean, std_dev = 46.257408, 2.162765
+    elif scoring_scheme_str == '5,-11,-2,-4':  # proovread
+        mean, std_dev = 73.221967, 1.363692
+    elif scoring_scheme_str == '3,-6,-5,-2':   # Unicycler-align
+        mean, std_dev = 61.656918, 1.314624
+    elif scoring_scheme_str == '2,-3,-5,-2':   # blastn / dc-megablast
+        mean, std_dev = 47.453862, 1.985947
+    elif scoring_scheme_str == '1,-2,0,0':     # megablast
+        mean, std_dev = 81.720641, 0.77204
+    elif scoring_scheme_str == '0,-6,-5,-3':   # Bowtie2 end-to-end
+        mean, std_dev = 62.647055, 1.738603
+    elif scoring_scheme_str == '2,-6,-5,-3':   # Bowtie2 local
+        mean, std_dev = 59.713806, 1.641191
+    elif scoring_scheme_str == '1,-4,-6,-1':   # BWA
+        mean, std_dev = 60.328393, 1.176776
+
+    # If scheme doesn't match any of the above, then we have to actually do the random alignments.
+    else:
+        mean, std_dev = get_random_sequence_alignment_mean_and_std_dev(100, 25000, scoring_scheme)
+
     threshold = mean + (std_devs_over_mean * std_dev)
 
     # Keep the threshold bounded to sane levels.
     threshold = min(threshold, 95.0)
     threshold = max(threshold, 50.0)
+
     return threshold, mean, std_dev
 
 

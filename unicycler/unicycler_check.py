@@ -209,7 +209,7 @@ def get_random_sequence_error_rate(scoring_scheme):
     Returns the expected number of errors per reference base for an alignment of random sequences
     using the given scoring scheme.
     """
-    # I've precalculated the error rate for some typical scoring schemes.
+    # I've pre-calculated the error rate for some typical scoring schemes.
     scoring_scheme_str = str(scoring_scheme)
     if scoring_scheme_str == '1,0,0,0':
         return 0.498197
@@ -227,7 +227,7 @@ def get_random_sequence_error_rate(scoring_scheme):
         return 0.482431
     elif scoring_scheme_str == '5,-11,-2,-4':  # proovread
         return 0.571232
-    elif scoring_scheme_str == '3,-6,-5,-2':   # my aligner
+    elif scoring_scheme_str == '3,-6,-5,-2':   # Unicycler-align
         return 0.477499
     elif scoring_scheme_str == '2,-3,-5,-2':   # blastn / dc-megablast
         return 0.471655

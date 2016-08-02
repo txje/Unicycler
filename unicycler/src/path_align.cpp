@@ -78,7 +78,7 @@ ScoredAlignment * pathAlignment(std::string s1, std::string s2,
     std::string s2Name = "s2";
 
     return new ScoredAlignment(alignment, s1Name, s2Name, s1.length(), s2.length(),
-                               0, startTime, 0, true, false, scoringScheme);
+                               0, startTime, 0, true, true, false, scoringScheme);
 }
 
 

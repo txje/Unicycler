@@ -325,7 +325,8 @@ ScoredAlignment * semiGlobalAlignmentOneLineOneBand(std::string & readName, std:
         bandedChainAlignment(alignment, line->m_bridgedSeedChain, scoringScheme, alignConfig,
                              bandSize);
         sgAlignment = new ScoredAlignment(alignment, readName, refName, readLen, refLen,
-                                          line->m_trimmedRefStart, startTime, bandSize, false, false, scoringScheme);
+                                          line->m_trimmedRefStart, startTime, bandSize, false,
+                                          false, false, scoringScheme);
     }
     catch (...) {
         if (verbosity > 2)
@@ -363,7 +364,7 @@ char * startExtensionAlignment(char * read, char * ref,
     globalAlignment(alignment, scoringScheme, alignConfig);
 
     ScoredAlignment startAlignment(alignment, readName, refName, length(read), length(ref),
-                                   0, startTime, 0, false, true, scoringScheme);
+                                   0, startTime, 0, false, true, true, scoringScheme);
     return cppStringToCString(startAlignment.getFullString());
 }
 
@@ -393,7 +394,7 @@ char * endExtensionAlignment(char * read, char * ref,
     globalAlignment(alignment, scoringScheme, alignConfig);
 
     ScoredAlignment endAlignment(alignment, readName, refName, length(read), length(ref),
-                                 0, startTime, 0, true, false, scoringScheme);
+                                 0, startTime, 0, true, false, false, scoringScheme);
     return cppStringToCString(endAlignment.getFullString());
 }
 

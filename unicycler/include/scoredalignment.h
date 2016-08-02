@@ -18,7 +18,8 @@ public:
                     std::string & readName, std::string & refName,
                     int readLength, int refLength,
                     int refOffset, long long startTime, int bandSize,
-                    bool startImmediately, bool goToEnd, Score<int, Simple> & scoringScheme);
+                    bool startImmediately, bool goToEndSeq1, bool goToEndSeq2,
+                    Score<int, Simple> & scoringScheme);
     std::string getFullString();
     std::string getShortDisplayString();
     bool isRevComp();

@@ -1898,14 +1898,16 @@ class AssemblyGraph(object):
                 else:
                     new_working_paths.append(path)
 
-            # print('\n  Working paths:', len(new_working_paths))
+            # print('  Working paths:', len(new_working_paths))
             # for path in new_working_paths:
             #     print('  ' + ','.join(str(x) for x in path) + ' (' +
             #           int_to_str(self.get_path_length(path)) + ' bp)')
 
             # If we've acquired too many working paths, cull out the worst ones.
             if len(new_working_paths) > max_working_paths:
-                # print('\n  CULL\n')
+                path_count_before_cull = len(new_working_paths)
+                # print('\n  CULL')
+                # print('  SHORTEST LENGTH:', shortest_len)
 
                 # It's possible at this point that all of the working paths share quite a bit in
                 # common at their start. We can therefore find the common starting sequence and
@@ -1922,19 +1924,19 @@ class AssemblyGraph(object):
                         common_start.append(potential_common_seg)
                         continue
                     break
-                # print('Common path: ', common_start)
+                # print('  COMMON START:', common_start)
                 common_path_seq = self.get_path_sequence(common_start)[:-100]
                 path_seq_align_start = len(common_path_seq)
                 consensus_seq_align_start = 0
                 if common_path_seq:
                     alignment_result = path_alignment(common_path_seq, sequence, scoring_scheme,
                                                       True, 1000)
-                    # print(alignment_result)
+                    # print('  COMMON START ALIGNMENT RESULT:', alignment_result)
                     consensus_seq_align_start = int(alignment_result.split(',')[5])
                     if consensus_seq_align_start >= len(sequence):
                         consensus_seq_align_start = 0
-                        # print('Alignment start pos in paths:    ', path_seq_align_start)
-                        # print('Alignment start pos in consensus:', consensus_seq_align_start)
+                    # print('  ALIGNMENT START POS IN PATHS:', path_seq_align_start)
+                    # print('  ALIGNMENT START POS IN CONSENSUS:', consensus_seq_align_start)
 
                 scored_paths = []
                 shortest_len = min(self.get_path_length(x) for x in new_working_paths)
@@ -1952,6 +1954,8 @@ class AssemblyGraph(object):
                     scored_paths.append((path, scaled_score))
                 scored_paths = sorted(scored_paths, key=lambda x: x[1], reverse=True)
 
+                # print('  PATH SCORES:', ','.join(str(x[1]) for x in scored_paths))
+
                 # Keep the keep_count number of paths, but go over the keep_count if there's a tie.
                 # E.g. if the keep count is 12 but the top 16 paths all have the same score, keep
                 # all 16.
@@ -1965,7 +1969,9 @@ class AssemblyGraph(object):
                                 scored_paths[i][1] >= 0.75 * best_final_path_score:
                             surviving_paths.append(scored_paths[i])
 
-                # If any of the surviving paths ends in the same segment but have different
+                # print('  SURVIVING PATHS BEFORE TERMINAL SEG CLEAN:', len(surviving_paths))
+
+                # If any of the surviving paths end in the same segment but have different
                 # scores, only keep the ones with the top score. This is because the segments with a
                 # lower score will have the same future paths, and so will always be lower.
                 surviving_paths_by_terminal_seg = {}
@@ -1980,8 +1986,24 @@ class AssemblyGraph(object):
                 working_paths = []
                 for best_paths_for_terminal_seg in surviving_paths_by_terminal_seg.values():
                     working_paths += list(x[0] for x in best_paths_for_terminal_seg)
+                path_count_after_cull = len(working_paths)
 
-                # print('\n  SURVIVING PATHS:', len(working_paths))
+                # print('  SURVIVING PATHS AFTER TERMINAL SEG CLEAN:', len(working_paths), '\n')
+
+                # If the cull failed to reduce the number of paths whatsoever, that's not good!
+                # We can't let the paths grow forever, so we must chop them down, even if we have
+                # to do so arbitrarily.
+                if path_count_after_cull == path_count_before_cull:
+                    working_paths = working_paths[:len(working_paths) // 2]
+
+                # If at this point we have more surviving paths than our working path count,
+                # that's a problem because it means this loop will slow to a crawl with extend
+                # path, cull, extend path, cull, extend path, cull... etc. To cope, we increase
+                # our working path count.
+                if len(working_paths) > max_working_paths:
+                    max_working_paths *= 2
+                    # print('  INCREASED WORKING PATHS TO:', max_working_paths, '\n')
+
                 # for i, path in enumerate(working_paths):
                 #     print('  ' + ','.join(str(x) for x in path) + ' (' +
                 #           int_to_str(self.get_path_length(path)) + ' bp, score = ' +
@@ -2452,13 +2474,11 @@ class AssemblyGraph(object):
                 for group_1_edge in group_1:
                     for must_match_edge in must_match[group_1_edge]:
                         if must_match_edge in group_2 or must_match_edge in new_group_2:
-                            print(must_match_edge)
                             raise CannotTrimOverlaps
                         else:
                             new_group_1.add(must_match_edge)
                     for must_differ_edge in must_differ[group_1_edge]:
                         if must_differ_edge in group_1 or must_differ_edge in new_group_1:
-                            print(must_differ_edge)
                             raise CannotTrimOverlaps
                         else:
                             new_group_2.add(must_differ_edge)
@@ -2466,13 +2486,11 @@ class AssemblyGraph(object):
                 for group_2_edge in group_2:
                     for must_match_edge in must_match[group_2_edge]:
                         if must_match_edge in group_1 or must_match_edge in new_group_1:
-                            print(must_match_edge)
                             raise CannotTrimOverlaps
                         else:
                             new_group_2.add(must_match_edge)
                     for must_differ_edge in must_differ[group_2_edge]:
                         if must_differ_edge in group_2 or must_differ_edge in new_group_2:
-                            print(must_differ_edge)
                             raise CannotTrimOverlaps
                         else:
                             new_group_1.add(must_differ_edge)

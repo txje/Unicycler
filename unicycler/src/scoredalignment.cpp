@@ -7,7 +7,8 @@ ScoredAlignment::ScoredAlignment(Align<Dna5String, ArrayGaps> & alignment,
                                  std::string & readName, std::string & refName,
                                  int readLength, int refLength,
                                  int refOffset, long long startTime, int bandSize,
-                                 bool startImmediately, bool goToEnd, Score<int, Simple> & scoringScheme):
+                                 bool startImmediately, bool goToEndSeq1, bool goToEndSeq2,
+                                 Score<int, Simple> & scoringScheme):
     m_readName(readName), m_refName(refName), m_readLength(readLength), m_refLength(refLength),
     m_readStartPos(-1), m_refStartPos(-1), m_rawScore(0), m_bandSize(bandSize)
 {
@@ -81,12 +82,12 @@ ScoredAlignment::ScoredAlignment(Align<Dna5String, ArrayGaps> & alignment,
 
     m_readEndPos = readBases;
     m_refEndPos = refBases;
-    if (currentCigarType == INSERTION && !goToEnd) {
+    if (currentCigarType == INSERTION && !goToEndSeq1) {
         currentCigarType = CLIP;
         m_readEndPos -= currentCigarLength;
         alignmentEndPos -= currentCigarLength;
     }
-    else if (currentCigarType == DELETION && !goToEnd) {
+    else if (currentCigarType == DELETION && !goToEndSeq2) {
         currentCigarType = NOTHING;
         m_refEndPos -= currentCigarLength;
         alignmentEndPos -= currentCigarLength;

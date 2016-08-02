@@ -1542,9 +1542,9 @@ class AssemblyGraph(object):
                   ', '.join(sorted([str(x) for x in list(seg_nums_used_in_bridges)])))
 
         single_copy_seg_nums = set(x.number for x in single_copy_segments)
+        self.remove_unbridging_segments(single_copy_seg_nums, verbosity)
         self.remove_components_without_single_copy_segments(single_copy_seg_nums, verbosity)
         self.remove_components_entirely_used_in_bridges(seg_nums_used_in_bridges, verbosity)
-        self.remove_unbridging_segments(single_copy_seg_nums, verbosity)
 
     def clean_up_after_bridging_2(self, seg_nums_used_in_bridges, min_component_size,
                                   min_dead_end_size, verbosity, unbridged_graph,

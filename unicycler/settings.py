@@ -61,6 +61,7 @@ ALL_PATH_SEARCH_MAX_FINAL_PATHS = 250
 # PROGRESSIVE_PATH_SEARCH_SCORE_FRACTION of the best are kept.
 PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS = 100
 PROGRESSIVE_PATH_SEARCH_SCORE_FRACTION = 0.99
+PROGRESSIVE_PATH_SEARCH_DIRECTION_COUNT = 5
 
 # These settings are used for Unicycler's copy number determination - the process by which it
 # tries to figure out the depth of constituent components of each segment.

@@ -325,7 +325,7 @@ class LongReadBridge(object):
         self.all_paths, progressive_path_search = \
             self.graph.get_best_paths_for_seq(self.start_segment, self.end_segment,
                                               target_path_length, self.consensus_sequence,
-                                              scoring_scheme, expected_scaled_score)
+                                              scoring_scheme)
         path_time = time.time() - path_start_time
 
         output += '  path count:                ' + int_to_str(len(self.all_paths)) + ' '
@@ -963,6 +963,8 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     completed_count = 0
     if threads == 1:
         for bridge in long_read_bridges:
+            if bridge.start_segment != 162 or bridge.end_segment != 40:  # TEMP
+                continue  # TEMP
             output = bridge.finalise(scoring_scheme, min_alignment_length, read_lengths,
                                      estimated_genome_size, verbosity)
             completed_count += 1

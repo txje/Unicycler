@@ -1827,15 +1827,13 @@ class AssemblyGraph(object):
                              key=lambda x: abs(target_length - self.get_path_length(x)))
         return final_paths
 
-    def progressive_path_find(self, start, end, min_length, target_length, max_length, sequence,
-                              scoring_scheme, expected_scaled_score):
+    def progressive_path_find(self, start, end, min_length, max_length, sequence, scoring_scheme):
         """
-        Finds paths from the start to the end that best match the sequence. It works outward and
-        culls paths when they grow too numerous. This function is called when all_paths fails due to
-        too many paths. The start and end segments are not themselves included in the paths.
+        This function is called when all_paths fails due to too many paths. The start and end
+        segments are not themselves included in the paths.
         """
-        if start not in self.forward_links:
-            return []
+        print('\n\n\n\n\n\n\n')  # TEMP
+        print(start, 'TO', end, 'PROGRESSIVE PATH FINDING')  # TEMP
 
         start_seg = self.segments[abs(start)]
         end_seg = self.segments[abs(end)]
@@ -1843,16 +1841,43 @@ class AssemblyGraph(object):
                                            start_seg.get_length_no_overlap(self.overlap),
                                            end_seg.get_length_no_overlap(self.overlap))
 
+        print('PATH SEARCH FROM START')  # TEMP
+        paths_from_start = self.progressive_search_one_direction(start, sequence, scoring_scheme,
+                                                                 start_end_depth, 0.7)
+        print('PATH SEARCH FROM END')  # TEMP
+        paths_from_end = self.progressive_search_one_direction(-end, reverse_complement(sequence),
+                                                               scoring_scheme, start_end_depth, 0.7)
+        flipped_paths_from_end = []
+        for path_from_end in paths_from_end:
+            flipped_paths_from_end.append([-x for x in path_from_end[::-1]])
+
+
+
+        # LOOP THROUGH EACH COMBINATION OF START AND END PATHS
+        #     FIND ALL POSSIBLE OVERLAPS OF PATHS
+        #     FOR EACH OVERLAP, ADD TO A SET IF THE PATH LENGTH IS WITHIN BOUNDS
+        # RETURN THE PATHS!
+
+
+    def progressive_search_one_direction(self, start, sequence, scoring_scheme, start_end_depth,
+                                         sequence_fraction):
+        """
+        Searches outward from the start segment, culling paths when they grow too numerous.
+        Returns all found paths which match the given fraction of the sequence. For example, if
+        sequence_fraction is 0.75, this function will try to find a path which matches the first
+        75% of the sequence.
+        """
+        if start not in self.forward_links:
+            return []
+
+        target_length = len(sequence) * sequence_fraction
+
         # When the number of paths exceeds max_working_paths, they are all evaluated and only the
         # best paths are kept.
         max_working_paths = settings.PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS
 
         final_paths = []
         working_paths = [[x] for x in self.forward_links[start]]
-
-        # print('\n\n\n\n\n\n\n')
-        # print(start, 'to', end, 'progressive path finding:')
-        # print('  target length:', target_length)
 
         while working_paths:
 
@@ -1864,200 +1889,194 @@ class AssemblyGraph(object):
             new_working_paths = []
             for path in working_paths:
                 path_len = self.get_path_length(path)
-                if path_len == shortest_len:
-                    if path[-1] in self.forward_links:
-                        downstream_segments = self.forward_links[path[-1]]
-                        for next_seg in downstream_segments:
-                            if next_seg == end:
-                                if min_length <= path_len <= max_length:
-                                    final_paths.append(path)
-                                    path_seq = self.get_path_sequence(path)
-                                    alignment_result = fully_global_alignment(path_seq, sequence,
-                                                                              scoring_scheme, True,
-                                                                              1000)
-                                    if alignment_result:
-                                        seqan_parts = alignment_result.split(',', 9)
-                                        scaled_score = float(seqan_parts[7])
-                                        expected_scaled_score = max(expected_scaled_score,
-                                                                    scaled_score)
-                                        # print('\nFINAL PATH:',
-                                        #       ','.join(str(x) for x in path) + ' (' +
-                                        #       int_to_str(self.get_path_length(
-                                        #           path)) + ' bp, score = ' +
-                                        #       float_to_str(scaled_score, 2) + ')\n')
-                            else:
-                                max_allowed_count = self.max_path_segment_count(next_seg,
-                                                                                start_end_depth)
-                                count_so_far = path.count(next_seg) + path.count(-next_seg)
-                                if count_so_far < max_allowed_count:
-                                    extended_path = path + [next_seg]
-                                    if self.get_path_length(extended_path) <= max_length:
-                                        new_working_paths.append(extended_path)
-                else:
+
+                # If this path isn't the shortest path, we just save it for later.
+                if path_len > shortest_len:
                     new_working_paths.append(path)
+                    continue
 
-            # print('WORKING PATHS: ' + str(len(new_working_paths)) + ',', end=' ')
+                # If this path is the shortest path...
 
-            # If we've acquired too many working paths, cull out the worst ones.
-            if len(new_working_paths) > max_working_paths:
-                path_count_before_cull = len(new_working_paths)
-                # print('\nCULL TIME!')
-                # print('PATH COUNT:', len(new_working_paths))
-                # print('SHORTEST PATH LENGTH:', shortest_len)
+                if path[-1] in self.forward_links:
+                    downstream_segments = self.forward_links[path[-1]]
+                    for next_seg in downstream_segments:
+                        max_allowed_count = self.max_path_segment_count(next_seg, start_end_depth)
+                        count_so_far = path.count(next_seg) + path.count(-next_seg)
+                        if count_so_far < max_allowed_count:
+                            extended_path = path + [next_seg]
 
-                # It's possible that all of the working paths share quite a bit in common at their
-                # start. We can therefore find the common starting sequence and align to that once,
-                # and then only do separate alignments for the remainder of the paths. This can
-                # save some time!
-                common_start = []
-                smallest_seg_count = min(len(x) for x in new_working_paths)
-                for i in range(smallest_seg_count):
-                    potential_common_seg = new_working_paths[0][i]
-                    for path in new_working_paths:
-                        if path[i] != potential_common_seg:
-                            break
-                    else:
-                        common_start.append(potential_common_seg)
-                        continue
-                    break
-                # print('COMMON PATH START:', common_start)
-                common_path_seq = self.get_path_sequence(common_start)[:-100]
-                path_seq_align_start = len(common_path_seq)
-                consensus_seq_align_start = 0
-                if common_path_seq:
-                    alignment_result = path_alignment(common_path_seq, sequence, scoring_scheme,
-                                                      True, 1000)
-                    # print('COMMON START ALIGNMENT RESULT:', alignment_result)
+                            # If the path seems to be long enough, we try to align it against the
+                            # sequence to see if it's actually long enough.
+                            if self.get_path_length(extended_path) >= target_length:
+                                alignment_result = path_alignment(common_path_seq, sequence,
+                                                                  scoring_scheme, True, 1000)
+                                seqan_parts = alignment_result.split(',', 9)
+                                sequence_end_pos = int(seqan_parts[5])
+                                scaled_score = float(seqan_parts[7])
 
-                    seqan_parts = alignment_result.split(',', 9)
-                    consensus_seq_align_start = int(seqan_parts[5])
+                                # If the alignment showed that our path has indeed covered the
+                                # required amount of the sequence, then it's finished!
+                                if sequence_end_pos >= target_length:
+                                    final_paths.append(path)
+                                    print('\nFINAL PATH:',  # TEMP
+                                          ','.join(str(x) for x in path) + ' (' +  # TEMP
+                                          int_to_str(self.get_path_length(path)) +  # TEMP
+                                          ' bp, score = ' +  # TEMP
+                                          float_to_str(scaled_score, 2) + ')\n')  # TEMP
+                                else:
+                                    new_working_paths.append(extended_path)
+                            else:
+                                new_working_paths.append(extended_path)
 
-                    # If the common path sequence has passed the end of the consensus sequence,
-                    # then there's no need to continue.
-                    if consensus_seq_align_start >= len(sequence) and \
-                            alignment_ends_with_many_insertions(seqan_parts[-1]):
-                        break
-                    # print('ALIGNMENT START POS IN PATHS:', path_seq_align_start)
-                    # print('ALIGNMENT START POS IN CONSENSUS:', consensus_seq_align_start)
+            print('WORKING PATHS: ' + str(len(new_working_paths)) + ',', end=' ')
 
-                scored_paths = []
-                shortest_len = min(self.get_path_length(x) for x in new_working_paths)
-                consensus_seq = sequence[consensus_seq_align_start:]
-                # print('TRIMMED PATH LENGTH:', shortest_len - path_seq_align_start)
-                # print('TRIMMED CONSENSUS LENGTH:', len(consensus_seq))
+            # If our number of working paths is still reasonable, we keep them all and continue.
+            if len(new_working_paths) <= max_working_paths:
+                working_paths = new_working_paths
+                continue
+
+            # If we've acquired too many working paths, we must cull out the worst ones to keep
+            # the number manageable.
+            path_count_before_cull = len(new_working_paths)
+            print('\n\n\n\nCULL TIME!')  # TEMP
+            # for path in working_paths:  # TEMP
+            #     print(' ', path)  # TEMP
+            print('PATH COUNT:', len(new_working_paths))  # TEMP
+            print('SHORTEST PATH LENGTH:', shortest_len)  # TEMP
+
+            # It's possible that all of the working paths share quite a bit in common at their
+            # start. We can therefore find the common starting sequence and align to that once,
+            # and then only do separate alignments for the remainder of the paths. This can
+            # save some time!
+            common_start = []
+            smallest_seg_count = min(len(x) for x in new_working_paths)
+            for i in range(smallest_seg_count):
+                potential_common_seg = new_working_paths[0][i]
                 for path in new_working_paths:
-                    path_seq = self.get_path_sequence(path)[path_seq_align_start:shortest_len]
+                    if path[i] != potential_common_seg:
+                        break
+                else:
+                    common_start.append(potential_common_seg)
+                    continue
+                break
+            print('COMMON PATH START:', common_start)  # TEMP
+            common_path_seq = self.get_path_sequence(common_start)[:-100]
+            path_seq_align_start = len(common_path_seq)
+            consensus_seq_align_start = 0
+            if common_path_seq:
+                alignment_result = path_alignment(common_path_seq, sequence, scoring_scheme,
+                                                  True, 1000)
+                print('COMMON START ALIGNMENT RESULT:', alignment_result)  # TEMP
 
-                    alignment_result = path_alignment(path_seq, consensus_seq, scoring_scheme,
-                                                      True, 500)
-                    # print('  PATH ALIGNMENT RESULT:', alignment_result[:50] + '.....' +
-                    #       alignment_result[-10:])
-                    if not alignment_result:
-                        continue
+                seqan_parts = alignment_result.split(',', 9)
+                consensus_seq_align_start = int(seqan_parts[5])
 
-                    seqan_parts = alignment_result.split(',', 9)
+            scored_paths = []
+            shortest_len = min(self.get_path_length(x) for x in new_working_paths)
+            consensus_seq = sequence[consensus_seq_align_start:]
+            print('TRIMMED PATH LENGTH:', shortest_len - path_seq_align_start)  # TEMP
+            print('TRIMMED CONSENSUS LENGTH:', len(consensus_seq))  # TEMP
+            for path in new_working_paths:
+                path_seq = self.get_path_sequence(path)[path_seq_align_start:shortest_len]
 
-                    # As described above, there's no need to keep going with paths which have
-                    # reached the end of the consensus sequence.
-                    if int(seqan_parts[5]) == len(consensus_seq) and \
-                            alignment_ends_with_many_insertions(seqan_parts[-1]):
-                        # print('SKIPPING PATH WHICH HAS GONE TOO FAR')
-                        # print('  PATH:', path)
-                        # print('  ALIGNMENT:', alignment_result)
-                        continue
+                alignment_result = path_alignment(path_seq, consensus_seq, scoring_scheme,
+                                                  True, 500)
+                # print('  PATH ALIGNMENT RESULT:', alignment_result[:50] + '.....' +
+                #       alignment_result[-10:])
+                if not alignment_result:
+                    continue
 
-                    scaled_score = float(seqan_parts[7])
-                    scored_paths.append((path, scaled_score))
+                seqan_parts = alignment_result.split(',', 9)
+                scaled_score = float(seqan_parts[7])
+                scored_paths.append((path, scaled_score))
 
-                scored_paths = sorted(scored_paths, key=lambda x: x[1], reverse=True)
-                if not scored_paths:
-                    break
+            scored_paths = sorted(scored_paths, key=lambda x: x[1], reverse=True)
+            if not scored_paths:
+                break
 
-                # print('PATH SCORES:', ','.join(str(x[1]) for x in scored_paths))
-                # for scored_path in scored_paths:
-                #     print(' ', scored_path)
+            print('PATH SCORES:', ','.join(str(x[1]) for x in scored_paths))  # TEMP
+            # for scored_path in scored_paths:  # TEMP
+            #     print(' ', scored_path)  # TEMP
 
-                # If all of the scores have dropped well below our expected scores, then our path
-                # finding has probably taken a wrong turn and we should give up!
-                best_score = scored_paths[0][1]
-                if best_score < 0.9 * expected_scaled_score:
-                    break
-
-                # Now that each path is scored we keep the ones that are closest in score to the
-                # best one. For example, if settings.PROGRESSIVE_PATH_SEARCH_SCORE_FRACTION is
-                # 0.99, then any path which has 99% or more of the best score is kept.
+            # Now that each path is scored we keep the ones that are closest in score to the
+            # best one. For example, if settings.PROGRESSIVE_PATH_SEARCH_SCORE_FRACTION is
+            # 0.99, then any path which has 99% or more of the best score is kept. But if this
+            # approach still results in too many surviving paths, then we increase the score
+            # fraction threshold and try again.
+            best_score = scored_paths[0][1]
+            score_fraction_threshold = settings.PROGRESSIVE_PATH_SEARCH_SCORE_FRACTION
+            while True:
                 surviving_paths = []
-                score_fraction_threshold = settings.PROGRESSIVE_PATH_SEARCH_SCORE_FRACTION
                 if scored_paths:
                     for i, scored_path in enumerate(scored_paths):
                         score = scored_paths[i][1]
                         if score >= best_score * score_fraction_threshold:
                             surviving_paths.append(scored_paths[i])
+                if len(surviving_paths) > max_working_paths // 2:
+                    score_fraction_threshold = 1.0 - ((1.0 - score_fraction_threshold) / 2)
+                else:
+                    break
+            working_paths = list(x[0] for x in surviving_paths)
+            #
+            # print('SURVIVING PATHS BEFORE TERMINAL SEG CLEAN:', len(surviving_paths))
+            # # for surviving_path in surviving_paths:
+            # #     print(' ', surviving_path)
+            #
+            # # If any of the surviving paths end in the same segment but have different
+            # # scores, only keep the ones with the top score. This is because the segments with a
+            # # lower score will have the same future paths, and so will always be lower.
+            # surviving_paths_by_terminal_seg = {}
+            # for surviving_path in surviving_paths:
+            #     terminal_seg = surviving_path[0][-1]
+            #     if terminal_seg not in surviving_paths_by_terminal_seg:
+            #         surviving_paths_by_terminal_seg[terminal_seg] = [surviving_path]
+            #     elif surviving_path[1] > surviving_paths_by_terminal_seg[terminal_seg][0][1]:
+            #         surviving_paths_by_terminal_seg[terminal_seg] = [surviving_path]
+            #     elif surviving_path[1] == surviving_paths_by_terminal_seg[terminal_seg][0][1]:
+            #         surviving_paths_by_terminal_seg[terminal_seg].append(surviving_path)
+            # working_paths = []
+            # for best_paths_for_terminal_seg in surviving_paths_by_terminal_seg.values():
+            #     working_paths += list(x[0] for x in best_paths_for_terminal_seg)
+            #
+            # path_count_after_cull = len(working_paths)
+            print('SURVIVING PATHS:', len(working_paths), '\n')  # TEMP
+            for working_path in working_paths:  # TEMP
+                print(' ', working_path)  # TEMP
 
-                # If there are still quite a lot of surviving paths (more than half the working
-                # path max), we drop off the worst scoring ones.
-                while len(surviving_paths) > max_working_paths // 2:
-                    worst_score = surviving_paths[-1][1]
-                    if worst_score == best_score:
-                        break
-                    surviving_paths = [x for x in surviving_paths if x[1] > worst_score]
+            # If the cull failed to reduce the number of paths whatsoever, that's not good!
+            # We can't let the paths grow forever, so we must chop them down, even if we have
+            # to do so arbitrarily
+            path_count_after_cull = len(working_paths)
+            if path_count_after_cull == path_count_before_cull:
+                working_paths = working_paths[:len(working_paths) // 2]
 
-                # print('SURVIVING PATHS BEFORE TERMINAL SEG CLEAN:', len(surviving_paths))
-                # for surviving_path in surviving_paths:
-                #     print(' ', surviving_path)
+            # If at this point we still have more surviving paths than our working path count,
+            # that's a problem because it means this loop will slow to a crawl with extend
+            # path, cull, extend path, cull, extend path, cull... etc. To cope, we increase
+            # our working path count.
+            if len(working_paths) > max_working_paths:
+                max_working_paths *= 2
+                print('INCREASED WORKING PATHS TO:', max_working_paths, '\n')  # TEMP
 
-                # If any of the surviving paths end in the same segment but have different
-                # scores, only keep the ones with the top score. This is because the segments with a
-                # lower score will have the same future paths, and so will always be lower.
-                surviving_paths_by_terminal_seg = {}
-                for surviving_path in surviving_paths:
-                    terminal_seg = surviving_path[0][-1]
-                    if terminal_seg not in surviving_paths_by_terminal_seg:
-                        surviving_paths_by_terminal_seg[terminal_seg] = [surviving_path]
-                    elif surviving_path[1] > surviving_paths_by_terminal_seg[terminal_seg][0][1]:
-                        surviving_paths_by_terminal_seg[terminal_seg] = [surviving_path]
-                    elif surviving_path[1] == surviving_paths_by_terminal_seg[terminal_seg][0][1]:
-                        surviving_paths_by_terminal_seg[terminal_seg].append(surviving_path)
-                working_paths = []
-                for best_paths_for_terminal_seg in surviving_paths_by_terminal_seg.values():
-                    working_paths += list(x[0] for x in best_paths_for_terminal_seg)
+            # for i, path in enumerate(working_paths):
+            #     print('  ' + ','.join(str(x) for x in path) + ' (' +
+            #           int_to_str(self.get_path_length(path)) + ' bp, score = ' +
+            #           int_to_str(scored_paths[i][1]) + ')')
 
-                path_count_after_cull = len(working_paths)
-                # print('SURVIVING PATHS AFTER TERMINAL SEG CLEAN:', len(working_paths), '\n')
+        # We should now have a collection of paths that all cover the necessary amount of the
+        # consensus sequence. Sort them by their score, high to low.
+        final_paths = sorted(final_paths, key=lambda x: x[1], reverse=True)
 
-                # If the cull failed to reduce the number of paths whatsoever, that's not good!
-                # We can't let the paths grow forever, so we must chop them down, even if we have
-                # to do so arbitrarily.
-                if path_count_after_cull == path_count_before_cull:
-                    working_paths = working_paths[:len(working_paths) // 2]
+        if final_paths:  # TEMP
+            print('\nFINAL PATHS:')  # TEMP
+            for path in final_paths:  # TEMP
+                print(' ', path[1], ','.join(str(x) for x in path[0]))  # TEMP
+        else:  # TEMP
+            print('\nNO PATHS FOUND:')  # TEMP
+        print()  # TEMP
 
-                # If at this point we still have more surviving paths than our working path count,
-                # that's a problem because it means this loop will slow to a crawl with extend
-                # path, cull, extend path, cull, extend path, cull... etc. To cope, we increase
-                # our working path count.
-                if len(working_paths) > max_working_paths:
-                    max_working_paths *= 2
-                    # print('INCREASED WORKING PATHS TO:', max_working_paths, '\n')
-
-                # for i, path in enumerate(working_paths):
-                #     print('  ' + ','.join(str(x) for x in path) + ' (' +
-                #           int_to_str(self.get_path_length(path)) + ' bp, score = ' +
-                #           int_to_str(scored_paths[i][1]) + ')')
-            else:
-                working_paths = new_working_paths
-
-        # if final_paths:
-        #     print('\nFINAL PATHS:')
-        #     for path in final_paths:
-        #         print('  ' + ','.join(str(x) for x in path))
-        # else:
-        #     print('\nNO PATHS FOUND:')
-        # print()
-
-        # Sort by length discrepancy from the target so the closest length matches come first.
-        final_paths = sorted(final_paths,
-                             key=lambda x: abs(target_length - self.get_path_length(x)))
-        return final_paths
+        # We only return the best few paths to be joined up with their opposite directions.
+        return final_paths[:settings.PROGRESSIVE_PATH_SEARCH_DIRECTION_COUNT]
 
     def max_path_segment_count(self, seg_num, start_end_depth):
         """
@@ -2308,8 +2327,7 @@ class AssemblyGraph(object):
                             stack.append(next_seg)
         return False
 
-    def get_best_paths_for_seq(self, start_seg, end_seg, target_length, sequence, scoring_scheme,
-                               expected_scaled_score):
+    def get_best_paths_for_seq(self, start_seg, end_seg, target_length, sequence, scoring_scheme):
         """
         Given a sequence and target length, this function finds the best paths from the start
         segment to the end segment.
@@ -2329,20 +2347,11 @@ class AssemblyGraph(object):
             progressive_path_search = False
 
         # If there are too many paths to try exhaustively, we use a progressive approach to find
-        # the best path. The path search is done in both directions, in case one direction proves
-        # more difficult than the other.
+        # the best path.
         except TooManyPaths:
             progressive_path_search = True
-            paths = self.progressive_path_find(start_seg, end_seg, min_length, target_length,
-                                               max_length, sequence, scoring_scheme,
-                                               expected_scaled_score)
-            rev_paths = self.progressive_path_find(-end_seg, -start_seg, min_length, target_length,
-                                                   max_length, reverse_complement(sequence),
-                                                   scoring_scheme, expected_scaled_score)
-            for rev_path in rev_paths:
-                flipped_rev_path = [-x for x in rev_path[::-1]]
-                if flipped_rev_path not in paths:
-                    paths.append(flipped_rev_path)
+            paths = self.progressive_path_find(start_seg, end_seg, min_length, max_length,
+                                               sequence, scoring_scheme)
 
         # We now have some paths and want to see how well the consensus sequence matches each of
         # them.

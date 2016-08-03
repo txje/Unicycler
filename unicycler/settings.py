@@ -57,9 +57,10 @@ ALL_PATH_SEARCH_MAX_FINAL_PATHS = 250
 
 # These settings are used when Unicycler is progressively searching for paths connecting two graph
 # segments. When its number of working paths reaches PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS, it
-# will cull them down to the PROGRESSIVE_PATH_SEARCH_KEEP_COUNT best paths.
+# will cull them down by scoring the alignment of each. Paths which have a score within the
+# PROGRESSIVE_PATH_SEARCH_SCORE_FRACTION of the best are kept.
 PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS = 100
-PROGRESSIVE_PATH_SEARCH_KEEP_COUNT = 10
+PROGRESSIVE_PATH_SEARCH_SCORE_FRACTION = 0.99
 
 # These settings are used for Unicycler's copy number determination - the process by which it
 # tries to figure out the depth of constituent components of each segment.

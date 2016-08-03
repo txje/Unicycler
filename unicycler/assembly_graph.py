@@ -1825,11 +1825,10 @@ class AssemblyGraph(object):
         # Sort by length discrepancy from the target so the closest length matches come first.
         final_paths = sorted(final_paths,
                              key=lambda x: abs(target_length - self.get_path_length(x)))
-
         return final_paths
 
     def progressive_path_find(self, start, end, min_length, target_length, max_length, sequence,
-                              scoring_scheme):
+                              scoring_scheme, expected_scaled_score):
         """
         Finds paths from the start to the end that best match the sequence. It works outward and
         culls paths when they grow too numerous. This function is called when all_paths fails due to
@@ -1844,13 +1843,11 @@ class AssemblyGraph(object):
                                            start_seg.get_length_no_overlap(self.overlap),
                                            end_seg.get_length_no_overlap(self.overlap))
 
-        # When the number of paths exceeds max_working_paths, they are all evaluated and the best
-        # keep_count paths will be kept.
+        # When the number of paths exceeds max_working_paths, they are all evaluated and only the
+        # best paths are kept.
         max_working_paths = settings.PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS
-        keep_count = settings.PROGRESSIVE_PATH_SEARCH_KEEP_COUNT
 
         final_paths = []
-        best_final_path_score = 0.0
         working_paths = [[x] for x in self.forward_links[start]]
 
         # print('\n\n\n\n\n\n\n')
@@ -1881,13 +1878,13 @@ class AssemblyGraph(object):
                                     if alignment_result:
                                         seqan_parts = alignment_result.split(',', 9)
                                         scaled_score = float(seqan_parts[7])
-                                        best_final_path_score = max(best_final_path_score,
+                                        expected_scaled_score = max(expected_scaled_score,
                                                                     scaled_score)
                                         # print('\nFINAL PATH:',
                                         #       ','.join(str(x) for x in path) + ' (' +
                                         #       int_to_str(self.get_path_length(
                                         #           path)) + ' bp, score = ' +
-                                        #       float_to_str(scaled_score, 2) + ')')
+                                        #       float_to_str(scaled_score, 2) + ')\n')
                             else:
                                 max_allowed_count = self.max_path_segment_count(next_seg,
                                                                                 start_end_depth)
@@ -1908,10 +1905,10 @@ class AssemblyGraph(object):
                 # print('PATH COUNT:', len(new_working_paths))
                 # print('SHORTEST PATH LENGTH:', shortest_len)
 
-                # It's possible at this point that all of the working paths share quite a bit in
-                # common at their start. We can therefore find the common starting sequence and
-                # align to that once, and then only do separate alignments for the remainder of
-                # the paths. This can save some time!
+                # It's possible that all of the working paths share quite a bit in common at their
+                # start. We can therefore find the common starting sequence and align to that once,
+                # and then only do separate alignments for the remainder of the paths. This can
+                # save some time!
                 common_start = []
                 smallest_seg_count = min(len(x) for x in new_working_paths)
                 for i in range(smallest_seg_count):
@@ -1970,39 +1967,44 @@ class AssemblyGraph(object):
                         continue
 
                     scaled_score = float(seqan_parts[7])
-                    # print('  ' + ','.join(str(x) for x in path) + ' (score = ' +
-                    #       float_to_str(scaled_score, 2) + ')')
                     scored_paths.append((path, scaled_score))
 
                 scored_paths = sorted(scored_paths, key=lambda x: x[1], reverse=True)
+                if not scored_paths:
+                    break
 
                 # print('PATH SCORES:', ','.join(str(x[1]) for x in scored_paths))
+                # for scored_path in scored_paths:
+                #     print(' ', scored_path)
 
-                # We aim to keep the best keep_count number of paths, with a few caveats:
-                #   * We'll go over the keep_count if there's a tie. E.g. if the keep count is 12
-                #     but the top 16 paths all have the same score, we keep all 16.
-                #   * We don't bother keeping paths which scored way less than the best path. For
-                #     example, if keep_count is 4 and the scores are [99, 98, 65, 65, 65] then we
-                #     only keep the first 2.
-                #   * We don't bother keeping paths which tied with the (keep_count+1)th path. This
-                #     is because it would be arbitrary to only keep some at that score. For example,
-                #     if keep_count is 4 and the scores are [99, 98, 97, 96, 96, 96, 96, 96] then
-                #     we only keep the first 3.
+                # If all of the scores have dropped well below our expected scores, then our path
+                # finding has probably taken a wrong turn and we should give up!
+                best_score = scored_paths[0][1]
+                if best_score < 0.9 * expected_scaled_score:
+                    break
+
+                # Now that each path is scored we keep the ones that are closest in score to the
+                # best one. For example, if settings.PROGRESSIVE_PATH_SEARCH_SCORE_FRACTION is
+                # 0.99, then any path which has 99% or more of the best score is kept.
                 surviving_paths = []
+                score_fraction_threshold = settings.PROGRESSIVE_PATH_SEARCH_SCORE_FRACTION
                 if scored_paths:
-                    best_score = scored_paths[0][1]
-                    if len(scored_paths) > keep_count and scored_paths[keep_count][1] < best_score:
-                        bad_score = scored_paths[keep_count][1]
-                    else:
-                        bad_score = 0.0
                     for i, scored_path in enumerate(scored_paths):
                         score = scored_paths[i][1]
-                        if i >= keep_count and score < best_score:
-                            break
-                        if score > bad_score and score >= 0.9 * best_score:
+                        if score >= best_score * score_fraction_threshold:
                             surviving_paths.append(scored_paths[i])
 
+                # If there are still quite a lot of surviving paths (more than half the working
+                # path max), we drop off the worst scoring ones.
+                while len(surviving_paths) > max_working_paths // 2:
+                    worst_score = surviving_paths[-1][1]
+                    if worst_score == best_score:
+                        break
+                    surviving_paths = [x for x in surviving_paths if x[1] > worst_score]
+
                 # print('SURVIVING PATHS BEFORE TERMINAL SEG CLEAN:', len(surviving_paths))
+                # for surviving_path in surviving_paths:
+                #     print(' ', surviving_path)
 
                 # If any of the surviving paths end in the same segment but have different
                 # scores, only keep the ones with the top score. This is because the segments with a
@@ -2019,8 +2021,8 @@ class AssemblyGraph(object):
                 working_paths = []
                 for best_paths_for_terminal_seg in surviving_paths_by_terminal_seg.values():
                     working_paths += list(x[0] for x in best_paths_for_terminal_seg)
-                path_count_after_cull = len(working_paths)
 
+                path_count_after_cull = len(working_paths)
                 # print('SURVIVING PATHS AFTER TERMINAL SEG CLEAN:', len(working_paths), '\n')
 
                 # If the cull failed to reduce the number of paths whatsoever, that's not good!
@@ -2029,7 +2031,7 @@ class AssemblyGraph(object):
                 if path_count_after_cull == path_count_before_cull:
                     working_paths = working_paths[:len(working_paths) // 2]
 
-                # If at this point we have more surviving paths than our working path count,
+                # If at this point we still have more surviving paths than our working path count,
                 # that's a problem because it means this loop will slow to a crawl with extend
                 # path, cull, extend path, cull, extend path, cull... etc. To cope, we increase
                 # our working path count.
@@ -2306,7 +2308,8 @@ class AssemblyGraph(object):
                             stack.append(next_seg)
         return False
 
-    def get_best_paths_for_seq(self, start_seg, end_seg, target_length, sequence, scoring_scheme):
+    def get_best_paths_for_seq(self, start_seg, end_seg, target_length, sequence, scoring_scheme,
+                               expected_scaled_score):
         """
         Given a sequence and target length, this function finds the best paths from the start
         segment to the end segment.
@@ -2331,10 +2334,11 @@ class AssemblyGraph(object):
         except TooManyPaths:
             progressive_path_search = True
             paths = self.progressive_path_find(start_seg, end_seg, min_length, target_length,
-                                               max_length, sequence, scoring_scheme)
+                                               max_length, sequence, scoring_scheme,
+                                               expected_scaled_score)
             rev_paths = self.progressive_path_find(-end_seg, -start_seg, min_length, target_length,
                                                    max_length, reverse_complement(sequence),
-                                                   scoring_scheme)
+                                                   scoring_scheme, expected_scaled_score)
             for rev_path in rev_paths:
                 flipped_rev_path = [-x for x in rev_path[::-1]]
                 if flipped_rev_path not in paths:

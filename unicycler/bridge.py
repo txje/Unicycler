@@ -197,8 +197,8 @@ class LongReadBridge(object):
                  verbosity):
         """
         Determines the consensus sequence for the bridge, attempts to find it in the graph and
-        assigns a quality score to the bridge. This is the performance-intensive step of long read
-        bridging.
+        assigns a quality score to the bridge. This is the big performance-intensive step of long
+        read bridging!
         """
         start_time = time.time()
         start_seg = self.graph.segments[abs(self.start_segment)]
@@ -206,6 +206,10 @@ class LongReadBridge(object):
 
         output = str(self.start_segment) + ' to ' + str(self.end_segment) + ':\n'
         output += '  bridging reads:            ' + int_to_str(len(self.full_span_reads)) + '\n'
+
+        alignment_scaled_scores = [x[2].scaled_score for x in self.full_span_reads]
+        alignment_scaled_scores += [x[2].scaled_score for x in self.full_span_reads]
+        mean_alignment_scaled_score = statistics.mean(alignment_scaled_scores)
 
         # Partition the full span reads into two groups: those with negative numbers (implying that
         # the two segments overlap) and those with actual sequences.
@@ -290,6 +294,19 @@ class LongReadBridge(object):
             target_path_length = len(self.consensus_sequence) + (2 * self.graph.overlap)
             mean_overlap = 0
 
+            # We now make an expected scaled score for an alignment between the consensus and a
+            # graph path. I.e. when we find a path in the graph for this consensus, this is about
+            # how well it should align. This goes up with alignment scores (better alignment scores
+            # imply better read sequences) and read count (more reads can give a better consensus).
+            #     https://www.desmos.com/calculator
+            #     y=100\cdot \left(\left(1-\frac{a}{100}\right)
+            #       \left(1-\frac{3}{2+x}\right)+\frac{a}{100}\right)
+            #     y = expected_scaled_score, x = num_span_reads, a = mean_alignment_scaled_score
+            num_span_reads = len(self.full_span_reads)
+            expected_scaled_score = 100.0 * ((1.0 - mean_alignment_scaled_score / 100.0) *
+                                             (1.0 - (3.0 / (2.0 + num_span_reads))) +
+                                             mean_alignment_scaled_score / 100.0)
+
         # For full spans without sequence, we simply need a mean distance.
         else:
             self.consensus_sequence = ''
@@ -297,14 +314,18 @@ class LongReadBridge(object):
                                      len(full_spans_without_seq)))
             output += '  mean overlap:              ' + int_to_str(abs(mean_overlap)) + '\n'
             target_path_length = mean_overlap + (2 * self.graph.overlap)
+            expected_scaled_score = 100.0
 
         output += '  target path length:        ' + int_to_str(target_path_length) + ' bp\n'
+        if verbosity > 2:
+            output += '  expected scaled score:     ' + \
+                float_to_str(expected_scaled_score, 2) + '\n'
 
         path_start_time = time.time()
         self.all_paths, progressive_path_search = \
             self.graph.get_best_paths_for_seq(self.start_segment, self.end_segment,
                                               target_path_length, self.consensus_sequence,
-                                              scoring_scheme)
+                                              scoring_scheme, expected_scaled_score)
         path_time = time.time() - path_start_time
 
         output += '  path count:                ' + int_to_str(len(self.all_paths)) + ' '
@@ -339,25 +360,7 @@ class LongReadBridge(object):
             self.bridge_sequence = self.graph.get_path_sequence(self.graph_path)
             self.path_support = True
 
-            # We get the average alignment scaled score for the alignments which contributed to
-            # this bridge. This will give us an idea of how good our consensus sequence should look.
-            alignment_scaled_scores = [x[2].scaled_score for x in self.full_span_reads]
-            alignment_scaled_scores += [x[2].scaled_score for x in self.full_span_reads]
-            mean_alignment_scaled_score = statistics.mean(alignment_scaled_scores)
-
-            # We now make an expected scaled score of the consensus alignment using the read
-            # alignments. This goes up with alignment scores (better alignment scores implies better
-            # read sequences) and read count (more reads can give a better consensus).
-            #     https://www.desmos.com/calculator
-            #     y=100\cdot \left(\left(1-\frac{a}{100}\right)
-            #       \left(1-\frac{3}{2+x}\right)+\frac{a}{100}\right)
-            #     y = expected_scaled_score, x = num_span_reads, a = mean_alignment_scaled_score
-            num_span_reads = len(self.full_span_reads)
-            expected_scaled_score = 100.0 * ((1.0 - mean_alignment_scaled_score/100.0) *
-                                             (1.0 - (3.0 / (2.0 + num_span_reads))) +
-                                             mean_alignment_scaled_score/100.0)
-
-            # Now we can start this bridge's quality using a function that takes into account the
+            # We start this bridge's quality using a function that takes into account the
             # actual, expected and minimum acceptable scores. If the actual scaled score is 100,
             # this function gives 1. If it is the expected value, this function gives a number
             # around 0.7. Then as the actual score approaches the minimum acceptable score, this
@@ -966,7 +969,8 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
             if verbosity == 1:
                 print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')
             if verbosity > 1:
-                print(output, end='', flush=True)
+                fraction = str(completed_count) + '/' + str(num_long_read_bridges) + ': '
+                print('\n' + fraction + output, end='', flush=True)
     else:
         pool = ThreadPool(threads)
         arg_list = []

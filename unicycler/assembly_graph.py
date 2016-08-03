@@ -6,6 +6,7 @@ email: rrwick@gmail.com
 """
 
 import math
+import re
 from collections import deque, defaultdict
 from .misc import int_to_str, float_to_str, weighted_average, weighted_average_list, \
     print_section_header, get_num_agreement, reverse_complement, score_function
@@ -1882,8 +1883,8 @@ class AssemblyGraph(object):
                                         scaled_score = float(seqan_parts[7])
                                         best_final_path_score = max(best_final_path_score,
                                                                     scaled_score)
-                                        # print('FINAL PATH:')
-                                        # print('  ' + ','.join(str(x) for x in path) + ' (' +
+                                        # print('\nFINAL PATH:',
+                                        #       ','.join(str(x) for x in path) + ' (' +
                                         #       int_to_str(self.get_path_length(
                                         #           path)) + ' bp, score = ' +
                                         #       float_to_str(scaled_score, 2) + ')')
@@ -1898,21 +1899,19 @@ class AssemblyGraph(object):
                 else:
                     new_working_paths.append(path)
 
-            # print('  Working paths:', len(new_working_paths))
-            # for path in new_working_paths:
-            #     print('  ' + ','.join(str(x) for x in path) + ' (' +
-            #           int_to_str(self.get_path_length(path)) + ' bp)')
+            # print('WORKING PATHS: ' + str(len(new_working_paths)) + ',', end=' ')
 
             # If we've acquired too many working paths, cull out the worst ones.
             if len(new_working_paths) > max_working_paths:
                 path_count_before_cull = len(new_working_paths)
-                # print('\n  CULL')
-                # print('  SHORTEST LENGTH:', shortest_len)
+                # print('\nCULL TIME!')
+                # print('PATH COUNT:', len(new_working_paths))
+                # print('SHORTEST PATH LENGTH:', shortest_len)
 
                 # It's possible at this point that all of the working paths share quite a bit in
                 # common at their start. We can therefore find the common starting sequence and
                 # align to that once, and then only do separate alignments for the remainder of
-                # the paths. This can save a lot of time!
+                # the paths. This can save some time!
                 common_start = []
                 smallest_seg_count = min(len(x) for x in new_working_paths)
                 for i in range(smallest_seg_count):
@@ -1924,52 +1923,86 @@ class AssemblyGraph(object):
                         common_start.append(potential_common_seg)
                         continue
                     break
-                # print('  COMMON START:', common_start)
+                # print('COMMON PATH START:', common_start)
                 common_path_seq = self.get_path_sequence(common_start)[:-100]
                 path_seq_align_start = len(common_path_seq)
                 consensus_seq_align_start = 0
                 if common_path_seq:
                     alignment_result = path_alignment(common_path_seq, sequence, scoring_scheme,
                                                       True, 1000)
-                    # print('  COMMON START ALIGNMENT RESULT:', alignment_result)
-                    consensus_seq_align_start = int(alignment_result.split(',')[5])
-                    if consensus_seq_align_start >= len(sequence):
-                        consensus_seq_align_start = 0
-                    # print('  ALIGNMENT START POS IN PATHS:', path_seq_align_start)
-                    # print('  ALIGNMENT START POS IN CONSENSUS:', consensus_seq_align_start)
+                    # print('COMMON START ALIGNMENT RESULT:', alignment_result)
+
+                    seqan_parts = alignment_result.split(',', 9)
+                    consensus_seq_align_start = int(seqan_parts[5])
+
+                    # If the common path sequence has passed the end of the consensus sequence,
+                    # then there's no need to continue.
+                    if consensus_seq_align_start >= len(sequence) and \
+                            alignment_ends_with_many_insertions(seqan_parts[-1]):
+                        break
+                    # print('ALIGNMENT START POS IN PATHS:', path_seq_align_start)
+                    # print('ALIGNMENT START POS IN CONSENSUS:', consensus_seq_align_start)
 
                 scored_paths = []
                 shortest_len = min(self.get_path_length(x) for x in new_working_paths)
+                consensus_seq = sequence[consensus_seq_align_start:]
+                # print('TRIMMED PATH LENGTH:', shortest_len - path_seq_align_start)
+                # print('TRIMMED CONSENSUS LENGTH:', len(consensus_seq))
                 for path in new_working_paths:
                     path_seq = self.get_path_sequence(path)[path_seq_align_start:shortest_len]
-                    consensus_seq = sequence[consensus_seq_align_start:]
-                    alignment_result = path_alignment(path_seq, consensus_seq, scoring_scheme, True,
-                                                      500)
+
+                    alignment_result = path_alignment(path_seq, consensus_seq, scoring_scheme,
+                                                      True, 500)
+                    # print('  PATH ALIGNMENT RESULT:', alignment_result[:50] + '.....' +
+                    #       alignment_result[-10:])
                     if not alignment_result:
                         continue
+
                     seqan_parts = alignment_result.split(',', 9)
+
+                    # As described above, there's no need to keep going with paths which have
+                    # reached the end of the consensus sequence.
+                    if int(seqan_parts[5]) == len(consensus_seq) and \
+                            alignment_ends_with_many_insertions(seqan_parts[-1]):
+                        # print('SKIPPING PATH WHICH HAS GONE TOO FAR')
+                        # print('  PATH:', path)
+                        # print('  ALIGNMENT:', alignment_result)
+                        continue
+
                     scaled_score = float(seqan_parts[7])
                     # print('  ' + ','.join(str(x) for x in path) + ' (score = ' +
                     #       float_to_str(scaled_score, 2) + ')')
                     scored_paths.append((path, scaled_score))
+
                 scored_paths = sorted(scored_paths, key=lambda x: x[1], reverse=True)
 
-                # print('  PATH SCORES:', ','.join(str(x[1]) for x in scored_paths))
+                # print('PATH SCORES:', ','.join(str(x[1]) for x in scored_paths))
 
-                # Keep the keep_count number of paths, but go over the keep_count if there's a tie.
-                # E.g. if the keep count is 12 but the top 16 paths all have the same score, keep
-                # all 16.
+                # We aim to keep the best keep_count number of paths, with a few caveats:
+                #   * We'll go over the keep_count if there's a tie. E.g. if the keep count is 12
+                #     but the top 16 paths all have the same score, we keep all 16.
+                #   * We don't bother keeping paths which scored way less than the best path. For
+                #     example, if keep_count is 4 and the scores are [99, 98, 65, 65, 65] then we
+                #     only keep the first 2.
+                #   * We don't bother keeping paths which tied with the (keep_count+1)th path. This
+                #     is because it would be arbitrary to only keep some at that score. For example,
+                #     if keep_count is 4 and the scores are [99, 98, 97, 96, 96, 96, 96, 96] then
+                #     we only keep the first 3.
                 surviving_paths = []
                 if scored_paths:
                     best_score = scored_paths[0][1]
+                    if len(scored_paths) > keep_count and scored_paths[keep_count][1] < best_score:
+                        bad_score = scored_paths[keep_count][1]
+                    else:
+                        bad_score = 0.0
                     for i, scored_path in enumerate(scored_paths):
-                        if i >= keep_count and scored_paths[i][1] < best_score:
+                        score = scored_paths[i][1]
+                        if i >= keep_count and score < best_score:
                             break
-                        if best_final_path_score == 0.0 or \
-                                scored_paths[i][1] >= 0.75 * best_final_path_score:
+                        if score > bad_score and score >= 0.9 * best_score:
                             surviving_paths.append(scored_paths[i])
 
-                # print('  SURVIVING PATHS BEFORE TERMINAL SEG CLEAN:', len(surviving_paths))
+                # print('SURVIVING PATHS BEFORE TERMINAL SEG CLEAN:', len(surviving_paths))
 
                 # If any of the surviving paths end in the same segment but have different
                 # scores, only keep the ones with the top score. This is because the segments with a
@@ -1988,7 +2021,7 @@ class AssemblyGraph(object):
                     working_paths += list(x[0] for x in best_paths_for_terminal_seg)
                 path_count_after_cull = len(working_paths)
 
-                # print('  SURVIVING PATHS AFTER TERMINAL SEG CLEAN:', len(working_paths), '\n')
+                # print('SURVIVING PATHS AFTER TERMINAL SEG CLEAN:', len(working_paths), '\n')
 
                 # If the cull failed to reduce the number of paths whatsoever, that's not good!
                 # We can't let the paths grow forever, so we must chop them down, even if we have
@@ -2002,7 +2035,7 @@ class AssemblyGraph(object):
                 # our working path count.
                 if len(working_paths) > max_working_paths:
                     max_working_paths *= 2
-                    # print('  INCREASED WORKING PATHS TO:', max_working_paths, '\n')
+                    # print('INCREASED WORKING PATHS TO:', max_working_paths, '\n')
 
                 # for i, path in enumerate(working_paths):
                 #     print('  ' + ','.join(str(x) for x in path) + ' (' +
@@ -2011,15 +2044,17 @@ class AssemblyGraph(object):
             else:
                 working_paths = new_working_paths
 
-        # print('\n  FINAL PATHS:')
-        # for path in final_paths:
-        #     print('  ' + ','.join(str(x) for x in path))
+        # if final_paths:
+        #     print('\nFINAL PATHS:')
+        #     for path in final_paths:
+        #         print('  ' + ','.join(str(x) for x in path))
+        # else:
+        #     print('\nNO PATHS FOUND:')
         # print()
 
         # Sort by length discrepancy from the target so the closest length matches come first.
         final_paths = sorted(final_paths,
                              key=lambda x: abs(target_length - self.get_path_length(x)))
-
         return final_paths
 
     def max_path_segment_count(self, seg_num, start_end_depth):
@@ -3267,3 +3302,23 @@ def get_overlap_from_gfa_link(filename):
 def remove_dupes_preserve_order(lst):
     seen = set()
     return [x for x in lst if not (x in seen or seen.add(x))]
+
+
+def alignment_ends_with_many_insertions(cigar):
+    """
+    This function takes an alignment CIGAR string and returns whether or not it seems to end in a
+    lot of insertions. This is a somewhat fuzzy call, as something like 1000M200I1M should be
+    positive in this test, even though the last piece of the CIGAR is a match. We therefore check
+    the last few CIGAR pieces to see if they are mostly insertions.
+    """
+    cigar_parts = re.findall(r'\d+\w', cigar)
+    insertion_count = 0  # Literally: how many more insertions we've found than other types
+    for part in reversed(cigar_parts[-3:]):  # Check the last 3 CIGAR pieces
+        cigar_size = int(part[:-1])
+        if part[-1] == 'I':
+            insertion_count += cigar_size
+        else:
+            insertion_count -= cigar_size
+        if insertion_count > 100:   # 100 counts as 'many'
+            return True
+    return False

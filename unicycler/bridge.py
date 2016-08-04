@@ -325,7 +325,7 @@ class LongReadBridge(object):
         self.all_paths, progressive_path_search = \
             self.graph.get_best_paths_for_seq(self.start_segment, self.end_segment,
                                               target_path_length, self.consensus_sequence,
-                                              scoring_scheme)
+                                              scoring_scheme, expected_scaled_score)
         path_time = time.time() - path_start_time
 
         output += '  path count:                ' + int_to_str(len(self.all_paths)) + ' '
@@ -431,12 +431,14 @@ class LongReadBridge(object):
                 dead_end_count += 1
             if self.graph.starts_with_dead_end(self.end_segment):
                 dead_end_count += 1
-            if dead_end_count == 0:
+            if dead_end_count == 2:
                 self.quality = 1.0
             elif dead_end_count == 1:
                 self.quality = 0.7
-            else:  # dead_end_count == 2
+            else:  # dead_end_count == 0
                 self.quality = 0.25
+            if verbosity > 2:
+                output += '  dead end score factor:     ' + float_to_str(self.quality, 2) + '\n'
 
         # Expected read count is determined using the read lengths and bridge size. For a given
         # read length and bridge, there are an estimable number of positions where a read of that

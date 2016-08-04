@@ -1828,7 +1828,8 @@ class AssemblyGraph(object):
                              key=lambda x: abs(target_length - self.get_path_length(x)))
         return final_paths
 
-    def progressive_path_find(self, start, end, min_length, max_length, sequence, scoring_scheme):
+    def progressive_path_find(self, start, end, min_length, max_length, sequence, scoring_scheme,
+                              expected_scaled_score):
         """
         This function is called when all_paths fails due to too many paths. The start and end
         segments are not themselves included in the paths.
@@ -1843,17 +1844,20 @@ class AssemblyGraph(object):
                                            end_seg.get_length_no_overlap(self.overlap))
 
         # print('PATH SEARCH FROM START')  # TEMP
-        paths_from_start = self.progressive_search_one_direction(start, sequence, scoring_scheme,
-                                                                 start_end_depth, 0.6, max_length)
+        paths_from_start, best_start_score = \
+            self.progressive_search_one_direction(start, sequence, scoring_scheme, start_end_depth,
+                                                  0.6, max_length, expected_scaled_score)
 
         # print('\nALL START PATHS:')  # TEMP
         # for path_from_start in paths_from_start:  # TEMP
         #     print(' ', path_from_start)  # TEMP
+        # print('BEST START SCORE:', best_start_score)  # TEMP
 
         # print('PATH SEARCH FROM END')  # TEMP
-        paths_from_end = self.progressive_search_one_direction(-end, reverse_complement(sequence),
-                                                               scoring_scheme, start_end_depth,
-                                                               0.6, max_length)
+        paths_from_end, best_end_score = \
+            self.progressive_search_one_direction(-end, reverse_complement(sequence),
+                                                  scoring_scheme, start_end_depth, 0.6, max_length,
+                                                  expected_scaled_score)
         flipped_paths_from_end = []
         for path_from_end in paths_from_end:
             flipped_paths_from_end.append([-x for x in path_from_end[::-1]])
@@ -1862,37 +1866,46 @@ class AssemblyGraph(object):
         # print('\nALL END PATHS:')  # TEMP
         # for path_from_end in paths_from_end:  # TEMP
         #     print(' ', path_from_end)  # TEMP
+        # print('BEST END SCORE:', best_end_score)  # TEMP
 
-        # Make every possible combination of start paths and end paths, sorted such that better
-        # paths come first.
-        path_combos = sorted([(x, y) for x in range(len(paths_from_start))
-                             for y in range(len(paths_from_end))], key=lambda z: z[0] + z[1])
-        valid_joined_paths = []
-        for x, y in path_combos:
-            valid_joined_paths += self.get_overlapping_paths(paths_from_start[x], paths_from_end[y])
-            if len(valid_joined_paths) >= settings.PROGRESSIVE_PATH_SEARCH_FINAL_COUNT:
-                break
-
-        # Remove duplicates.
-        valid_joined_paths.sort()
-        valid_joined_paths = list(valid_joined_paths for valid_joined_paths, _
-                                  in itertools.groupby(valid_joined_paths))
-
-        # print('ALL COMBINED PATHS:')  # TEMP
-        # for valid_joined_path in valid_joined_paths:  # TEMP
-        #     print(' ', valid_joined_path)  # TEMP
-
-        valid_joined_paths = [x for x in valid_joined_paths
-                              if min_length <= self.get_path_length(x) <= max_length]
+        joined_paths = self.combine_paths(paths_from_start, paths_from_end, min_length, max_length)
 
         # print('\nCOMBINED PATHS:')  # TEMP
-        # for valid_joined_path in valid_joined_paths:  # TEMP
-        #     print(' ', valid_joined_path)  # TEMP
+        # for joined_path in joined_paths:  # TEMP
+        #     print(' ', joined_path)  # TEMP
 
-        return valid_joined_paths
+        # If at this point we don't have any valid paths but at least one of the directions had a
+        # decent score, that implies that a real path may exist but we've missed it. We then take
+        # the better scoring direction of the two (implies that one was on the right path) and
+        # try it again, but a bit further.
+        decent_score = 0.95 * expected_scaled_score
+        if not joined_paths and \
+                (best_start_score > decent_score or best_end_score > decent_score):
+            if best_start_score > best_end_score:
+                paths_from_start, best_start_score = \
+                    self.progressive_search_one_direction(start, sequence, scoring_scheme,
+                                                          start_end_depth, 0.8, max_length,
+                                                          expected_scaled_score)
+            else:  # best_end_score >= best_start_score
+                paths_from_end, best_end_score = \
+                    self.progressive_search_one_direction(-end, reverse_complement(sequence),
+                                                          scoring_scheme, start_end_depth, 0.8,
+                                                          max_length, expected_scaled_score)
+                flipped_paths_from_end = []
+                for path_from_end in paths_from_end:
+                    flipped_paths_from_end.append([-x for x in path_from_end[::-1]])
+                paths_from_end = flipped_paths_from_end
+            joined_paths = self.combine_paths(paths_from_start, paths_from_end, min_length,
+                                              max_length)
+
+            # print('\nCOMBINED PATHS (RETRY):')  # TEMP
+            # for joined_path in joined_paths:  # TEMP
+            #     print(' ', joined_path)  # TEMP
+
+        return joined_paths
 
     def progressive_search_one_direction(self, start, sequence, scoring_scheme, start_end_depth,
-                                         sequence_fraction, max_length):
+                                         sequence_fraction, max_length, expected_scaled_score):
         """
         Searches outward from the start segment, culling paths when they grow too numerous.
         Returns all found paths which match the given fraction of the sequence. For example, if
@@ -2042,7 +2055,7 @@ class AssemblyGraph(object):
             # If all of the scores have dropped well below our current best (if there is one),
             # then our path finding has probably taken a wrong turn and we should give up!
             best_score = scored_paths[0][1]
-            if best_score < 0.9 * best_final_score:
+            if best_score < 0.9 * best_final_score or best_score < 0.85 * expected_scaled_score:
                 break
 
             # Now that each path is scored we keep the ones that are closest in score to the
@@ -2137,7 +2150,7 @@ class AssemblyGraph(object):
         # for path in best_final_paths:  # TEMP
         #     print(' ', ','.join(str(x) for x in path))  # TEMP
 
-        return best_final_paths
+        return best_final_paths, best_final_score
 
     def max_path_segment_count(self, seg_num, start_end_depth):
         """
@@ -2388,7 +2401,8 @@ class AssemblyGraph(object):
                             stack.append(next_seg)
         return False
 
-    def get_best_paths_for_seq(self, start_seg, end_seg, target_length, sequence, scoring_scheme):
+    def get_best_paths_for_seq(self, start_seg, end_seg, target_length, sequence, scoring_scheme,
+                               expected_scaled_score):
         """
         Given a sequence and target length, this function finds the best paths from the start
         segment to the end segment.
@@ -2412,7 +2426,7 @@ class AssemblyGraph(object):
         except TooManyPaths:
             progressive_path_search = True
             paths = self.progressive_path_find(start_seg, end_seg, min_length, max_length,
-                                               sequence, scoring_scheme)
+                                               sequence, scoring_scheme, expected_scaled_score)
 
         # We now have some paths and want to see how well the consensus sequence matches each of
         # them.
@@ -2784,6 +2798,32 @@ class AssemblyGraph(object):
         if self.segments[abs_seg_num].bridge is not None:
             return True
         return abs_seg_num in self.copy_depths and len(self.copy_depths[abs_seg_num]) == 1
+
+    def combine_paths(self, paths_from_start, paths_from_end, min_length, max_length):
+        """
+        Returns a list of completed paths made by overlapping the given start and end paths.
+        """
+        # Make every possible combination of start paths and end paths, sorted such that better
+        # paths come first.
+        path_combos = sorted([(x, y) for x in range(len(paths_from_start))
+                              for y in range(len(paths_from_end))], key=lambda z: z[0] + z[1])
+        valid_joined_paths = []
+        for x, y in path_combos:
+            valid_joined_paths += self.get_overlapping_paths(paths_from_start[x], paths_from_end[y])
+            if len(valid_joined_paths) >= settings.PROGRESSIVE_PATH_SEARCH_FINAL_COUNT:
+                break
+
+        # Remove duplicates.
+        valid_joined_paths.sort()
+        valid_joined_paths = list(valid_joined_paths for valid_joined_paths, _
+                                  in itertools.groupby(valid_joined_paths))
+
+        # print('\nALL COMBINED PATHS:')  # TEMP
+        # for valid_joined_path in valid_joined_paths:  # TEMP
+        #     print(' ', valid_joined_path)  # TEMP
+
+        return [x for x in valid_joined_paths
+                if min_length <= self.get_path_length(x) <= max_length]
 
     def get_overlapping_paths(self, path_1, path_2):
         """

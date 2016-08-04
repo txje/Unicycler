@@ -16,6 +16,7 @@ from .misc import int_to_str, float_to_str, reverse_complement, print_progress_l
     weighted_average, get_num_agreement, flip_number_order, score_function
 from .cpp_function_wrappers import multiple_sequence_alignment
 from . import settings
+from .path_finding import get_best_paths_for_seq
 
 
 class SpadesContigBridge(object):
@@ -323,9 +324,9 @@ class LongReadBridge(object):
 
         path_start_time = time.time()
         self.all_paths, progressive_path_search = \
-            self.graph.get_best_paths_for_seq(self.start_segment, self.end_segment,
-                                              target_path_length, self.consensus_sequence,
-                                              scoring_scheme, expected_scaled_score)
+            get_best_paths_for_seq(self.graph, self.start_segment, self.end_segment,
+                                   target_path_length, self.consensus_sequence, scoring_scheme,
+                                   expected_scaled_score)
         path_time = time.time() - path_start_time
 
         output += '  path count:                ' + int_to_str(len(self.all_paths)) + ' '

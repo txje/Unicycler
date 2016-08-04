@@ -6,13 +6,10 @@ email: rrwick@gmail.com
 """
 
 import math
-import re
-import itertools
 from collections import deque, defaultdict
-from .misc import int_to_str, float_to_str, weighted_average, weighted_average_list, \
-    print_section_header, get_num_agreement, reverse_complement, score_function
+from .misc import int_to_str, float_to_str, weighted_average_list, print_section_header, \
+     reverse_complement, score_function
 from .bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge
-from .cpp_function_wrappers import fully_global_alignment, path_alignment
 from . import settings
 
 
@@ -1798,6 +1795,8 @@ class AssemblyGraph(object):
         """
         Returns the length of the given path.
         """
+        if not path:
+            return 0
         try:
             path_length = 0
             for seg in path:

@@ -1858,10 +1858,7 @@ class AssemblyGraph(object):
             self.progressive_search_one_direction(-end, reverse_complement(sequence),
                                                   scoring_scheme, start_end_depth, 0.6, max_length,
                                                   expected_scaled_score)
-        flipped_paths_from_end = []
-        for path_from_end in paths_from_end:
-            flipped_paths_from_end.append([-x for x in path_from_end[::-1]])
-        paths_from_end = flipped_paths_from_end
+        paths_from_end = [[-x for x in y[::-1]] for y in paths_from_end]  # Flip direction
 
         # print('\nALL END PATHS:')  # TEMP
         # for path_from_end in paths_from_end:  # TEMP
@@ -1891,10 +1888,7 @@ class AssemblyGraph(object):
                     self.progressive_search_one_direction(-end, reverse_complement(sequence),
                                                           scoring_scheme, start_end_depth, 0.8,
                                                           max_length, expected_scaled_score)
-                flipped_paths_from_end = []
-                for path_from_end in paths_from_end:
-                    flipped_paths_from_end.append([-x for x in path_from_end[::-1]])
-                paths_from_end = flipped_paths_from_end
+                paths_from_end = [[-x for x in y[::-1]] for y in paths_from_end]  # Flip direction
             joined_paths = self.combine_paths(paths_from_start, paths_from_end, min_length,
                                               max_length)
 

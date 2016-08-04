@@ -1832,8 +1832,8 @@ class AssemblyGraph(object):
         This function is called when all_paths fails due to too many paths. The start and end
         segments are not themselves included in the paths.
         """
-        print('\n\n\n\n\n\n\n')  # TEMP
-        print(start, 'TO', end, 'PROGRESSIVE PATH FINDING')  # TEMP
+        # print('\n\n\n\n\n\n\n')  # TEMP
+        # print(start, 'TO', end, 'PROGRESSIVE PATH FINDING')  # TEMP
 
         start_seg = self.segments[abs(start)]
         end_seg = self.segments[abs(end)]
@@ -1841,26 +1841,52 @@ class AssemblyGraph(object):
                                            start_seg.get_length_no_overlap(self.overlap),
                                            end_seg.get_length_no_overlap(self.overlap))
 
-        print('PATH SEARCH FROM START')  # TEMP
+        # print('PATH SEARCH FROM START')  # TEMP
         paths_from_start = self.progressive_search_one_direction(start, sequence, scoring_scheme,
-                                                                 start_end_depth, 0.7)
-        print('PATH SEARCH FROM END')  # TEMP
+                                                                 start_end_depth, 0.6, max_length)
+        # print('PATH SEARCH FROM END')  # TEMP
         paths_from_end = self.progressive_search_one_direction(-end, reverse_complement(sequence),
-                                                               scoring_scheme, start_end_depth, 0.7)
+                                                               scoring_scheme, start_end_depth,
+                                                               0.6, max_length)
+
+        # print('ALL START PATHS:')  # TEMP
+        # for path_from_start in paths_from_start:  # TEMP
+        #     print(' ', path_from_start)  # TEMP
+
         flipped_paths_from_end = []
         for path_from_end in paths_from_end:
             flipped_paths_from_end.append([-x for x in path_from_end[::-1]])
+        paths_from_end = flipped_paths_from_end
 
+        # print('ALL END PATHS:')  # TEMP
+        # for path_from_end in paths_from_end:  # TEMP
+        #     print(' ', path_from_end)  # TEMP
 
+        # Make every possible combination of start paths and end paths, sorted such that better
+        # paths come first.
+        path_combos = sorted([(x, y) for x in range(len(paths_from_start))
+                             for y in range(len(paths_from_end))], key=lambda z: z[0] + z[1])
+        valid_joined_paths = []
+        for x, y in path_combos:
+            valid_joined_paths += self.get_overlapping_paths(paths_from_start[x], paths_from_end[y])
+            if len(valid_joined_paths) >= settings.PROGRESSIVE_PATH_SEARCH_FINAL_COUNT:
+                break
 
-        # LOOP THROUGH EACH COMBINATION OF START AND END PATHS
-        #     FIND ALL POSSIBLE OVERLAPS OF PATHS
-        #     FOR EACH OVERLAP, ADD TO A SET IF THE PATH LENGTH IS WITHIN BOUNDS
-        # RETURN THE PATHS!
+        # print('ALL COMBINED PATHS:')  # TEMP
+        # for valid_joined_path in valid_joined_paths:  # TEMP
+        #     print(' ', valid_joined_path)  # TEMP
 
+        valid_joined_paths = [x for x in valid_joined_paths
+                              if min_length <= self.get_path_length(x) <= max_length]
+
+        # print('AFTER SIZE FILTERING:')  # TEMP
+        # for valid_joined_path in valid_joined_paths:  # TEMP
+        #     print(' ', valid_joined_path)  # TEMP
+
+        return valid_joined_paths
 
     def progressive_search_one_direction(self, start, sequence, scoring_scheme, start_end_depth,
-                                         sequence_fraction):
+                                         sequence_fraction, max_length):
         """
         Searches outward from the start segment, culling paths when they grow too numerous.
         Returns all found paths which match the given fraction of the sequence. For example, if
@@ -1871,6 +1897,7 @@ class AssemblyGraph(object):
             return []
 
         target_length = len(sequence) * sequence_fraction
+        # print('TARGET_LENGTH', target_length)  # TEMP
 
         # When the number of paths exceeds max_working_paths, they are all evaluated and only the
         # best paths are kept.
@@ -1904,11 +1931,18 @@ class AssemblyGraph(object):
                         count_so_far = path.count(next_seg) + path.count(-next_seg)
                         if count_so_far < max_allowed_count:
                             extended_path = path + [next_seg]
+                            extended_path_len = self.get_path_length(extended_path)
+
+                            # If the extended path is excessively long, then it's almost certain
+                            # wrong, and would take a long time to align, so we skip it.
+                            if extended_path_len > max_length:
+                                pass
 
                             # If the path seems to be long enough, we try to align it against the
-                            # sequence to see if it's actually long enough.
-                            if self.get_path_length(extended_path) >= target_length:
-                                alignment_result = path_alignment(common_path_seq, sequence,
+                            # sequence to see if it's actually long enough to be a final path.
+                            elif self.get_path_length(extended_path) >= target_length:
+                                path_sequence = self.get_path_sequence(extended_path)
+                                alignment_result = path_alignment(path_sequence, sequence,
                                                                   scoring_scheme, True, 1000)
                                 seqan_parts = alignment_result.split(',', 9)
                                 sequence_end_pos = int(seqan_parts[5])
@@ -1917,18 +1951,18 @@ class AssemblyGraph(object):
                                 # If the alignment showed that our path has indeed covered the
                                 # required amount of the sequence, then it's finished!
                                 if sequence_end_pos >= target_length:
-                                    final_paths.append(path)
-                                    print('\nFINAL PATH:',  # TEMP
-                                          ','.join(str(x) for x in path) + ' (' +  # TEMP
-                                          int_to_str(self.get_path_length(path)) +  # TEMP
-                                          ' bp, score = ' +  # TEMP
-                                          float_to_str(scaled_score, 2) + ')\n')  # TEMP
+                                    final_paths.append((extended_path, scaled_score))
+                                    # print('FINAL PATH:',  # TEMP
+                                    #       ','.join(str(x) for x in extended_path) + ' (' +  # TEMP
+                                    #       int_to_str(self.get_path_length(extended_path)) + # TEMP
+                                    #       ' bp, score = ' +  # TEMP
+                                    #       float_to_str(scaled_score, 2) + ')')  # TEMP
                                 else:
                                     new_working_paths.append(extended_path)
                             else:
                                 new_working_paths.append(extended_path)
 
-            print('WORKING PATHS: ' + str(len(new_working_paths)) + ',', end=' ')
+            # print('WORKING PATHS: ' + str(len(new_working_paths)))
 
             # If our number of working paths is still reasonable, we keep them all and continue.
             if len(new_working_paths) <= max_working_paths:
@@ -1938,16 +1972,15 @@ class AssemblyGraph(object):
             # If we've acquired too many working paths, we must cull out the worst ones to keep
             # the number manageable.
             path_count_before_cull = len(new_working_paths)
-            print('\n\n\n\nCULL TIME!')  # TEMP
-            # for path in working_paths:  # TEMP
-            #     print(' ', path)  # TEMP
-            print('PATH COUNT:', len(new_working_paths))  # TEMP
-            print('SHORTEST PATH LENGTH:', shortest_len)  # TEMP
+            # print('\n\n\n\nCULL TIME!')  # TEMP
+            # # for path in working_paths:  # TEMP
+            # #     print(' ', path)  # TEMP
+            # print('PATH COUNT:', len(new_working_paths))  # TEMP
+            # print('SHORTEST PATH LENGTH:', shortest_len)  # TEMP
 
             # It's possible that all of the working paths share quite a bit in common at their
             # start. We can therefore find the common starting sequence and align to that once,
-            # and then only do separate alignments for the remainder of the paths. This can
-            # save some time!
+            # and then only do separate alignments for the remainder of the paths, saving some time.
             common_start = []
             smallest_seg_count = min(len(x) for x in new_working_paths)
             for i in range(smallest_seg_count):
@@ -1959,14 +1992,14 @@ class AssemblyGraph(object):
                     common_start.append(potential_common_seg)
                     continue
                 break
-            print('COMMON PATH START:', common_start)  # TEMP
+            # print('COMMON PATH START:', common_start)  # TEMP
             common_path_seq = self.get_path_sequence(common_start)[:-100]
             path_seq_align_start = len(common_path_seq)
             consensus_seq_align_start = 0
             if common_path_seq:
                 alignment_result = path_alignment(common_path_seq, sequence, scoring_scheme,
                                                   True, 1000)
-                print('COMMON START ALIGNMENT RESULT:', alignment_result)  # TEMP
+                # print('COMMON START ALIGNMENT RESULT:', alignment_result)  # TEMP
 
                 seqan_parts = alignment_result.split(',', 9)
                 consensus_seq_align_start = int(seqan_parts[5])
@@ -1974,8 +2007,8 @@ class AssemblyGraph(object):
             scored_paths = []
             shortest_len = min(self.get_path_length(x) for x in new_working_paths)
             consensus_seq = sequence[consensus_seq_align_start:]
-            print('TRIMMED PATH LENGTH:', shortest_len - path_seq_align_start)  # TEMP
-            print('TRIMMED CONSENSUS LENGTH:', len(consensus_seq))  # TEMP
+            # print('TRIMMED PATH LENGTH:', shortest_len - path_seq_align_start)  # TEMP
+            # print('TRIMMED CONSENSUS LENGTH:', len(consensus_seq))  # TEMP
             for path in new_working_paths:
                 path_seq = self.get_path_sequence(path)[path_seq_align_start:shortest_len]
 
@@ -1994,7 +2027,7 @@ class AssemblyGraph(object):
             if not scored_paths:
                 break
 
-            print('PATH SCORES:', ','.join(str(x[1]) for x in scored_paths))  # TEMP
+            # print('PATH SCORES:', ','.join(str(x[1]) for x in scored_paths))  # TEMP
             # for scored_path in scored_paths:  # TEMP
             #     print(' ', scored_path)  # TEMP
 
@@ -2039,9 +2072,9 @@ class AssemblyGraph(object):
             #     working_paths += list(x[0] for x in best_paths_for_terminal_seg)
             #
             # path_count_after_cull = len(working_paths)
-            print('SURVIVING PATHS:', len(working_paths), '\n')  # TEMP
-            for working_path in working_paths:  # TEMP
-                print(' ', working_path)  # TEMP
+            # print('SURVIVING PATHS:', len(working_paths))  # TEMP
+            # for working_path in working_paths:  # TEMP
+            #     print(' ', working_path)  # TEMP
 
             # If the cull failed to reduce the number of paths whatsoever, that's not good!
             # We can't let the paths grow forever, so we must chop them down, even if we have
@@ -2051,12 +2084,12 @@ class AssemblyGraph(object):
                 working_paths = working_paths[:len(working_paths) // 2]
 
             # If at this point we still have more surviving paths than our working path count,
-            # that's a problem because it means this loop will slow to a crawl with extend
-            # path, cull, extend path, cull, extend path, cull... etc. To cope, we increase
-            # our working path count.
+            # that's a problem because it means this loop can slow to a crawl with extend path,
+            # cull, extend path, cull, extend path, cull... etc. To cope, we increase our working
+            # path count.
             if len(working_paths) > max_working_paths:
                 max_working_paths *= 2
-                print('INCREASED WORKING PATHS TO:', max_working_paths, '\n')  # TEMP
+                # print('INCREASED WORKING PATHS TO:', max_working_paths, '\n')  # TEMP
 
             # for i, path in enumerate(working_paths):
             #     print('  ' + ','.join(str(x) for x in path) + ' (' +
@@ -2067,16 +2100,26 @@ class AssemblyGraph(object):
         # consensus sequence. Sort them by their score, high to low.
         final_paths = sorted(final_paths, key=lambda x: x[1], reverse=True)
 
-        if final_paths:  # TEMP
-            print('\nFINAL PATHS:')  # TEMP
-            for path in final_paths:  # TEMP
-                print(' ', path[1], ','.join(str(x) for x in path[0]))  # TEMP
-        else:  # TEMP
-            print('\nNO PATHS FOUND:')  # TEMP
-        print()  # TEMP
+        # print('\nALL FINAL PATHS:')  # TEMP
+        # for path in final_paths:  # TEMP
+        #     print(' ', path[1], '   ', ','.join(str(x) for x in path[0]))  # TEMP
 
-        # We only return the best few paths to be joined up with their opposite directions.
-        return final_paths[:settings.PROGRESSIVE_PATH_SEARCH_DIRECTION_COUNT]
+        # Reduce the final path count to the setting, but keep going if there's a tie.
+        best_count = settings.PROGRESSIVE_PATH_SEARCH_DIRECTION_COUNT
+        if len(final_paths) <= best_count:
+            best_final_paths = [x[0] for x in final_paths]
+        else:
+            last_best_score = final_paths[best_count-1][1]
+            while best_count < len(final_paths) and final_paths[best_count][1] == last_best_score:
+                best_count += 1
+            best_final_paths = [x[0] for x in final_paths[:best_count]]
+
+        # Just in case, make sure we don't have way too many...
+        upper_limit = 3 * settings.PROGRESSIVE_PATH_SEARCH_DIRECTION_COUNT
+        if len(best_final_paths) > upper_limit:
+            best_final_paths = best_final_paths[:upper_limit]
+
+        return best_final_paths
 
     def max_path_segment_count(self, seg_num, start_end_depth):
         """
@@ -2723,6 +2766,26 @@ class AssemblyGraph(object):
         if self.segments[abs_seg_num].bridge is not None:
             return True
         return abs_seg_num in self.copy_depths and len(self.copy_depths[abs_seg_num]) == 1
+
+    def get_overlapping_paths(self, path_1, path_2):
+        """
+        Tries to find all valid overlaps of the two paths. Returns a list of each possible
+        combined path (empty list if none).
+        """
+        if not path_1 or not path_2:
+            return []
+        overlapping_paths = []
+
+        # First try no overlap - direct connection.
+        if path_1[-1] in self.forward_links and path_2[0] in self.forward_links[path_1[-1]]:
+            overlapping_paths.append(path_1 + path_2)
+
+        # Now try each possible overlap size.
+        for overlap in range(1, min(len(path_1), len(path_2)) + 1):
+            if path_1[-overlap:] == path_2[:overlap]:
+                overlapping_paths.append(path_1 + path_2[overlap:])
+
+        return overlapping_paths
 
 
 class Segment(object):

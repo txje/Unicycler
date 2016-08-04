@@ -963,8 +963,6 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     completed_count = 0
     if threads == 1:
         for bridge in long_read_bridges:
-            if bridge.start_segment != 162 or bridge.end_segment != 40:  # TEMP
-                continue  # TEMP
             output = bridge.finalise(scoring_scheme, min_alignment_length, read_lengths,
                                      estimated_genome_size, verbosity)
             completed_count += 1

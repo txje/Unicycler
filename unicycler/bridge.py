@@ -386,7 +386,7 @@ class LongReadBridge(object):
         else:
             self.graph_path = []
             self.path_support = False
-            output += '  best path:               none found\n'
+            output += '  best path:                 none found\n'
             start_overlap = \
                 self.graph.seq_from_signed_seg_num(self.start_segment)[-self.graph.overlap:]
             end_overlap = \

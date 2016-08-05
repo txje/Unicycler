@@ -320,7 +320,7 @@ class LongReadBridge(object):
             # the read alignments, but it approaches 1 as we have more reads and expect our
             # consensus to be better.
             expected_consensus_to_ref_ratio = 1.0 + (mean_read_to_ref_ratio - 1.0) * \
-                                                    (3 / (3 + num_span_reads))
+                                                    (4 / (4 + num_span_reads))
 
         # For full spans without sequence, we simply need a mean distance.
         else:

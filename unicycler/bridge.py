@@ -298,9 +298,6 @@ class LongReadBridge(object):
             if verbosity > 3:
                 output += '                           ' + self.consensus_sequence + '\n'
 
-            target_path_length = len(self.consensus_sequence) + (2 * self.graph.overlap)
-            mean_overlap = 0
-
             # We now make an expected scaled score for an alignment between the consensus and a
             # graph path. I.e. when we find a path in the graph for this consensus, this is about
             # how well it should align. This goes up with alignment scores (better alignment scores
@@ -320,7 +317,11 @@ class LongReadBridge(object):
             # the read alignments, but it approaches 1 as we have more reads and expect our
             # consensus to be better.
             expected_consensus_to_ref_ratio = 1.0 + (mean_read_to_ref_ratio - 1.0) * \
-                                                    (4 / (4 + num_span_reads))
+                                                    (4 / (4 + num_span_reads - 1))
+            target_path_length = int(round((len(self.consensus_sequence) /
+                                           expected_consensus_to_ref_ratio))) + \
+                                 (2 * self.graph.overlap)
+            mean_overlap = 0
 
         # For full spans without sequence, we simply need a mean distance.
         else:
@@ -390,7 +391,7 @@ class LongReadBridge(object):
             actual_scaled_score = self.all_paths[0][3]
             self.quality = math.sqrt(1.0 /
                                      (1.0 + 2.0 ** (expected_scaled_score - actual_scaled_score)))
-            if best_path_len > 0:
+            if best_path_len > 0 and len(self.consensus_sequence) > 0:
                 actual_consensus_to_ref_ratio = len(self.consensus_sequence) / \
                                                 (best_path_len - (self.graph.overlap * 2))
             else:

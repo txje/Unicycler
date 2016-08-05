@@ -208,9 +208,15 @@ class LongReadBridge(object):
         output = str(self.start_segment) + ' to ' + str(self.end_segment) + ':\n'
         output += '  bridging reads:            ' + int_to_str(len(self.full_span_reads)) + '\n'
 
-        alignment_scaled_scores = [x[2].scaled_score for x in self.full_span_reads]
-        alignment_scaled_scores += [x[2].scaled_score for x in self.full_span_reads]
+        start_alignment_scaled_scores = [x[2].scaled_score for x in self.full_span_reads]
+        end_alignment_scaled_scores = [x[3].scaled_score for x in self.full_span_reads]
+        best_overall_scaled_score = min(max(start_alignment_scaled_scores),
+                                        max(end_alignment_scaled_scores))
+        alignment_scaled_scores = start_alignment_scaled_scores + end_alignment_scaled_scores
         mean_alignment_scaled_score = statistics.mean(alignment_scaled_scores)
+        read_to_ref_ratios = [x[2].get_read_to_ref_ratio() for x in self.full_span_reads] + \
+                             [x[3].get_read_to_ref_ratio() for x in self.full_span_reads]
+        mean_read_to_ref_ratio = statistics.mean(read_to_ref_ratios)
 
         # Partition the full span reads into two groups: those with negative numbers (implying that
         # the two segments overlap) and those with actual sequences.
@@ -307,6 +313,14 @@ class LongReadBridge(object):
             expected_scaled_score = 100.0 * ((1.0 - mean_alignment_scaled_score / 100.0) *
                                              (1.0 - (3.0 / (2.0 + num_span_reads))) +
                                              mean_alignment_scaled_score / 100.0)
+            expected_scaled_score = max(expected_scaled_score, best_overall_scaled_score)
+
+            # We can also predict the ratio in length between the consensus sequence and the
+            # graph path. For a low number of input reads, this is close to the mean ratio for
+            # the read alignments, but it approaches 1 as we have more reads and expect our
+            # consensus to be better.
+            expected_consensus_to_ref_ratio = 1.0 + (mean_read_to_ref_ratio - 1.0) * \
+                                                    (3 / (3 + num_span_reads))
 
         # For full spans without sequence, we simply need a mean distance.
         else:
@@ -316,6 +330,7 @@ class LongReadBridge(object):
             output += '  mean overlap:              ' + int_to_str(abs(mean_overlap)) + '\n'
             target_path_length = mean_overlap + (2 * self.graph.overlap)
             expected_scaled_score = 100.0
+            expected_consensus_to_ref_ratio = 1.0
 
         output += '  target path length:        ' + int_to_str(target_path_length) + ' bp\n'
         if verbosity > 2:
@@ -350,9 +365,11 @@ class LongReadBridge(object):
             output += '  best path:                 '
             if self.all_paths[0][0]:
                 output += ', '.join(str(x) for x in self.all_paths[0][0])
+                best_path_len = self.graph.get_path_length(self.all_paths[0][0])
             else:
                 output += 'direct connection'
-            output += ' (' + int_to_str(self.graph.get_path_length(self.all_paths[0][0])) + ' bp, '
+                best_path_len = 0
+            output += ' (' + int_to_str(best_path_len) + ' bp, '
             output += 'raw score = ' + float_to_str(self.all_paths[0][1], 1) + ', '
             output += 'scaled score = ' + float_to_str(self.all_paths[0][3], 2) + ', '
             output += 'length discrepancy = ' + int_to_str(self.all_paths[0][2]) + ' bp)\n'
@@ -373,6 +390,11 @@ class LongReadBridge(object):
             actual_scaled_score = self.all_paths[0][3]
             self.quality = math.sqrt(1.0 /
                                      (1.0 + 2.0 ** (expected_scaled_score - actual_scaled_score)))
+            if best_path_len > 0:
+                actual_consensus_to_ref_ratio = len(self.consensus_sequence) / \
+                                                (best_path_len - (self.graph.overlap * 2))
+            else:
+                actual_consensus_to_ref_ratio = 1.0
 
             if verbosity > 2:
                 output += '  path score factor:         ' + float_to_str(self.quality, 2) + '\n'
@@ -382,6 +404,12 @@ class LongReadBridge(object):
                           float_to_str(expected_scaled_score, 2) + '\n'
                 output += '    actual scaled score:     ' + \
                           float_to_str(actual_scaled_score, 2) + '\n'
+                output += '    mean read to ref ratio:  ' + \
+                          float_to_str(mean_read_to_ref_ratio, 4) + '\n'
+                output += '    expected cons to ref:    ' + \
+                          float_to_str(expected_consensus_to_ref_ratio, 4) + '\n'
+                output += '    actual cons to ref:      ' + \
+                          float_to_str(actual_consensus_to_ref_ratio, 4) + '\n'
 
         # If a path wasn't found, the consensus sequence is the bridge (with the overlaps added).
         else:
@@ -966,6 +994,8 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     completed_count = 0
     if threads == 1:
         for bridge in long_read_bridges:
+            if bridge.start_segment != -125 or bridge.end_segment != 182:  # TEMP
+                continue  # TEMP
             output = bridge.finalise(scoring_scheme, min_alignment_length, read_lengths,
                                      estimated_genome_size, verbosity)
             completed_count += 1

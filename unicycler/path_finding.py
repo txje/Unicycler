@@ -43,8 +43,10 @@ def get_best_paths_for_seq(graph, start_seg, end_seg, target_length, sequence, s
         paths = progressive_path_find(graph, start_seg, end_seg, min_length, max_length,
                                       sequence, scoring_scheme, expected_scaled_score)
 
-    # We now have some paths and want to see how well the consensus sequence matches each of
-    # them.
+    # Sort by length discrepancy from the target so the closest length matches come first.
+    paths = sorted(paths, key=lambda x: abs(target_length - graph.get_path_length(x)))
+
+    # We now align the consensus to each of the possible paths.
     paths_and_scores = []
     for path in paths:
         path_len = graph.get_path_length(path)
@@ -125,9 +127,6 @@ def all_paths(graph, start, end, min_length, target_length, max_length):
             raise TooManyPaths
         working_paths = new_working_paths
 
-    # Sort by length discrepancy from the target so the closest length matches come first.
-    final_paths = sorted(final_paths,
-                         key=lambda x: abs(target_length - graph.get_path_length(x)))
     return final_paths
 
 
@@ -474,17 +473,19 @@ def advance_paths(working_paths, opposite_paths_dict, shortest_opposite_path,
                   final_paths, flip_new_final_paths, sequence, scoring_scheme,
                   expected_scaled_score, graph, start_end_depth, total_max_length):
     """
-    This function takes the
+    This function takes the working paths for one direction and extends them until there are too
+    many or there are no more.
     """
-    # If we've exceeded the allowable working count, cull the paths down to size now.
-    if len(working_paths) > settings.PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS:
-        working_paths = cull_paths(graph, working_paths, sequence, scoring_scheme)
-
     # For this function, the longest we'll allow paths to get is the the max length minus how far
     # the other side has gotten.
     max_length = total_max_length - shortest_opposite_path
 
     while True:
+        # If the working paths have run out or grown too large, then we're finished with this
+        # round of advancing.
+        if not 0 < len(working_paths) <= settings.PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS:
+            break
+
         shortest_path_len = min(graph.get_path_length(x) for x in working_paths)
 
         # Extend the shortest working path(s) by adding downstream segments.
@@ -515,20 +516,21 @@ def advance_paths(working_paths, opposite_paths_dict, shortest_opposite_path,
                                     final_path = reverse_path(final_path)
                                 final_paths.add(tuple(final_path))
 
-                        # Otherwise, we simply extend the path if doing so won't make it too long.
-                        else:
-                            if graph.get_path_length(path[1:] + [next_seg]) <= max_length:
-                                new_working_paths.append(path + [next_seg])
-        # If the working paths have run out or grown too large, then we're finished with this
-        # round of advancing.
+                        # Finally, extend the path if doing so won't make it too long.
+                        if graph.get_path_length(path[1:] + [next_seg]) <= max_length:
+                            new_working_paths.append(path + [next_seg])
+
         working_paths = new_working_paths
-        if not working_paths or \
-                len(working_paths) > settings.PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS:
-            break
+
+    # If we've exceeded the allowable working count, cull the paths down to size now.
+    if len(working_paths) > settings.PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS:
+        working_paths = cull_paths(graph, working_paths, sequence, scoring_scheme,
+                                   expected_scaled_score)
+
     return working_paths
 
 
-def cull_paths(graph, paths, sequence, scoring_scheme):
+def cull_paths(graph, paths, sequence, scoring_scheme, expected_scaled_score):
     """
     Returns a reduced list of paths - the ones which best align to the given sequence.
     """
@@ -548,22 +550,24 @@ def cull_paths(graph, paths, sequence, scoring_scheme):
             common_start.append(potential_common_seg)
             continue
         break
+    common_start = common_start[1:]  # Remove starting segment (not part of consensus)
     common_path_seq = graph.get_path_sequence(common_start)[:-100]
     path_align_start = len(common_path_seq)
     seq_align_start = 0
     if common_path_seq:
         alignment_result = path_alignment(common_path_seq, sequence, scoring_scheme, True, 1000)
-        seq_align_start = int(alignment_result.split(',', 5)[5])
+        seq_align_start = int(alignment_result.split(',', 6)[5])
 
     scored_paths = []
     shortest_len = min(graph.get_path_length(x) for x in paths)
     seq_after_common_path = sequence[seq_align_start:]
     for path in paths:
+        path = path[1:]  # Remove starting segment (not part of consensus)
         path_seq_after_common_path = graph.get_path_sequence(path)[path_align_start:shortest_len]
         alignment_result = path_alignment(path_seq_after_common_path, seq_after_common_path,
                                           scoring_scheme, True, 500)
         if alignment_result:
-            scaled_score = float(alignment_result.split(',', 7)[7])
+            scaled_score = float(alignment_result.split(',', 8)[7])
             scored_paths.append((path, scaled_score))
 
     scored_paths = sorted(scored_paths, key=lambda x: x[1], reverse=True)
@@ -571,10 +575,10 @@ def cull_paths(graph, paths, sequence, scoring_scheme):
         return []
     best_score = scored_paths[0][1]
 
-    # # If all of the scores have dropped well below our current best (if there is one),
-    # # then our path finding has probably taken a wrong turn and we should give up!
-    # if best_score < 0.9 * best_final_score or best_score < 0.85 * expected_scaled_score:
-    #     break
+    # If all of the scores have dropped well below our expectation, then our path finding has
+    # probably taken a wrong turn and we should give up!
+    if best_score < 0.9 * expected_scaled_score:
+        return []
 
     # Now that each path is scored we keep the ones that are closest in score to the
     # best one. For example, if settings.PROGRESSIVE_PATH_SEARCH_SCORE_FRACTION is

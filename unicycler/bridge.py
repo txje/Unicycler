@@ -316,6 +316,8 @@ class LongReadBridge(object):
             # graph path. For a low number of input reads, this is close to the mean ratio for
             # the read alignments, but it approaches 1 as we have more reads and expect our
             # consensus to be better.
+            #     https://www.desmos.com/calculator
+            #     y=\left(a-1\right)\left(\frac{b}{x+b-1}\right)+1
             expected_consensus_to_ref_ratio = 1.0 + (mean_read_to_ref_ratio - 1.0) * \
                                                     (4 / (4 + num_span_reads - 1))
             target_path_length = int(round((len(self.consensus_sequence) /
@@ -466,7 +468,7 @@ class LongReadBridge(object):
             elif dead_end_count == 1:
                 self.quality = 0.7
             else:  # dead_end_count == 0
-                self.quality = 0.25
+                self.quality = 0.2
             if verbosity > 2:
                 output += '  dead end score factor:     ' + float_to_str(self.quality, 2) + '\n'
 
@@ -995,8 +997,6 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     completed_count = 0
     if threads == 1:
         for bridge in long_read_bridges:
-            if bridge.start_segment != -125 or bridge.end_segment != 182:  # TEMP
-                continue  # TEMP
             output = bridge.finalise(scoring_scheme, min_alignment_length, read_lengths,
                                      estimated_genome_size, verbosity)
             completed_count += 1

@@ -23,8 +23,10 @@ def get_best_paths_for_seq(graph, start_seg, end_seg, target_length, sequence, s
     segment to the end segment.
     """
     # Limit the path search to lengths near the target.
-    min_length = int(round(target_length * settings.MIN_RELATIVE_PATH_LENGTH))
-    max_length = int(round(target_length * settings.MAX_RELATIVE_PATH_LENGTH))
+    min_length = min(int(round(target_length * settings.MIN_RELATIVE_PATH_LENGTH)),
+                     target_length - settings.RELATIVE_PATH_LENGTH_BUFFER_SIZE)
+    max_length = max(int(round(target_length * settings.MAX_RELATIVE_PATH_LENGTH)),
+                     target_length + settings.RELATIVE_PATH_LENGTH_BUFFER_SIZE)
 
     # The overlap isn't present in the consensus sequence, so we need to add it on.
     if sequence:
@@ -33,7 +35,7 @@ def get_best_paths_for_seq(graph, start_seg, end_seg, target_length, sequence, s
 
     # If there are few enough possible paths, we just try aligning to them all.
     try:
-        paths = all_paths(graph, start_seg, end_seg, min_length, target_length, max_length)
+        paths = all_paths(graph, start_seg, end_seg, min_length, max_length)
         progressive_path_search = False
 
     # If there are too many paths to try exhaustively, we use a progressive approach to find
@@ -84,7 +86,7 @@ def get_best_paths_for_seq(graph, start_seg, end_seg, target_length, sequence, s
     return paths_and_scores, progressive_path_search
 
 
-def all_paths(graph, start, end, min_length, target_length, max_length):
+def all_paths(graph, start, end, min_length, max_length):
     """
     Returns a list of all paths which connect the starting segment to the ending segment and
     are within the length bounds. The start and end segments are not themselves included in the
@@ -181,272 +183,6 @@ def progressive_path_find(graph, start, end, min_length, max_length, sequence, s
     # Trim the start/end segments, filter for appropriate length and return the final paths!
     final_paths = [list(x)[1:-1] for x in final_paths]
     return [x for x in final_paths if min_length <= graph.get_path_length(x) <= max_length]
-
-#     start_seg = graph.segments[abs(start)]
-#     end_seg = graph.segments[abs(end)]
-#     start_end_depth = weighted_average(start_seg.depth, end_seg.depth,
-#                                        start_seg.get_length_no_overlap(graph.overlap),
-#                                        end_seg.get_length_no_overlap(graph.overlap))
-#
-#     # print('PATH SEARCH FROM START')  # TEMP
-#     paths_from_start, best_start_score = \
-#         graph.progressive_search_one_direction(start, sequence, scoring_scheme, start_end_depth,
-#                                                0.6, max_length, expected_scaled_score)
-#
-#     # print('\nALL START PATHS:')  # TEMP
-#     # for path_from_start in paths_from_start:  # TEMP
-#     #     print(' ', path_from_start)  # TEMP
-#     # print('BEST START SCORE:', best_start_score)  # TEMP
-#
-#     # print('PATH SEARCH FROM END')  # TEMP
-#     paths_from_end, best_end_score = \
-#         graph.progressive_search_one_direction(-end, reverse_complement(sequence),
-#                                                scoring_scheme, start_end_depth, 0.6, max_length,
-#                                                expected_scaled_score)
-#     paths_from_end = [[-x for x in y[::-1]] for y in paths_from_end]  # Flip direction
-#
-#     # print('\nALL END PATHS:')  # TEMP
-#     # for path_from_end in paths_from_end:  # TEMP
-#     #     print(' ', path_from_end)  # TEMP
-#     # print('BEST END SCORE:', best_end_score)  # TEMP
-#
-#     joined_paths = graph.combine_paths(paths_from_start, paths_from_end, min_length, max_length)
-#
-#     # print('\nCOMBINED PATHS:')  # TEMP
-#     # for joined_path in joined_paths:  # TEMP
-#     #     print(' ', joined_path)  # TEMP
-#
-#     # If at this point we don't have any valid paths but at least one of the directions had a
-#     # decent score, that implies that a real path may exist but we've missed it. We then take
-#     # the better scoring direction of the two (implies that one was on the right path) and
-#     # try it again, but a bit further.
-#     decent_score = 0.95 * expected_scaled_score
-#     if not joined_paths and \
-#             (best_start_score > decent_score or best_end_score > decent_score):
-#         if best_start_score > best_end_score:
-#             paths_from_start, best_start_score = \
-#                 graph.progressive_search_one_direction(start, sequence, scoring_scheme,
-#                                                        start_end_depth, 0.8, max_length,
-#                                                        expected_scaled_score)
-#         else:  # best_end_score >= best_start_score
-#             paths_from_end, best_end_score = \
-#                 graph.progressive_search_one_direction(-end, reverse_complement(sequence),
-#                                                        scoring_scheme, start_end_depth, 0.8,
-#                                                        max_length, expected_scaled_score)
-#             paths_from_end = [[-x for x in y[::-1]] for y in paths_from_end]  # Flip direction
-#         joined_paths = combine_paths(graph, paths_from_start, paths_from_end, min_length,
-#                                      max_length)
-#
-#         # print('\nCOMBINED PATHS (RETRY):')  # TEMP
-#         # for joined_path in joined_paths:  # TEMP
-#         #     print(' ', joined_path)  # TEMP
-#
-#     return joined_paths
-#
-#
-# def progressive_search_one_direction(graph, start, sequence, scoring_scheme, start_end_depth,
-#                                      sequence_fraction, max_length, expected_scaled_score):
-#     """
-#     Searches outward from the start segment, culling paths when they grow too numerous.
-#     Returns all found paths which match the given fraction of the sequence. For example, if
-#     sequence_fraction is 0.75, this function will try to find a path which matches the first
-#     75% of the sequence.
-#     """
-#     if start not in graph.forward_links:
-#         return []
-#
-#     best_final_score = 0.0
-#     target_length = len(sequence) * sequence_fraction
-#     # print('TARGET_LENGTH', target_length)  # TEMP
-#
-#     # When the number of paths exceeds max_working_paths, they are all evaluated and only the
-#     # best paths are kept.
-#     max_working_paths = settings.PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS
-#
-#     final_paths = []
-#     working_paths = [[x] for x in graph.forward_links[start]]
-#
-#     while working_paths:
-#
-#         # Find the length of the shortest working path.
-#         shortest_len = min(graph.get_path_length(x) for x in working_paths)
-#
-#         # Extend the shortest working path(s) by adding downstream segments. Check to see if
-#         # this finishes the path or makes it excessively long.
-#         new_working_paths = []
-#         for path in working_paths:
-#             path_len = graph.get_path_length(path)
-#
-#             # If this path isn't the shortest path, we just save it for later.
-#             if path_len > shortest_len:
-#                 new_working_paths.append(path)
-#                 continue
-#
-#             # If this path is the shortest path...
-#
-#             if path[-1] in graph.forward_links:
-#                 downstream_segments = graph.forward_links[path[-1]]
-#                 for next_seg in downstream_segments:
-#                     max_allowed_count = graph.max_path_segment_count(next_seg, start_end_depth)
-#                     count_so_far = path.count(next_seg) + path.count(-next_seg)
-#                     if count_so_far < max_allowed_count:
-#                         extended_path = path + [next_seg]
-#                         extended_path_len = graph.get_path_length(extended_path)
-#
-#                         # If the extended path is excessively long, then it's almost certain
-#                         # wrong, and would take a long time to align, so we skip it.
-#                         if extended_path_len > max_length:
-#                             pass
-#
-#                         # If the path seems to be long enough, we try to align it against the
-#                         # sequence to see if it's actually long enough to be a final path.
-#                         elif graph.get_path_length(extended_path) >= target_length:
-#                             path_sequence = graph.get_path_sequence(extended_path)
-#                             alignment_result = path_alignment(path_sequence, sequence,
-#                                                               scoring_scheme, True, 1000)
-#                             seqan_parts = alignment_result.split(',', 9)
-#                             sequence_end_pos = int(seqan_parts[5])
-#                             scaled_score = float(seqan_parts[7])
-#
-#                             # If the alignment showed that our path has indeed covered the
-#                             # required amount of the sequence, then it's finished!
-#                             if sequence_end_pos >= target_length:
-#                                 final_paths.append((extended_path, scaled_score))
-#                                 best_final_score = max(scaled_score, best_final_score)
-#                                 # print('FINAL PATH:',  # TEMP
-#                                 #       ','.join(str(x) for x in extended_path) + ' (' +  # TEMP
-#                                 #       int_to_str(self.get_path_length(extended_path)) + # TEMP
-#                                 #       ' bp, score = ' +  # TEMP
-#                                 #       float_to_str(scaled_score, 2) + ')')  # TEMP
-#                             else:
-#                                 new_working_paths.append(extended_path)
-#                         else:
-#                             new_working_paths.append(extended_path)
-#
-#         # print('WORKING PATHS: ' + str(len(new_working_paths)))  # TEMP
-#
-#         # If our number of working paths is still reasonable, we keep them all and continue.
-#         if len(new_working_paths) <= max_working_paths:
-#             working_paths = new_working_paths
-#             continue
-#
-#         # If we've acquired too many working paths, we must cull out the worst ones to keep
-#         # the number manageable.
-#
-#
-#     # We should now have a collection of paths that all cover the necessary amount of the
-#     # consensus sequence. Sort them by their score, high to low.
-#     final_paths = sorted(final_paths, key=lambda x: x[1], reverse=True)
-#     if not final_paths:
-#         return []
-#
-#     # print('\nALL FINAL PATHS:')  # TEMP
-#     # for path in final_paths:  # TEMP
-#     #     print(' ', path[1], '   ', ','.join(str(x) for x in path[0]))  # TEMP
-#     # print('\nBEST FINAL PATH SCORE:', best_final_score)  # TEMP
-#
-#     # Reduce the final path count to a more reasonable number.
-#     score_fraction_threshold = settings.PROGRESSIVE_PATH_SEARCH_SCORE_FRACTION
-#     best_final_paths = []
-#     while True:
-#         best_final_paths = []
-#         for final_path in final_paths:
-#             score = final_path[1]
-#             if score >= best_final_score * score_fraction_threshold:
-#                 best_final_paths.append(final_path[0])
-#         if len(best_final_paths) > settings.PROGRESSIVE_PATH_SEARCH_DIRECTION_COUNT:
-#             score_fraction_threshold = 1.0 - ((1.0 - score_fraction_threshold) / 2)
-#         else:
-#             break
-#
-#     # print('\nBEST FINAL PATHS:')  # TEMP
-#     # for path in best_final_paths:  # TEMP
-#     #     print(' ', ','.join(str(x) for x in path))  # TEMP
-#
-#     return best_final_paths, best_final_score
-#
-#
-# def combine_paths(graph, paths_from_start, paths_from_end, min_length, max_length):
-#     """
-#     Returns a list of completed paths made by overlapping the given start and end paths.
-#     """
-#     # Make every possible combination of start paths and end paths, sorted such that better
-#     # paths come first.
-#     path_combos = sorted([(x, y) for x in range(len(paths_from_start))
-#                           for y in range(len(paths_from_end))], key=lambda z: z[0] + z[1])
-#     valid_joined_paths = []
-#     for x, y in path_combos:
-#         valid_joined_paths += get_overlapping_paths(graph, paths_from_start[x], paths_from_end[y])
-#         if len(valid_joined_paths) >= settings.PROGRESSIVE_PATH_SEARCH_FINAL_COUNT:
-#             break
-#
-#     # Remove duplicates.
-#     valid_joined_paths.sort()
-#     valid_joined_paths = list(valid_joined_paths for valid_joined_paths, _
-#                               in itertools.groupby(valid_joined_paths))
-#
-#     # print('\nALL COMBINED PATHS:')  # TEMP
-#     # for valid_joined_path in valid_joined_paths:  # TEMP
-#     #     print(' ', valid_joined_path)  # TEMP
-#
-#     return [x for x in valid_joined_paths
-#             if min_length <= graph.get_path_length(x) <= max_length]
-#
-#
-# def get_overlapping_paths(graph, path_1, path_2):
-#     """
-#     Tries to find all valid overlaps of the two paths. It will search for both perfect
-#     overlaps but also for imperfect ones. It returns the paths resulting from all perfect
-#     overlaps and the best few imperfect overlaps.
-#     """
-#     if not path_1 or not path_2:
-#         return []
-#     overlapping_paths = []
-#
-#     exact_overlap_count = 0
-#     shorter_length = min(len(path_1), len(path_2))
-#     longer_length = max(len(path_1), len(path_2))
-#
-#     # First try no overlap - direct connection.
-#     if path_1[-1] in graph.forward_links and path_2[0] in graph.forward_links[path_1[-1]]:
-#         overlapping_paths.append((path_1 + path_2, 1.0))
-#         exact_overlap_count += 1
-#
-#     # Now try each possible exact overlap.
-#     for overlap in range(1, shorter_length + 1):
-#         if path_1[-overlap:] == path_2[:overlap]:
-#             overlapping_paths.append((path_1 + path_2[overlap:], 1.0))
-#
-#     # Now try for inexact overlaps.
-#     for overlap in range(1, longer_length + 1):
-#         overlap_1 = path_1[-overlap:][:shorter_length]
-#         overlap_2 = path_2[:overlap][-shorter_length:]
-#         path_2_excess = max(0, overlap - len(path_1))
-#         assert len(overlap_1) == len(overlap_2)
-#         match_count = sum(1 if overlap_1[i] == overlap_2[i] else 0
-#                           for i in range(len(overlap_1)))
-#         match_fraction = match_count / overlap
-#         if match_fraction == 1.0 and overlap <= shorter_length:
-#             continue
-#         if match_fraction > 0.0:
-#             capped_overlap = min(overlap, shorter_length)
-#             midpoint = capped_overlap // 2
-#             overlap_positions = [midpoint]
-#             for i in range(1, capped_overlap - midpoint + 1):
-#                 if midpoint + i < capped_overlap:
-#                     overlap_positions.append(midpoint + i)
-#                 if midpoint - i >= 0:
-#                     overlap_positions.append(midpoint - i)
-#             for pos in overlap_positions:
-#                 pos_1 = len(path_1) - overlap + path_2_excess + pos
-#                 pos_2 = pos + path_2_excess
-#                 if path_1[pos_1] == path_2[pos_2]:
-#                     overlapping_paths.append((path_1[:pos_1] + path_2[pos_2:], match_fraction))
-#                     break
-#
-#     # Return only the most matching overlapping paths.
-#     overlapping_paths = sorted(overlapping_paths, key=lambda x: x[1], reverse=True)
-#     return [x[0] for x in overlapping_paths[:exact_overlap_count + 5]]
 
 
 def build_path_dictionary(path_list):
@@ -550,20 +286,25 @@ def cull_paths(graph, paths, sequence, scoring_scheme, expected_scaled_score):
             common_start.append(potential_common_seg)
             continue
         break
-    common_start = common_start[1:]  # Remove starting segment (not part of consensus)
-    common_path_seq = graph.get_path_sequence(common_start)[:-100]
+
+    # Align the consensus sequence to the common start of the paths. We exclude the first segment
+    # (which is the start segment and not part of the consensus) and back up a little bit so our
+    # different alignments to follow won't start right at a difference. I.e. it's better to begin
+    # with a bit of common sequence.
+    common_path_seq = graph.get_path_sequence(common_start[1:])[:-100]
     path_align_start = len(common_path_seq)
-    seq_align_start = 0
     if common_path_seq:
         alignment_result = path_alignment(common_path_seq, sequence, scoring_scheme, True, 1000)
         seq_align_start = int(alignment_result.split(',', 6)[5])
+    else:
+        seq_align_start = 0
 
     scored_paths = []
-    shortest_len = min(graph.get_path_length(x) for x in paths)
+    shortest_len = min(graph.get_path_length(x[1:]) for x in paths)
     seq_after_common_path = sequence[seq_align_start:]
     for path in paths:
-        path = path[1:]  # Remove starting segment (not part of consensus)
-        path_seq_after_common_path = graph.get_path_sequence(path)[path_align_start:shortest_len]
+        path_seq_after_common_path = \
+            graph.get_path_sequence(path[1:])[path_align_start:shortest_len]
         alignment_result = path_alignment(path_seq_after_common_path, seq_after_common_path,
                                           scoring_scheme, True, 500)
         if alignment_result:
@@ -574,10 +315,12 @@ def cull_paths(graph, paths, sequence, scoring_scheme, expected_scaled_score):
     if not scored_paths:
         return []
     best_score = scored_paths[0][1]
+    worst_score = scored_paths[0][-1]
 
-    # If all of the scores have dropped well below our expectation, then our path finding has
-    # probably taken a wrong turn and we should give up!
-    if best_score < 0.9 * expected_scaled_score:
+    # If our path finding has taken a wrong turn (i.e. all of the paths are wrong), then we want
+    # to give up to save time. To check for this we see if the best one falls well below our
+    # expectation and isn't that much better than the worst one.
+    if best_score < 0.9 * expected_scaled_score and best_score * 0.95 < worst_score:
         return []
 
     # Now that each path is scored we keep the ones that are closest in score to the

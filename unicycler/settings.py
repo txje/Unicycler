@@ -42,11 +42,13 @@ ALLOWED_MISSING_GRAPHMAP_BASES = 100
 AUTO_SCORE_STDEV_ABOVE_RANDOM_ALIGNMENT_MEAN = 5
 
 # When Unicycler is searching for paths connecting two graph segments which matches a read
-# consensus sequence, it will only consider paths which have a length similar to the consensus
-# sequence. These settings define the acceptable range. E.g. if they are 0.7 and 1.3, Unicycler
-# will consider graph paths that range from 70% to 130% of the consensus sequence length.
-MIN_RELATIVE_PATH_LENGTH = 0.8
-MAX_RELATIVE_PATH_LENGTH = 1.2
+# consensus sequence, it will only consider paths which have a length similar to the expected
+# sequence (based on the consensus sequence length). These settings define the acceptable range.
+# E.g. if they are 0.7 and 1.3, Unicycler will consider graph paths that range from 70% to 130%
+# of the expected sequence length.
+MIN_RELATIVE_PATH_LENGTH = 0.9
+MAX_RELATIVE_PATH_LENGTH = 1.1
+RELATIVE_PATH_LENGTH_BUFFER_SIZE = 100
 
 # These settings are used when Unicycler is exhaustively searching for paths connecting two graph
 # segments. If the number of working paths or the number of final paths gets too high during the

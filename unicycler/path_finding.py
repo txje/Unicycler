@@ -160,25 +160,44 @@ def progressive_path_find(graph, start, end, min_length, max_length, sequence, s
                                        start_seg.get_length_no_overlap(graph.overlap),
                                        end_seg.get_length_no_overlap(graph.overlap))
 
-    while True:
-        shortest_reverse_path = min(graph.get_path_length(x[1:]) for x in reverse_working_paths)
-        reverse_paths_dict = build_path_dictionary(reverse_working_paths)
-        forward_working_paths = advance_paths(forward_working_paths, reverse_paths_dict,
-                                              shortest_reverse_path, final_paths, False,
-                                              sequence, scoring_scheme, expected_scaled_score,
-                                              graph, start_end_depth, max_length)
-        if not forward_working_paths:
-            break
+    # If one of the two directions gets clogged, then only the other direction will be advanced.
+    # If both directions get clogged, then the culling score fraction will be increased (brought
+    # closer to 1.0) such that path culling is more aggressive.
+    forward_clogged = False
+    reverse_clogged = False
+    cull_score_fraction = settings.PROGRESSIVE_PATH_SEARCH_SCORE_FRACTION
 
-        shortest_forward_path = min(graph.get_path_length(x[1:]) for x in forward_working_paths)
-        forward_paths_dict = build_path_dictionary(forward_working_paths)
-        reverse_working_paths = advance_paths(reverse_working_paths, forward_paths_dict,
-                                              shortest_forward_path, final_paths, True,
-                                              reverse_sequence, scoring_scheme,
-                                              expected_scaled_score, graph, start_end_depth,
-                                              max_length)
-        if not reverse_working_paths:
-            break
+    while True:
+        if not forward_clogged:
+            shortest_reverse_path = min(graph.get_path_length(x[1:]) for x in reverse_working_paths)
+            reverse_paths_dict = build_path_dictionary(reverse_working_paths)
+            forward_working_paths = advance_paths(forward_working_paths, reverse_paths_dict,
+                                                  shortest_reverse_path, final_paths, False,
+                                                  sequence, scoring_scheme, expected_scaled_score,
+                                                  graph, start_end_depth, max_length,
+                                                  cull_score_fraction)
+            if not forward_working_paths:
+                break
+            elif len(forward_working_paths) > settings.PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS:
+                forward_clogged = True
+
+        if not reverse_clogged:
+            shortest_forward_path = min(graph.get_path_length(x[1:]) for x in forward_working_paths)
+            forward_paths_dict = build_path_dictionary(forward_working_paths)
+            reverse_working_paths = advance_paths(reverse_working_paths, forward_paths_dict,
+                                                  shortest_forward_path, final_paths, True,
+                                                  reverse_sequence, scoring_scheme,
+                                                  expected_scaled_score, graph, start_end_depth,
+                                                  max_length, cull_score_fraction)
+            if not reverse_working_paths:
+                break
+            elif len(reverse_working_paths) > settings.PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS:
+                reverse_clogged = True
+
+        if forward_clogged and reverse_clogged:
+            cull_score_fraction = 1.0 - ((1.0 - cull_score_fraction) / 2.0)
+            forward_clogged = False
+            reverse_clogged = False
 
     # Trim the start/end segments, filter for appropriate length and return the final paths!
     final_paths = [list(x)[1:-1] for x in final_paths]
@@ -207,7 +226,8 @@ def reverse_path(path):
 
 def advance_paths(working_paths, opposite_paths_dict, shortest_opposite_path,
                   final_paths, flip_new_final_paths, sequence, scoring_scheme,
-                  expected_scaled_score, graph, start_end_depth, total_max_length):
+                  expected_scaled_score, graph, start_end_depth, total_max_length,
+                  cull_score_fraction):
     """
     This function takes the working paths for one direction and extends them until there are too
     many or there are no more.
@@ -261,17 +281,15 @@ def advance_paths(working_paths, opposite_paths_dict, shortest_opposite_path,
     # If we've exceeded the allowable working count, cull the paths down to size now.
     if len(working_paths) > settings.PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS:
         working_paths = cull_paths(graph, working_paths, sequence, scoring_scheme,
-                                   expected_scaled_score)
+                                   expected_scaled_score, cull_score_fraction)
 
     return working_paths
 
 
-def cull_paths(graph, paths, sequence, scoring_scheme, expected_scaled_score):
+def cull_paths(graph, paths, sequence, scoring_scheme, expected_scaled_score, cull_score_fraction):
     """
     Returns a reduced list of paths - the ones which best align to the given sequence.
     """
-    path_count_before_cull = len(paths)
-
     # It's possible that all of the working paths share quite a bit in common at their
     # start. We can therefore find the common starting sequence and align to that once,
     # and then only do separate alignments for the remainder of the paths, saving some time.
@@ -314,39 +332,14 @@ def cull_paths(graph, paths, sequence, scoring_scheme, expected_scaled_score):
     scored_paths = sorted(scored_paths, key=lambda x: x[1], reverse=True)
     if not scored_paths:
         return []
-    best_score = scored_paths[0][1]
-    worst_score = scored_paths[0][-1]
 
     # If our path finding has taken a wrong turn (i.e. all of the paths are wrong), then we want
     # to give up to save time. To check for this we see if the best one falls well below our
     # expectation and isn't that much better than the worst one.
+    best_score = scored_paths[0][1]
+    worst_score = scored_paths[-1][1]
     if best_score < 0.9 * expected_scaled_score and best_score * 0.95 < worst_score:
         return []
 
-    # Now that each path is scored we keep the ones that are closest in score to the
-    # best one. For example, if settings.PROGRESSIVE_PATH_SEARCH_SCORE_FRACTION is
-    # 0.99, then any path which has 99% or more of the best score is kept. But if this
-    # approach still results in too many surviving paths, then we increase the score
-    # fraction threshold and try again.
-    score_fraction_threshold = settings.PROGRESSIVE_PATH_SEARCH_SCORE_FRACTION
-    surviving_paths = []
-    while True:
-        surviving_paths = []
-        for scored_path in scored_paths:
-            score = scored_path[1]
-            if score >= best_score * score_fraction_threshold:
-                surviving_paths.append(scored_path)
-        if len(surviving_paths) > settings.PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS // 2:
-            score_fraction_threshold = 1.0 - ((1.0 - score_fraction_threshold) / 2)
-        else:
-            break
-    paths = list(x[0] for x in surviving_paths)
-
-    # If the cull failed to reduce the number of paths whatsoever, that's not good!
-    # We can't let the paths grow forever, so we must chop them down, even if we have
-    # to do so arbitrarily.
-    path_count_after_cull = len(paths)
-    if path_count_after_cull == path_count_before_cull:
-        paths = paths[:len(paths) // 2]
-
-    return paths
+    # Now that each path is scored we keep the ones that are closest in score to the best one.
+    return list(x[0] for x in scored_paths if x[1] >= best_score * cull_score_fraction)

@@ -455,12 +455,6 @@ class AssemblyGraph(object):
         and links, excluding those segments. It also deletes any paths which contain those
         segments.
         """
-        new_segments = {}
-        for num, segment in self.segments.items():
-            if num not in nums_to_remove:
-                new_segments[num] = segment
-        self.segments = new_segments
-
         for num_to_remove in nums_to_remove:
             if num_to_remove in self.segments:
                 seg_to_remove = self.segments[num_to_remove]
@@ -474,7 +468,7 @@ class AssemblyGraph(object):
                             restore_depth_seg.depth += depth
                             if copy_depth and num in self.copy_depths:
                                 self.copy_depths[num].append(copy_depth)
-                # Now we can actually delete the segment.
+                # Now actually delete the segment.
                 del self.segments[num_to_remove]
 
         # Delete the copy depths for deleted segments.
@@ -1597,7 +1591,7 @@ class AssemblyGraph(object):
                     if seg_num in self.segments and self.dead_end_count(seg_num) > 0:
                         self.remove_segments([seg_num])
                         removed_segments.append(seg_num)
-                        print('HAS DEAD END:', seg_num)  # TEMP
+                        # print('HAS DEAD END:', seg_num)  # TEMP
                         break
                 else:
                     break
@@ -1633,7 +1627,7 @@ class AssemblyGraph(object):
                     unsigned_path = [abs(x) for x in path]
                     self.remove_segments(unsigned_path)
                     removed_segments += unsigned_path
-                    print('DELETION WILL NOT MAKE DEAD END:', unsigned_path)  # TEMP
+                    # print('DELETION WILL NOT MAKE DEAD END:', unsigned_path)  # TEMP
                     break
             else:
                 break
@@ -1654,7 +1648,7 @@ class AssemblyGraph(object):
                     unsigned_path = [abs(x) for x in path]
                     self.remove_segments(unsigned_path)
                     removed_segments += unsigned_path
-                    print('USED UP BUBBLE:', unsigned_path)  # TEMP
+                    # print('USED UP BUBBLE:', unsigned_path)  # TEMP
                     break
             else:
                 break
@@ -1668,7 +1662,7 @@ class AssemblyGraph(object):
             average_usedupness = weighted_average_list(component_usedupness, component_lengths)
             if average_usedupness > settings.CLEANING_USEDUPNESS_THRESHOLD:
                 self.remove_segments(component_nums)
-                print('USED UP COMPONENT:', component_nums)  # TEMP
+                # print('USED UP COMPONENT:', component_nums)  # TEMP
                 removed_segments += component_nums
 
         if verbosity > 1 and removed_segments:

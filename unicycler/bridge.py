@@ -199,10 +199,12 @@ class LongReadBridge(object):
             mean_full_span_seq_length = total_full_span_seq_length / full_span_seq_count
 
         if full_span_seq_count > 1:
-            predicted_consensus_time = 0.0005657 * total_full_span_seq_length
+            predicted_consensus_time = ((1.34e-9 * (total_full_span_seq_length ** 2)) +
+                                        (2.76e-5 * total_full_span_seq_length))
         else:
             predicted_consensus_time = 0.0
-        predicted_path_time = 0.0024605 * mean_full_span_seq_length
+        predicted_path_time = ((1.78e-7 * (mean_full_span_seq_length ** 2)) +
+                               (3.75e-3 * mean_full_span_seq_length))
 
         return predicted_consensus_time + predicted_path_time
 
@@ -568,6 +570,8 @@ class LongReadBridge(object):
         if verbosity > 2:
             full_time = time.time() - start_time
             output += '  total time:                ' + float_to_str(full_time, 2) + ' sec\n'
+            output += '    predicted time:          ' + \
+                      float_to_str(self.predicted_time_to_finalise(), 2) + ' sec\n'
 
         return output
 

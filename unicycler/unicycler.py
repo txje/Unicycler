@@ -367,13 +367,13 @@ def get_arguments():
 
     parser = argparse.ArgumentParser(description='Hybrid Assembler')
 
-    # Short read input arguments
+    # Short read input options
     parser.add_argument('--short1', required=True, default=argparse.SUPPRESS,
                         help='FASTQ file of short reads (first reads in each pair).')
     parser.add_argument('--short2', required=True, default=argparse.SUPPRESS,
                         help='FASTQ file of short reads (second reads in each pair).')
 
-    # Long read input arguments
+    # Long read input options
     parser.add_argument('--long', required=False, default=argparse.SUPPRESS,
                         help='FASTQ or FASTA file of long reads, if all reads are available at '
                              'start.')
@@ -382,7 +382,7 @@ def get_arguments():
     parser.add_argument('--no_long', action='store_true',
                         help='Do not use any long reads - assemble with short reads only')
 
-    # Output arguments
+    # Output options
     parser.add_argument('--out', required=True, default=argparse.SUPPRESS,
                         help='Output directory')
     parser.add_argument('--verbosity', type=int, required=False, default=1,
@@ -395,17 +395,15 @@ def get_arguments():
                         help='Number of CPU threads used to align (default: the number of '
                              'available CPUs)')
 
-    # Confidence level arguments
-    parser.add_argument('--low_confidence', action='store_true',
-                        help='Assemble cautiously - low risk of misassembly but shorter contigs')
-    parser.add_argument('--medium_confidence', action='store_true',
-                        help='Balanced contig length and misassembly risk (default)')
-    parser.add_argument('--high_confidence', action='store_true',
-                        help='Assemble confidently - longer contigs but higher risk of misassembly')
+    # Confidence level options
+    parser.add_argument('--confidence', choices=['low', 'medium', 'high'], default='medium',
+                        help='Bridging confidence: low = smaller contigs but small risk of '
+                             'misassembly, medium (default) = balanced contig length and '
+                             'misassembly risk, high = longer contigs but more risk of misassembly')
     parser.add_argument('--min_bridge_qual', type=float, default=argparse.SUPPRESS,
                         help='Bridges with a quality below this value will not be applied)')
 
-    # SPAdes assembly arguments
+    # SPAdes assembly options
     parser.add_argument('--spades_path', type=str, default='spades.py',
                         help='Path to the SPAdes executable')
     parser.add_argument('--no_spades_correct', action='store_true',
@@ -419,7 +417,7 @@ def get_arguments():
     parser.add_argument('--kmer_count', type=int, default=10,
                         help='Number of k-mer steps to use in SPAdes assembly')
 
-    # Rotation arguments
+    # Rotation options
     parser.add_argument('--no_rotate', action='store_true',
                         help='Do not rotate completed replicons to start at a standard gene')
     parser.add_argument('--start_genes', type=str,
@@ -434,7 +432,7 @@ def get_arguments():
     parser.add_argument('--tblastn_path', type=str, default='tblastn',
                         help='Path to the tblastn executable')
 
-    # Polishing arguments
+    # Polishing options
     parser.add_argument('--no_pilon', action='store_true',
                         help='Do not use Pilon to polish the final assembly')
     parser.add_argument('--bowtie2_path', type=str, default='bowtie2',
@@ -448,14 +446,14 @@ def get_arguments():
     parser.add_argument('--min_polish_size', type=int, default=10000,
                         help='Sequences shorter than this value will not be polished using Pilon')
 
-    # Miscellaneous other arguments
+    # Graph cleaning options
     parser.add_argument('--read_depth_filter', type=float, required=False, default=0.5,
                         help='Minimum allowed read depth, expressed as a fraction of the median'
                              'read depth. Graph segments with less depth will be removed.')
-    parser.add_argument('--min_component_size', type=int, default=500,
+    parser.add_argument('--min_component_size', type=int, default=1000,
                         help='Unbridged graph components smaller than this size will be removed '
                              'from the final graph')
-    parser.add_argument('--min_dead_end_size', type=int, default=500,
+    parser.add_argument('--min_dead_end_size', type=int, default=1000,
                         help='Graph dead ends smaller than this size will be removed from the '
                              'final graph')
 
@@ -500,27 +498,21 @@ def get_arguments():
                         '--long, --long_dir or --no_long')
 
     # Set up confidence-related stuff.
-    confidence_arg_count = 1 if args.low_confidence else 0
-    confidence_arg_count += 1 if args.medium_confidence else 0
-    confidence_arg_count += 1 if args.high_confidence else 0
-    if confidence_arg_count > 1:
-        quit_with_error('Only one of the following options can be used: '
-                        '--low_confidence, --medium_confidence or --high_confidence')
-    if confidence_arg_count == 0:
-        args.medium_confidence = True
     user_set_bridge_qual = hasattr(args, 'min_bridge_qual')
-    if args.low_confidence:
-        args.confidence = 0
+    confidence_val = 1
+    if args.confidence == 'low':
+        confidence_val = 0
         if not user_set_bridge_qual:
             args.min_bridge_qual = 25.0
-    elif args.medium_confidence:
-        args.confidence = 1
+    elif args.confidence == 'medium':
+        confidence_val = 1
         if not user_set_bridge_qual:
             args.min_bridge_qual = 10.0
-    elif args.high_confidence:
-        args.confidence = 2
+    elif args.confidence == 'high':
+        confidence_val = 2
         if not user_set_bridge_qual:
             args.min_bridge_qual = 5.0
+    args.confidence = confidence_val
 
     # Change some arguments to full paths.
     args.out = os.path.abspath(args.out)
@@ -595,6 +587,7 @@ def sam_references_match(sam_filename, assembly_graph):
     seg_numbers_in_graph = sorted(assembly_graph.segments.keys())
     return ref_numbers_in_sam == seg_numbers_in_graph
 
+
 def print_intro_message(args, verbosity, full_command):
     """
     Prints a message at the start of the program's execution.
@@ -605,9 +598,11 @@ def print_intro_message(args, verbosity, full_command):
     print_section_header('Starting Unicycler', verbosity)
     print('command:', full_command)
     if verbosity > 1:
-        if args.low_confidence:
+        print()
+        if args.confidence == 0:
             print('Bridging confidence level: low')
-        if args.medium_confidence:
+        if args.confidence == 1:
             print('Bridging confidence level: medium')
-        if args.high_confidence:
+        if args.confidence == 2:
             print('Bridging confidence level: high')
+        print('  bridge quality cutoff:', float_to_str(args.min_bridge_qual, 1))

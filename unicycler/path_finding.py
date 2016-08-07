@@ -166,6 +166,7 @@ def progressive_path_find(graph, start, end, min_length, max_length, sequence, s
     forward_clogged = False
     reverse_clogged = False
     cull_score_fraction = settings.PROGRESSIVE_PATH_SEARCH_SCORE_FRACTION
+    max_working_paths = settings.PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS
 
     while True:
         if not forward_clogged:
@@ -178,7 +179,7 @@ def progressive_path_find(graph, start, end, min_length, max_length, sequence, s
                                                   cull_score_fraction)
             if not forward_working_paths:
                 break
-            elif len(forward_working_paths) > settings.PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS:
+            elif len(forward_working_paths) > max_working_paths:
                 forward_clogged = True
 
         if not reverse_clogged:
@@ -191,11 +192,13 @@ def progressive_path_find(graph, start, end, min_length, max_length, sequence, s
                                                   max_length, cull_score_fraction)
             if not reverse_working_paths:
                 break
-            elif len(reverse_working_paths) > settings.PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS:
+            elif len(reverse_working_paths) > max_working_paths:
                 reverse_clogged = True
 
+        # If both paths have clogged up, then we need to fix things so that we can keep going! Make
+        # the thresholds a bit less strict and unclog whichever path is less clogged.
         if forward_clogged and reverse_clogged:
-            cull_score_fraction = 1.0 - ((1.0 - cull_score_fraction) / 2.0)
+            cull_score_fraction = 1.0 - ((1.0 - cull_score_fraction) * 0.5)
             forward_clogged = False
             reverse_clogged = False
 

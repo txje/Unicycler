@@ -61,7 +61,7 @@ ALL_PATH_SEARCH_MAX_FINAL_PATHS = 250
 # segments. When its number of working paths reaches PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS, it
 # will cull them down by scoring the alignment of each. Paths which have a score within the
 # PROGRESSIVE_PATH_SEARCH_SCORE_FRACTION of the best are kept.
-PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS = 200
+PROGRESSIVE_PATH_SEARCH_MAX_WORKING_PATHS = 500
 PROGRESSIVE_PATH_SEARCH_SCORE_FRACTION = 0.99
 
 # These settings are used for Unicycler's copy number determination - the process by which it

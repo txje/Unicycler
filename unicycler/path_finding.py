@@ -345,4 +345,29 @@ def cull_paths(graph, paths, sequence, scoring_scheme, expected_scaled_score, cu
         return []
 
     # Now that each path is scored we keep the ones that are closest in score to the best one.
-    return list(x[0] for x in scored_paths if x[1] >= best_score * cull_score_fraction)
+    surviving_paths = list(x for x in scored_paths
+                           if x[1] >= best_score * cull_score_fraction)
+
+    # If any of the surviving paths end in the same segment but have different scores, only keep
+    # the ones with the top score. This is because the segments with a lower score will have the
+    # same future paths, and so will always be lower. Doing this also helps to ensure that future
+    # passes through this function will have a larger common start and will therefore go faster.
+    surviving_paths_by_terminal_seg = {}
+    for path in surviving_paths:
+        terminal_seg = path[0][-1]
+        score = path[1]
+        if terminal_seg not in surviving_paths_by_terminal_seg:  # First
+            surviving_paths_by_terminal_seg[terminal_seg] = [path]
+        else:  # We've seen this terminal segment already
+            current_best_score = surviving_paths_by_terminal_seg[terminal_seg][0][1]
+            if score > current_best_score:
+                surviving_paths_by_terminal_seg[terminal_seg] = [path]  # Replace the list
+            elif score == current_best_score:
+                surviving_paths_by_terminal_seg[terminal_seg].append(path)  # Add to the list
+            else:  # score < current_best_score
+                pass
+    surviving_paths = []
+    for paths_with_same_terminal_seg in surviving_paths_by_terminal_seg.values():
+        surviving_paths += [x[0] for x in paths_with_same_terminal_seg]
+
+    return surviving_paths

@@ -38,6 +38,8 @@ def main():
     full_command = ' '.join(sys.argv)
     args = get_arguments()
     verbosity = args.verbosity
+    print_intro_message(args, verbosity, full_command)
+
     files = [args.short1, args.short2]
     if not args.no_long:
         files.append(args.long)
@@ -106,7 +108,7 @@ def main():
         graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +
                                        '_cleaned_second_pass.gfa'), verbosity,
                           save_seg_type_info=True, single_copy_segments=single_copy_segments)
-    graph.merge_all_possible(only_singles_and_bridges=True)
+    graph.merge_all_possible(single_copy_segments, args.confidence)
     if args.keep_temp > 1:
         file_num += 1
         graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa'),
@@ -260,7 +262,7 @@ def main():
                                            '_cleaned_second_pass.gfa'), verbosity,
                               save_seg_type_info=True,
                               single_copy_segments=single_copy_segments)
-        graph.merge_all_possible(only_singles_and_bridges=True)
+        graph.merge_all_possible(single_copy_segments, args.confidence)
         if args.keep_temp > 1:
             file_num += 1
             graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa'),
@@ -365,36 +367,49 @@ def get_arguments():
 
     parser = argparse.ArgumentParser(description='Hybrid Assembler')
 
+    # Short read input arguments
     parser.add_argument('--short1', required=True, default=argparse.SUPPRESS,
                         help='FASTQ file of short reads (first reads in each pair).')
     parser.add_argument('--short2', required=True, default=argparse.SUPPRESS,
                         help='FASTQ file of short reads (second reads in each pair).')
+
+    # Long read input arguments
     parser.add_argument('--long', required=False, default=argparse.SUPPRESS,
                         help='FASTQ or FASTA file of long reads, if all reads are available at '
                              'start.')
     parser.add_argument('--long_dir', required=False, default=argparse.SUPPRESS,
                         help='Directory where FASTQ or FASTA read files will be deposited.')
+    parser.add_argument('--no_long', action='store_true',
+                        help='Do not use any long reads - assemble with short reads only')
+
+    # Output arguments
     parser.add_argument('--out', required=True, default=argparse.SUPPRESS,
                         help='Output directory')
-    parser.add_argument('--read_depth_filter', type=float, required=False, default=0.5,
-                        help='Minimum allowed read depth, expressed as a fraction of the median'
-                             'read depth. Graph segments with less depth will be removed.')
-    parser.add_argument('--threads', type=int, required=False, default=argparse.SUPPRESS,
-                        help='Number of CPU threads used to align (default: the number of '
-                             'available CPUs)')
+    parser.add_argument('--verbosity', type=int, required=False, default=1,
+                        help='Level of stdout information (0 to 2)')
     parser.add_argument('--keep_temp', type=int, default=1,
                         help='0 = keep only main checkpoints, 1 = keep some temporary files, '
                              'including alignment SAM, 2 = keep all temporary files')
-    parser.add_argument('--min_bridge_qual', type=float, default=10.0,
+
+    parser.add_argument('--threads', type=int, required=False, default=argparse.SUPPRESS,
+                        help='Number of CPU threads used to align (default: the number of '
+                             'available CPUs)')
+
+    # Confidence level arguments
+    parser.add_argument('--low_confidence', action='store_true',
+                        help='Assemble cautiously - low risk of misassembly but shorter contigs')
+    parser.add_argument('--medium_confidence', action='store_true',
+                        help='Balanced contig length and misassembly risk (default)')
+    parser.add_argument('--high_confidence', action='store_true',
+                        help='Assemble confidently - longer contigs but higher risk of misassembly')
+    parser.add_argument('--min_bridge_qual', type=float, default=argparse.SUPPRESS,
                         help='Bridges with a quality below this value will not be applied)')
-    parser.add_argument('--min_component_size', type=int, default=500,
-                        help='Unbridged graph components smaller than this size will be removed '
-                             'from the final graph')
-    parser.add_argument('--min_dead_end_size', type=int, default=500,
-                        help='Graph dead ends smaller than this size will be removed from the '
-                             'final graph')
+
+    # SPAdes assembly arguments
     parser.add_argument('--spades_path', type=str, default='spades.py',
                         help='Path to the SPAdes executable')
+    parser.add_argument('--no_spades_correct', action='store_true',
+                        help='Skip SPAdes error correction step')
     parser.add_argument('--min_kmer_frac', type=float, default=0.2,
                         help='Lowest k-mer size for SPAdes assembly, expressed as a fraction of '
                              'the read length')
@@ -403,8 +418,8 @@ def get_arguments():
                              'the read length')
     parser.add_argument('--kmer_count', type=int, default=10,
                         help='Number of k-mer steps to use in SPAdes assembly')
-    parser.add_argument('--verbosity', type=int, required=False, default=1,
-                        help='Level of stdout information (0 to 2)')
+
+    # Rotation arguments
     parser.add_argument('--no_rotate', action='store_true',
                         help='Do not rotate completed replicons to start at a standard gene')
     parser.add_argument('--start_genes', type=str,
@@ -418,6 +433,8 @@ def get_arguments():
                         help='Path to the makeblastdb executable')
     parser.add_argument('--tblastn_path', type=str, default='tblastn',
                         help='Path to the tblastn executable')
+
+    # Polishing arguments
     parser.add_argument('--no_pilon', action='store_true',
                         help='Do not use Pilon to polish the final assembly')
     parser.add_argument('--bowtie2_path', type=str, default='bowtie2',
@@ -430,10 +447,17 @@ def get_arguments():
                         help='Path to the executable Pilon Java archive file')
     parser.add_argument('--min_polish_size', type=int, default=10000,
                         help='Sequences shorter than this value will not be polished using Pilon')
-    parser.add_argument('--no_long', action='store_true',
-                        help='Do not use any long reads - assemble with short reads only')
-    parser.add_argument('--no_spades_correct', action='store_true',
-                        help='Skip SPAdes error correction step')
+
+    # Miscellaneous other arguments
+    parser.add_argument('--read_depth_filter', type=float, required=False, default=0.5,
+                        help='Minimum allowed read depth, expressed as a fraction of the median'
+                             'read depth. Graph segments with less depth will be removed.')
+    parser.add_argument('--min_component_size', type=int, default=500,
+                        help='Unbridged graph components smaller than this size will be removed '
+                             'from the final graph')
+    parser.add_argument('--min_dead_end_size', type=int, default=500,
+                        help='Graph dead ends smaller than this size will be removed from the '
+                             'final graph')
 
     # Add the arguments for the aligner, but suppress the help text.
     add_aligning_arguments(parser, True)
@@ -452,6 +476,7 @@ def get_arguments():
         args.long_dir
     except AttributeError:
         args.long_dir = None
+
     try:
         args.threads
     except AttributeError:
@@ -473,6 +498,29 @@ def get_arguments():
     if long_arg_count > 1:
         quit_with_error('Only one of the following options can be used: '
                         '--long, --long_dir or --no_long')
+
+    # Set up confidence-related stuff.
+    confidence_arg_count = 1 if args.low_confidence else 0
+    confidence_arg_count += 1 if args.medium_confidence else 0
+    confidence_arg_count += 1 if args.high_confidence else 0
+    if confidence_arg_count > 1:
+        quit_with_error('Only one of the following options can be used: '
+                        '--low_confidence, --medium_confidence or --high_confidence')
+    if confidence_arg_count == 0:
+        args.medium_confidence = True
+    user_set_bridge_qual = hasattr(args, 'min_bridge_qual')
+    if args.low_confidence:
+        args.confidence = 0
+        if not user_set_bridge_qual:
+            args.min_bridge_qual = 25.0
+    elif args.medium_confidence:
+        args.confidence = 1
+        if not user_set_bridge_qual:
+            args.min_bridge_qual = 10.0
+    elif args.high_confidence:
+        args.confidence = 2
+        if not user_set_bridge_qual:
+            args.min_bridge_qual = 5.0
 
     # Change some arguments to full paths.
     args.out = os.path.abspath(args.out)
@@ -546,3 +594,20 @@ def sam_references_match(sam_filename, assembly_graph):
     ref_numbers_in_sam = sorted(ref_numbers_in_sam)
     seg_numbers_in_graph = sorted(assembly_graph.segments.keys())
     return ref_numbers_in_sam == seg_numbers_in_graph
+
+def print_intro_message(args, verbosity, full_command):
+    """
+    Prints a message at the start of the program's execution.
+    """
+    if verbosity == 0:
+        return
+
+    print_section_header('Starting Unicycler', verbosity)
+    print('command:', full_command)
+    if verbosity > 1:
+        if args.low_confidence:
+            print('Bridging confidence level: low')
+        if args.medium_confidence:
+            print('Bridging confidence level: medium')
+        if args.high_confidence:
+            print('Bridging confidence level: high')

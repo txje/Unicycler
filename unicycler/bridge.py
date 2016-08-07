@@ -48,6 +48,12 @@ class SpadesContigBridge(object):
         # start at 1.0 and so cannot get as high as long read bridges potentially can.
         self.quality = 0.4
 
+        # When a bridge is applied, the segments in the bridge may have their depth reduced
+        # accordingly. This member stores which segments have had their depth reduced and by how
+        # much due to this bridge's application. It is stored so if this bridge is later deleted,
+        # we can restore the depth to the segments.
+        self.segments_reduced_depth = []
+
         # The first and last values in spades_contig_path are the start and end segments. The
         # values in between are the path.
         self.graph_path = spades_contig_path
@@ -161,6 +167,12 @@ class LongReadBridge(object):
         # Whether or not the long read bridge got its sequence from a graph path (True) or from the
         # read consensus (False).
         self.path_support = None
+
+        # When a bridge is applied, the segments in the bridge may have their depth reduced
+        # accordingly. This member stores which segments have had their depth reduced and by how
+        # much due to this bridge's application. It is stored so if this bridge is later deleted,
+        # we can restore the depth to the segments.
+        self.segments_reduced_depth = []
 
         self.graph = graph
 
@@ -320,9 +332,9 @@ class LongReadBridge(object):
             #     y=\left(a-1\right)\left(\frac{b}{x+b-1}\right)+1
             expected_consensus_to_ref_ratio = 1.0 + (mean_read_to_ref_ratio - 1.0) * \
                                                     (4 / (4 + num_span_reads - 1))
-            target_path_length = int(round((len(self.consensus_sequence) /
-                                           expected_consensus_to_ref_ratio))) + \
-                                 (2 * self.graph.overlap)
+            target_path_length = (2 * self.graph.overlap) + \
+                int(round((len(self.consensus_sequence) / expected_consensus_to_ref_ratio)))
+
             mean_overlap = 0
 
         # For full spans without sequence, we simply need a mean distance.
@@ -654,6 +666,12 @@ class LoopUnrollingBridge(object):
         # A score used to determine the order of bridge application. This value starts at the
         # maximum for a loop unrolling bridge and can only decrease as the constructor continues.
         self.quality = 0.4
+
+        # When a bridge is applied, the segments in the bridge may have their depth reduced
+        # accordingly. This member stores which segments have had their depth reduced and by how
+        # much due to this bridge's application. It is stored so if this bridge is later deleted,
+        # we can restore the depth to the segments.
+        self.segments_reduced_depth = []
 
         # Get the actual segments from the numbers. Since we are assuming they do form a simple
         # loop, we don't care about directionality.

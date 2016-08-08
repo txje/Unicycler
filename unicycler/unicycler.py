@@ -370,7 +370,22 @@ def get_arguments():
     """
     this_script_dir = os.path.dirname(os.path.realpath(__file__))
 
-    parser = argparse.ArgumentParser(description='Hybrid Assembler')
+    ascii_art = ("       __\n"
+                 "       \ \___\n"
+                 "        \ ___\\\n"
+                 "        //\n"
+                 "   ____//     _    _       _                 _\n"
+                 " //_  //\\\\   | |  | |     (_)               | |\n"
+                 "//  \//  \\\\  | |  | |_ __  _  ___ _   _  ___| | ___ _ __\n"
+                 "||  (O)  ||  | |  | | '_ \| |/ __| | | |/ __| |/ _ \ '__|\n"
+                 "\\\\    \_ //  | |__| | | | | | (__| |_| | (__| |  __/ |\n"
+                 " \\\\_____//    \____/|_| |_|_|\___|\__, |\___|_|\___|_|\n"
+                 "                                   __/ |\n"
+                 "                                  |___/\n\n")
+    description = 'Unicycler: a hybrid assembly pipeline for bacterial isolates'
+
+    parser = argparse.ArgumentParser(description=ascii_art + description,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
 
     # Short read input options
     parser.add_argument('--short1', required=True, default=argparse.SUPPRESS,

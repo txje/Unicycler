@@ -84,8 +84,12 @@ def main():
             spades_no_long_dir = run_regular_spades(short_1, short_2, args, quast_results,
                                                     simple_quast_results)
         if not args.no_unicycler:
-            unicycler_no_long_dir = run_unicycler_no_long(short_1, short_2, args, quast_results,
-                                                          simple_quast_results)
+            unicycler_no_long_dir = run_unicycler(args, short_1, short_2, None, None, 0, 0.0,
+                                                  quast_results, simple_quast_results, 'low')
+            run_unicycler(args, short_1, short_2, None, None, 0, 0.0, quast_results,
+                          simple_quast_results, 'medium', unicycler_no_long_dir)
+            run_unicycler(args, short_1, short_2, None, None, 0, 0.0, quast_results,
+                          simple_quast_results, 'high', unicycler_no_long_dir)
         else:
             unicycler_no_long_dir = None
 
@@ -98,11 +102,18 @@ def main():
             # Run Unicycler on the full set of long reads - will be the source of alignments for
             # subsampled Unicycler runs.
             if not args.no_unicycler:
-                unicycler_all_long_dir = run_unicycler_all_long(short_1, short_2, long_filename,
-                                                                args, long_read_count,
-                                                                long_read_depth, quast_results,
-                                                                simple_quast_results,
-                                                                unicycler_no_long_dir)
+                unicycler_all_long_dir = run_unicycler(args, short_1, short_2, long_reads,
+                                                       long_filename, long_read_count,
+                                                       long_read_depth, quast_results,
+                                                       simple_quast_results, 'low',
+                                                       unicycler_no_long_dir)
+                run_unicycler(args, short_1, short_2, long_reads, long_filename, long_read_count,
+                              long_read_depth, quast_results, simple_quast_results, 'medium',
+                              unicycler_no_long_dir, unicycler_all_long_dir)
+                run_unicycler(args, short_1, short_2, long_reads, long_filename, long_read_count,
+                              long_read_depth, quast_results, simple_quast_results, 'high',
+                              unicycler_no_long_dir, unicycler_all_long_dir)
+
             else:
                 unicycler_all_long_dir = None
 
@@ -151,13 +162,12 @@ def main():
                 subsampled_filename += '.gz'
 
                 # Run Unicycler on the subsampled long reads. This should be relatively fast,
-                # because we can skip the short read assembly and the alignment. The polishing
-                # step still takes a while, though.
+                # because we can skip the short read assembly and the alignment. The bridging and
+                # polishing steps can still take a while, though.
                 if not args.no_unicycler:
-                    run_unicycler_subsampled_long(short_1, short_2, subsampled_reads,
-                                                  subsampled_filename, args, subsampled_count,
-                                                  subsampled_long_read_depth, quast_results,
-                                                  simple_quast_results, unicycler_all_long_dir)
+                    run_unicycler(args, short_1, short_2, subsampled_reads, subsampled_filename,
+                                  subsampled_count, subsampled_long_read_depth, quast_results,
+                                  simple_quast_results, unicycler_all_long_dir)
 
                 # Run hybridSPAdes on the subsampled long reads.
                 if not args.no_spades:
@@ -281,14 +291,22 @@ def make_fake_short_reads(args):
     reads_1 = open(read_filename_1, 'w')
     reads_2 = open(read_filename_2, 'w')
     for read_pair in short_read_pairs:
-        reads_1.write(read_pair[0] + '\n')
-        reads_1.write(read_pair[1] + '\n')
-        reads_1.write(read_pair[2] + '\n')
-        reads_1.write(read_pair[3] + '\n')
-        reads_2.write(read_pair[4] + '\n')
-        reads_2.write(read_pair[5] + '\n')
-        reads_2.write(read_pair[6] + '\n')
-        reads_2.write(read_pair[7] + '\n')
+        reads_1.write(read_pair[0])
+        reads_1.write('\n')
+        reads_1.write(read_pair[1])
+        reads_1.write('\n')
+        reads_1.write(read_pair[2])
+        reads_1.write('\n')
+        reads_1.write(read_pair[3])
+        reads_1.write('\n')
+        reads_2.write(read_pair[4])
+        reads_1.write('\n')
+        reads_2.write(read_pair[5])
+        reads_1.write('\n')
+        reads_2.write(read_pair[6])
+        reads_1.write('\n')
+        reads_2.write(read_pair[7])
+        reads_1.write('\n')
     reads_1.close()
     reads_2.close()
 
@@ -933,9 +951,32 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
     return os.path.abspath(cerulean_dir)
 
 
-def run_unicycler_no_long(short_1, short_2, args, all_quast_results, simple_quast_results):
-    run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', args.reference, 0.0, args)
+def run_unicycler(args, short_1, short_2, long_reads, long_read_filename, long_read_count,
+                  long_read_depth, all_quast_results, simple_quast_results, confidence,
+                  unicycler_no_long_dir=None, unicycler_all_long_dir=None):
+    run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler_' + confidence,
+                                                            args.reference, long_read_depth, args)
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
+
+    if not os.path.exists(unicycler_dir):
+        os.makedirs(unicycler_dir)
+
+    # If an unbridged graph is already available, copy it over to save time (we won't have to run
+    # SPAdes).
+    if unicycler_no_long_dir:
+        shutil.copyfile(os.path.join(unicycler_no_long_dir, '001_unbridged_graph.gfa'),
+                        os.path.join(unicycler_dir, '001_unbridged_graph.gfa'))
+
+    # Instead of making Unicycler realign the subsampled reads, we just copy the appropriate
+    # alignments over from the full read set Unicycler run.
+    if unicycler_all_long_dir:
+        read_align_dir = os.path.join(unicycler_dir, 'read_alignment_temp')
+        if not os.path.exists(read_align_dir):
+            os.makedirs(read_align_dir)
+        create_subsampled_sam(os.path.join(unicycler_all_long_dir, 'read_alignment_temp',
+                                           'long_read_alignments.sam'),
+                              os.path.join(read_align_dir, 'long_read_alignments.sam'),
+                              long_reads)
 
     unicycler_start_time = time.time()
     print('\nRunning', run_name, flush=True)
@@ -943,50 +984,16 @@ def run_unicycler_no_long(short_1, short_2, args, all_quast_results, simple_quas
         os.makedirs(unicycler_dir)
     unicycler_command = ['unicycler',
                          '--short1', short_1,
-                         '--short2', short_2,
-                         '--no_long',
-                         '--out', unicycler_dir,
-                         '--keep_temp', '0',
-                         '--threads', str(args.threads),
-                         '--verbosity', '2']
-    print(' '.join(unicycler_command), flush=True)
-    try:
-        unicycler_out = subprocess.check_output(unicycler_command, stderr=subprocess.STDOUT)
-        with open(os.path.join(unicycler_dir, 'unicycler.out'), 'wb') as f:
-            f.write(unicycler_out)
-    except subprocess.CalledProcessError as e:
-        quit_with_error('Unicycler encountered an error:\n' + e.output.decode())
-    unicycler_time = time.time() - unicycler_start_time
-    run_quast(unicycler_assembly, args, all_quast_results, simple_quast_results, 'Unicycler',
-              0, 0.0, unicycler_time, run_name, unicycler_dir)
-
-    clean_up_unicycler_dir(unicycler_dir)
-    return os.path.abspath(unicycler_dir)
-
-
-def run_unicycler_all_long(short_1, short_2, long, args, long_read_count, long_read_depth,
-                           all_quast_results, simple_quast_results, unicycler_no_long_dir):
-    run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', args.reference,
-                                                            long_read_depth, args)
-    unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
-
-    if not os.path.exists(unicycler_dir):
-        os.makedirs(unicycler_dir)
-
-    # Copy over the unbridged graph, to save time.
-    shutil.copyfile(os.path.join(unicycler_no_long_dir, '001_unbridged_graph.gfa'),
-                    os.path.join(unicycler_dir, '001_unbridged_graph.gfa'))
-
-    unicycler_start_time = time.time()
-    print('\nRunning', run_name, flush=True)
-    unicycler_command = ['unicycler',
-                         '--short1', short_1,
-                         '--short2', short_2,
-                         '--long', long,
-                         '--out', unicycler_dir,
-                         '--keep_temp', '1',
-                         '--threads', str(args.threads),
-                         '--verbosity', '2']
+                         '--short2', short_2]
+    if long_read_filename:
+        unicycler_command += ['--long', long_read_filename]
+    else:
+        unicycler_command += ['--no_long']
+    unicycler_command += ['--out', unicycler_dir,
+                          '--confidence', confidence,
+                          '--keep_temp', '0',
+                          '--threads', str(args.threads),
+                          '--verbosity', '2']
     print(' '.join(unicycler_command), flush=True)
     try:
         unicycler_out = subprocess.check_output(unicycler_command, stderr=subprocess.STDOUT)
@@ -997,57 +1004,6 @@ def run_unicycler_all_long(short_1, short_2, long, args, long_read_count, long_r
     unicycler_time = time.time() - unicycler_start_time
     run_quast(unicycler_assembly, args, all_quast_results, simple_quast_results, 'Unicycler',
               long_read_count, long_read_depth, unicycler_time, run_name, unicycler_dir)
-
-    clean_up_unicycler_dir(unicycler_dir)
-    return os.path.abspath(unicycler_dir)
-
-
-def run_unicycler_subsampled_long(short_1, short_2, subsampled_reads, subsampled_filename,
-                                  args, subsampled_count, subsampled_depth, all_quast_results,
-                                  simple_quast_results, unicycler_all_long_dir):
-    run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler', args.reference,
-                                                            subsampled_depth, args)
-    unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
-
-    if not os.path.exists(unicycler_dir):
-        os.makedirs(unicycler_dir)
-
-    # Copy over the unbridged graph, to save time.
-    shutil.copyfile(os.path.join(unicycler_all_long_dir, '001_unbridged_graph.gfa'),
-                    os.path.join(unicycler_dir, '001_unbridged_graph.gfa'))
-
-    # Instead of making Unicycler realign the subsampled reads, we just copy the appropriate
-    # alignments over from the full read set Unicycler run.
-    read_align_dir = os.path.join(unicycler_dir, 'read_alignment_temp')
-    if not os.path.exists(read_align_dir):
-        os.makedirs(read_align_dir)
-    create_subsampled_sam(os.path.join(unicycler_all_long_dir, 'read_alignment_temp',
-                                       'long_read_alignments.sam'),
-                          os.path.join(read_align_dir, 'long_read_alignments.sam'),
-                          subsampled_reads)
-
-    unicycler_start_time = time.time()
-    print('\nRunning', run_name, flush=True)
-    if not os.path.exists(unicycler_dir):
-        os.makedirs(unicycler_dir)
-    unicycler_command = ['unicycler',
-                         '--short1', short_1,
-                         '--short2', short_2,
-                         '--long', subsampled_filename,
-                         '--out', unicycler_dir,
-                         '--keep_temp', '0',
-                         '--threads', str(args.threads),
-                         '--verbosity', '2']
-    print(' '.join(unicycler_command), flush=True)
-    try:
-        unicycler_out = subprocess.check_output(unicycler_command, stderr=subprocess.STDOUT)
-        with open(os.path.join(unicycler_dir, 'unicycler.out'), 'wb') as f:
-            f.write(unicycler_out)
-    except subprocess.CalledProcessError as e:
-        quit_with_error('Unicycler encountered an error:\n' + e.output.decode())
-    unicycler_time = time.time() - unicycler_start_time
-    run_quast(unicycler_assembly, args, all_quast_results, simple_quast_results, 'Unicycler',
-              subsampled_count, subsampled_depth, unicycler_time, run_name, unicycler_dir)
 
     clean_up_unicycler_dir(unicycler_dir)
     return os.path.abspath(unicycler_dir)

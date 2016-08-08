@@ -1018,49 +1018,39 @@ def run_unicycler(args, short_1, short_2, long_reads, long_read_filename, long_r
     return os.path.abspath(unicycler_dir)
 
 
-def run_canu(short_1, short_2, long, long_count, long_depth, args, all_quast_results,
-             simple_quast_results, spades_no_long_dir):
-    """
-    Runs Canu.
-    """
-    run_name, spades_dir = get_run_name_and_run_dir_name('Canu', args.reference, long_depth, args)
-    spades_assembly = os.path.join(spades_dir, 'scaffolds.fasta')
-
-    spades_start_time = time.time()
-    try:
-        print('\nRunning', run_name, flush=True)
-        if not os.path.exists(spades_dir):
-            os.makedirs(spades_dir)
-        spades_command = ['spades.py']
-        if corrected_1 and corrected_2 and corrected_u:
-            spades_command += ['-1', corrected_1,
-                               '-2', corrected_2,
-                               '-s', corrected_u,
-                               '--only-assembler']
-        else:
-            spades_command += ['-1', short_1,
-                               '-2', short_2]
-        spades_command += ['--nanopore', long,
-                           '--careful',
-                           '--threads', str(args.threads),
-                           '-o', spades_dir]
-        print(' '.join(spades_command), flush=True)
-        try:
-            spades_out = subprocess.check_output(spades_command, stderr=subprocess.STDOUT)
-            with open(os.path.join(spades_dir, 'spades.out'), 'wb') as f:
-                f.write(spades_out)
-        except subprocess.CalledProcessError as e:
-            print('SPAdes encountered an error:\n' + e.output.decode())
-            raise AssemblyError
-
-    except AssemblyError:
-        spades_assembly = None
-
-    spades_time = time.time() - spades_start_time
-    run_quast(spades_assembly, args, all_quast_results, simple_quast_results, 'SPAdes hybrid',
-              long_count, long_depth, spades_time, run_name, spades_dir)
-    clean_up_spades_dir(spades_dir)
-    return os.path.abspath(spades_dir)
+# def run_canu(long, long_count, long_depth, args, all_quast_results, simple_quast_results):
+#     """
+#     Runs Canu.
+#     """
+#     run_name, canu_dir = get_run_name_and_run_dir_name('Canu', args.reference, long_depth, args)
+#     canu_assembly = os.path.join(canu_dir, 'canu_out.fasta')
+#
+#     canu_start_time = time.time()
+#     try:
+#         print('\nRunning', run_name, flush=True)
+#         if not os.path.exists(canu_dir):
+#             os.makedirs(canu_dir)
+#         canu_command = ['canu',
+#                         '-p', 'canu_out',
+#                         '-d', canu_dir,
+#                         '-nanopore-raw', long]
+#         print(' '.join(canu_command), flush=True)
+#         try:
+#             canu_out = subprocess.check_output(canu_command, stderr=subprocess.STDOUT)
+#             with open(os.path.join(canu_dir, 'canu.out'), 'wb') as f:
+#                 f.write(canu_out)
+#         except subprocess.CalledProcessError as e:
+#             print('Canu encountered an error:\n' + e.output.decode())
+#             raise AssemblyError
+#
+#     except AssemblyError:
+#         spades_assembly = None
+#
+#     canu_time = time.time() - canu_start_time
+#     run_quast(spades_assembly, args, all_quast_results, simple_quast_results, 'Canu',
+#               long_count, long_depth, canu_time, run_name, canu_dir)
+#     clean_up_spades_dir(canu_dir)
+#     return os.path.abspath(canu_dir)
 
 
 def create_quast_results_tables():

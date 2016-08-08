@@ -230,7 +230,7 @@ def get_args():
                         help='Skips SPAdes and hybridSPAdes assemblies')
     parser.add_argument('--no_unicycler', action='store_true',
                         help='Skips Unicycler assemblies')
-    parser.add_argument('--time', type=str, help='Path to gnu-time')
+    # parser.add_argument('--time', type=str, help='Path to gnu-time')
 
     args = parser.parse_args()
     args.reference = os.path.abspath(args.reference)

@@ -136,7 +136,7 @@ def spades_read_correction(short1, short2, spades_dir, verbosity, threads, spade
         spades_output = process.stdout.readline().rstrip().decode()
         print_line = verbosity > 1
         if verbosity > 0 and 'Command line:' in spades_output:
-            spades_output = ' '.join(spades_output.split())
+            spades_output = ' '.join(spades_output.split()).replace('Command line:', 'Command:')
             print_line = True
         if spades_output and print_line:
             print(spades_output, flush=True)
@@ -203,7 +203,8 @@ def spades_assembly(read_files, out_dir, kmers, verbosity, threads, spades_path)
         spades_output = process.stdout.readline().rstrip().decode()
         if spades_output and verbosity > 1:
             if 'Command line:' in spades_output:
-                spades_output = ' '.join(spades_output.split())
+                spades_output = ' '.join(spades_output.split()).replace('Command line:',
+                                                                        'Command:')
             print(spades_output, flush=True)
         if 'Insert size =' in spades_output and 'deviation = ' in spades_output:
             try:

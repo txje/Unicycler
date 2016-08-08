@@ -71,10 +71,10 @@ def main():
         unbridged_graph = AssemblyGraph(unbridged_graph_filename, None)
     else:
         unbridged_graph = get_best_spades_graph(args.short1, args.short2, args.out,
-                                                args.read_depth_filter, verbosity, args.spades_path,
-                                                args.threads, args.keep_temp, args.kmer_count,
-                                                args.min_kmer_frac, args.max_kmer_frac,
-                                                args.no_spades_correct)
+                                                settings.READ_DEPTH_FILTER, verbosity,
+                                                args.spades_path, args.threads, args.keep_temp,
+                                                args.kmer_count, args.min_kmer_frac,
+                                                args.max_kmer_frac, args.no_spades_correct)
 
     # Determine copy number and get single-copy segments.
     single_copy_segments = get_single_copy_segments(unbridged_graph, verbosity, 0)
@@ -715,7 +715,7 @@ def print_intro_message(args, verbosity, full_command):
         return
 
     print_section_header('Starting Unicycler', verbosity)
-    print('command:', full_command)
+    print('Command:', full_command)
     if verbosity > 1:
         print()
         if args.confidence == 0:

@@ -1067,6 +1067,7 @@ def create_quast_results_tables():
                                    "Run time (seconds)\t"
                                    "Completeness (%)\t"
                                    "# misassemblies\t"
+                                   "# local misassemblies\t"
                                    "# mismatches and indels per 100 kbp\n")
         simple_quast_results.close()
 
@@ -1181,6 +1182,8 @@ def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler
                 simple_quast_line.append(get_quast_result(headers, results,
                                                           'Percent complete total'))
                 simple_quast_line.append(get_quast_result(headers, results, '# misassemblies'))
+                simple_quast_line.append(get_quast_result(headers, results,
+                                                          '# local misassemblies'))
                 try:
                     mismatches = float(get_quast_result(headers, results,
                                                         '# mismatches per 100 kbp'))

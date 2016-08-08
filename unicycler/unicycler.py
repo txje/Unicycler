@@ -83,6 +83,7 @@ def main():
     # running with low confidence (in that case we don't trust SPAdes contig paths at all).
     if args.confidence == 0:
         bridges = []
+        graph = copy.deepcopy(unbridged_graph)
     else:
         print_section_header('Bridging graph with SPAdes contig paths', verbosity,
                              last_newline=(verbosity > 1))

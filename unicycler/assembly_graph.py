@@ -535,7 +535,10 @@ class AssemblyGraph(object):
         This function merges segments which are in a simple, unbranching path. It produces and
         returns a dictionary of new segment numbers to old segment numbers.
         """
-        single_copy_seg_nums = set(x.number for x in single_copy_segments)
+        if single_copy_segments is not None:
+            single_copy_seg_nums = set(x.number for x in single_copy_segments)
+        else:
+            single_copy_seg_nums = None
         while True:
             # Sort the segment numbers first so we apply the merging in a consistent order.
             seg_nums = sorted(list(self.segments.keys()))

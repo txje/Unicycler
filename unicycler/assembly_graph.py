@@ -1641,7 +1641,8 @@ class AssemblyGraph(object):
             potentially_deletable_paths = []
             for seg_num in self.segments:
                 path = self.get_simple_path(seg_num, None, 2)
-                path_lengths = [self.segments[abs(x)].get_length() - self.overlap for x in path]
+                path_lengths = [max(1, self.segments[abs(x)].get_length() - self.overlap)
+                                for x in path]
                 path_usedupness = [usedupness_scores[abs(x)] for x in path]
                 average_usedupness = weighted_average_list(path_usedupness, path_lengths)
                 potentially_deletable_paths.append((average_usedupness, path))

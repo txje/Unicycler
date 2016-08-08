@@ -331,7 +331,10 @@ def weighted_average_list(nums, weights):
     A simple weighted mean of a list of numbers.
     """
     w_sum = sum(weights)
-    return sum(num * (weights[i] / w_sum) for i, num in enumerate(nums))
+    if w_sum == 0.0:
+        return 0.0
+    else:
+        return sum(num * (weights[i] / w_sum) for i, num in enumerate(nums))
 
 
 def print_section_header(message, verbosity, last_newline=True):

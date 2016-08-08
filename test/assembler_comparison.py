@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
 Tool for comparing the assemblies made by Unicycler, SPAdes, hybridSPAdes, ABySS, Cerulean and
-npScarf. Uses ART and PBSIM to generate synthetic reads and then compares assemblies back to the
-reference using QUAST.
+npScarf.
 
-Usage:
-assembler_comparison.py --reference path/to/reference.fasta  --threads 12 --model_qc model_qc_clr
+Can use ART and PBSIM to generate synthetic reads and then compare assemblies back to the
+reference using QUAST. Or it can take real reads and a reference for those reads.
 
 Author: Ryan Wick
 email: rrwick@gmail.com
@@ -102,75 +101,19 @@ def real_reads(args, scaled_ref_length, quast_results, simple_quast_results):
     """
     Runs tests using real reads.
     """
-    # Run ABySS, SPAdes and Unicycler on short read data alone.
-    args.long_acc, args.long_len = 0.0, 0
-    if not args.no_cerulean:
-        abyss_dir = run_abyss(args.real_short_1, args.real_short_2, args, quast_results,
-                              simple_quast_results)
-    else:
-        abyss_dir = None
-
-    if not args.no_spades:
-        spades_no_long_dir = run_regular_spades(args.real_short_1, args.real_short_2, args,
-                                                quast_results, simple_quast_results)
-    else:
-        spades_no_long_dir = None
-
-    if not args.no_unicycler:
-        unicycler_no_long_dir = run_unicycler(args, args.real_short_1, args.real_short_2, None,
-                                              None, 0, 0.0, quast_results, simple_quast_results,
-                                              'low')
-        run_unicycler(args, args.real_short_1, args.real_short_2, None, None, 0, 0.0, quast_results,
-                      simple_quast_results, 'medium', unicycler_no_long_dir)
-        run_unicycler(args, args.real_short_1, args.real_short_2, None, None, 0, 0.0, quast_results,
-                      simple_quast_results, 'high', unicycler_no_long_dir)
-    else:
-        unicycler_no_long_dir = None
+    abyss_dir, spades_no_long_dir, unicycler_no_long_dir = \
+        assemble_short_reads_only(args, args.real_short_1, args.real_short_2, quast_results,
+                                  simple_quast_results)
 
     long_reads = load_fastq(args.real_long, '')
     long_read_count = len(long_reads)
     long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
 
-    # Run Unicycler on the full set of long reads - will be the source of alignments for
-    # subsampled Unicycler runs.
-    if not args.no_unicycler:
-        unicycler_all_long_dir = run_unicycler(args, args.real_short_1, args.real_short_2,
-                                               long_reads, args.real_long, long_read_count,
-                                               long_read_depth, quast_results,
-                                               simple_quast_results, 'low', unicycler_no_long_dir)
-        run_unicycler(args, args.real_short_1, args.real_short_2, long_reads, args.real_long,
-                      long_read_count, long_read_depth, quast_results, simple_quast_results,
-                      'medium', unicycler_no_long_dir, unicycler_all_long_dir)
-        run_unicycler(args, args.real_short_1, args.real_short_2, long_reads, args.real_long,
-                      long_read_count, long_read_depth, quast_results, simple_quast_results,
-                      'high', unicycler_no_long_dir, unicycler_all_long_dir)
-
-    else:
-        unicycler_all_long_dir = None
-
-    # Run hybridSPAdes on the full set of long reads.
-    if not args.no_spades:
-        run_hybrid_spades(args.real_short_1, args.real_short_2, args.real_long, long_read_count,
-                          long_read_depth, args, quast_results, simple_quast_results,
-                          spades_no_long_dir)
-
-    # Run npScarf on the full set of long reads - will be the source of alignments for
-    # subsampled npScarf runs.
-    if not args.no_npscarf:
-        np_scarf_all_long_dir = run_np_scarf(args.real_long, long_reads, long_read_count,
-                                             long_read_depth, args, quast_results,
-                                             simple_quast_results, spades_no_long_dir)
-    else:
-        np_scarf_all_long_dir = None
-
-    # Run Cerulean on the full set of long reads - will be the source of alignments for
-    # subsampled Cerulean runs.
-    if not args.no_cerulean:
-        cerulean_all_long_dir = run_cerulean(args.real_long, long_reads, long_read_count,
-                                             long_read_depth, args, quast_results,
-                                             simple_quast_results, abyss_dir)
-    else:
-        cerulean_all_long_dir = None
+    unicycler_all_long_dir, np_scarf_all_long_dir, cerulean_all_long_dir = \
+        assemble_all_long_reads(args, args.real_short_1, args.real_short_2, long_reads,
+                                args.real_long, long_read_count, long_read_depth, quast_results,
+                                simple_quast_results, unicycler_no_long_dir,
+                                spades_no_long_dir, abyss_dir)
 
     # The program runs indefinitely, always running more tests until the user kills it.
     while True:
@@ -178,58 +121,15 @@ def real_reads(args, scaled_ref_length, quast_results, simple_quast_results):
         subsampled_counts = subsample(long_read_count, args.subsample_count)
         for subsampled_count in subsampled_counts:
 
-            # Subsample the long reads.
-            subsampled_reads = random.sample(long_reads, subsampled_count)
-            subsampled_long_read_depth = get_long_read_depth(subsampled_reads, scaled_ref_length)
-            subsampled_filename = 'long_subsampled_' + str(args.long_acc) + '_' + \
-                                  str(args.long_len) + '_' + str(subsampled_count)
-            subsampled_filename = subsampled_filename.replace('.', '_')
-            subsampled_filename = os.path.abspath(subsampled_filename + '.fastq')
+            subsampled_reads, subsampled_filename, subsampled_long_read_depth = \
+                subsample_long_reads(args, long_reads, subsampled_count, scaled_ref_length)
 
-            print('\nSubsampling to', subsampled_count, 'reads')
-            save_long_reads_to_fastq(subsampled_reads, subsampled_filename)
-            try:
-                subprocess.check_output(['gzip', subsampled_filename], stderr=subprocess.STDOUT)
-            except subprocess.CalledProcessError as e:
-                quit_with_error('gzip encountered an error:\n' + e.output.decode())
-            subsampled_filename += '.gz'
-
-            # Run Unicycler on the subsampled long reads. This should be relatively fast,
-            # because we can skip the short read assembly and the alignment. The bridging and
-            # polishing steps can still take a while, though.
-            if not args.no_unicycler:
-                run_unicycler(args, args.real_short_1, args.real_short_2, subsampled_reads,
-                              subsampled_filename,
-                              subsampled_count, subsampled_long_read_depth, quast_results,
-                              simple_quast_results, 'low', unicycler_all_long_dir)
-                run_unicycler(args, args.real_short_1, args.real_short_2, subsampled_reads,
-                              subsampled_filename, subsampled_count, subsampled_long_read_depth,
-                              quast_results, simple_quast_results, 'medium', unicycler_all_long_dir)
-                run_unicycler(args, args.real_short_1, args.real_short_2, subsampled_reads,
-                              subsampled_filename, subsampled_count, subsampled_long_read_depth,
-                              quast_results, simple_quast_results, 'high', unicycler_all_long_dir)
-
-            # Run hybridSPAdes on the subsampled long reads.
-            if not args.no_spades:
-                run_hybrid_spades(args.real_short_1, args.real_short_2, subsampled_filename,
-                                  subsampled_count, subsampled_long_read_depth, args, quast_results,
-                                  simple_quast_results, spades_no_long_dir)
-
-            # Run npScarf on the subsampled long reads. This is very fast because we can skip
-            # the alignment step.
-            if not args.no_npscarf:
-                run_np_scarf(subsampled_filename, subsampled_reads, subsampled_count,
-                             subsampled_long_read_depth, args, quast_results,
-                             simple_quast_results, spades_no_long_dir,
-                             np_scarf_all_long_dir=np_scarf_all_long_dir)
-
-            # Run Cerulean on the subsampled long reads. The BLASR alignments can be subsampled
-            # from the full long read run, which saves some time.
-            if not args.no_cerulean:
-                run_cerulean(subsampled_filename, subsampled_reads, subsampled_count,
-                             subsampled_long_read_depth, args, quast_results,
-                             simple_quast_results, abyss_dir,
-                             cerulean_all_long_dir=cerulean_all_long_dir)
+            assemble_subsampled_long_reads(args, args.real_short_1, args.real_short_2,
+                                           subsampled_reads, subsampled_filename, subsampled_count,
+                                           subsampled_long_read_depth, quast_results,
+                                           simple_quast_results, unicycler_all_long_dir,
+                                           spades_no_long_dir, np_scarf_all_long_dir,
+                                           abyss_dir, cerulean_all_long_dir)
 
 
 def simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results,
@@ -260,22 +160,8 @@ def simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results
         # Make new short reads every time through this loop.
         short_1, short_2 = make_fake_short_reads(args)
 
-        # Run ABySS, SPAdes and Unicycler on short read data alone.
-        args.long_acc, args.long_len = 0.0, 0
-        if not args.no_cerulean:
-            abyss_dir = run_abyss(short_1, short_2, args, quast_results, simple_quast_results)
-        if not args.no_spades:
-            spades_no_long_dir = run_regular_spades(short_1, short_2, args, quast_results,
-                                                    simple_quast_results)
-        if not args.no_unicycler:
-            unicycler_no_long_dir = run_unicycler(args, short_1, short_2, None, None, 0, 0.0,
-                                                  quast_results, simple_quast_results, 'low')
-            run_unicycler(args, short_1, short_2, None, None, 0, 0.0, quast_results,
-                          simple_quast_results, 'medium', unicycler_no_long_dir)
-            run_unicycler(args, short_1, short_2, None, None, 0, 0.0, quast_results,
-                          simple_quast_results, 'high', unicycler_no_long_dir)
-        else:
-            unicycler_no_long_dir = None
+        abyss_dir, spades_no_long_dir, unicycler_no_long_dir = \
+            assemble_short_reads_only(args, short_1, short_2, quast_results, simple_quast_results)
 
         for accuracy, length in accuracies_and_lengths:
             args.long_acc, args.long_len = accuracy, length
@@ -283,103 +169,162 @@ def simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results
             long_read_count = len(long_reads)
             long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
 
-            # Run Unicycler on the full set of long reads - will be the source of alignments for
-            # subsampled Unicycler runs.
-            if not args.no_unicycler:
-                unicycler_all_long_dir = run_unicycler(args, short_1, short_2, long_reads,
-                                                       long_filename, long_read_count,
-                                                       long_read_depth, quast_results,
-                                                       simple_quast_results, 'low',
-                                                       unicycler_no_long_dir)
-                run_unicycler(args, short_1, short_2, long_reads, long_filename, long_read_count,
-                              long_read_depth, quast_results, simple_quast_results, 'medium',
-                              unicycler_no_long_dir, unicycler_all_long_dir)
-                run_unicycler(args, short_1, short_2, long_reads, long_filename, long_read_count,
-                              long_read_depth, quast_results, simple_quast_results, 'high',
-                              unicycler_no_long_dir, unicycler_all_long_dir)
-
-            else:
-                unicycler_all_long_dir = None
-
-            # Run hybridSPAdes on the full set of long reads.
-            if not args.no_spades:
-                run_hybrid_spades(short_1, short_2, long_filename, long_read_count, long_read_depth,
-                                  args, quast_results, simple_quast_results, spades_no_long_dir)
-
-            # Run npScarf on the full set of long reads - will be the source of alignments for
-            # subsampled npScarf runs.
-            if not args.no_npscarf:
-                np_scarf_all_long_dir = run_np_scarf(long_filename, long_reads, long_read_count,
-                                                     long_read_depth, args, quast_results,
-                                                     simple_quast_results, spades_no_long_dir)
-            else:
-                np_scarf_all_long_dir = None
-
-            # Run Cerulean on the full set of long reads - will be the source of alignments for
-            # subsampled Cerulean runs.
-            if not args.no_cerulean:
-                cerulean_all_long_dir = run_cerulean(long_filename, long_reads, long_read_count,
-                                                     long_read_depth, args, quast_results,
-                                                     simple_quast_results, abyss_dir)
-            else:
-                cerulean_all_long_dir = None
+            unicycler_all_long_dir, np_scarf_all_long_dir, cerulean_all_long_dir = \
+                assemble_all_long_reads(args, short_1, short_2, long_reads, long_filename,
+                                        long_read_count, long_read_depth, quast_results,
+                                        simple_quast_results, unicycler_no_long_dir,
+                                        spades_no_long_dir, abyss_dir)
 
             # Randomly subsample this read set.
             subsampled_counts = subsample(long_read_count, args.subsample_count)
             for subsampled_count in subsampled_counts:
 
-                # Subsample the long reads.
-                subsampled_reads = random.sample(long_reads, subsampled_count)
-                subsampled_long_read_depth = get_long_read_depth(subsampled_reads,
-                                                                 scaled_ref_length)
-                subsampled_filename = 'long_subsampled_' + str(args.long_acc) + '_' + \
-                                      str(args.long_len) + '_' + str(subsampled_count)
-                subsampled_filename = subsampled_filename.replace('.', '_')
-                subsampled_filename = os.path.abspath(subsampled_filename + '.fastq')
+                subsampled_reads, subsampled_filename, subsampled_long_read_depth = \
+                    subsample_long_reads(args, long_reads, subsampled_count, scaled_ref_length)
 
-                print('\nSubsampling to', subsampled_count, 'reads')
-                save_long_reads_to_fastq(subsampled_reads, subsampled_filename)
-                try:
-                    subprocess.check_output(['gzip', subsampled_filename], stderr=subprocess.STDOUT)
-                except subprocess.CalledProcessError as e:
-                    quit_with_error('gzip encountered an error:\n' + e.output.decode())
-                subsampled_filename += '.gz'
+                assemble_subsampled_long_reads(args, short_1, short_2, subsampled_reads,
+                                               subsampled_filename, subsampled_count,
+                                               subsampled_long_read_depth, quast_results,
+                                               simple_quast_results, unicycler_all_long_dir,
+                                               spades_no_long_dir, np_scarf_all_long_dir,
+                                               abyss_dir, cerulean_all_long_dir)
 
-                # Run Unicycler on the subsampled long reads. This should be relatively fast,
-                # because we can skip the short read assembly and the alignment. The bridging and
-                # polishing steps can still take a while, though.
-                if not args.no_unicycler:
-                    run_unicycler(args, short_1, short_2, subsampled_reads, subsampled_filename,
-                                  subsampled_count, subsampled_long_read_depth, quast_results,
-                                  simple_quast_results, 'low', unicycler_all_long_dir)
-                    run_unicycler(args, short_1, short_2, subsampled_reads, subsampled_filename,
-                                  subsampled_count, subsampled_long_read_depth, quast_results,
-                                  simple_quast_results, 'medium', unicycler_all_long_dir)
-                    run_unicycler(args, short_1, short_2, subsampled_reads, subsampled_filename,
-                                  subsampled_count, subsampled_long_read_depth, quast_results,
-                                  simple_quast_results, 'high', unicycler_all_long_dir)
 
-                # Run hybridSPAdes on the subsampled long reads.
-                if not args.no_spades:
-                    run_hybrid_spades(short_1, short_2, subsampled_filename, subsampled_count,
-                                      subsampled_long_read_depth, args, quast_results,
-                                      simple_quast_results, spades_no_long_dir)
+def assemble_short_reads_only(args, short_1, short_2, quast_results, simple_quast_results):
+    """
+    Run ABySS, SPAdes and Unicycler on short read data alone.
+    """
+    args.long_acc, args.long_len = 0.0, 0
+    if not args.no_cerulean:
+        abyss_dir = run_abyss(short_1, short_2, args, quast_results, simple_quast_results)
+    else:
+        abyss_dir = None
 
-                # Run npScarf on the subsampled long reads. This is very fast because we can skip
-                # the alignment step.
-                if not args.no_npscarf:
-                    run_np_scarf(subsampled_filename, subsampled_reads, subsampled_count,
-                                 subsampled_long_read_depth, args, quast_results,
-                                 simple_quast_results, spades_no_long_dir,
-                                 np_scarf_all_long_dir=np_scarf_all_long_dir)
+    if not args.no_spades:
+        spades_no_long_dir = run_regular_spades(short_1, short_2, args, quast_results,
+                                                simple_quast_results)
+    else:
+        spades_no_long_dir = None
+    if not args.no_unicycler:
+        unicycler_no_long_dir = run_unicycler(args, short_1, short_2, None, None, 0, 0.0,
+                                              quast_results, simple_quast_results, 'low')
+        run_unicycler(args, short_1, short_2, None, None, 0, 0.0, quast_results,
+                      simple_quast_results, 'medium', unicycler_no_long_dir)
+        run_unicycler(args, short_1, short_2, None, None, 0, 0.0, quast_results,
+                      simple_quast_results, 'high', unicycler_no_long_dir)
+    else:
+        unicycler_no_long_dir = None
 
-                # Run Cerulean on the subsampled long reads. The BLASR alignments can be subsampled
-                # from the full long read run, which saves some time.
-                if not args.no_cerulean:
-                    run_cerulean(subsampled_filename, subsampled_reads, subsampled_count,
-                                 subsampled_long_read_depth, args, quast_results,
-                                 simple_quast_results, abyss_dir,
-                                 cerulean_all_long_dir=cerulean_all_long_dir)
+    return abyss_dir, spades_no_long_dir, unicycler_no_long_dir
+
+
+def assemble_all_long_reads(args, short_1, short_2, long_reads, long_filename, long_read_count,
+                            long_read_depth, quast_results, simple_quast_results,
+                            unicycler_no_long_dir, spades_no_long_dir, abyss_dir):
+    # Run Unicycler on the full set of long reads - will be the source of alignments for
+    # subsampled Unicycler runs.
+    if not args.no_unicycler:
+        unicycler_all_long_dir = run_unicycler(args, short_1, short_2, long_reads,
+                                               long_filename, long_read_count,
+                                               long_read_depth, quast_results,
+                                               simple_quast_results, 'low',
+                                               unicycler_no_long_dir)
+        run_unicycler(args, short_1, short_2, long_reads, long_filename, long_read_count,
+                      long_read_depth, quast_results, simple_quast_results, 'medium',
+                      unicycler_no_long_dir, unicycler_all_long_dir)
+        run_unicycler(args, short_1, short_2, long_reads, long_filename, long_read_count,
+                      long_read_depth, quast_results, simple_quast_results, 'high',
+                      unicycler_no_long_dir, unicycler_all_long_dir)
+
+    else:
+        unicycler_all_long_dir = None
+
+    # Run hybridSPAdes on the full set of long reads.
+    if not args.no_spades:
+        run_hybrid_spades(short_1, short_2, long_filename, long_read_count, long_read_depth,
+                          args, quast_results, simple_quast_results, spades_no_long_dir)
+
+    # Run npScarf on the full set of long reads - will be the source of alignments for
+    # subsampled npScarf runs.
+    if not args.no_npscarf:
+        np_scarf_all_long_dir = run_np_scarf(long_filename, long_reads, long_read_count,
+                                             long_read_depth, args, quast_results,
+                                             simple_quast_results, spades_no_long_dir)
+    else:
+        np_scarf_all_long_dir = None
+
+    # Run Cerulean on the full set of long reads - will be the source of alignments for
+    # subsampled Cerulean runs.
+    if not args.no_cerulean:
+        cerulean_all_long_dir = run_cerulean(long_filename, long_reads, long_read_count,
+                                             long_read_depth, args, quast_results,
+                                             simple_quast_results, abyss_dir)
+    else:
+        cerulean_all_long_dir = None
+
+    return unicycler_all_long_dir, np_scarf_all_long_dir, cerulean_all_long_dir
+
+
+def assemble_subsampled_long_reads(args, short_1, short_2, subsampled_reads, subsampled_filename,
+                                   subsampled_count, subsampled_long_read_depth, quast_results,
+                                   simple_quast_results, unicycler_all_long_dir,
+                                   spades_no_long_dir, np_scarf_all_long_dir, abyss_dir,
+                                   cerulean_all_long_dir):
+    # Run Unicycler on the subsampled long reads. This should be relatively fast,
+    # because we can skip the short read assembly and the alignment. The bridging and
+    # polishing steps can still take a while, though.
+    if not args.no_unicycler:
+        run_unicycler(args, short_1, short_2, subsampled_reads, subsampled_filename,
+                      subsampled_count, subsampled_long_read_depth, quast_results,
+                      simple_quast_results, 'low', unicycler_all_long_dir)
+        run_unicycler(args, short_1, short_2, subsampled_reads, subsampled_filename,
+                      subsampled_count, subsampled_long_read_depth, quast_results,
+                      simple_quast_results, 'medium', unicycler_all_long_dir)
+        run_unicycler(args, short_1, short_2, subsampled_reads, subsampled_filename,
+                      subsampled_count, subsampled_long_read_depth, quast_results,
+                      simple_quast_results, 'high', unicycler_all_long_dir)
+
+    # Run hybridSPAdes on the subsampled long reads.
+    if not args.no_spades:
+        run_hybrid_spades(short_1, short_2, subsampled_filename, subsampled_count,
+                          subsampled_long_read_depth, args, quast_results,
+                          simple_quast_results, spades_no_long_dir)
+
+    # Run npScarf on the subsampled long reads. This is very fast because we can skip
+    # the alignment step.
+    if not args.no_npscarf:
+        run_np_scarf(subsampled_filename, subsampled_reads, subsampled_count,
+                     subsampled_long_read_depth, args, quast_results,
+                     simple_quast_results, spades_no_long_dir,
+                     np_scarf_all_long_dir=np_scarf_all_long_dir)
+
+    # Run Cerulean on the subsampled long reads. The BLASR alignments can be subsampled
+    # from the full long read run, which saves some time.
+    if not args.no_cerulean:
+        run_cerulean(subsampled_filename, subsampled_reads, subsampled_count,
+                     subsampled_long_read_depth, args, quast_results,
+                     simple_quast_results, abyss_dir,
+                     cerulean_all_long_dir=cerulean_all_long_dir)
+
+
+def subsample_long_reads(args, long_reads, subsampled_count, scaled_ref_length):
+    subsampled_reads = random.sample(long_reads, subsampled_count)
+    subsampled_long_read_depth = get_long_read_depth(subsampled_reads,
+                                                     scaled_ref_length)
+    subsampled_filename = 'long_subsampled_' + str(args.long_acc) + '_' + \
+                          str(args.long_len) + '_' + str(subsampled_count)
+    subsampled_filename = subsampled_filename.replace('.', '_')
+    subsampled_filename = os.path.abspath(subsampled_filename + '.fastq')
+
+    print('\nSubsampling to', subsampled_count, 'reads')
+    save_long_reads_to_fastq(subsampled_reads, subsampled_filename)
+    try:
+        subprocess.check_output(['gzip', subsampled_filename], stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as e:
+        quit_with_error('gzip encountered an error:\n' + e.output.decode())
+    subsampled_filename += '.gz'
+
+    return subsampled_reads, subsampled_filename, subsampled_long_read_depth
 
 
 class AssemblyError(Exception):

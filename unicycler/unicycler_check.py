@@ -126,7 +126,7 @@ def get_arguments():
                         help='Level of stdout information (0 to 2)')
 
     # Add the arguments for the aligner, but suppress the help text.
-    add_aligning_arguments(parser, True)
+    add_aligning_arguments(parser, False)
 
     args = parser.parse_args()
     fix_up_arguments(args)

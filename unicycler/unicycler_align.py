@@ -108,7 +108,7 @@ def get_arguments():
     parser.add_argument('--sam', type=str, required=True, default=argparse.SUPPRESS,
                         help='SAM file of resulting alignments')
 
-    add_aligning_arguments(parser, False)
+    add_aligning_arguments(parser, True)
 
     parser.add_argument('--extra_sensitive', action='store_true',
                         help='Perform slow but very sensitive alignment')
@@ -128,60 +128,43 @@ def get_arguments():
     return args
 
 
-def add_aligning_arguments(parser, hide_help):
+def add_aligning_arguments(parser, show_help):
     """
     Adds the aligning-specific arguments to the parser.
     """
-    temp_dir_help = argparse.SUPPRESS if hide_help else 'Temp directory for working files ' + \
-                                                        '("PID" will be replaced with the ' + \
-                                                        'process ID)'
     parser.add_argument('--temp_dir', type=str, required=False, default='align_temp_PID',
-                        help=temp_dir_help)
-
-    no_graphmap_help = argparse.SUPPRESS if hide_help else 'Do not use GraphMap as a ' + \
-                                                           'first-pass aligner (default: ' + \
-                                                           'GraphMap is used)'
+                        help='Temp directory for working files ("PID" will be replaced with the '
+                             'process ID)'
+                             if show_help else argparse.SUPPRESS)
     parser.add_argument('--no_graphmap', action='store_true', default=argparse.SUPPRESS,
-                        help=no_graphmap_help)
-
-    graphmap_path_help = argparse.SUPPRESS if hide_help else 'Path to the GraphMap executable'
+                        help='Do not use GraphMap as a first-pass aligner (default: GraphMap is '
+                             'used)'
+                             if show_help else argparse.SUPPRESS)
     parser.add_argument('--graphmap_path', type=str, required=False, default='graphmap',
-                        help=graphmap_path_help)
-
-    scores_help = argparse.SUPPRESS if hide_help else 'Comma-delimited string of alignment ' + \
-                                                      'scores: match, mismatch, gap open, gap ' + \
-                                                      'extend'
+                        help='Path to the GraphMap executable'
+                             if show_help else argparse.SUPPRESS)
     parser.add_argument('--scores', type=str, required=False, default='3,-6,-5,-2',
-                        help=scores_help)
-
-    low_score_help = argparse.SUPPRESS if hide_help else 'Score threshold - alignments below ' + \
-                                                         'this are considered poor (default: ' + \
-                                                         'set threshold automatically)'
+                        help='Comma-delimited string of alignment scores: match, mismatch, '
+                             'gap open, gap extend'
+                             if show_help else argparse.SUPPRESS)
     parser.add_argument('--low_score', type=float, required=False, default=argparse.SUPPRESS,
-                        help=low_score_help)
-
-    min_len_help = argparse.SUPPRESS if hide_help else 'Minimum alignment length (bp) - ' + \
-                                                       'exclude alignments shorter than this ' + \
-                                                       'length'
+                        help='Score threshold - alignments below this are considered poor '
+                             '(default: set threshold automatically)'
+                             if show_help else argparse.SUPPRESS)
     parser.add_argument('--min_len', type=float, required=False, default=100,
-                        help=min_len_help)
-
-    keep_bad_help = argparse.SUPPRESS if hide_help else 'Include alignments in the results ' + \
-                                                        'even if they are below the low score ' + \
-                                                        'threshold (default: low-scoring ' + \
-                                                        'alignments are discarded)'
+                        help='Minimum alignment length (bp) - exclude alignments shorter than this'
+                             'length'
+                             if show_help else argparse.SUPPRESS)
     parser.add_argument('--keep_bad', action='store_true', default=argparse.SUPPRESS,
-                        help=keep_bad_help)
-
-    allowed_overlap_help = argparse.SUPPRESS if hide_help else 'Allow this much overlap ' + \
-                                                               'between alignments in a ' + \
-                                                               'single read'
+                        help='Include alignments in the results even if they are below the low '
+                             'score threshold (default: low-scoring alignments are discarded)'
+                             if show_help else argparse.SUPPRESS)
     parser.add_argument('--allowed_overlap', type=int, required=False, default=100,
-                        help=allowed_overlap_help)
-
-    kmer_help = argparse.SUPPRESS if hide_help else 'K-mer size used for seeding alignments'
+                        help='Allow this much overlap between alignments in a single read'
+                             if show_help else argparse.SUPPRESS)
     parser.add_argument('--kmer', type=int, required=False, default=7,
-                        help=kmer_help)
+                        help='K-mer size used for seeding alignments'
+                             if show_help else argparse.SUPPRESS)
 
 
 def fix_up_arguments(args):

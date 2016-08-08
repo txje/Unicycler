@@ -26,6 +26,7 @@ from .unicycler_align import add_aligning_arguments, fix_up_arguments, \
     print_alignment_summary_table
 from .pilon_func import polish_with_pilon, CannotPolish
 from . import settings
+from .version import __version__
 
 
 def main():
@@ -364,121 +365,219 @@ def main():
     graph.save_to_fasta(os.path.join(args.out, 'assembly.fasta'), verbosity)
 
 
+class MyHelpFormatter(argparse.RawDescriptionHelpFormatter):
+    """
+    This is a custom formatter class for argparse. It allows me to adjust some widths and to
+    format some help text as raw.
+    http://stackoverflow.com/questions/3853722
+    """
+    def __init__(self, prog):
+        terminal_width = shutil.get_terminal_size().columns
+        max_help_position = min(max(24, terminal_width // 3), 40)
+        super().__init__(prog, max_help_position=max_help_position)
+
+    def _split_lines(self, text, width):
+        if text.startswith('R|'):
+            return text[2:].splitlines()
+        else:
+            return argparse.HelpFormatter._split_lines(self, text, width)
+
+    def _fill_text(self, text, width, indent):
+        if text.startswith('R|'):
+            return argparse.RawDescriptionHelpFormatter._fill_text(self, text[2:], width, indent)
+        else:
+            return argparse.HelpFormatter._fill_text(self, text, width, indent)
+
+
 def get_arguments():
     """
     Parse the command line arguments.
     """
+    description = 'Unicycler: a hybrid assembly pipeline for bacterial genomes'
     this_script_dir = os.path.dirname(os.path.realpath(__file__))
 
-    ascii_art = ("       __\n"
+    if '--helpall' in sys.argv or '--allhelp' in sys.argv or '--all_help' in sys.argv:
+        sys.argv.append('--help_all')
+    show_all_args = '--help_all' in sys.argv
+
+    # Show the ASCII art if the terminal is wide enough for it.
+    terminal_width = shutil.get_terminal_size().columns
+    os.environ['COLUMNS'] = str(terminal_width)
+    ascii_art = ("R|       __\n"
                  "       \ \___\n"
                  "        \ ___\\\n"
                  "        //\n"
-                 "   ____//     _    _       _                 _\n"
-                 " //_  //\\\\   | |  | |     (_)               | |\n"
-                 "//  \//  \\\\  | |  | |_ __  _  ___ _   _  ___| | ___ _ __\n"
-                 "||  (O)  ||  | |  | | '_ \| |/ __| | | |/ __| |/ _ \ '__|\n"
-                 "\\\\    \_ //  | |__| | | | | | (__| |_| | (__| |  __/ |\n"
-                 " \\\\_____//    \____/|_| |_|_|\___|\__, |\___|_|\___|_|\n"
-                 "                                   __/ |\n"
-                 "                                  |___/\n\n")
-    description = 'Unicycler: a hybrid assembly pipeline for bacterial isolates'
+                 "   ____//      _    _       _                 _\n"
+                 " //_  //\\\\    | |  | |     (_)               | |\n"
+                 "//  \//  \\\\   | |  | |_ __  _  ___ _   _  ___| | ___ _ __\n"
+                 "||  (O)  ||   | |  | | '_ \| |/ __| | | |/ __| |/ _ \ '__|\n"
+                 "\\\\    \_ //   | |__| | | | | | (__| |_| | (__| |  __/ |\n"
+                 " \\\\_____//     \____/|_| |_|_|\___|\__, |\___|_|\___|_|\n"
+                 "                                    __/ |\n"
+                 "                                   |___/\n\n")
 
-    parser = argparse.ArgumentParser(description=ascii_art + description,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    if terminal_width >= 60:
+        full_description = ascii_art + description
+    else:
+        full_description = description
+    parser = argparse.ArgumentParser(description=full_description, formatter_class=MyHelpFormatter,
+                                     add_help=False)
+
+    # Help options
+    help_group = parser.add_argument_group('Help')
+    help_group.add_argument('-h', '--help', action='help',
+                            help='Show this help message and exit')
+    help_group.add_argument('--help_all', action='help',
+                            help='Show a help message with all program options')
+    help_group.add_argument('--version', action='version', version='Unicycler v' + __version__,
+                            help="Show Unicycler's version number")
 
     # Short read input options
-    parser.add_argument('--short1', required=True, default=argparse.SUPPRESS,
-                        help='FASTQ file of short reads (first reads in each pair).')
-    parser.add_argument('--short2', required=True, default=argparse.SUPPRESS,
-                        help='FASTQ file of short reads (second reads in each pair).')
+    input_group = parser.add_argument_group('Input')
+    input_group.add_argument('-1', '--short1', required=True, default=argparse.SUPPRESS,
+                             help='FASTQ file of short reads (first reads in each pair).')
+    input_group.add_argument('-2', '--short2', required=True, default=argparse.SUPPRESS,
+                             help='FASTQ file of short reads (second reads in each pair).')
 
     # Long read input options
-    parser.add_argument('--long', required=False, default=argparse.SUPPRESS,
-                        help='FASTQ or FASTA file of long reads, if all reads are available at '
-                             'start.')
-    parser.add_argument('--long_dir', required=False, default=argparse.SUPPRESS,
-                        help='Directory where FASTQ or FASTA read files will be deposited.')
-    parser.add_argument('--no_long', action='store_true',
-                        help='Do not use any long reads - assemble with short reads only')
+    input_group.add_argument('-l', '--long', required=False, default=argparse.SUPPRESS,
+                             help='FASTQ or FASTA file of long reads, if all reads are available '
+                                  'at start.')
+    input_group.add_argument('-d', '--long_dir', required=False, default=argparse.SUPPRESS,
+                             help='Directory where FASTQ or FASTA read files will be deposited.')
+    input_group.add_argument('--no_long', action='store_true',
+                             help='Do not use any long reads (assemble with short reads only)')
 
     # Output options
-    parser.add_argument('--out', required=True, default=argparse.SUPPRESS,
-                        help='Output directory')
-    parser.add_argument('--verbosity', type=int, required=False, default=1,
-                        help='Level of stdout information (0 to 2)')
-    parser.add_argument('--keep_temp', type=int, default=1,
-                        help='0 = keep only main checkpoints, 1 = keep some temporary files, '
-                             'including alignment SAM, 2 = keep all temporary files')
+    output_group = parser.add_argument_group('Output')
+    output_group.add_argument('-o', '--out', required=True, default=argparse.SUPPRESS,
+                              help='Output directory')
+    output_group.add_argument('--verbosity', type=int, required=False, default=1,
+                              help='R|Level of stdout information (0 to 3, default: 1)\n'
+                                   '  0 = no stdout,  1 = basic progress indicators\n'
+                                   '  2 = extra info, 3 = debugging info')
+    output_group.add_argument('--keep_temp', type=int, default=1,
+                              help='R|Level of file retention (0 to 2, default: 0)\n'
+                                   '  0 = keep files only at main checkpoints\n'
+                                   '  1 = keep some temporary files, including SAM\n'
+                                   '  2 = keep all temporary files')
 
-    parser.add_argument('--threads', type=int, required=False, default=argparse.SUPPRESS,
-                        help='Number of CPU threads used to align (default: the number of '
-                             'available CPUs)')
-
-    # Confidence level options
-    parser.add_argument('--confidence', choices=['low', 'medium', 'high'], default='medium',
-                        help='Bridging confidence: low = smaller contigs but small risk of '
-                             'misassembly, medium (default) = balanced contig length and '
-                             'misassembly risk, high = longer contigs but more risk of misassembly')
-    parser.add_argument('--min_bridge_qual', type=float, default=argparse.SUPPRESS,
-                        help='Bridges with a quality below this value will not be applied)')
+    other_group = parser.add_argument_group('Other')
+    other_group.add_argument('-t', '--threads', type=int, required=False, default=argparse.SUPPRESS,
+                             help='Number of threads used to align (default: number of CPUs)')
+    other_group.add_argument('--confidence', choices=['low', 'medium', 'high'], default='medium',
+                             help='R|Bridging confidence (default: medium)\n'
+                                  '  low = smaller contigs, less risk of misassembly\n'
+                                  '  medium = balanced contig size and misassembly risk\n'
+                                  '  high = longer contigs, more risk of misassembly')
+    other_group.add_argument('--min_bridge_qual', type=float, default=argparse.SUPPRESS,
+                             help='R|Do not apply bridges with a quality below this value\n'
+                                  '  low confidence default: ' +
+                                  str(settings.LOW_CONFIDENCE_MIN_BRIDGE_QUAL) + '\n'
+                                  '  medium confidence default: ' +
+                                  str(settings.MEDIUM_CONFIDENCE_MIN_BRIDGE_QUAL) + '\n'
+                                  '  high confidence default: ' +
+                                  str(settings.HIGH_CONFIDENCE_MIN_BRIDGE_QUAL)
+                                  if show_all_args else argparse.SUPPRESS)
 
     # SPAdes assembly options
-    parser.add_argument('--spades_path', type=str, default='spades.py',
-                        help='Path to the SPAdes executable')
-    parser.add_argument('--no_spades_correct', action='store_true',
-                        help='Skip SPAdes error correction step')
-    parser.add_argument('--min_kmer_frac', type=float, default=0.2,
-                        help='Lowest k-mer size for SPAdes assembly, expressed as a fraction of '
-                             'the read length')
-    parser.add_argument('--max_kmer_frac', type=float, default=0.9,
-                        help='Highest k-mer size for SPAdes assembly, expressed as a fraction of '
-                             'the read length')
-    parser.add_argument('--kmer_count', type=int, default=10,
-                        help='Number of k-mer steps to use in SPAdes assembly')
+    spades_group = parser.add_argument_group('SPAdes assembly',
+                                             'These options control the short read SPAdes '
+                                             'assembly at the beginning of the Unicycler pipeline.'
+                                             if show_all_args else argparse.SUPPRESS)
+    spades_group.add_argument('--spades_path', type=str, default='spades.py',
+                            help='Path to the SPAdes executable'
+                                 if show_all_args else argparse.SUPPRESS)
+    spades_group.add_argument('--no_spades_correct', action='store_true',
+                              help='Skip SPAdes error correction step'
+                                   if show_all_args else argparse.SUPPRESS)
+    spades_group.add_argument('--min_kmer_frac', type=float, default=0.2,
+                              help='Lowest k-mer size for SPAdes assembly, expressed as a '
+                                   'fraction of the read length'
+                                   if show_all_args else argparse.SUPPRESS)
+    spades_group.add_argument('--max_kmer_frac', type=float, default=0.9,
+                              help='Highest k-mer size for SPAdes assembly, expressed as a '
+                                   'fraction of the read length'
+                                   if show_all_args else argparse.SUPPRESS)
+    spades_group.add_argument('--kmer_count', type=int, default=10,
+                              help='Number of k-mer steps to use in SPAdes assembly'
+                                   if show_all_args else argparse.SUPPRESS)
 
     # Rotation options
-    parser.add_argument('--no_rotate', action='store_true',
-                        help='Do not rotate completed replicons to start at a standard gene')
-    parser.add_argument('--start_genes', type=str,
-                        default=os.path.join(this_script_dir, 'gene_data', 'start_genes.fasta'),
-                        help='FASTA file of genes for start point of rotated replicons')
-    parser.add_argument('--start_gene_id', type=float, default=90.0,
-                        help='The minimum required BLAST percent identity for a start gene search')
-    parser.add_argument('--start_gene_cov', type=float, default=95.0,
-                        help='The minimum required BLAST percent coverage for a start gene search')
-    parser.add_argument('--makeblastdb_path', type=str, default='makeblastdb',
-                        help='Path to the makeblastdb executable')
-    parser.add_argument('--tblastn_path', type=str, default='tblastn',
-                        help='Path to the tblastn executable')
+    rotation_group = parser.add_argument_group('Assembly rotation',
+                                               'These options control the rotation of completed '
+                                               'circular sequence near the end of the Unicycler '
+                                               'pipeline.'
+                                               if show_all_args else argparse.SUPPRESS)
+    rotation_group.add_argument('--no_rotate', action='store_true',
+                                help='Do not rotate completed replicons to start at a standard gene'
+                                     if show_all_args else argparse.SUPPRESS)
+    rotation_group.add_argument('--start_genes', type=str,
+                                default=os.path.join(this_script_dir, 'gene_data',
+                                                     'start_genes.fasta'),
+                                help='FASTA file of genes for start point of rotated replicons'
+                                     if show_all_args else argparse.SUPPRESS)
+    rotation_group.add_argument('--start_gene_id', type=float, default=90.0,
+                                help='The minimum required BLAST percent identity for a start gene '
+                                     'search'
+                                     if show_all_args else argparse.SUPPRESS)
+    rotation_group.add_argument('--start_gene_cov', type=float, default=95.0,
+                                help='The minimum required BLAST percent coverage for a start gene '
+                                     'search'
+                                     if show_all_args else argparse.SUPPRESS)
+    rotation_group.add_argument('--makeblastdb_path', type=str, default='makeblastdb',
+                                help='Path to the makeblastdb executable'
+                                     if show_all_args else argparse.SUPPRESS)
+    rotation_group.add_argument('--tblastn_path', type=str, default='tblastn',
+                                help='Path to the tblastn executable'
+                                     if show_all_args else argparse.SUPPRESS)
 
     # Polishing options
-    parser.add_argument('--no_pilon', action='store_true',
-                        help='Do not use Pilon to polish the final assembly')
-    parser.add_argument('--bowtie2_path', type=str, default='bowtie2',
-                        help='Path to the bowtie2 executable')
-    parser.add_argument('--bowtie2_build_path', type=str, default='bowtie2-build',
-                        help='Path to the bowtie2_build executable')
-    parser.add_argument('--samtools_path', type=str, default='samtools',
-                        help='Path to the samtools executable')
-    parser.add_argument('--pilon_path', type=str, default='pilon.jar',
-                        help='Path to the executable Pilon Java archive file')
-    parser.add_argument('--min_polish_size', type=int, default=10000,
-                        help='Sequences shorter than this value will not be polished using Pilon')
+    polish_group = parser.add_argument_group('Pilon polishing',
+                                             'These options control the final assembly polish '
+                                             'using Pilon at the end of the Unicycler pipeline.'
+                                             if show_all_args else argparse.SUPPRESS)
+    polish_group.add_argument('--no_pilon', action='store_true',
+                              help='Do not use Pilon to polish the final assembly'
+                                   if show_all_args else argparse.SUPPRESS)
+    polish_group.add_argument('--bowtie2_path', type=str, default='bowtie2',
+                              help='Path to the bowtie2 executable'
+                                   if show_all_args else argparse.SUPPRESS)
+    polish_group.add_argument('--bowtie2_build_path', type=str, default='bowtie2-build',
+                              help='Path to the bowtie2_build executable'
+                                   if show_all_args else argparse.SUPPRESS)
+    polish_group.add_argument('--samtools_path', type=str, default='samtools',
+                              help='Path to the samtools executable'
+                                   if show_all_args else argparse.SUPPRESS)
+    polish_group.add_argument('--pilon_path', type=str, default='pilon.jar',
+                              help='Path to the executable Pilon Java archive file'
+                                   if show_all_args else argparse.SUPPRESS)
+    polish_group.add_argument('--min_polish_size', type=int, default=10000,
+                              help='Sequences shorter than this value will not be polished using '
+                                   'Pilon'
+                                   if show_all_args else argparse.SUPPRESS)
 
     # Graph cleaning options
-    parser.add_argument('--read_depth_filter', type=float, required=False, default=0.5,
-                        help='Minimum allowed read depth, expressed as a fraction of the median'
-                             'read depth. Graph segments with less depth will be removed.')
-    parser.add_argument('--min_component_size', type=int, default=1000,
-                        help='Unbridged graph components smaller than this size will be removed '
-                             'from the final graph')
-    parser.add_argument('--min_dead_end_size', type=int, default=1000,
-                        help='Graph dead ends smaller than this size will be removed from the '
-                             'final graph')
+    cleaning_group = parser.add_argument_group('Graph cleaning',
+                                               'These options control the removal of small '
+                                               'leftover sequences after bridging is complete.'
+                                               if show_all_args else argparse.SUPPRESS)
+    cleaning_group.add_argument('--min_component_size', type=int, default=1000,
+                                help='Unbridged graph components smaller than this size will be '
+                                     'removed from the final graph'
+                                     if show_all_args else argparse.SUPPRESS)
+    cleaning_group.add_argument('--min_dead_end_size', type=int, default=1000,
+                                help='Graph dead ends smaller than this size will be removed from '
+                                     'the final graph'
+                                     if show_all_args else argparse.SUPPRESS)
 
     # Add the arguments for the aligner, but suppress the help text.
-    add_aligning_arguments(parser, True)
+    align_group = parser.add_argument_group('Long read alignment',
+                                            'These options control the alignment of long reads to '
+                                            'the assembly graph using Graphmap and/or '
+                                            'Unicycler-align'
+                                            if show_all_args else argparse.SUPPRESS)
+    add_aligning_arguments(align_group, show_all_args)
 
     args = parser.parse_args()
     fix_up_arguments(args)
@@ -523,15 +622,15 @@ def get_arguments():
     if args.confidence == 'low':
         confidence_val = 0
         if not user_set_bridge_qual:
-            args.min_bridge_qual = 25.0
+            args.min_bridge_qual = settings.LOW_CONFIDENCE_MIN_BRIDGE_QUAL
     elif args.confidence == 'medium':
         confidence_val = 1
         if not user_set_bridge_qual:
-            args.min_bridge_qual = 10.0
+            args.min_bridge_qual = settings.MEDIUM_CONFIDENCE_MIN_BRIDGE_QUAL
     elif args.confidence == 'high':
         confidence_val = 2
         if not user_set_bridge_qual:
-            args.min_bridge_qual = 5.0
+            args.min_bridge_qual = settings.HIGH_CONFIDENCE_MIN_BRIDGE_QUAL
     args.confidence = confidence_val
 
     # Change some arguments to full paths.

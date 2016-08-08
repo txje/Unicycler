@@ -79,40 +79,44 @@ def main():
     single_copy_segments = get_single_copy_segments(unbridged_graph, verbosity, 0)
     unbridged_graph.save_to_gfa(unbridged_graph_filename, verbosity, save_copy_depth_info=True)
 
-    # Make an initial set of bridges using the SPAdes contig paths.
-    print_section_header('Bridging graph with SPAdes contig paths', verbosity,
-                         last_newline=(verbosity > 1))
-    bridges = create_spades_contig_bridges(unbridged_graph, single_copy_segments)
-    bridges += create_loop_unrolling_bridges(unbridged_graph)
-    graph = copy.deepcopy(unbridged_graph)
-    seg_nums_used_in_bridges = graph.apply_bridges(bridges, verbosity, args.min_bridge_qual,
-                                                   unbridged_graph)
-    file_num += 1
-    spades_bridged_graph_unmerged = os.path.join(args.out, str(file_num).zfill(3) +
-                                                 '_spades_bridges_applied.gfa')
-    graph.save_to_gfa(spades_bridged_graph_unmerged, verbosity, save_seg_type_info=True,
-                      single_copy_segments=single_copy_segments)
+    # Make an initial set of bridges using the SPAdes contig paths. This step is skipped when
+    # running with low confidence (in that case we don't trust SPAdes contig paths at all).
+    if args.confidence == 0:
+        bridges = []
+    else:
+        print_section_header('Bridging graph with SPAdes contig paths', verbosity,
+                             last_newline=(verbosity > 1))
+        bridges = create_spades_contig_bridges(unbridged_graph, single_copy_segments)
+        bridges += create_loop_unrolling_bridges(unbridged_graph)
+        graph = copy.deepcopy(unbridged_graph)
+        seg_nums_used_in_bridges = graph.apply_bridges(bridges, verbosity, args.min_bridge_qual,
+                                                       unbridged_graph)
+        file_num += 1
+        spades_bridged_graph_unmerged = os.path.join(args.out, str(file_num).zfill(3) +
+                                                     '_spades_bridges_applied.gfa')
+        graph.save_to_gfa(spades_bridged_graph_unmerged, verbosity, save_seg_type_info=True,
+                          single_copy_segments=single_copy_segments)
 
-    # Clean up unnecessary segments after bridging.
-    graph.clean_up_after_bridging_1(single_copy_segments, seg_nums_used_in_bridges, verbosity)
-    if args.keep_temp > 1:
-        file_num += 1
-        graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +
-                                       '_cleaned_first_pass.gfa'), verbosity,
-                          save_seg_type_info=True, single_copy_segments=single_copy_segments)
-    graph.clean_up_after_bridging_2(seg_nums_used_in_bridges, args.min_component_size,
-                                    args.min_dead_end_size, verbosity, unbridged_graph,
-                                    single_copy_segments)
-    if args.keep_temp > 1:
-        file_num += 1
-        graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +
-                                       '_cleaned_second_pass.gfa'), verbosity,
-                          save_seg_type_info=True, single_copy_segments=single_copy_segments)
-    graph.merge_all_possible(single_copy_segments, args.confidence)
-    if args.keep_temp > 1:
-        file_num += 1
-        graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa'),
-                          verbosity)
+        # Clean up unnecessary segments after bridging.
+        graph.clean_up_after_bridging_1(single_copy_segments, seg_nums_used_in_bridges, verbosity)
+        if args.keep_temp > 1:
+            file_num += 1
+            graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +
+                                           '_cleaned_first_pass.gfa'), verbosity,
+                              save_seg_type_info=True, single_copy_segments=single_copy_segments)
+        graph.clean_up_after_bridging_2(seg_nums_used_in_bridges, args.min_component_size,
+                                        args.min_dead_end_size, verbosity, unbridged_graph,
+                                        single_copy_segments)
+        if args.keep_temp > 1:
+            file_num += 1
+            graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +
+                                           '_cleaned_second_pass.gfa'), verbosity,
+                              save_seg_type_info=True, single_copy_segments=single_copy_segments)
+        graph.merge_all_possible(single_copy_segments, args.confidence)
+        if args.keep_temp > 1:
+            file_num += 1
+            graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa'),
+                              verbosity)
 
     # Prepare for long read alignment.
     alignment_dir = os.path.join(args.out, 'read_alignment_temp')

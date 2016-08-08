@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Tool for comparing the assemblies made by Unicycler, SPAdes, hybridSPAdes and npScarf.
+Tool for comparing the assemblies made by Unicycler, SPAdes, hybridSPAdes, ABySS, Cerulean and
+npScarf. Uses ART and PBSIM to generate synthetic reads and then compares assemblies back to the
+reference using QUAST.
 
 Usage:
-assembler_comparison.py --reference path/to/reference.fasta
+assembler_comparison.py --reference path/to/reference.fasta  --threads 12 --model_qc model_qc_clr
 
 Author: Ryan Wick
 email: rrwick@gmail.com
@@ -19,39 +21,8 @@ import shutil
 
 
 def main():
-    # Set up environment variables for Cerulean and PBJelly.
-    if os.path.isdir('/Users/Ryan/Applications/PBSuite_15.8.24'):
-        local_pb_path = '/Users/Ryan/Applications/PBSuite_15.8.24'
-    else:
-        local_pb_path = '/vlsci/SG0006/rwick/PBSuite_15.8.24'
-    if os.path.isdir('/Users/Ryan/Applications/Cerulean/src'):
-        local_cerulean_path = '/Users/Ryan/Applications/Cerulean/src'
-    else:
-        local_cerulean_path = '/vlsci/SG0006/rwick/Cerulean/src'
-    if 'SWEETPATH' not in os.environ:
-        os.environ['SWEETPATH'] = local_pb_path
-    if 'PYTHONPATH' not in os.environ:
-        os.environ['PYTHONPATH'] = local_pb_path
-    elif 'PBSuite' not in os.environ['PYTHONPATH']:
-        os.environ['PYTHONPATH'] += ':' + local_pb_path
-    if 'PBSuite' not in os.environ['PATH']:
-        os.environ['PATH'] += ':' + os.environ['SWEETPATH'] + '/bin/'
-    if 'JELLYPATH' not in os.environ:
-        os.environ['JELLYPATH'] = local_pb_path
-    if 'CERULEANPATH' not in os.environ:
-        os.environ['CERULEANPATH'] = local_cerulean_path
-
+    set_up_env_var()
     args = get_args()
-
-    # Set up each read accuracy-length combination.
-    accuracies = [float(x) for x in args.long_accs.split(',')]
-    lengths = [int(x) for x in args.long_lens.split(',')]
-    accuracies_and_lengths = []
-    for accuracy in accuracies:
-        accuracies_and_lengths += [(accuracy, length) for length in lengths]
-    print('Simulating long reads with these accuracy and length combinations:')
-    for accuracy, length in accuracies_and_lengths:
-        print(str(accuracy) + '%, ' + str(length) + ' bp')
 
     scaled_ref_length = get_scaled_ref_length(args)
     ref_name = get_reference_name_from_filename(args.reference)
@@ -62,6 +33,219 @@ def main():
     if not os.path.exists(ref_dir):
         os.makedirs(ref_dir)
     os.chdir(ref_dir)
+
+    if args.real_short_1 and args.real_short_2 and args.real_long:
+        real_reads(args, scaled_ref_length, quast_results, simple_quast_results)
+
+    elif args.short_depth and args.long_depth and args.long_accs and args.long_lens and \
+            args.model_qc:
+        simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref_dir)
+
+    else:
+        quit_with_error('Options not compatible with either real or simulated reads')
+
+
+def get_args():
+    """
+    Specifies the command line arguments required by the script.
+    """
+    parser = argparse.ArgumentParser(description='Assembly tester')
+
+    # Used for both real and simulated reads.
+    parser.add_argument('--reference', type=str, required=True,
+                        help='The reference genome to shred and reassemble')
+    parser.add_argument('--threads', type=int, required=False, default=8,
+                        help='Number of CPU threads')
+    parser.add_argument('--subsample_count', type=int, required=False, default=4,
+                        help='Number of times to subsample long reads')
+
+    # Used for real reads:
+    parser.add_argument('--real_short_1', type=str,
+                        help='Real short reads, forward half of pair')
+    parser.add_argument('--real_short_2', type=str,
+                        help='Real short reads, second half of pair')
+    parser.add_argument('--real_long', type=str,
+                        help='Real long reads')
+
+    # Used for simulated reads.
+    parser.add_argument('--short_depth', type=float, default=50.0,
+                        help='Base read depth for fake short reads')
+    parser.add_argument('--long_depth', type=float, default=20.0,
+                        help='Base read depth for fake long reads')
+    parser.add_argument('--long_accs', type=str, default='75,90,60',
+                        help='Mean accuracies for long reads (comma delimited)')
+    parser.add_argument('--long_lens', type=str, default='10000,25000',
+                        help='Mean lengths for long reads (comma delimited)')
+    parser.add_argument('--model_qc', type=str, default='model_qc_clr',
+                        help='Model QC file for pbsim')
+    parser.add_argument('--rotation_count', type=int, default=20, required=False,
+                        help='The number of times to run read simulators with random start '
+                             'positions')
+
+    # Used to skip particular assemblers.
+    parser.add_argument('--no_cerulean', action='store_true',
+                        help='Skips Cerulean and ABySS assemblies')
+    parser.add_argument('--no_npscarf', action='store_true',
+                        help='Skips npScarf assemblies')
+    parser.add_argument('--no_spades', action='store_true',
+                        help='Skips SPAdes and hybridSPAdes assemblies')
+    parser.add_argument('--no_unicycler', action='store_true',
+                        help='Skips Unicycler assemblies')
+
+    args = parser.parse_args()
+    args.reference = os.path.abspath(args.reference)
+    args.model_qc = os.path.abspath(args.model_qc)
+    return args
+
+
+def real_reads(args, scaled_ref_length, quast_results, simple_quast_results):
+    """
+    Runs tests using real reads.
+    """
+    # Run ABySS, SPAdes and Unicycler on short read data alone.
+    args.long_acc, args.long_len = 0.0, 0
+    if not args.no_cerulean:
+        abyss_dir = run_abyss(args.real_short_1, args.real_short_2, args, quast_results,
+                              simple_quast_results)
+    else:
+        abyss_dir = None
+
+    if not args.no_spades:
+        spades_no_long_dir = run_regular_spades(args.real_short_1, args.real_short_2, args,
+                                                quast_results, simple_quast_results)
+    else:
+        spades_no_long_dir = None
+
+    if not args.no_unicycler:
+        unicycler_no_long_dir = run_unicycler(args, args.real_short_1, args.real_short_2, None,
+                                              None, 0, 0.0, quast_results, simple_quast_results,
+                                              'low')
+        run_unicycler(args, args.real_short_1, args.real_short_2, None, None, 0, 0.0, quast_results,
+                      simple_quast_results, 'medium', unicycler_no_long_dir)
+        run_unicycler(args, args.real_short_1, args.real_short_2, None, None, 0, 0.0, quast_results,
+                      simple_quast_results, 'high', unicycler_no_long_dir)
+    else:
+        unicycler_no_long_dir = None
+
+    long_reads = load_fastq(args.real_long, '')
+    long_read_count = len(long_reads)
+    long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
+
+    # Run Unicycler on the full set of long reads - will be the source of alignments for
+    # subsampled Unicycler runs.
+    if not args.no_unicycler:
+        unicycler_all_long_dir = run_unicycler(args, args.real_short_1, args.real_short_2,
+                                               long_reads, args.real_long, long_read_count,
+                                               long_read_depth, quast_results,
+                                               simple_quast_results, 'low', unicycler_no_long_dir)
+        run_unicycler(args, args.real_short_1, args.real_short_2, long_reads, args.real_long,
+                      long_read_count, long_read_depth, quast_results, simple_quast_results,
+                      'medium', unicycler_no_long_dir, unicycler_all_long_dir)
+        run_unicycler(args, args.real_short_1, args.real_short_2, long_reads, args.real_long,
+                      long_read_count, long_read_depth, quast_results, simple_quast_results,
+                      'high', unicycler_no_long_dir, unicycler_all_long_dir)
+
+    else:
+        unicycler_all_long_dir = None
+
+    # Run hybridSPAdes on the full set of long reads.
+    if not args.no_spades:
+        run_hybrid_spades(args.real_short_1, args.real_short_2, args.real_long, long_read_count,
+                          long_read_depth, args, quast_results, simple_quast_results,
+                          spades_no_long_dir)
+
+    # Run npScarf on the full set of long reads - will be the source of alignments for
+    # subsampled npScarf runs.
+    if not args.no_npscarf:
+        np_scarf_all_long_dir = run_np_scarf(args.real_long, long_reads, long_read_count,
+                                             long_read_depth, args, quast_results,
+                                             simple_quast_results, spades_no_long_dir)
+    else:
+        np_scarf_all_long_dir = None
+
+    # Run Cerulean on the full set of long reads - will be the source of alignments for
+    # subsampled Cerulean runs.
+    if not args.no_cerulean:
+        cerulean_all_long_dir = run_cerulean(args.real_long, long_reads, long_read_count,
+                                             long_read_depth, args, quast_results,
+                                             simple_quast_results, abyss_dir)
+    else:
+        cerulean_all_long_dir = None
+
+    # The program runs indefinitely, always running more tests until the user kills it.
+    while True:
+        # Randomly subsample this read set.
+        subsampled_counts = subsample(long_read_count, args.subsample_count)
+        for subsampled_count in subsampled_counts:
+
+            # Subsample the long reads.
+            subsampled_reads = random.sample(long_reads, subsampled_count)
+            subsampled_long_read_depth = get_long_read_depth(subsampled_reads, scaled_ref_length)
+            subsampled_filename = 'long_subsampled_' + str(args.long_acc) + '_' + \
+                                  str(args.long_len) + '_' + str(subsampled_count)
+            subsampled_filename = subsampled_filename.replace('.', '_')
+            subsampled_filename = os.path.abspath(subsampled_filename + '.fastq')
+
+            print('\nSubsampling to', subsampled_count, 'reads')
+            save_long_reads_to_fastq(subsampled_reads, subsampled_filename)
+            try:
+                subprocess.check_output(['gzip', subsampled_filename], stderr=subprocess.STDOUT)
+            except subprocess.CalledProcessError as e:
+                quit_with_error('gzip encountered an error:\n' + e.output.decode())
+            subsampled_filename += '.gz'
+
+            # Run Unicycler on the subsampled long reads. This should be relatively fast,
+            # because we can skip the short read assembly and the alignment. The bridging and
+            # polishing steps can still take a while, though.
+            if not args.no_unicycler:
+                run_unicycler(args, args.real_short_1, args.real_short_2, subsampled_reads,
+                              subsampled_filename,
+                              subsampled_count, subsampled_long_read_depth, quast_results,
+                              simple_quast_results, 'low', unicycler_all_long_dir)
+                run_unicycler(args, args.real_short_1, args.real_short_2, subsampled_reads,
+                              subsampled_filename, subsampled_count, subsampled_long_read_depth,
+                              quast_results, simple_quast_results, 'medium', unicycler_all_long_dir)
+                run_unicycler(args, args.real_short_1, args.real_short_2, subsampled_reads,
+                              subsampled_filename, subsampled_count, subsampled_long_read_depth,
+                              quast_results, simple_quast_results, 'high', unicycler_all_long_dir)
+
+            # Run hybridSPAdes on the subsampled long reads.
+            if not args.no_spades:
+                run_hybrid_spades(args.real_short_1, args.real_short_2, subsampled_filename,
+                                  subsampled_count, subsampled_long_read_depth, args, quast_results,
+                                  simple_quast_results, spades_no_long_dir)
+
+            # Run npScarf on the subsampled long reads. This is very fast because we can skip
+            # the alignment step.
+            if not args.no_npscarf:
+                run_np_scarf(subsampled_filename, subsampled_reads, subsampled_count,
+                             subsampled_long_read_depth, args, quast_results,
+                             simple_quast_results, spades_no_long_dir,
+                             np_scarf_all_long_dir=np_scarf_all_long_dir)
+
+            # Run Cerulean on the subsampled long reads. The BLASR alignments can be subsampled
+            # from the full long read run, which saves some time.
+            if not args.no_cerulean:
+                run_cerulean(subsampled_filename, subsampled_reads, subsampled_count,
+                             subsampled_long_read_depth, args, quast_results,
+                             simple_quast_results, abyss_dir,
+                             cerulean_all_long_dir=cerulean_all_long_dir)
+
+
+def simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results,
+                    ref_dir):
+    """
+    Runs tests using fake reads.
+    """
+    # Set up each read accuracy-length combination.
+    accuracies = [float(x) for x in args.long_accs.split(',')]
+    lengths = [int(x) for x in args.long_lens.split(',')]
+    accuracies_and_lengths = []
+    for accuracy in accuracies:
+        accuracies_and_lengths += [(accuracy, length) for length in lengths]
+    print('Simulating long reads with these accuracy and length combinations:')
+    for accuracy, length in accuracies_and_lengths:
+        print(str(accuracy) + '%, ' + str(length) + ' bp')
 
     # The program runs indefinitely, always running more tests until the user kills it.
     dir_num = 1
@@ -136,7 +320,7 @@ def main():
             if not args.no_cerulean:
                 cerulean_all_long_dir = run_cerulean(long_filename, long_reads, long_read_count,
                                                      long_read_depth, args, quast_results,
-                                                     simple_quast_results, abyss_dir, i)
+                                                     simple_quast_results, abyss_dir)
             else:
                 cerulean_all_long_dir = None
 
@@ -196,46 +380,6 @@ def main():
                                  subsampled_long_read_depth, args, quast_results,
                                  simple_quast_results, abyss_dir,
                                  cerulean_all_long_dir=cerulean_all_long_dir)
-
-
-def get_args():
-    """
-    Specifies the command line arguments required by the script.
-    """
-    parser = argparse.ArgumentParser(description='Assembly tester')
-    parser.add_argument('--reference', type=str, required=True,
-                        help='The reference genome to shred and reassemble')
-    parser.add_argument('--short_depth', type=float, default=50.0,
-                        help='Base read depth for fake short reads')
-    parser.add_argument('--long_depth', type=float, default=20.0,
-                        help='Base read depth for fake long reads')
-    parser.add_argument('--long_accs', type=str, default='75,90,60',
-                        help='Mean accuracies for long reads (comma delimited)')
-    parser.add_argument('--long_lens', type=str, default='10000,25000',
-                        help='Mean lengths for long reads (comma delimited)')
-    parser.add_argument('--model_qc', type=str, default='model_qc_clr',
-                        help='Model QC file for pbsim')
-    parser.add_argument('--rotation_count', type=int, default=20, required=False,
-                        help='The number of times to run read simulators with random start '
-                             'positions')
-    parser.add_argument('--threads', type=int, required=False, default=8,
-                        help='Number of CPU threads')
-    parser.add_argument('--subsample_count', type=int, required=False, default=4,
-                        help='Number of times to subsample long reads')
-    parser.add_argument('--no_cerulean', action='store_true',
-                        help='Skips Cerulean and ABySS assemblies')
-    parser.add_argument('--no_npscarf', action='store_true',
-                        help='Skips npScarf assemblies')
-    parser.add_argument('--no_spades', action='store_true',
-                        help='Skips SPAdes and hybridSPAdes assemblies')
-    parser.add_argument('--no_unicycler', action='store_true',
-                        help='Skips Unicycler assemblies')
-    # parser.add_argument('--time', type=str, help='Path to gnu-time')
-
-    args = parser.parse_args()
-    args.reference = os.path.abspath(args.reference)
-    args.model_qc = os.path.abspath(args.model_qc)
-    return args
 
 
 class AssemblyError(Exception):
@@ -535,19 +679,27 @@ def run_pbsim(input_fasta, depth, args, read_prefix, seq_length):
     except subprocess.CalledProcessError as e:
         quit_with_error('pbsim encountered an error:\n' + e.output.decode())
 
-    reads = []
-    with open('sd_0001.fastq', 'rt') as fastq:
-        for line in fastq:
-            name = '@' + read_prefix + '_' + line.strip().split('_')[1]
-            sequence = next(fastq).strip()
-            _ = next(fastq)
-            qualities = next(fastq).strip()
-            reads.append((name, sequence, '+', qualities))
-
+    reads = load_fastq('sd_0001.fastq', read_prefix)
     os.remove('sd_0001.fastq')
     os.remove('sd_0001.maf')
     os.remove('sd_0001.ref')
 
+    return reads
+
+
+def load_fastq(fastq_filename, read_prefix):
+    reads = []
+    if read_prefix:
+        read_prefix += '_'
+    else:
+        read_prefix = ''
+    with open(fastq_filename, 'rt') as fastq:
+        for line in fastq:
+            name = '@' + read_prefix + line.strip().split('_')[1]
+            sequence = next(fastq).strip()
+            _ = next(fastq)
+            qualities = next(fastq).strip()
+            reads.append((name, sequence, '+', qualities))
     return reads
 
 
@@ -1425,6 +1577,32 @@ def fastq_to_fasta(fastq_filename, fasta_filename):
 #         if b'Maximum resident set size' in line:
 #             max_mem = int(line.split(b': ')[1])
 #     return output, max_mem
+
+
+def set_up_env_var():
+    """
+    Set up environment variables for Cerulean and PBJelly.
+    """
+    if os.path.isdir('/Users/Ryan/Applications/PBSuite_15.8.24'):
+        local_pb_path = '/Users/Ryan/Applications/PBSuite_15.8.24'
+    else:
+        local_pb_path = '/vlsci/SG0006/rwick/PBSuite_15.8.24'
+    if os.path.isdir('/Users/Ryan/Applications/Cerulean/src'):
+        local_cerulean_path = '/Users/Ryan/Applications/Cerulean/src'
+    else:
+        local_cerulean_path = '/vlsci/SG0006/rwick/Cerulean/src'
+    if 'SWEETPATH' not in os.environ:
+        os.environ['SWEETPATH'] = local_pb_path
+    if 'PYTHONPATH' not in os.environ:
+        os.environ['PYTHONPATH'] = local_pb_path
+    elif 'PBSuite' not in os.environ['PYTHONPATH']:
+        os.environ['PYTHONPATH'] += ':' + local_pb_path
+    if 'PBSuite' not in os.environ['PATH']:
+        os.environ['PATH'] += ':' + os.environ['SWEETPATH'] + '/bin/'
+    if 'JELLYPATH' not in os.environ:
+        os.environ['JELLYPATH'] = local_pb_path
+    if 'CERULEANPATH' not in os.environ:
+        os.environ['CERULEANPATH'] = local_cerulean_path
 
 
 if __name__ == '__main__':

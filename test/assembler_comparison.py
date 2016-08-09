@@ -17,6 +17,7 @@ import argparse
 import sys
 import time
 import shutil
+import gzip
 
 
 def main():
@@ -25,7 +26,7 @@ def main():
 
     scaled_ref_length = get_scaled_ref_length(args)
     ref_name = get_reference_name_from_filename(args.reference)
-    quast_results, simple_quast_results = create_quast_results_tables()
+    quast_results, simple_quast_results = create_quast_results_tables(args)
 
     # Make a directory for this ref, if necessary.
     ref_dir = os.path.abspath(ref_name)
@@ -34,7 +35,7 @@ def main():
     os.chdir(ref_dir)
 
     if args.real_short_1 and args.real_short_2 and args.real_long:
-        real_reads(args, scaled_ref_length, quast_results, simple_quast_results)
+        real_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref_dir)
 
     elif args.short_depth and args.long_depth and args.long_accs and args.long_lens and \
             args.model_qc:
@@ -65,6 +66,8 @@ def get_args():
                         help='Real short reads, second half of pair')
     parser.add_argument('--real_long', type=str,
                         help='Real long reads')
+    parser.add_argument('--max_subsample_depth', type=float, default=100.0,
+                        help='When subsampling real reads, stay below this depth')
 
     # Used for simulated reads.
     parser.add_argument('--short_depth', type=float, default=50.0,
@@ -92,22 +95,38 @@ def get_args():
                         help='Skips Unicycler assemblies')
 
     args = parser.parse_args()
-    args.reference = os.path.abspath(args.reference)
-    args.model_qc = os.path.abspath(args.model_qc)
+    if args.reference:
+        args.reference = os.path.abspath(args.reference)
+    if args.real_short_1:
+        args.real_short_1 = os.path.abspath(args.real_short_1)
+    if args.real_short_2:
+        args.real_short_2 = os.path.abspath(args.real_short_2)
+    if args.real_long:
+        args.real_long = os.path.abspath(args.real_long)
+    if args.model_qc:
+        args.model_qc = os.path.abspath(args.model_qc)
     return args
 
 
-def real_reads(args, scaled_ref_length, quast_results, simple_quast_results):
+def real_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref_dir):
     """
     Runs tests using real reads.
     """
-    abyss_dir, spades_no_long_dir, unicycler_no_long_dir = \
-        assemble_short_reads_only(args, args.real_short_1, args.real_short_2, quast_results,
-                                  simple_quast_results)
-
     long_reads = load_fastq(args.real_long, '')
     long_read_count = len(long_reads)
     long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
+    max_subsample_depth_count = int(long_read_count * args.max_subsample_depth / long_read_depth)
+    full_count = min(long_read_count, max_subsample_depth_count)
+
+    # Create and move into a directory for this iteration.
+    dir_name, dir_num = get_next_available_set_number(ref_dir, 1)
+    iter_dir = os.path.join(ref_dir, dir_name)
+    print('\nChanging to new directory:', iter_dir)
+    os.chdir(iter_dir)
+
+    abyss_dir, spades_no_long_dir, unicycler_no_long_dir = \
+        assemble_short_reads_only(args, args.real_short_1, args.real_short_2, quast_results,
+                                  simple_quast_results)
 
     unicycler_all_long_dir, np_scarf_all_long_dir, cerulean_all_long_dir = \
         assemble_all_long_reads(args, args.real_short_1, args.real_short_2, long_reads,
@@ -118,11 +137,11 @@ def real_reads(args, scaled_ref_length, quast_results, simple_quast_results):
     # The program runs indefinitely, always running more tests until the user kills it.
     while True:
         # Randomly subsample this read set.
-        subsampled_counts = subsample(long_read_count, args.subsample_count)
+        subsampled_counts = subsample(full_count, args.subsample_count)
         for subsampled_count in subsampled_counts:
 
             subsampled_reads, subsampled_filename, subsampled_long_read_depth = \
-                subsample_long_reads(args, long_reads, subsampled_count, scaled_ref_length)
+                subsample_long_reads(args, long_reads, subsampled_count, scaled_ref_length, False)
 
             assemble_subsampled_long_reads(args, args.real_short_1, args.real_short_2,
                                            subsampled_reads, subsampled_filename, subsampled_count,
@@ -180,7 +199,8 @@ def simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results
             for subsampled_count in subsampled_counts:
 
                 subsampled_reads, subsampled_filename, subsampled_long_read_depth = \
-                    subsample_long_reads(args, long_reads, subsampled_count, scaled_ref_length)
+                    subsample_long_reads(args, long_reads, subsampled_count, scaled_ref_length,
+                                         True)
 
                 assemble_subsampled_long_reads(args, short_1, short_2, subsampled_reads,
                                                subsampled_filename, subsampled_count,
@@ -224,11 +244,9 @@ def assemble_all_long_reads(args, short_1, short_2, long_reads, long_filename, l
     # Run Unicycler on the full set of long reads - will be the source of alignments for
     # subsampled Unicycler runs.
     if not args.no_unicycler:
-        unicycler_all_long_dir = run_unicycler(args, short_1, short_2, long_reads,
-                                               long_filename, long_read_count,
-                                               long_read_depth, quast_results,
-                                               simple_quast_results, 'low',
-                                               unicycler_no_long_dir)
+        unicycler_all_long_dir = run_unicycler(args, short_1, short_2, long_reads, long_filename,
+                                               long_read_count, long_read_depth, quast_results,
+                                               simple_quast_results, 'low', unicycler_no_long_dir)
         run_unicycler(args, short_1, short_2, long_reads, long_filename, long_read_count,
                       long_read_depth, quast_results, simple_quast_results, 'medium',
                       unicycler_no_long_dir, unicycler_all_long_dir)
@@ -307,24 +325,37 @@ def assemble_subsampled_long_reads(args, short_1, short_2, subsampled_reads, sub
                      cerulean_all_long_dir=cerulean_all_long_dir)
 
 
-def subsample_long_reads(args, long_reads, subsampled_count, scaled_ref_length):
+def subsample_long_reads(args, long_reads, subsampled_count, scaled_ref_length, include_acc_len):
     subsampled_reads = random.sample(long_reads, subsampled_count)
     subsampled_long_read_depth = get_long_read_depth(subsampled_reads,
                                                      scaled_ref_length)
-    subsampled_filename = 'long_subsampled_' + str(args.long_acc) + '_' + \
-                          str(args.long_len) + '_' + str(subsampled_count)
+    if include_acc_len:
+        subsampled_filename = 'long_subsampled_' + str(args.long_acc) + '_' + \
+                              str(args.long_len) + '_' + str(subsampled_count)
+    else:
+        subsampled_filename = 'long_subsampled_' + str(subsampled_count)
     subsampled_filename = subsampled_filename.replace('.', '_')
-    subsampled_filename = os.path.abspath(subsampled_filename + '.fastq')
+    file_index = 1
+    while True:
+        if file_index == 1:
+            full_subsampled_filename = os.path.abspath(subsampled_filename + '.fastq')
+        else:
+            full_subsampled_filename = os.path.abspath(subsampled_filename + '_' +
+                                                       str(file_index) + '.fastq')
+        if not os.path.isfile(full_subsampled_filename + '.gz'):
+            break
+        else:
+            file_index += 1
 
     print('\nSubsampling to', subsampled_count, 'reads')
-    save_long_reads_to_fastq(subsampled_reads, subsampled_filename)
+    save_long_reads_to_fastq(subsampled_reads, full_subsampled_filename)
     try:
-        subprocess.check_output(['gzip', subsampled_filename], stderr=subprocess.STDOUT)
+        subprocess.check_output(['gzip', full_subsampled_filename], stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as e:
         quit_with_error('gzip encountered an error:\n' + e.output.decode())
-    subsampled_filename += '.gz'
+    full_subsampled_filename += '.gz'
 
-    return subsampled_reads, subsampled_filename, subsampled_long_read_depth
+    return subsampled_reads, full_subsampled_filename, subsampled_long_read_depth
 
 
 class AssemblyError(Exception):
@@ -632,15 +663,42 @@ def run_pbsim(input_fasta, depth, args, read_prefix, seq_length):
     return reads
 
 
+def get_compression_type(filename):
+    """
+    Attempts to guess the compression (if any) on a file using the first few bytes.
+    http://stackoverflow.com/questions/13044562
+    """
+    magic_dict = {'gz': (b'\x1f', b'\x8b', b'\x08'),
+                  'bz2': (b'\x42', b'\x5a', b'\x68'),
+                  'zip': (b'\x50', b'\x4b', b'\x03', b'\x04')}
+    max_len = max(len(x) for x in magic_dict)
+
+    unknown_file = open(filename, 'rb')
+    file_start = unknown_file.read(max_len)
+    unknown_file.close()
+    compression_type = 'plain'
+    for filetype, magic_bytes in magic_dict.items():
+        if file_start.startswith(magic_bytes):
+            compression_type = filetype
+    if compression_type == 'bz2':
+        quit_with_error('cannot use bzip2 format - use gzip instead')
+    if compression_type == 'zip':
+        quit_with_error('cannot use zip format - use gzip instead')
+    return compression_type
+
+
 def load_fastq(fastq_filename, read_prefix):
+    if get_compression_type(fastq_filename) == 'gz':
+        open_func = gzip.open
+    else:  # plain text
+        open_func = open
     reads = []
-    if read_prefix:
-        read_prefix += '_'
-    else:
-        read_prefix = ''
-    with open(fastq_filename, 'rt') as fastq:
+    with open_func(fastq_filename, 'rt') as fastq:
         for line in fastq:
-            name = '@' + read_prefix + line.strip().split('_')[1]
+            name = line.strip()[1:]
+            if read_prefix:
+                name = read_prefix + '_' + name
+            name = '@' + name
             sequence = next(fastq).strip()
             _ = next(fastq)
             qualities = next(fastq).strip()
@@ -1080,8 +1138,7 @@ def run_unicycler(args, short_1, short_2, long_reads, long_read_filename, long_r
             os.makedirs(read_align_dir)
         create_subsampled_sam(os.path.join(unicycler_all_long_dir, 'read_alignment_temp',
                                            'long_read_alignments.sam'),
-                              os.path.join(read_align_dir, 'long_read_alignments.sam'),
-                              long_reads)
+                              os.path.join(read_align_dir, 'long_read_alignments.sam'), long_reads)
 
     unicycler_start_time = time.time()
     print('\nRunning', run_name, flush=True)
@@ -1098,7 +1155,8 @@ def run_unicycler(args, short_1, short_2, long_reads, long_read_filename, long_r
                           '--confidence', confidence,
                           '--keep_temp', '1',
                           '--threads', str(args.threads),
-                          '--verbosity', '2']
+                          '--verbosity', '2',
+                          '--no_rotate']
     print(' '.join(unicycler_command), flush=True)
     try:
         unicycler_out = subprocess.check_output(unicycler_command, stderr=subprocess.STDOUT)
@@ -1150,17 +1208,20 @@ def run_unicycler(args, short_1, short_2, long_reads, long_read_filename, long_r
 #     return os.path.abspath(canu_dir)
 
 
-def create_quast_results_tables():
+def create_quast_results_tables(args):
     quast_results_filename = 'quast_results.tsv'
     simple_quast_results_filename = 'quast_results_simple.tsv'
 
     if not os.path.isfile(simple_quast_results_filename):
         simple_quast_results = open(simple_quast_results_filename, 'w')
         simple_quast_results.write("Reference name\t"
-                                   "Assembler\t"
-                                   "Long read accuracy (%)\t"
-                                   "Long read mean length (bp)\t"
-                                   "Long read depth\t"
+                                   "Assembler\t")
+        if args.real_long:
+            simple_quast_results.write("Long read filename\t")
+        else:
+            simple_quast_results.write("Long read accuracy (%)\t"
+                                       "Long read mean length (bp)\t")
+        simple_quast_results.write("Long read depth\t"
                                    "Run time (seconds)\t"
                                    "Completeness (%)\t"
                                    "# misassemblies\t"
@@ -1173,10 +1234,13 @@ def create_quast_results_tables():
         quast_results.write("Reference name\t"
                             "Reference size (bp)\t"
                             "Reference pieces\t"
-                            "Assembler\t"
-                            "Long read accuracy (%)\t"
-                            "Long read mean length (bp)\t"
-                            "Long read depth\t"
+                            "Assembler\t")
+        if args.real_long:
+            quast_results.write("Long read filename\t")
+        else:
+            quast_results.write("Long read accuracy (%)\t"
+                                "Long read mean length (bp)\t")
+        quast_results.write("Long read depth\t"
                             "Long read count\t"
                             "Run time (seconds)\t"
                             "# contigs (>= 0 bp)\t"
@@ -1241,11 +1305,19 @@ def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler
     long_read_len = str(args.long_len) if long_read_count > 0 else ''
 
     ref_length, ref_count = get_fasta_length_and_seq_count(args.reference)
-    quast_line = [reference_name, str(ref_length), str(ref_count), assembler_name,
-                  long_read_acc, long_read_len, float_to_str(long_read_depth, 5),
-                  str(long_read_count), str(run_time)]
-    simple_quast_line = [reference_name, assembler_name, long_read_acc, long_read_len,
-                         float_to_str(long_read_depth, 5), str(run_time)]
+    quast_line = [reference_name, str(ref_length), str(ref_count), assembler_name]
+    if args.real_long:
+        quast_line.append(args.real_long)
+    else:
+        quast_line += [long_read_acc, long_read_len]
+    quast_line += [float_to_str(long_read_depth, 5), str(long_read_count), str(run_time)]
+
+    simple_quast_line = [reference_name, assembler_name]
+    if args.real_long:
+        simple_quast_line.append(args.real_long)
+    else:
+        simple_quast_line += [long_read_acc, long_read_len]
+    simple_quast_line += [float_to_str(long_read_depth, 5), str(run_time)]
 
     if assembly is None:
         print('\nSkipping QUAST for', run_name, flush=True)
@@ -1376,7 +1448,7 @@ def get_run_name_and_run_dir_name(assembler_name, reference, long_read_depth, ar
     read_depth = '{:0>5.2f}'.format(long_read_depth)
     run_name = ref_name + ', ' + assembler_name
     run_dir_name = assembler_name
-    if long_read_depth > 0.0:
+    if long_read_depth > 0.0 and not args.real_long:
         run_name += ', ' + read_accuracy + '%, ' + read_length + ' bp'
         run_dir_name += '_' + read_accuracy + '_' + read_length
     run_name += ', ' + read_depth + 'x'

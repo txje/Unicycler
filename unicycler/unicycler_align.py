@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Antpath - a sensitive semi-global long read aligner
+Unicycler align - a sensitive semi-global long read aligner
 
 This is a script to align error-prone long reads (e.g. PacBio or Nanopore) to one or more
 references in a semi-global manner. Semi-global alignment does not penalise end gaps, but the
@@ -32,6 +32,7 @@ import os
 import argparse
 import time
 import random
+import shutil
 from multiprocessing.dummy import Pool as ThreadPool
 from multiprocessing import cpu_count
 import threading
@@ -97,8 +98,11 @@ def get_arguments():
     """
     Specifies the command line arguments required by the script.
     """
-    parser = argparse.ArgumentParser(description='Antpath - a sensitive semi-global long read '
-                                                 'aligner',
+    terminal_width = shutil.get_terminal_size().columns
+    os.environ['COLUMNS'] = str(terminal_width)
+
+    parser = argparse.ArgumentParser(description='Unicycler align - a sensitive semi-global long '
+                                                 'read aligner',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--ref', type=str, required=True, default=argparse.SUPPRESS,

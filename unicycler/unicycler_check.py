@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Scrutinate - a long read assembly checker
+Unicycler check - a long read assembly error checker
 
 Author: Ryan Wick
 email: rrwick@gmail.com
@@ -13,6 +13,7 @@ import os
 import string
 import argparse
 import random
+import shutil
 from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
     get_nice_header, reverse_complement, print_progress_line, print_section_header
 from .read_ref import load_references, load_long_reads
@@ -91,6 +92,9 @@ def get_arguments():
     """
     Specifies the command line arguments required by the script.
     """
+    terminal_width = shutil.get_terminal_size().columns
+    os.environ['COLUMNS'] = str(terminal_width)
+
     parser = argparse.ArgumentParser(description='Long read assembly checker',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 

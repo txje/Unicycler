@@ -1361,12 +1361,28 @@ class AssemblyGraph(object):
             if i == 0:
                 path_sequence = seg_sequence
             else:
-                assert seg_num in self.forward_links[prev_segment_number]
+                assert seg_num in self.forward_links[prev_segment_number], \
+                    'link missing for ' + str(seg_num) + ' in path' + \
+                    ','.join(path_segments)
                 if self.overlap > 0:
-                    assert path_sequence[-self.overlap:] == seg_sequence[:self.overlap]
+                    assert path_sequence[-self.overlap:] == seg_sequence[:self.overlap], \
+                        'overlaps do not match when merging ' + str(seg_num) + ' in path' + \
+                        ','.join(path_segments)
                 path_sequence += seg_sequence[self.overlap:]
             prev_segment_number = seg_num
         return path_sequence
+
+    def get_bridge_path_sequence(self, path_segments, start_seg):
+        """
+        This function behaves like get_path_sequence but also handles the case where there are no
+        segments in the path (i.e. the bridge is a direct connection between two segments. In that
+        case we don't want to return an empty sequence, but rather the overlap between the two
+        segments.
+        """
+        if path_segments:
+            return self.get_path_sequence(path_segments)
+        else:
+            return self.seq_from_signed_seg_num(start_seg)[-self.overlap:]
 
     def apply_bridges(self, bridges, verbosity, min_bridge_qual, unbridged_graph):
         """
@@ -1829,6 +1845,16 @@ class AssemblyGraph(object):
             return path_length
         except KeyError:
             return 0
+
+    def get_bridge_path_length(self, path):
+        """
+        Like get_path_length, but if the path is empty it returns the graph overlap size (for a
+        direct connection).
+        """
+        if not path:
+            return self.overlap
+        else:
+            return self.get_path_length(path)
 
     def renumber_segments(self):
         """

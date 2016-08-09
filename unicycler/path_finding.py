@@ -46,12 +46,12 @@ def get_best_paths_for_seq(graph, start_seg, end_seg, target_length, sequence, s
                                       sequence, scoring_scheme, expected_scaled_score)
 
     # Sort by length discrepancy from the target so the closest length matches come first.
-    paths = sorted(paths, key=lambda x: abs(target_length - graph.get_path_length(x)))
+    paths = sorted(paths, key=lambda x: abs(target_length - graph.get_bridge_path_length(x)))
 
     # We now align the consensus to each of the possible paths.
     paths_and_scores = []
     for path in paths:
-        path_len = graph.get_path_length(path)
+        path_len = graph.get_bridge_path_length(path)
         length_discrepancy = abs(path_len - target_length)
 
         # If there is a consensus sequence, then we actually do an alignment against the path.

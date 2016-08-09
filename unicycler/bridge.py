@@ -61,13 +61,9 @@ class SpadesContigBridge(object):
         self.end_segment = self.graph_path.pop()
 
         # If there are segments in between the start and end (there usually will be), then they
-        # give the bridge sequence. If not (i.e. if the start and end directly connect),
+        # provide the bridge sequence. If not (i.e. if the start and end directly connect),
         # then the bridge sequence is just the overlapping sequence between them.
-        if self.graph_path:
-            self.bridge_sequence = graph.get_path_sequence(self.graph_path)
-        else:
-            overlap_seq = graph.seq_from_signed_seg_num(self.start_segment)[-graph.overlap:]
-            self.bridge_sequence = overlap_seq
+        self.bridge_sequence = graph.get_bridge_path_sequence(self.graph_path, self.start_segment)
 
         # The start segment and end segment should agree in depth. If they don't, that's very bad,
         # so depth_disagreement is applied to quality twice (squared effect).
@@ -382,17 +378,17 @@ class LongReadBridge(object):
             output += '  best path:                 '
             if self.all_paths[0][0]:
                 output += ', '.join(str(x) for x in self.all_paths[0][0])
-                best_path_len = self.graph.get_path_length(self.all_paths[0][0])
             else:
                 output += 'direct connection'
-                best_path_len = 0
+            best_path_len = self.graph.get_bridge_path_length(self.all_paths[0][0])
             output += ' (' + int_to_str(best_path_len) + ' bp, '
             output += 'raw score = ' + float_to_str(self.all_paths[0][1], 1) + ', '
             output += 'scaled score = ' + float_to_str(self.all_paths[0][3], 2) + ', '
             output += 'length discrepancy = ' + int_to_str(self.all_paths[0][2]) + ' bp)\n'
 
             self.graph_path = self.all_paths[0][0]
-            self.bridge_sequence = self.graph.get_path_sequence(self.graph_path)
+            self.bridge_sequence = self.graph.get_bridge_path_sequence(self.graph_path,
+                                                                       self.start_segment)
             self.path_support = True
 
             # We start this bridge's quality using a function that takes into account the
@@ -583,7 +579,7 @@ class LongReadBridge(object):
         It has to balance the path quality with the path availability to make a choice.
         """
         best_path = self.all_paths[0][0]
-        best_sequence = unbridged_graph.get_path_sequence(best_path)
+        best_sequence = unbridged_graph.get_bridge_path_sequence(best_path, self.start_segment)
         best_scaled_score = self.all_paths[0][3]
         best_availability = graph.get_path_availability(best_path)
         for i in range(1, len(self.all_paths)):
@@ -610,7 +606,8 @@ class LongReadBridge(object):
             # availability), then it becomes the new best.
             if relative_score * relative_availability > 1.0:
                 best_path = potential_path
-                best_sequence = unbridged_graph.get_path_sequence(potential_path)
+                best_sequence = unbridged_graph.get_bridge_path_sequence(potential_path,
+                                                                         self.start_segment)
                 best_scaled_score = potential_scaled_score
                 best_availability = potential_availability
 
@@ -715,7 +712,7 @@ class LoopUnrollingBridge(object):
         self.graph_path = [repeat]
         for _ in range(loop_count):
             self.graph_path += [middle, repeat]
-        self.bridge_sequence = graph.get_path_sequence(self.graph_path)
+        self.bridge_sequence = graph.get_bridge_path_sequence(self.graph_path, self.start_segment)
 
         # We finalise the quality to a range of 0 to 100. We also use the sqrt function to pull
         # the scores up a bit (otherwise they tend to hang near the bottom of the range).

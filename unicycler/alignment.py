@@ -84,7 +84,6 @@ class Alignment(object):
         # Alignment details
         self.alignment_type = None
         self.rev_comp = None
-        self.cigar = None
         self.cigar_parts = None
         self.match_count = None
         self.mismatch_count = None
@@ -116,8 +115,7 @@ class Alignment(object):
         assert len(seqan_parts) >= 10
 
         self.rev_comp = (seqan_parts[1] == '-')
-        self.cigar = seqan_parts[9]
-        self.cigar_parts = re.findall(r'\d+\w', self.cigar)
+        self.cigar_parts = re.findall(r'\d+\w', seqan_parts[9])
         self.milliseconds = int(seqan_parts[8])
 
         self.read = read
@@ -135,10 +133,9 @@ class Alignment(object):
         This function sets up the Alignment using a SAM line.
         """
         self.alignment_type = 'SAM'
-        sam_parts = sam_line.split('\t')
+        sam_parts = sam_line.split('\t', 6)
         self.rev_comp = bool(int(sam_parts[1]) & 0x10)
-        self.cigar = sam_parts[5]
-        self.cigar_parts = re.findall(r'\d+\w', self.cigar)
+        self.cigar_parts = re.findall(r'\d+\w', sam_parts[5])
 
         self.read = read_dict[sam_parts[0]]
         self.read_start_pos = self.get_start_soft_clips()
@@ -242,11 +239,12 @@ class Alignment(object):
         if verbosity > 3:
             print()
             print(self)
-            if len(self.cigar) > 20:
-                print('   ', self.cigar[:20] + '...')
+            cigar = ''.join(self.cigar_parts)
+            if len(cigar) > 20:
+                print('   ', cigar[:20] + '...')
             else:
-                print('   ', self.cigar[:20])
-            cigar_length_before = len(self.cigar)
+                print('   ', cigar[:20])
+            cigar_length_before = len(cigar)
 
         # We will try the start extension a few times, if necessary, with increasing margin sizes.
         # The first try should usually be sufficient.
@@ -295,18 +293,18 @@ class Alignment(object):
             new_cigar_parts = new_cigar_parts[:-1] + [merged_part]
             old_cigar_parts = old_cigar_parts[1:]
         self.cigar_parts = new_cigar_parts + old_cigar_parts
-        self.cigar = ''.join(self.cigar_parts)
 
         self.tally_up_score_and_errors(scoring_scheme)
 
         if verbosity > 3:
-            cigar_length_increase = len(self.cigar) - cigar_length_before
+            cigar = ''.join(self.cigar_parts)
+            cigar_length_increase = len(cigar) - cigar_length_before
             cigar_size_to_print = 20 + cigar_length_increase
             print(self)
-            if len(self.cigar) > cigar_size_to_print:
-                print('   ', self.cigar[:cigar_size_to_print] + '...')
+            if len(cigar) > cigar_size_to_print:
+                print('   ', cigar[:cigar_size_to_print] + '...')
             else:
-                print('   ', self.cigar[:cigar_size_to_print])
+                print('   ', cigar[:cigar_size_to_print])
 
     def extend_end(self, scoring_scheme, verbosity):
         """
@@ -315,11 +313,12 @@ class Alignment(object):
         if verbosity > 3:
             print()
             print(self)
-            if len(self.cigar) > 20:
-                print('    ...' + self.cigar[-20:])
+            cigar = ''.join(self.cigar_parts)
+            if len(cigar) > 20:
+                print('    ...' + cigar[-20:])
             else:
-                print('       ' + self.cigar[-20:])
-            cigar_length_before = len(self.cigar)
+                print('       ' + cigar[-20:])
+            cigar_length_before = len(cigar)
 
         # We will try the end extension a few times, if necessary, with increasing margin sizes.
         # The first try should usually be sufficient.
@@ -370,18 +369,18 @@ class Alignment(object):
             old_cigar_parts = old_cigar_parts[:-1] + [merged_part]
             new_cigar_parts = new_cigar_parts[1:]
         self.cigar_parts = old_cigar_parts + new_cigar_parts
-        self.cigar = ''.join(self.cigar_parts)
 
         self.tally_up_score_and_errors(scoring_scheme)
 
         if verbosity > 3:
-            cigar_length_increase = len(self.cigar) - cigar_length_before
+            cigar = ''.join(self.cigar_parts)
+            cigar_length_increase = len(cigar) - cigar_length_before
             cigar_size_to_print = 20 + cigar_length_increase
             print(self)
-            if len(self.cigar) > cigar_size_to_print:
-                print('    ...' + self.cigar[-cigar_size_to_print:])
+            if len(cigar) > cigar_size_to_print:
+                print('    ...' + cigar[-cigar_size_to_print:])
             else:
-                print('       ' + self.cigar[-cigar_size_to_print:])
+                print('       ' + cigar[-cigar_size_to_print:])
 
     def __repr__(self):
         read_start, read_end = self.read_start_end_positive_strand()
@@ -500,7 +499,7 @@ class Alignment(object):
         sam_parts.append(self.ref.name)  # Reference sequence name
         sam_parts.append(str(self.ref_start_pos + 1))  # 1-based leftmost mapping position
         sam_parts.append('255')  # Mapping quality (255 means unavailable)
-        sam_parts.append(self.cigar)  # CIGAR string
+        sam_parts.append(''.join(self.cigar_parts))  # CIGAR string
         sam_parts.append('*')  # Ref. name of the mate/next read (* means unavailable)
         sam_parts.append('0')  # Position of the mate/next read (0 means unavailable)
         sam_parts.append('0')  # Observed template length (0 means unavailable)

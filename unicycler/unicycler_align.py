@@ -306,8 +306,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
                     print(alignment.cigar)
 
         # Gather some statistics about the alignments.
-        percent_ids = [x.percent_identity for x in graphmap_alignments]
-        scores = [x.scaled_score for x in graphmap_alignments]
+        percent_ids = [x.percent_identity for x in semi_global_graphmap_alignments]
+        scores = [x.scaled_score for x in semi_global_graphmap_alignments]
         percent_id_mean, percent_id_std_dev = get_mean_and_st_dev(percent_ids)
         score_mean, score_std_dev = get_mean_and_st_dev(scores)
 

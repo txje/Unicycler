@@ -112,6 +112,11 @@ def real_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref
     """
     Runs tests using real reads.
     """
+    print('Running in real read mode:')
+    print(' ', args.real_short_1)
+    print(' ', args.real_short_2)
+    print(' ', args.real_long)
+
     long_reads = load_fastq(args.real_long, '')
     long_read_count = len(long_reads)
     long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
@@ -162,9 +167,9 @@ def simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results
     accuracies_and_lengths = []
     for accuracy in accuracies:
         accuracies_and_lengths += [(accuracy, length) for length in lengths]
-    print('Simulating long reads with these accuracy and length combinations:')
+    print('Running in simulated read mode with these accuracy and length combinations:')
     for accuracy, length in accuracies_and_lengths:
-        print(str(accuracy) + '%, ' + str(length) + ' bp')
+        print(' ', str(accuracy) + '%, ' + str(length) + ' bp')
 
     # The program runs indefinitely, always running more tests until the user kills it.
     dir_num = 1
@@ -181,6 +186,10 @@ def simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results
 
         abyss_dir, spades_no_long_dir, unicycler_no_long_dir = \
             assemble_short_reads_only(args, short_1, short_2, quast_results, simple_quast_results)
+
+        # Shuffle the acc/len order so if repeated runs are cut short I'm not always getting the
+        # first combination.
+        random.shuffle(accuracies_and_lengths)
 
         for accuracy, length in accuracies_and_lengths:
             args.long_acc, args.long_len = accuracy, length
@@ -1219,8 +1228,8 @@ def create_quast_results_tables(args):
         if args.real_long:
             simple_quast_results.write("Long read filename\t")
         else:
-            simple_quast_results.write("Long read accuracy (%)\t"
-                                       "Long read mean length (bp)\t")
+            simple_quast_results.write("Synthetic long read accuracy (%)\t"
+                                       "Synthetic long read mean length (bp)\t")
         simple_quast_results.write("Long read depth\t"
                                    "Run time (seconds)\t"
                                    "Completeness (%)\t"
@@ -1238,8 +1247,8 @@ def create_quast_results_tables(args):
         if args.real_long:
             quast_results.write("Long read filename\t")
         else:
-            quast_results.write("Long read accuracy (%)\t"
-                                "Long read mean length (bp)\t")
+            quast_results.write("Synthetic long read accuracy (%)\t"
+                                "Synthetic long read mean length (bp)\t")
         quast_results.write("Long read depth\t"
                             "Long read count\t"
                             "Run time (seconds)\t"

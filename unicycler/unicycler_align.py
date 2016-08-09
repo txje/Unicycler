@@ -616,7 +616,7 @@ def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme,
             sam_lines.append(line)
     num_alignments = sum(1 for line in open(sam_filename) if not line.startswith('@'))
     if not num_alignments:
-        quit_with_error('there are no alignments in the file: ' + sam_filename)
+        return []
     if verbosity > 0:
         print_progress_line(0, num_alignments)
 

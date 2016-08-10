@@ -336,8 +336,7 @@ def assemble_subsampled_long_reads(args, short_1, short_2, subsampled_reads, sub
 
 def subsample_long_reads(args, long_reads, subsampled_count, scaled_ref_length, include_acc_len):
     subsampled_reads = random.sample(long_reads, subsampled_count)
-    subsampled_long_read_depth = get_long_read_depth(subsampled_reads,
-                                                     scaled_ref_length)
+    subsampled_long_read_depth = get_long_read_depth(subsampled_reads, scaled_ref_length)
     if include_acc_len:
         subsampled_filename = 'long_subsampled_' + str(args.long_acc) + '_' + \
                               str(args.long_len) + '_' + str(subsampled_count)
@@ -345,6 +344,7 @@ def subsample_long_reads(args, long_reads, subsampled_count, scaled_ref_length, 
         subsampled_filename = 'long_subsampled_' + str(subsampled_count)
     subsampled_filename = subsampled_filename.replace('.', '_')
     file_index = 1
+    full_subsampled_filename = ''
     while True:
         if file_index == 1:
             full_subsampled_filename = os.path.abspath(subsampled_filename + '.fastq')
@@ -571,7 +571,7 @@ def create_subsampled_sam(full_sam_file, subsampled_sam_file, subsampled_long_re
                 if line.startswith('@'):
                     subsampled_sam.write(line)
                 else:
-                    read_name = line.split('\t')[0]
+                    read_name = line.split('\t', 1)[0]
                     if read_name in subsampled_read_names:
                         subsampled_sam.write(line)
 
@@ -1463,7 +1463,16 @@ def get_run_name_and_run_dir_name(assembler_name, reference, long_read_depth, ar
     run_name += ', ' + read_depth + 'x'
     run_dir_name += '_' + read_depth + 'x'
     run_dir_name = run_dir_name.replace(',', '_').replace(' ', '_')
-    return run_name, os.path.abspath(run_dir_name)
+
+    full_run_name = run_name
+    full_run_dir_name = os.path.abspath(run_dir_name)
+    index = 1
+    while os.path.isdir(full_run_dir_name):
+        index += 1
+        full_run_name = run_name + '_' + str(index)
+        full_run_dir_name = os.path.abspath(run_dir_name) + '_' + str(index)
+
+    return full_run_name, full_run_dir_name
 
 
 def clean_up_spades_dir(spades_dir):

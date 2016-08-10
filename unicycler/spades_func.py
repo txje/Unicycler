@@ -10,7 +10,7 @@ import subprocess
 import gzip
 import shutil
 from .misc import print_section_header, round_to_nearest_odd, get_compression_type, int_to_str, \
-    quit_with_error
+    quit_with_error, strip_read_extensions
 from .assembly_graph import AssemblyGraph
 
 
@@ -282,13 +282,6 @@ def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity, km
     kmer_range_file.write(kmer_range_str)
     kmer_range_file.close()
     return kmer_range
-
-
-def strip_read_extensions(read_file_name):
-    """
-    This function removes all extensions from a file name.
-    """
-    return os.path.basename(read_file_name).split('.')[0]
 
 
 def get_read_lengths(reads_filename):

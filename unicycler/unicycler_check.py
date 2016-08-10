@@ -43,7 +43,7 @@ def main():
 
     references = load_references(args.ref, VERBOSITY)
     reference_dict = {x.name: x for x in references}
-    read_dict, read_names = load_long_reads(args.reads, VERBOSITY)
+    read_dict, read_names, read_filename = load_long_reads(args.reads, VERBOSITY)
 
     if must_perform_alignment:
         scoring_scheme = AlignmentScoringScheme(args.scores)
@@ -51,7 +51,7 @@ def main():
         scoring_scheme = get_scoring_scheme_from_sam(args.sam)
 
     if must_perform_alignment:
-        semi_global_align_long_reads(references, args.ref, read_dict, read_names, args.reads,
+        semi_global_align_long_reads(references, args.ref, read_dict, read_names, read_filename,
                                      args.temp_dir, args.graphmap_path, args.threads,
                                      scoring_scheme, [args.low_score], not args.no_graphmap,
                                      args.keep_bad, args.kmer, args.min_len, args.sam,

@@ -7,8 +7,9 @@ email: rrwick@gmail.com
 
 import random
 import gzip
+import os
 from .misc import quit_with_error, print_progress_line, get_nice_header, get_compression_type, \
-    print_section_header, get_sequence_file_type
+    print_section_header, get_sequence_file_type, strip_read_extensions
 
 
 def load_references(fasta_filename, verbosity):
@@ -92,6 +93,7 @@ def load_long_reads(filename, verbosity):
     read_names = []
     total_bases = 0
     last_progress = 0.0
+    duplicate_read_names_found = False
 
     if file_type == 'FASTQ':
         num_reads = sum(1 for _ in open_func(filename, 'rt')) // 4
@@ -105,10 +107,19 @@ def load_long_reads(filename, verbosity):
     if file_type == 'FASTQ':
         fastq = open_func(filename, 'rt')
         for line in fastq:
-            name = line.strip()[1:].split()[0]
+            original_name = line.strip()[1:].split()[0]
             sequence = next(fastq).strip()
             _ = next(fastq)
             qualities = next(fastq).strip()
+
+            # Don't allow duplicate read names, so add a trailing number when they occur.
+            name = original_name
+            duplicate_name_number = 1
+            while name in read_dict:
+                duplicate_read_names_found = True
+                duplicate_name_number += 1
+                name = original_name + '_' + str(duplicate_name_number)
+
             read_dict[name] = Read(name, sequence, qualities)
             read_names.append(name)
             total_bases += len(sequence)
@@ -155,7 +166,23 @@ def load_long_reads(filename, verbosity):
     if verbosity > 0:
         print_progress_line(len(read_dict), len(read_dict), total_bases, end_newline=True)
 
-    return read_dict, read_names
+    # If there were duplicate read names, then we save the reads back out to file with their fixed
+    # names. We'll then be able to use this fixed file for GraphMap and the duplicate read names
+    # won't be a problem in the SAM file.
+    if duplicate_read_names_found:
+        no_dup_filename = os.path.abspath(strip_read_extensions(filename) +
+                                          '_no_duplicates.fastq.gz')
+        if verbosity > 0:
+            print('\nDuplicate read names found. Saving duplicate-free file:')
+            print(no_dup_filename, flush=True)
+        with gzip.open(no_dup_filename, 'wb') as f:
+            for read_name in read_names:
+                read = read_dict[read_name]
+                f.write(read.get_fastq().encode())
+    else:
+        no_dup_filename = filename
+
+    return read_dict, read_names, no_dup_filename
 
 
 def simplify_ranges(ranges):
@@ -329,7 +356,7 @@ class Read(object):
         """
         return '@' + self.name + '\n' + \
                self.sequence + '\n' + \
-               '+' + self.name + '\n' + \
+               '+\n' + \
                self.qualities + '\n'
 
     def get_fasta(self):

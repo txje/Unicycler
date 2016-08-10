@@ -83,10 +83,10 @@ def main():
         check_graphmap(args.graphmap_path)
 
     references = load_references(args.ref, VERBOSITY)
-    read_dict, read_names = load_long_reads(args.reads, VERBOSITY)
+    read_dict, read_names, read_filename = load_long_reads(args.reads, VERBOSITY)
     scoring_scheme = AlignmentScoringScheme(args.scores)
 
-    semi_global_align_long_reads(references, args.ref, read_dict, read_names, args.reads,
+    semi_global_align_long_reads(references, args.ref, read_dict, read_names, read_filename,
                                  args.temp_dir, args.graphmap_path, args.threads, scoring_scheme,
                                  [args.low_score], not args.no_graphmap, args.keep_bad, args.kmer,
                                  args.min_len, args.sam, full_command, args.allowed_overlap,

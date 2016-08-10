@@ -478,3 +478,15 @@ def score_function(val, half_score_val):
     approaches 1.0 more quickly.
     """
     return 1.0 - (half_score_val / (half_score_val + val))
+
+
+def strip_read_extensions(read_file_name):
+    """
+    This function removes extensions from a file name.
+    """
+    base_name = os.path.basename(read_file_name)
+    name_parts = base_name.split('.')
+    for i in range(2):
+        if len(name_parts) > 1 and len(name_parts[-1]) <= 5:
+            name_parts = name_parts[:-1]
+    return '.'.join(name_parts)

@@ -140,7 +140,7 @@ def main():
     if args.long:
         references = load_references(graph_fasta, 0)
         reference_dict = {x.name: x for x in references}
-        read_dict, read_names = load_long_reads(args.long, verbosity)
+        read_dict, read_names, long_read_filename = load_long_reads(args.long, verbosity)
 
         # Load existing alignments if available.
         if os.path.isfile(alignments_sam) and sam_references_match(alignments_sam, unbridged_graph):
@@ -165,7 +165,7 @@ def main():
                                         settings.ALLOWED_ALIGNMENT_OVERLAP))
             low_score_threshold = [args.low_score]
             semi_global_align_long_reads(references, graph_fasta, read_dict, read_names,
-                                         args.long, temp_alignment_dir, args.graphmap_path,
+                                         long_read_filename, temp_alignment_dir, args.graphmap_path,
                                          args.threads, scoring_scheme, low_score_threshold,
                                          not args.no_graphmap, False, args.kmer,
                                          min_alignment_length, alignments_1_in_progress,
@@ -179,11 +179,12 @@ def main():
                                 if x.get_fraction_aligned() < settings.MIN_READ_FRACTION_ALIGNED]
             if retry_read_names:
                 semi_global_align_long_reads(references, single_copy_segments_fasta, read_dict,
-                                             retry_read_names, args.long, temp_alignment_dir,
-                                             args.graphmap_path, args.threads, scoring_scheme,
-                                             low_score_threshold, False, False, args.kmer,
-                                             min_alignment_length, alignments_2_in_progress,
-                                             full_command, allowed_overlap, True, verbosity,
+                                             retry_read_names, long_read_filename,
+                                             temp_alignment_dir, args.graphmap_path,
+                                             args.threads, scoring_scheme, low_score_threshold,
+                                             False, False, args.kmer, min_alignment_length,
+                                             alignments_2_in_progress, full_command,
+                                             allowed_overlap, True, verbosity,
                                              stdout_header='Aligning reads (second pass)',
                                              display_low_score=False)
                 shutil.move(alignments_2_in_progress, alignments_2_sam)

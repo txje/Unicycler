@@ -19,8 +19,8 @@ from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, 
 from .read_ref import load_references, load_long_reads
 from .alignment import AlignmentScoringScheme
 from .cpp_function_wrappers import simulate_depths, get_random_sequence_alignment_error_rates
-from .unicycler_align import semi_global_align_long_reads, add_aligning_arguments, fix_up_arguments, \
-    load_sam_alignments
+from .unicycler_align import semi_global_align_long_reads, add_aligning_arguments, \
+    fix_up_arguments, load_sam_alignments
 
 VERBOSITY = 0  # Controls how much the script prints to the screen
 CONSOLE_WIDTH = 40  # The width of many things printed to stdout
@@ -99,9 +99,9 @@ def get_arguments():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('--sam', type=str, required=True, default=argparse.SUPPRESS,
-                        help='Input SAM file of alignments (if this file doesn\'t exist, the '
-                             'alignment will be performed with results saved to this file - you '
-                             'can use the aligner arguments with this script)')
+                        help="Input SAM file of alignments (if this file doesn't exist, the "
+                             "alignment will be performed with results saved to this file - you "
+                             "can use the aligner arguments with this script)")
     parser.add_argument('--ref', type=str, required=True, default=argparse.SUPPRESS,
                         help='FASTA file containing one or more reference sequences')
     parser.add_argument('--reads', type=str, required=True, default=argparse.SUPPRESS,
@@ -285,10 +285,10 @@ def count_depth_and_errors_per_base(references, reference_dict, alignments):
         if VERBOSITY > 0:
             print_progress_line(i + 1, len(alignments))
 
+    finished_bases = 0
     if VERBOSITY > 0:
         print()
         base_sum = sum([x.get_length() for x in references])
-        finished_bases = 0
         print_section_header('Totalling depth and errors', VERBOSITY)
         print_progress_line(finished_bases, base_sum)
 
@@ -299,8 +299,8 @@ def count_depth_and_errors_per_base(references, reference_dict, alignments):
                 error_count = ref.mismatch_counts[i] + ref.insertion_counts[i] + \
                               ref.deletion_counts[i]
                 ref.error_rates[i] = error_count / ref.depths[i]
-            if VERBOSITY > 0:
                 finished_bases += 1
+            if VERBOSITY > 0:
                 if finished_bases % 10 == 0:
                     print_progress_line(finished_bases, base_sum)
 

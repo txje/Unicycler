@@ -487,8 +487,8 @@ def get_arguments():
                                              'assembly at the beginning of the Unicycler pipeline.'
                                              if show_all_args else argparse.SUPPRESS)
     spades_group.add_argument('--spades_path', type=str, default='spades.py',
-                            help='Path to the SPAdes executable'
-                                 if show_all_args else argparse.SUPPRESS)
+                              help='Path to the SPAdes executable'
+                                   if show_all_args else argparse.SUPPRESS)
     spades_group.add_argument('--no_spades_correct', action='store_true',
                               help='Skip SPAdes error correction step'
                                    if show_all_args else argparse.SUPPRESS)

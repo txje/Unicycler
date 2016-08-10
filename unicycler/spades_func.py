@@ -265,6 +265,7 @@ def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity, km
     if starting_kmer < 11:
         starting_kmer = 11
     interval = 2
+    kmer_range = []
     while True:
         kmer_range = list(range(starting_kmer, max_kmer, interval)) + [max_kmer]
         if len(kmer_range) <= kmer_count:

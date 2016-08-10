@@ -81,6 +81,7 @@ def load_long_reads(filename, verbosity):
     try:
         file_type = get_sequence_file_type(filename)
     except ValueError:
+        file_type = ''
         quit_with_error(filename + ' is not in either FASTA or FASTQ format')
     if get_compression_type(filename) == 'gz':
         open_func = gzip.open

@@ -262,7 +262,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
 
         # Program line.
         sam_file.write('@PG' + '\t')
-        sam_file.write('ID:' + 'ALIGNER_NAME')
+        sam_file.write('ID:' + 'unicycler_align')
         if full_command:
             sam_file.write('\tCL:' + full_command + '\t')
         sam_file.write('SC:' + str(scoring_scheme) + '\n')

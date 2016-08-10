@@ -704,7 +704,7 @@ def load_fastq(fastq_filename, read_prefix):
     reads = []
     with open_func(fastq_filename, 'rt') as fastq:
         for line in fastq:
-            name = line.strip()[1:]
+            name = line.strip()[1:].split()[0]
             if read_prefix:
                 name = read_prefix + '_' + name
             name = '@' + name

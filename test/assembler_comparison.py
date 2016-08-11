@@ -236,11 +236,11 @@ def assemble_short_reads_only(args, short_1, short_2, quast_results, simple_quas
         spades_no_long_dir = None
     if not args.no_unicycler:
         unicycler_no_long_dir = run_unicycler(args, short_1, short_2, None, None, 0, 0.0,
-                                              quast_results, simple_quast_results, 'low')
+                                              quast_results, simple_quast_results, 'conservative')
         run_unicycler(args, short_1, short_2, None, None, 0, 0.0, quast_results,
-                      simple_quast_results, 'medium', unicycler_no_long_dir)
+                      simple_quast_results, 'normal', unicycler_no_long_dir)
         run_unicycler(args, short_1, short_2, None, None, 0, 0.0, quast_results,
-                      simple_quast_results, 'high', unicycler_no_long_dir)
+                      simple_quast_results, 'bold', unicycler_no_long_dir)
     else:
         unicycler_no_long_dir = None
 
@@ -255,12 +255,13 @@ def assemble_all_long_reads(args, short_1, short_2, long_reads, long_filename, l
     if not args.no_unicycler:
         unicycler_all_long_dir = run_unicycler(args, short_1, short_2, long_reads, long_filename,
                                                long_read_count, long_read_depth, quast_results,
-                                               simple_quast_results, 'low', unicycler_no_long_dir)
+                                               simple_quast_results, 'conservative',
+                                               unicycler_no_long_dir)
         run_unicycler(args, short_1, short_2, long_reads, long_filename, long_read_count,
-                      long_read_depth, quast_results, simple_quast_results, 'medium',
+                      long_read_depth, quast_results, simple_quast_results, 'normal',
                       unicycler_no_long_dir, unicycler_all_long_dir)
         run_unicycler(args, short_1, short_2, long_reads, long_filename, long_read_count,
-                      long_read_depth, quast_results, simple_quast_results, 'high',
+                      long_read_depth, quast_results, simple_quast_results, 'bold',
                       unicycler_no_long_dir, unicycler_all_long_dir)
 
     else:
@@ -303,13 +304,13 @@ def assemble_subsampled_long_reads(args, short_1, short_2, subsampled_reads, sub
     if not args.no_unicycler:
         run_unicycler(args, short_1, short_2, subsampled_reads, subsampled_filename,
                       subsampled_count, subsampled_long_read_depth, quast_results,
-                      simple_quast_results, 'low', unicycler_all_long_dir)
+                      simple_quast_results, 'conservative', unicycler_all_long_dir)
         run_unicycler(args, short_1, short_2, subsampled_reads, subsampled_filename,
                       subsampled_count, subsampled_long_read_depth, quast_results,
-                      simple_quast_results, 'medium', unicycler_all_long_dir)
+                      simple_quast_results, 'normal', unicycler_all_long_dir)
         run_unicycler(args, short_1, short_2, subsampled_reads, subsampled_filename,
                       subsampled_count, subsampled_long_read_depth, quast_results,
-                      simple_quast_results, 'high', unicycler_all_long_dir)
+                      simple_quast_results, 'bold', unicycler_all_long_dir)
 
     # Run hybridSPAdes on the subsampled long reads.
     if not args.no_spades:
@@ -1124,9 +1125,9 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
 
 
 def run_unicycler(args, short_1, short_2, long_reads, long_read_filename, long_read_count,
-                  long_read_depth, all_quast_results, simple_quast_results, confidence,
+                  long_read_depth, all_quast_results, simple_quast_results, bridging_mode,
                   unicycler_no_long_dir=None, unicycler_all_long_dir=None):
-    run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler_' + confidence,
+    run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler_' + bridging_mode,
                                                             args.reference, long_read_depth, args)
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
 
@@ -1161,7 +1162,7 @@ def run_unicycler(args, short_1, short_2, long_reads, long_read_filename, long_r
     else:
         unicycler_command += ['--no_long']
     unicycler_command += ['--out', unicycler_dir,
-                          '--confidence', confidence,
+                          '--mode', bridging_mode,
                           '--keep_temp', '1',
                           '--threads', str(args.threads),
                           '--verbosity', '2',
@@ -1175,7 +1176,7 @@ def run_unicycler(args, short_1, short_2, long_reads, long_read_filename, long_r
         quit_with_error('Unicycler encountered an error:\n' + e.output.decode())
     unicycler_time = time.time() - unicycler_start_time
     run_quast(unicycler_assembly, args, all_quast_results, simple_quast_results,
-              'Unicycler (' + confidence + ')', long_read_count, long_read_depth, unicycler_time,
+              'Unicycler (' + bridging_mode + ')', long_read_count, long_read_depth, unicycler_time,
               run_name, unicycler_dir)
 
     clean_up_unicycler_dir(unicycler_dir)

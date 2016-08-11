@@ -81,8 +81,8 @@ def main():
     unbridged_graph.save_to_gfa(unbridged_graph_filename, verbosity, save_copy_depth_info=True)
 
     # Make an initial set of bridges using the SPAdes contig paths. This step is skipped when
-    # running with low confidence (in that case we don't trust SPAdes contig paths at all).
-    if args.confidence == 0:
+    # using conservative bridging mode (in that case we don't trust SPAdes contig paths at all).
+    if args.mode == 0:
         bridges = []
         graph = copy.deepcopy(unbridged_graph)
     else:
@@ -114,7 +114,7 @@ def main():
             graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +
                                            '_cleaned_second_pass.gfa'), verbosity,
                               save_seg_type_info=True, single_copy_segments=single_copy_segments)
-        graph.merge_all_possible(single_copy_segments, args.confidence)
+        graph.merge_all_possible(single_copy_segments, args.mode)
         if args.keep_temp > 1:
             file_num += 1
             graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa'),
@@ -269,7 +269,7 @@ def main():
                                            '_cleaned_second_pass.gfa'), verbosity,
                               save_seg_type_info=True,
                               single_copy_segments=single_copy_segments)
-        graph.merge_all_possible(single_copy_segments, args.confidence)
+        graph.merge_all_possible(single_copy_segments, args.mode)
         if args.keep_temp > 1:
             file_num += 1
             graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa'),
@@ -466,19 +466,19 @@ def get_arguments():
     other_group = parser.add_argument_group('Other')
     other_group.add_argument('-t', '--threads', type=int, required=False, default=argparse.SUPPRESS,
                              help='Number of threads used to align (default: number of CPUs)')
-    other_group.add_argument('--confidence', choices=['low', 'medium', 'high'], default='medium',
-                             help='R|Bridging confidence (default: medium)\n'
-                                  '  low = smaller contigs, less risk of misassembly\n'
-                                  '  medium = balanced contig size and misassembly risk\n'
-                                  '  high = longer contigs, more risk of misassembly')
+    other_group.add_argument('--mode', choices=['conservative', 'normal', 'bold'], default='normal',
+                             help='R|Bridging mode (default: normal)\n'
+                                  '  conservative = smaller contigs, less risk of misassembly\n'
+                                  '  normal = balanced contig size and misassembly risk\n'
+                                  '  bold = longer contigs, more risk of misassembly')
     other_group.add_argument('--min_bridge_qual', type=float, default=argparse.SUPPRESS,
                              help='R|Do not apply bridges with a quality below this value\n'
-                                  '  low confidence default: ' +
-                                  str(settings.LOW_CONFIDENCE_MIN_BRIDGE_QUAL) + '\n'
-                                  '  medium confidence default: ' +
-                                  str(settings.MEDIUM_CONFIDENCE_MIN_BRIDGE_QUAL) + '\n'
-                                  '  high confidence default: ' +
-                                  str(settings.HIGH_CONFIDENCE_MIN_BRIDGE_QUAL)
+                                  '  conservative mode default: ' +
+                                  str(settings.CONSERVATIVE_MIN_BRIDGE_QUAL) + '\n'
+                                  '  normal mode default: ' +
+                                  str(settings.NORMAL_MIN_BRIDGE_QUAL) + '\n'
+                                  '  bold mode default: ' +
+                                  str(settings.BOLD_MIN_BRIDGE_QUAL)
                                   if show_all_args else argparse.SUPPRESS)
 
     # SPAdes assembly options
@@ -617,22 +617,22 @@ def get_arguments():
         quit_with_error('Only one of the following options can be used: '
                         '--long, --long_dir or --no_long')
 
-    # Set up confidence-related stuff.
+    # Set up bridging mode related stuff.
     user_set_bridge_qual = hasattr(args, 'min_bridge_qual')
-    confidence_val = 1
-    if args.confidence == 'low':
-        confidence_val = 0
+    bridging_mode_val = 1
+    if args.mode == 'conservative':
+        bridging_mode_val = 0
         if not user_set_bridge_qual:
-            args.min_bridge_qual = settings.LOW_CONFIDENCE_MIN_BRIDGE_QUAL
-    elif args.confidence == 'medium':
-        confidence_val = 1
+            args.min_bridge_qual = settings.CONSERVATIVE_MIN_BRIDGE_QUAL
+    elif args.mode == 'normal':
+        bridging_mode_val = 1
         if not user_set_bridge_qual:
-            args.min_bridge_qual = settings.MEDIUM_CONFIDENCE_MIN_BRIDGE_QUAL
-    elif args.confidence == 'high':
-        confidence_val = 2
+            args.min_bridge_qual = settings.NORMAL_MIN_BRIDGE_QUAL
+    elif args.mode == 'bold':
+        bridging_mode_val = 2
         if not user_set_bridge_qual:
-            args.min_bridge_qual = settings.HIGH_CONFIDENCE_MIN_BRIDGE_QUAL
-    args.confidence = confidence_val
+            args.min_bridge_qual = settings.BOLD_MIN_BRIDGE_QUAL
+    args.mode = bridging_mode_val
 
     # Change some arguments to full paths.
     args.out = os.path.abspath(args.out)
@@ -719,10 +719,22 @@ def print_intro_message(args, verbosity, full_command):
     print('Command:', full_command)
     if verbosity > 1:
         print()
-        if args.confidence == 0:
-            print('Bridging confidence level: low')
-        if args.confidence == 1:
-            print('Bridging confidence level: medium')
-        if args.confidence == 2:
-            print('Bridging confidence level: high')
-        print('  bridge quality cutoff:', float_to_str(args.min_bridge_qual, 1))
+        if args.mode == 0:
+            print('Bridging mode: conservative')
+            if args.min_bridge_qual == settings.CONSERVATIVE_MIN_BRIDGE_QUAL:
+                print('  using default conservative bridge quality cutoff: ', end='')
+            else:
+                print('  using user-specified bridge quality cutoff: ', end='')
+        elif args.mode == 1:
+            print('Bridging mode: normal')
+            if args.min_bridge_qual == settings.CONSERVATIVE_MIN_BRIDGE_QUAL:
+                print('  using default normal bridge quality cutoff: ', end='')
+            else:
+                print('  using user-specified bridge quality cutoff: ', end='')
+        else:  # args.mode == 2
+            print('Bridging mode: bold')
+            if args.min_bridge_qual == settings.CONSERVATIVE_MIN_BRIDGE_QUAL:
+                print('  using default bold bridge quality cutoff: ', end='')
+            else:
+                print('  using user-specified bridge quality cutoff: ', end='')
+        print(float_to_str(args.min_bridge_qual, 1))

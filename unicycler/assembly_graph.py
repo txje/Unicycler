@@ -530,7 +530,7 @@ class AssemblyGraph(object):
         if verbosity > 1 and removed_segments:
             print('\nRemoved small dead ends: ', ', '.join(str(x) for x in removed_segments))
 
-    def merge_all_possible(self, single_copy_segments, confidence):
+    def merge_all_possible(self, single_copy_segments, bridging_mode):
         """
         This function merges segments which are in a simple, unbranching path. It produces and
         returns a dictionary of new segment numbers to old segment numbers.
@@ -543,7 +543,7 @@ class AssemblyGraph(object):
             # Sort the segment numbers first so we apply the merging in a consistent order.
             seg_nums = sorted(list(self.segments.keys()))
             for num in seg_nums:
-                path = self.get_simple_path(num, single_copy_seg_nums, confidence)
+                path = self.get_simple_path(num, single_copy_seg_nums, bridging_mode)
                 assert len(path) > 0
                 if len(path) > 1:
                     self.merge_simple_path(path)
@@ -1030,7 +1030,7 @@ class AssemblyGraph(object):
         self.copy_depths = {}
 
         # Determine the single-copy read depth for the graph. In haploid and some diploid cases,
-        # this will be the median depth. But in some diploid cases, the single-copy depth may at
+        # this will be the median depth. But in some diploid cases, the single-copy depth may be at
         # about half the median (because the median depth holds the sequences shared between sister
         # chromosomes). To catch these cases, we look to see whether the graph peaks more strongly
         # at half the median or double the median. In the former case, we move the single-copy
@@ -2001,11 +2001,11 @@ class AssemblyGraph(object):
             return False
         return self.get_upstream_seg_nums(seg) == [seg]
 
-    def get_simple_path(self, starting_seg, single_copy_seg_nums, confidence):
+    def get_simple_path(self, starting_seg, single_copy_seg_nums, bridging_mode):
         """
         Starting with the given segment, this function tries to expand outward as far as possible
         while maintaining a simple (i.e. can be merged) path. If it can't expand at all, it will
-        just return a list of the starting segment. At lower confidence levels, we only allow the
+        just return a list of the starting segment. At lower bridging modes, we only allow the
         merging of paths which are made up of single copy segments and bridges.
         """
         simple_path = [starting_seg]
@@ -2019,8 +2019,8 @@ class AssemblyGraph(object):
             if potential in simple_path or -potential in simple_path:
                 break
             abs_potential = abs(potential)
-            if confidence < 2 and not self.is_single_copy_or_bridge(abs_potential, confidence,
-                                                                    single_copy_seg_nums):
+            if bridging_mode < 2 and not self.is_single_copy_or_bridge(abs_potential, bridging_mode,
+                                                                       single_copy_seg_nums):
                 break
             if len(self.reverse_links[potential]) == 1 and \
                     self.reverse_links[potential][0] == simple_path[-1]:
@@ -2037,8 +2037,8 @@ class AssemblyGraph(object):
             if potential in simple_path or -potential in simple_path:
                 break
             abs_potential = abs(potential)
-            if confidence < 2 and not self.is_single_copy_or_bridge(abs_potential, confidence,
-                                                                    single_copy_seg_nums):
+            if bridging_mode < 2 and not self.is_single_copy_or_bridge(abs_potential, bridging_mode,
+                                                                       single_copy_seg_nums):
                 break
             if len(self.forward_links[potential]) == 1 and \
                     self.forward_links[potential][0] == simple_path[0]:
@@ -2408,16 +2408,16 @@ class AssemblyGraph(object):
             return True
         return not self.forward_links[signed_seg_num]
 
-    def is_single_copy_or_bridge(self, seg_num, confidence, single_copy_seg_nums):
+    def is_single_copy_or_bridge(self, seg_num, bridging_mode, single_copy_seg_nums):
         """
         Returns True if the given segment number is a single copy segment or a bridge segment. For
-        this function, what counts as a 'single copy segment' depends on the confidence level. At
-        confidence level 0, only segments which are bridges or original single copy segments are
-        allowed. At confidence level 1, we also allow segments which have become single copy due
-        to all but one of their copy depths being used up.
+        this function, what counts as a 'single copy segment' depends on the bridging mode. At
+        conservative bridging mode, only segments which are bridges or original single copy
+        segments are allowed. At normal bridging mode, we also allow segments which have become
+        single copy due to all but one of their copy depths being used up.
         """
-        # Confidence level 2 means merge everything.
-        if confidence == 2 or single_copy_seg_nums is None:
+        # Bridging mode level 2 (bold) means merge everything.
+        if bridging_mode == 2 or single_copy_seg_nums is None:
             return True
 
         # Bridges are always okay to merge.
@@ -2429,12 +2429,12 @@ class AssemblyGraph(object):
             return True
 
         # If the code got here, then the segment isn't a bridge or an original single copy. For
-        # confidence level 0, this is unmergeable.
-        if confidence == 0:
+        # bridging mode level 0 (conservative), this is unmergeable.
+        if bridging_mode == 0:
             return False
 
-        # If the code got here, then the confidence is level 1. If the segment has become
-        # single-copy, then it's okay to merge.
+        # If the code got here, then the bridging mode is level 1 (normal). If the segment has
+        # become single-copy, then it's okay to merge.
         return seg_num in self.copy_depths and len(self.copy_depths[seg_num]) == 1
 
 

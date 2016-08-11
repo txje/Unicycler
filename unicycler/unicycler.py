@@ -368,8 +368,8 @@ def main():
 
 class MyHelpFormatter(argparse.RawDescriptionHelpFormatter):
     """
-    This is a custom formatter class for argparse. It allows me to adjust some widths and to
-    format some help text as raw.
+    This is a custom formatter class for argparse. It allows for some custom formatting,
+    in particular for the help texts with multiple options (like bridging mode and verbosity level).
     http://stackoverflow.com/questions/3853722
     """
     def __init__(self, prog):
@@ -378,8 +378,36 @@ class MyHelpFormatter(argparse.RawDescriptionHelpFormatter):
         super().__init__(prog, max_help_position=max_help_position)
 
     def _split_lines(self, text, width):
-        if text.startswith('R|'):
-            return text[2:].splitlines()
+        if text.startswith('B|') or text.startswith('R|'):
+            text_lines = text[2:].splitlines()
+            wrapped_text_lines = []
+            for line in text_lines:
+                if len(line) <= width:
+                    wrapped_text_lines.append(line)
+                else:
+                    wrap_column = 2
+
+                    # The bridging mode help text should wrap each line around to the column of
+                    # the equals sign.
+                    if text.startswith('B|'):
+                        line_parts = line.split()
+                        wrap_column += line.find('=')
+                        join = ''
+                        current_line = '  ' + line_parts[0]
+
+                    # The other multi-option help texts should wrap an entire option at a time.
+                    else:  # text.startswith('R|')
+                        line_parts = line.split(', ')
+                        join = ','
+                        current_line = line_parts[0]
+                    for part in line_parts[1:]:
+                        if len(current_line) + len(join) + 1 + len(part) <= width:
+                            current_line += join + ' ' + part
+                        else:
+                            wrapped_text_lines.append(current_line + join)
+                            current_line = ' ' * wrap_column + part
+                    wrapped_text_lines.append(current_line)
+            return wrapped_text_lines
         else:
             return argparse.HelpFormatter._split_lines(self, text, width)
 
@@ -454,23 +482,23 @@ def get_arguments():
     output_group.add_argument('-o', '--out', required=True, default=argparse.SUPPRESS,
                               help='Output directory')
     output_group.add_argument('--verbosity', type=int, required=False, default=1,
-                              help='R|Level of stdout information (0 to 3, default: 1)\n'
-                                   '  0 = no stdout,  1 = basic progress indicators\n'
-                                   '  2 = extra info, 3 = debugging info')
+                              help='R|Level of stdout information (0 to 3, default: 1)\n  '
+                                   '0 = no stdout, 1 = basic progress indicators, '
+                                   '2 = extra info, 3 = debugging info')
     output_group.add_argument('--keep_temp', type=int, default=1,
-                              help='R|Level of file retention (0 to 2, default: 0)\n'
-                                   '  0 = keep files only at main checkpoints\n'
-                                   '  1 = keep some temporary files, including SAM\n'
-                                   '  2 = keep all temporary files')
+                              help='R|Level of file retention (0 to 2, default: 1)\n  '
+                                   '0 = only keep files at main checkpoints, '
+                                   '1 = keep some temp files including SAM, '
+                                   '2 = keep all temp files')
 
     other_group = parser.add_argument_group('Other')
     other_group.add_argument('-t', '--threads', type=int, required=False, default=argparse.SUPPRESS,
                              help='Number of threads used to align (default: number of CPUs)')
     other_group.add_argument('--mode', choices=['conservative', 'normal', 'bold'], default='normal',
-                             help='R|Bridging mode (default: normal)\n'
-                                  '  conservative = smaller contigs, less risk of misassembly\n'
-                                  '  normal = balanced contig size and misassembly risk\n'
-                                  '  bold = longer contigs, more risk of misassembly')
+                             help='B|Bridging mode (default: normal)\n'
+                                  '  conservative = smaller contigs, lowest misassembly rate\n'
+                                  '  normal = moderate contig size and misassembly rate\n'
+                                  '  bold = longest contigs, higher misassembly rate')
     other_group.add_argument('--min_bridge_qual', type=float, default=argparse.SUPPRESS,
                              help='R|Do not apply bridges with a quality below this value\n'
                                   '  conservative mode default: ' +

@@ -43,15 +43,21 @@ class UnicycleBuild(build):
 
     def run(self):
         build.run(self)  # Run original build code
+
+        clean_cmd = ['make', 'clean']
         try:
-            cmd = ['make', '-j', str(max(8, multiprocessing.cpu_count()))]
+            make_cmd = ['make', '-j', str(max(8, multiprocessing.cpu_count()))]
         except NotImplementedError:
-            cmd = ['make']
+            make_cmd = ['make']
+
+        def clean_cpp():
+            subprocess.call(clean_cmd)
 
         def compile_cpp():
-            subprocess.call(cmd)
+            subprocess.call(make_cmd)
 
-        self.execute(compile_cpp, [], 'Compiling Unicycler: ' + ' '.join(cmd))
+        self.execute(clean_cpp, [], 'Cleaning previous compilations: ' + ' '.join(clean_cmd))
+        self.execute(compile_cpp, [], 'Compiling Unicycler: ' + ' '.join(make_cmd))
 
 
 class UnicycleInstall(install):

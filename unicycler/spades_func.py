@@ -101,7 +101,6 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
 
     if verbosity > 0:
         print('Best kmer: ' + str(best_kmer))
-        print()
 
     return best_assembly_graph
 

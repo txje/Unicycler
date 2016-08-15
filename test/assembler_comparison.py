@@ -1374,8 +1374,7 @@ def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler
                 headers = results.readline().strip().split('\t')
                 results = results.readline().strip().split('\t')
                 quast_line += results[1:]
-                simple_quast_line.append(get_quast_result(headers, results,
-                                                          'Reference pieces'))
+                simple_quast_line.append(str(ref_count))
                 simple_quast_line.append(get_quast_result(headers, results,
                                                           '# contigs (>= 0 bp)'))
                 simple_quast_line.append(get_quast_result(headers, results,

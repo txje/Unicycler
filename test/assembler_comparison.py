@@ -26,7 +26,6 @@ def main():
 
     scaled_ref_length = get_scaled_ref_length(args)
     ref_name = get_reference_name_from_filename(args.reference)
-    quast_results, simple_quast_results = create_quast_results_tables(args)
 
     # Make a directory for this ref, if necessary.
     ref_dir = os.path.abspath(ref_name)
@@ -34,11 +33,12 @@ def main():
         os.makedirs(ref_dir)
     os.chdir(ref_dir)
 
+    quast_results, simple_quast_results = create_quast_results_tables(args)
+
     if args.real_short_1 and args.real_short_2 and args.real_long:
         real_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref_dir)
 
-    elif args.short_depth and args.long_depth and args.long_accs and args.long_lens and \
-            args.model_qc:
+    elif args.short_depth and args.long_accs and args.long_lens and args.model_qc:
         simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref_dir)
 
     else:
@@ -66,14 +66,10 @@ def get_args():
                         help='Real short reads, second half of pair')
     parser.add_argument('--real_long', type=str,
                         help='Real long reads')
-    parser.add_argument('--max_subsample_depth', type=float, default=100.0,
-                        help='When subsampling real reads, stay below this depth')
 
     # Used for simulated reads.
     parser.add_argument('--short_depth', type=float, default=50.0,
                         help='Base read depth for fake short reads')
-    parser.add_argument('--long_depth', type=float, default=20.0,
-                        help='Base read depth for fake long reads')
     parser.add_argument('--long_accs', type=str, default='75,90,60',
                         help='Mean accuracies for long reads (comma delimited)')
     parser.add_argument('--long_lens', type=str, default='10000,25000',
@@ -83,6 +79,12 @@ def get_args():
     parser.add_argument('--rotation_count', type=int, default=20, required=False,
                         help='The number of times to run read simulators with random start '
                              'positions')
+
+    # Used for both real and simulated reads.
+    parser.add_argument('--max_long_depth', type=float, default=10.0,
+                        help='Maximum read depth for long reads')
+    parser.add_argument('--long_depth_steps', type=int, default=10,
+                        help='Number of long read depths to assemble')
 
     # Used to skip particular assemblers.
     parser.add_argument('--no_cerulean', action='store_true',
@@ -120,8 +122,6 @@ def real_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref
     long_reads = load_fastq(args.real_long, '')
     long_read_count = len(long_reads)
     long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
-    max_subsample_depth_count = int(long_read_count * args.max_subsample_depth / long_read_depth)
-    full_count = min(long_read_count, max_subsample_depth_count)
 
     # Create and move into a directory for this iteration.
     dir_name, dir_num = get_next_available_set_number(ref_dir, 1)
@@ -142,22 +142,23 @@ def real_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref
     # The program runs indefinitely, always running more tests until the user kills it.
     while True:
         # Randomly subsample this read set.
-        subsampled_counts = subsample(full_count, args.subsample_count)
-        for subsampled_count in subsampled_counts:
+        depths = [args.max_long_depth * x / args.long_depth_steps
+                  for x in range(args.long_depth_steps, 0, -1)]
+
+        for subsampled_depth in depths:
 
             subsampled_reads, subsampled_filename, subsampled_long_read_depth = \
-                subsample_long_reads(args, long_reads, subsampled_count, scaled_ref_length, False)
+                subsample_long_reads(args, long_reads, subsampled_depth, scaled_ref_length, False)
 
             assemble_subsampled_long_reads(args, args.real_short_1, args.real_short_2,
-                                           subsampled_reads, subsampled_filename, subsampled_count,
-                                           subsampled_long_read_depth, quast_results,
-                                           simple_quast_results, unicycler_all_long_dir,
-                                           spades_no_long_dir, np_scarf_all_long_dir,
-                                           abyss_dir, cerulean_all_long_dir)
+                                           subsampled_reads, subsampled_filename,
+                                           len(subsampled_reads), subsampled_long_read_depth,
+                                           quast_results, simple_quast_results,
+                                           unicycler_all_long_dir, spades_no_long_dir,
+                                           np_scarf_all_long_dir, abyss_dir, cerulean_all_long_dir)
 
 
-def simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results,
-                    ref_dir):
+def simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref_dir):
     """
     Runs tests using fake reads.
     """
@@ -193,30 +194,19 @@ def simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results
 
         for accuracy, length in accuracies_and_lengths:
             args.long_acc, args.long_len = accuracy, length
-            long_filename, long_reads = make_fake_long_reads(args)
-            long_read_count = len(long_reads)
-            long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
 
-            unicycler_all_long_dir, np_scarf_all_long_dir, cerulean_all_long_dir = \
+            depths = [args.max_long_depth * x / args.long_depth_steps
+                      for x in range(args.long_depth_steps, 0, -1)]
+
+            for depth in depths:
+                long_filename, long_reads = make_fake_long_reads(args, depth)
+                long_read_count = len(long_reads)
+                long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
+
                 assemble_all_long_reads(args, short_1, short_2, long_reads, long_filename,
                                         long_read_count, long_read_depth, quast_results,
                                         simple_quast_results, unicycler_no_long_dir,
                                         spades_no_long_dir, abyss_dir)
-
-            # Randomly subsample this read set.
-            subsampled_counts = subsample(long_read_count, args.subsample_count)
-            for subsampled_count in subsampled_counts:
-
-                subsampled_reads, subsampled_filename, subsampled_long_read_depth = \
-                    subsample_long_reads(args, long_reads, subsampled_count, scaled_ref_length,
-                                         True)
-
-                assemble_subsampled_long_reads(args, short_1, short_2, subsampled_reads,
-                                               subsampled_filename, subsampled_count,
-                                               subsampled_long_read_depth, quast_results,
-                                               simple_quast_results, unicycler_all_long_dir,
-                                               spades_no_long_dir, np_scarf_all_long_dir,
-                                               abyss_dir, cerulean_all_long_dir)
 
 
 def assemble_short_reads_only(args, short_1, short_2, quast_results, simple_quast_results):
@@ -235,11 +225,11 @@ def assemble_short_reads_only(args, short_1, short_2, quast_results, simple_quas
     else:
         spades_no_long_dir = None
     if not args.no_unicycler:
-        unicycler_no_long_dir = run_unicycler(args, short_1, short_2, None, None, 0, 0.0,
+        unicycler_no_long_dir = run_unicycler(args, short_1, short_2, None, 0, 0.0,
                                               quast_results, simple_quast_results, 'conservative')
-        run_unicycler(args, short_1, short_2, None, None, 0, 0.0, quast_results,
+        run_unicycler(args, short_1, short_2, None, 0, 0.0, quast_results,
                       simple_quast_results, 'normal', unicycler_no_long_dir)
-        run_unicycler(args, short_1, short_2, None, None, 0, 0.0, quast_results,
+        run_unicycler(args, short_1, short_2, None, 0, 0.0, quast_results,
                       simple_quast_results, 'bold', unicycler_no_long_dir)
     else:
         unicycler_no_long_dir = None
@@ -253,14 +243,14 @@ def assemble_all_long_reads(args, short_1, short_2, long_reads, long_filename, l
     # Run Unicycler on the full set of long reads - will be the source of alignments for
     # subsampled Unicycler runs.
     if not args.no_unicycler:
-        unicycler_all_long_dir = run_unicycler(args, short_1, short_2, long_reads, long_filename,
+        unicycler_all_long_dir = run_unicycler(args, short_1, short_2, long_filename,
                                                long_read_count, long_read_depth, quast_results,
                                                simple_quast_results, 'conservative',
                                                unicycler_no_long_dir)
-        run_unicycler(args, short_1, short_2, long_reads, long_filename, long_read_count,
+        run_unicycler(args, short_1, short_2, long_filename, long_read_count,
                       long_read_depth, quast_results, simple_quast_results, 'normal',
                       unicycler_no_long_dir, unicycler_all_long_dir)
-        run_unicycler(args, short_1, short_2, long_reads, long_filename, long_read_count,
+        run_unicycler(args, short_1, short_2, long_filename, long_read_count,
                       long_read_depth, quast_results, simple_quast_results, 'bold',
                       unicycler_no_long_dir, unicycler_all_long_dir)
 
@@ -302,13 +292,13 @@ def assemble_subsampled_long_reads(args, short_1, short_2, subsampled_reads, sub
     # because we can skip the short read assembly and the alignment. The bridging and
     # polishing steps can still take a while, though.
     if not args.no_unicycler:
-        run_unicycler(args, short_1, short_2, subsampled_reads, subsampled_filename,
+        run_unicycler(args, short_1, short_2, subsampled_filename,
                       subsampled_count, subsampled_long_read_depth, quast_results,
                       simple_quast_results, 'conservative', unicycler_all_long_dir)
-        run_unicycler(args, short_1, short_2, subsampled_reads, subsampled_filename,
+        run_unicycler(args, short_1, short_2, subsampled_filename,
                       subsampled_count, subsampled_long_read_depth, quast_results,
                       simple_quast_results, 'normal', unicycler_all_long_dir)
-        run_unicycler(args, short_1, short_2, subsampled_reads, subsampled_filename,
+        run_unicycler(args, short_1, short_2, subsampled_filename,
                       subsampled_count, subsampled_long_read_depth, quast_results,
                       simple_quast_results, 'bold', unicycler_all_long_dir)
 
@@ -335,14 +325,37 @@ def assemble_subsampled_long_reads(args, short_1, short_2, subsampled_reads, sub
                      cerulean_all_long_dir=cerulean_all_long_dir)
 
 
-def subsample_long_reads(args, long_reads, subsampled_count, scaled_ref_length, include_acc_len):
-    subsampled_reads = random.sample(long_reads, subsampled_count)
+def subsample_long_reads(args, long_reads, subsampled_depth, scaled_ref_length, include_acc_len):
+
+    read_indices = list(range(len(long_reads)))
+    subsampled_reads = []
+    random.shuffle(read_indices)
+    for i in read_indices:
+        subsampled_reads.append(long_reads[i])
+        subsampled_long_read_depth = get_long_read_depth(subsampled_reads, scaled_ref_length)
+        if subsampled_long_read_depth == subsampled_depth:
+            break
+        elif subsampled_long_read_depth > subsampled_depth:
+            last_read = subsampled_reads.pop()
+            under_shot_depth = get_long_read_depth(subsampled_reads, scaled_ref_length)
+            depth_from_last_read = subsampled_long_read_depth - under_shot_depth
+            required_depth = subsampled_depth - under_shot_depth
+            fraction_last_read_needed = required_depth / depth_from_last_read
+            last_read_length = len(last_read[1])
+            trimmed_last_read_length = int(round(last_read_length * fraction_last_read_needed))
+            trimmed_last_read = (last_read[0],
+                                 last_read[1][:trimmed_last_read_length],
+                                 last_read[2],
+                                 last_read[3][:trimmed_last_read_length])
+            subsampled_reads.append(trimmed_last_read)
+            break
+
     subsampled_long_read_depth = get_long_read_depth(subsampled_reads, scaled_ref_length)
     if include_acc_len:
         subsampled_filename = 'long_subsampled_' + str(args.long_acc) + '_' + \
-                              str(args.long_len) + '_' + str(subsampled_count)
+                              str(args.long_len) + '_' + str(subsampled_depth)
     else:
-        subsampled_filename = 'long_subsampled_' + str(subsampled_count)
+        subsampled_filename = 'long_subsampled_' + str(subsampled_depth)
     subsampled_filename = subsampled_filename.replace('.', '_')
     file_index = 1
     full_subsampled_filename = ''
@@ -357,7 +370,7 @@ def subsample_long_reads(args, long_reads, subsampled_count, scaled_ref_length, 
         else:
             file_index += 1
 
-    print('\nSubsampling to', subsampled_count, 'reads')
+    print('\nSubsampling to', str(subsampled_depth) + 'x')
     save_long_reads_to_fastq(subsampled_reads, full_subsampled_filename)
     try:
         subprocess.check_output(['gzip', full_subsampled_filename], stderr=subprocess.STDOUT)
@@ -461,13 +474,14 @@ def make_fake_short_reads(args):
     return read_filename_1, read_filename_2
 
 
-def make_fake_long_reads(args):
+def make_fake_long_reads(args, long_depth):
     """
     Runs pbsim to generate fake long reads. Runs pbsim separate for each sequence in the reference
     file (to control relative depth) and at multiple sequence rotations (to ensure circular
     assembly).
     """
-    long_filename = 'long_' + str(args.long_acc) + '_' + str(args.long_len)
+    long_filename = 'long_' + '{0:g}'.format(args.long_acc) + '_' + str(args.long_len) + '_' + \
+        '{0:g}'.format(long_depth) + 'x'
     long_filename = long_filename.replace('.', '_')
     long_filename = os.path.abspath(long_filename + '.fastq')
     print('\nGenerating synthetic long reads:', str(args.long_acc) + '% accuracy,',
@@ -484,14 +498,14 @@ def make_fake_long_reads(args):
     for i, ref in enumerate(references):
         ref_seq = ref[1]
         ref_len = len(ref_seq)
-        long_depth = relative_depths[i] * args.long_depth
+        ref_long_depth = relative_depths[i] * long_depth
 
         rotation_count = args.rotation_count
-        long_depth_per_rotation = long_depth / rotation_count
+        long_depth_per_rotation = ref_long_depth / rotation_count
 
         while long_depth_per_rotation * ref_len < args.long_len and rotation_count > 1:
             rotation_count = max(1, rotation_count // 2)
-            long_depth_per_rotation = long_depth / rotation_count
+            long_depth_per_rotation = ref_long_depth / rotation_count
 
         ref_seq = ref[1]
         for j in range(rotation_count):
@@ -1124,7 +1138,7 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
     return os.path.abspath(cerulean_dir)
 
 
-def run_unicycler(args, short_1, short_2, long_reads, long_read_filename, long_read_count,
+def run_unicycler(args, short_1, short_2, long_read_filename, long_read_count,
                   long_read_depth, all_quast_results, simple_quast_results, bridging_mode,
                   unicycler_no_long_dir=None, unicycler_all_long_dir=None):
     run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler_' + bridging_mode,
@@ -1140,15 +1154,14 @@ def run_unicycler(args, short_1, short_2, long_reads, long_read_filename, long_r
         shutil.copyfile(os.path.join(unicycler_no_long_dir, '001_unbridged_graph.gfa'),
                         os.path.join(unicycler_dir, '001_unbridged_graph.gfa'))
 
-    # Instead of making Unicycler realign the subsampled reads, we just copy the appropriate
-    # alignments over from the full read set Unicycler run.
+    # If read alignments are already available, copy them over instead of doing the alignment again.
     if unicycler_all_long_dir:
         read_align_dir = os.path.join(unicycler_dir, 'read_alignment_temp')
         if not os.path.exists(read_align_dir):
             os.makedirs(read_align_dir)
-        create_subsampled_sam(os.path.join(unicycler_all_long_dir, 'read_alignment_temp',
-                                           'long_read_alignments.sam'),
-                              os.path.join(read_align_dir, 'long_read_alignments.sam'), long_reads)
+            shutil.copyfile(os.path.join(unicycler_all_long_dir, 'read_alignment_temp',
+                                         'long_read_alignments.sam'),
+                            os.path.join(read_align_dir, 'long_read_alignments.sam'))
 
     unicycler_start_time = time.time()
     print('\nRunning', run_name, flush=True)
@@ -1233,6 +1246,9 @@ def create_quast_results_tables(args):
                                        "Synthetic long read mean length (bp)\t")
         simple_quast_results.write("Long read depth\t"
                                    "Run time (seconds)\t"
+                                   "Reference pieces\t"
+                                   "# contigs\t"
+                                   "NGA50\t"
                                    "Completeness (%)\t"
                                    "# misassemblies\t"
                                    "# local misassemblies\t"
@@ -1358,6 +1374,12 @@ def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler
                 headers = results.readline().strip().split('\t')
                 results = results.readline().strip().split('\t')
                 quast_line += results[1:]
+                simple_quast_line.append(get_quast_result(headers, results,
+                                                          'Reference pieces'))
+                simple_quast_line.append(get_quast_result(headers, results,
+                                                          '# contigs (>= 0 bp)'))
+                simple_quast_line.append(get_quast_result(headers, results,
+                                                          'NGA50'))
                 simple_quast_line.append(get_quast_result(headers, results,
                                                           'Percent complete total'))
                 simple_quast_line.append(get_quast_result(headers, results, '# misassemblies'))

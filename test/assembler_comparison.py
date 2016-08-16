@@ -382,24 +382,39 @@ def make_fake_short_reads(args):
     for i, ref in enumerate(references):
 
         short_depth = relative_depths[i] * args.short_depth
-        short_depth_per_rotation = short_depth / args.rotation_count
 
         ref_seq = ref[1]
-        for j in range(args.rotation_count):
+        circular = ref[3]
 
-            # Randomly rotate the sequence.
-            random_start = random.randint(0, len(ref_seq) - 1)
-            rotated = ref_seq[random_start:] + ref_seq[:random_start]
+        if circular:
+            short_depth_per_rotation = short_depth / args.rotation_count
 
-            # Save the rotated sequence to FASTA.
-            temp_fasta_filename = 'temp_rotated.fasta'
+            for j in range(args.rotation_count):
+
+                # Randomly rotate the sequence.
+                random_start = random.randint(0, len(ref_seq) - 1)
+                rotated = ref_seq[random_start:] + ref_seq[:random_start]
+
+                # Save the rotated sequence to FASTA.
+                temp_fasta_filename = 'temp_rotated.fasta'
+                temp_fasta = open(temp_fasta_filename, 'w')
+                temp_fasta.write('>' + ref[0] + '\n')
+                temp_fasta.write(rotated + '\n')
+                temp_fasta.close()
+
+                short_read_pairs += run_art(temp_fasta_filename, short_depth_per_rotation,
+                                            str(read_prefix))
+                os.remove(temp_fasta_filename)
+                read_prefix += 1
+
+        else:  # linear
+            temp_fasta_filename = 'temp.fasta'
             temp_fasta = open(temp_fasta_filename, 'w')
             temp_fasta.write('>' + ref[0] + '\n')
-            temp_fasta.write(rotated + '\n')
+            temp_fasta.write(ref_seq + '\n')
             temp_fasta.close()
 
-            short_read_pairs += run_art(temp_fasta_filename, short_depth_per_rotation,
-                                        str(read_prefix))
+            short_read_pairs = run_art(temp_fasta_filename, short_depth, str(read_prefix))
             os.remove(temp_fasta_filename)
             read_prefix += 1
 
@@ -469,39 +484,53 @@ def make_fake_long_reads(args, long_depth):
         ref_len = len(ref_seq)
         ref_long_depth = relative_depths[i] * long_depth
 
-        rotation_count = args.rotation_count
-        long_depth_per_rotation = ref_long_depth / rotation_count
+        ref_seq = ref[1]
+        circular = ref[3]
 
-        while long_depth_per_rotation * ref_len < args.long_len and rotation_count > 1:
-            rotation_count = max(1, rotation_count // 2)
+        if circular:
+            rotation_count = args.rotation_count
             long_depth_per_rotation = ref_long_depth / rotation_count
 
-        ref_seq = ref[1]
-        for j in range(rotation_count):
+            while long_depth_per_rotation * ref_len < args.long_len and rotation_count > 1:
+                rotation_count = max(1, rotation_count // 2)
+                long_depth_per_rotation = ref_long_depth / rotation_count
 
-            # Randomly rotate the sequence.
-            random_start = random.randint(0, ref_len - 1)
-            rotated = ref_seq[random_start:] + ref_seq[:random_start]
+            for j in range(rotation_count):
 
-            # If the sequence is very short compared to the read length, then we duplicate the
-            # sequence. This is because PBSIM does weird stuff when you, for example, ask for 25 kb
-            # reads from an 8 kb sequence.
-            copy_adjusted_depth = long_depth_per_rotation
-            copy_adjusted_sequence = rotated
-            while len(copy_adjusted_sequence) < 5 * args.long_len:
-                copy_adjusted_sequence += copy_adjusted_sequence
-                copy_adjusted_depth /= 2.0
+                # Randomly rotate the sequence.
+                random_start = random.randint(0, ref_len - 1)
+                rotated = ref_seq[random_start:] + ref_seq[:random_start]
 
-            # Save the rotated sequence to FASTA.
-            temp_fasta_filename = 'temp_rotated.fasta'
+                # If the sequence is very short compared to the read length, then we duplicate the
+                # sequence. This is because PBSIM does weird stuff when you, for example, ask for
+                # 25 kb reads from an 8 kb sequence.
+                copy_adjusted_depth = long_depth_per_rotation
+                copy_adjusted_sequence = rotated
+                while len(copy_adjusted_sequence) < 5 * args.long_len:
+                    copy_adjusted_sequence += copy_adjusted_sequence
+                    copy_adjusted_depth /= 2.0
+
+                # Save the rotated sequence to FASTA.
+                temp_fasta_filename = 'temp_rotated.fasta'
+                temp_fasta = open(temp_fasta_filename, 'w')
+                temp_fasta.write('>' + ref[0] + '\n')
+                temp_fasta.write(copy_adjusted_sequence + '\n')
+                temp_fasta.close()
+
+                long_reads += run_pbsim(temp_fasta_filename, copy_adjusted_depth, args,
+                                        str(read_prefix), ref_len)
+                os.remove(temp_fasta_filename)
+                read_prefix += 1
+
+        else:  # linear
+            temp_fasta_filename = 'temp.fasta'
             temp_fasta = open(temp_fasta_filename, 'w')
             temp_fasta.write('>' + ref[0] + '\n')
-            temp_fasta.write(copy_adjusted_sequence + '\n')
+            temp_fasta.write(ref_seq + '\n')
             temp_fasta.close()
 
-            long_reads += run_pbsim(temp_fasta_filename, copy_adjusted_depth, args,
-                                    str(read_prefix), ref_len)
-
+            long_reads += run_pbsim(temp_fasta_filename, ref_long_depth, args, str(read_prefix),
+                                    ref_len)
             os.remove(temp_fasta_filename)
             read_prefix += 1
 
@@ -1434,7 +1463,14 @@ def load_fasta(filename):
         else:
             sequence += line
     if name:
-        fasta_seqs.append((name.split()[0], sequence, name.split()[-1]))
+        name_parts = name.split()
+        seq_name = name_parts[0]
+        relative_depth = name_parts[1]
+        if len(name_parts) > 2 and name_parts[2] == 'linear':
+            circular = False
+        else:
+            circular = True
+        fasta_seqs.append((seq_name, sequence, relative_depth, circular))
     fasta_file.close()
     return fasta_seqs
 

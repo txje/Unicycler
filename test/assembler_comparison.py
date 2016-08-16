@@ -71,9 +71,9 @@ def get_args():
     # Used for simulated reads.
     parser.add_argument('--short_depth', type=float, default=50.0,
                         help='Base read depth for fake short reads')
-    parser.add_argument('--long_accs', type=str, default='75,90,60',
+    parser.add_argument('--long_accs', type=str, default='75',
                         help='Mean accuracies for long reads (comma delimited)')
-    parser.add_argument('--long_lens', type=str, default='10000,25000',
+    parser.add_argument('--long_lens', type=str, default='10000',
                         help='Mean lengths for long reads (comma delimited)')
     parser.add_argument('--model_qc', type=str, default='model_qc_clr',
                         help='Model QC file for pbsim')
@@ -84,6 +84,8 @@ def get_args():
     # Used for both real and simulated reads.
     parser.add_argument('--long_depths', type=str, default='1,2,3,4,5,6,7,8,9,10',
                         help='Maximum read depth for long reads')
+    parser.add_argument('--iterations', type=int, default=10,
+                        help='Number of replicate tests')
     parser.add_argument('--no_cerulean', action='store_true',
                         help='Skips Cerulean and ABySS assemblies')
     parser.add_argument('--no_npscarf', action='store_true',
@@ -111,43 +113,43 @@ def real_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref
     """
     Runs tests using real reads.
     """
-    print_with_timestamp('Running in real read mode: ' + args.real_short_1 +  args.real_short_2 +
-                         args.real_long)
+    print_with_timestamp('Running in real read mode: ' + args.real_short_1 + ', ' +
+                         args.real_short_2 + ', ' + args.real_long)
 
     long_reads = load_fastq(args.real_long, '')
-    long_read_count = len(long_reads)
-    long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
 
-    # Create and move into a directory for this iteration.
+    # Create and move into a directory for the short-only and all-long assemblies.
     dir_name, dir_num = get_next_available_set_number(ref_dir, 1)
     iter_dir = os.path.join(ref_dir, dir_name)
+    print()
     print_with_timestamp('Changing to new directory: ' + str(iter_dir))
     os.chdir(iter_dir)
 
-    abyss_dir, spades_no_long_dir, unicycler_no_long_dir = \
+    abyss_dir, spades_no_long_dir, unicycler_no_long_dir, \
+        abyss_time, spades_no_long_time, unicycler_no_long_time = \
         assemble_short_reads_only(args, args.real_short_1, args.real_short_2, quast_results,
                                   simple_quast_results)
 
-    unicycler_all_long_dir, np_scarf_all_long_dir, cerulean_all_long_dir = \
-        assemble_all_long_reads(args, args.real_short_1, args.real_short_2, long_reads,
-                                args.real_long, long_read_count, long_read_depth, quast_results,
-                                simple_quast_results, unicycler_no_long_dir,
-                                spades_no_long_dir, abyss_dir)
+    for i in range(args.iterations):
 
-    # The program runs indefinitely, always running more tests until the user kills it.
-    while True:
+        # Create and move into a directory for this iteration.
+        dir_name, dir_num = get_next_available_set_number(ref_dir, 1)
+        iter_dir = os.path.join(ref_dir, dir_name)
+        print()
+        print_with_timestamp('Changing to new directory: ' + str(iter_dir))
+        os.chdir(iter_dir)
+
         depths = [float(x) for x in args.long_depths.split(',')]
         for subsampled_depth in depths:
 
             subsampled_reads, subsampled_filename, subsampled_long_read_depth = \
                 subsample_long_reads(args, long_reads, subsampled_depth, scaled_ref_length, False)
 
-            assemble_subsampled_long_reads(args, args.real_short_1, args.real_short_2,
-                                           subsampled_reads, subsampled_filename,
-                                           len(subsampled_reads), subsampled_long_read_depth,
-                                           quast_results, simple_quast_results,
-                                           unicycler_all_long_dir, spades_no_long_dir,
-                                           np_scarf_all_long_dir, abyss_dir, cerulean_all_long_dir)
+            assemble_long_reads(args, args.real_short_1, args.real_short_2, subsampled_reads,
+                                subsampled_filename, len(subsampled_reads),
+                                subsampled_long_read_depth, quast_results, simple_quast_results,
+                                unicycler_no_long_dir, spades_no_long_dir, abyss_dir,
+                                unicycler_no_long_time, spades_no_long_time, abyss_time)
 
 
 def simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref_dir):
@@ -172,13 +174,15 @@ def simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results
         # Create and move into a directory for this iteration.
         dir_name, dir_num = get_next_available_set_number(ref_dir, dir_num)
         iter_dir = os.path.join(ref_dir, dir_name)
+        print()
         print_with_timestamp('Changing to new directory: ' + str(iter_dir))
         os.chdir(iter_dir)
 
         # Make new short reads every time through this loop.
         short_1, short_2 = make_fake_short_reads(args)
 
-        abyss_dir, spades_no_long_dir, unicycler_no_long_dir = \
+        abyss_dir, spades_no_long_dir, unicycler_no_long_dir, \
+            abyss_time, spades_no_long_time, unicycler_no_long_time = \
             assemble_short_reads_only(args, short_1, short_2, quast_results, simple_quast_results)
 
         # Shuffle the acc/len order so if repeated runs are cut short I'm not always getting the
@@ -193,10 +197,11 @@ def simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results
                 long_read_count = len(long_reads)
                 long_read_depth = get_long_read_depth(long_reads, scaled_ref_length)
 
-                assemble_all_long_reads(args, short_1, short_2, long_reads, long_filename,
-                                        long_read_count, long_read_depth, quast_results,
-                                        simple_quast_results, unicycler_no_long_dir,
-                                        spades_no_long_dir, abyss_dir)
+                assemble_long_reads(args, short_1, short_2, long_reads, long_filename,
+                                    long_read_count, long_read_depth, quast_results,
+                                    simple_quast_results, unicycler_no_long_dir,
+                                    spades_no_long_dir, abyss_dir, unicycler_no_long_time,
+                                    spades_no_long_time, abyss_time)
 
 
 def assemble_short_reads_only(args, short_1, short_2, quast_results, simple_quast_results):
@@ -205,44 +210,56 @@ def assemble_short_reads_only(args, short_1, short_2, quast_results, simple_quas
     """
     args.long_acc, args.long_len = 0.0, 0
     if not args.no_cerulean:
-        abyss_dir = run_abyss(short_1, short_2, args, quast_results, simple_quast_results)
+        abyss_dir, abyss_time = run_abyss(short_1, short_2, args, quast_results,
+                                          simple_quast_results)
     else:
         abyss_dir = None
+        abyss_time = 0.0
 
     if not args.no_spades:
-        spades_no_long_dir = run_regular_spades(short_1, short_2, args, quast_results,
-                                                simple_quast_results)
+        spades_no_long_dir, spades_time = run_regular_spades(short_1, short_2, args, quast_results,
+                                                             simple_quast_results)
     else:
         spades_no_long_dir = None
+        spades_time = 0.0
+
     if not args.no_unicycler:
-        unicycler_no_long_dir = run_unicycler(args, short_1, short_2, None, 0, 0.0,
-                                              quast_results, simple_quast_results, 'conservative')
+        unicycler_no_long_dir, unicycler_time = \
+            run_unicycler(args, short_1, short_2, None, 0, 0.0, quast_results,
+                          simple_quast_results, 'conservative')
         run_unicycler(args, short_1, short_2, None, 0, 0.0, quast_results,
-                      simple_quast_results, 'normal', unicycler_no_long_dir)
+                      simple_quast_results, 'normal', unicycler_no_long_dir,
+                      replacement_time=unicycler_time)
         run_unicycler(args, short_1, short_2, None, 0, 0.0, quast_results,
-                      simple_quast_results, 'bold', unicycler_no_long_dir)
+                      simple_quast_results, 'bold', unicycler_no_long_dir,
+                      replacement_time=unicycler_time)
     else:
         unicycler_no_long_dir = None
+        unicycler_time = 0.0
 
-    return abyss_dir, spades_no_long_dir, unicycler_no_long_dir
+    return abyss_dir, spades_no_long_dir, unicycler_no_long_dir, abyss_time, spades_time, \
+        unicycler_time
 
 
-def assemble_all_long_reads(args, short_1, short_2, long_reads, long_filename, long_read_count,
-                            long_read_depth, quast_results, simple_quast_results,
-                            unicycler_no_long_dir, spades_no_long_dir, abyss_dir):
+def assemble_long_reads(args, short_1, short_2, long_reads, long_filename, long_read_count,
+                        long_read_depth, quast_results, simple_quast_results,
+                        unicycler_no_long_dir, spades_no_long_dir, abyss_dir,
+                        unicycler_no_long_time, spades_no_long_time, abyss_time):
     # Run Unicycler on the full set of long reads - will be the source of alignments for
     # subsampled Unicycler runs.
     if not args.no_unicycler:
-        unicycler_all_long_dir = run_unicycler(args, short_1, short_2, long_filename,
-                                               long_read_count, long_read_depth, quast_results,
-                                               simple_quast_results, 'conservative',
-                                               unicycler_no_long_dir)
+        unicycler_all_long_dir, unicycler_time = \
+            run_unicycler(args, short_1, short_2, long_filename, long_read_count,
+                          long_read_depth, quast_results, simple_quast_results, 'conservative',
+                          unicycler_no_long_dir, extra_time=unicycler_no_long_time)
         run_unicycler(args, short_1, short_2, long_filename, long_read_count,
                       long_read_depth, quast_results, simple_quast_results, 'normal',
-                      unicycler_no_long_dir, unicycler_all_long_dir)
+                      unicycler_no_long_dir, unicycler_all_long_dir,
+                      replacement_time=unicycler_time)
         run_unicycler(args, short_1, short_2, long_filename, long_read_count,
                       long_read_depth, quast_results, simple_quast_results, 'bold',
-                      unicycler_no_long_dir, unicycler_all_long_dir)
+                      unicycler_no_long_dir, unicycler_all_long_dir,
+                      replacement_time=unicycler_time)
 
     else:
         unicycler_all_long_dir = None
@@ -257,7 +274,8 @@ def assemble_all_long_reads(args, short_1, short_2, long_reads, long_filename, l
     if not args.no_npscarf:
         np_scarf_all_long_dir = run_np_scarf(long_filename, long_reads, long_read_count,
                                              long_read_depth, args, quast_results,
-                                             simple_quast_results, spades_no_long_dir)
+                                             simple_quast_results, spades_no_long_dir,
+                                             extra_time=spades_no_long_time)
     else:
         np_scarf_all_long_dir = None
 
@@ -266,53 +284,11 @@ def assemble_all_long_reads(args, short_1, short_2, long_reads, long_filename, l
     if not args.no_cerulean:
         cerulean_all_long_dir = run_cerulean(long_filename, long_reads, long_read_count,
                                              long_read_depth, args, quast_results,
-                                             simple_quast_results, abyss_dir)
+                                             simple_quast_results, abyss_dir, extra_time=abyss_time)
     else:
         cerulean_all_long_dir = None
 
     return unicycler_all_long_dir, np_scarf_all_long_dir, cerulean_all_long_dir
-
-
-def assemble_subsampled_long_reads(args, short_1, short_2, subsampled_reads, subsampled_filename,
-                                   subsampled_count, subsampled_long_read_depth, quast_results,
-                                   simple_quast_results, unicycler_all_long_dir,
-                                   spades_no_long_dir, np_scarf_all_long_dir, abyss_dir,
-                                   cerulean_all_long_dir):
-    # Run Unicycler on the subsampled long reads. This should be relatively fast,
-    # because we can skip the short read assembly and the alignment. The bridging and
-    # polishing steps can still take a while, though.
-    if not args.no_unicycler:
-        run_unicycler(args, short_1, short_2, subsampled_filename,
-                      subsampled_count, subsampled_long_read_depth, quast_results,
-                      simple_quast_results, 'conservative', unicycler_all_long_dir)
-        run_unicycler(args, short_1, short_2, subsampled_filename,
-                      subsampled_count, subsampled_long_read_depth, quast_results,
-                      simple_quast_results, 'normal', unicycler_all_long_dir)
-        run_unicycler(args, short_1, short_2, subsampled_filename,
-                      subsampled_count, subsampled_long_read_depth, quast_results,
-                      simple_quast_results, 'bold', unicycler_all_long_dir)
-
-    # Run hybridSPAdes on the subsampled long reads.
-    if not args.no_spades:
-        run_hybrid_spades(short_1, short_2, subsampled_filename, subsampled_count,
-                          subsampled_long_read_depth, args, quast_results,
-                          simple_quast_results, spades_no_long_dir)
-
-    # Run npScarf on the subsampled long reads. This is very fast because we can skip
-    # the alignment step.
-    if not args.no_npscarf:
-        run_np_scarf(subsampled_filename, subsampled_reads, subsampled_count,
-                     subsampled_long_read_depth, args, quast_results,
-                     simple_quast_results, spades_no_long_dir,
-                     np_scarf_all_long_dir=np_scarf_all_long_dir)
-
-    # Run Cerulean on the subsampled long reads. The BLASR alignments can be subsampled
-    # from the full long read run, which saves some time.
-    if not args.no_cerulean:
-        run_cerulean(subsampled_filename, subsampled_reads, subsampled_count,
-                     subsampled_long_read_depth, args, quast_results,
-                     simple_quast_results, abyss_dir,
-                     cerulean_all_long_dir=cerulean_all_long_dir)
 
 
 def subsample_long_reads(args, long_reads, subsampled_depth, scaled_ref_length, include_acc_len):
@@ -360,7 +336,8 @@ def subsample_long_reads(args, long_reads, subsampled_depth, scaled_ref_length, 
         else:
             file_index += 1
 
-    print_with_timestamp('\nSubsampling to ' + str(subsampled_depth) + 'x')
+    print()
+    print_with_timestamp('Subsampling to ' + str(subsampled_depth) + 'x')
     save_long_reads_to_fastq(subsampled_reads, full_subsampled_filename)
     try:
         subprocess.check_output(['gzip', full_subsampled_filename], stderr=subprocess.STDOUT)
@@ -475,7 +452,8 @@ def make_fake_long_reads(args, long_depth):
     long_filename = long_filename.replace('.', '_')
     long_filename = os.path.abspath(long_filename + '.fastq')
 
-    print_with_timestamp('\nGenerating synthetic long reads: ' + str(args.long_acc) +
+    print()
+    print_with_timestamp('Generating synthetic long reads: ' + str(args.long_acc) +
                          '% accuracy, ' + str(args.long_len) + ' bp, ' +
                          '{0:g}'.format(long_depth) + 'x')
 
@@ -745,7 +723,8 @@ def run_abyss(short_1, short_2, args, all_quast_results, simple_quast_results):
         except subprocess.CalledProcessError as e:
             quit_with_error('gzip encountered an error:\n' + e.output.decode())
 
-        abyss_command = "abyss-pe k=64 j=" + str(args.threads) + \
+        thread_str = str(args.threads)
+        abyss_command = "abyss-pe k=64 j=" + thread_str + " np=" + thread_str + \
                         " in='reads_1.fastq reads_2.fastq' name=run"
         print_with_timestamp(abyss_command)
         try:
@@ -764,11 +743,11 @@ def run_abyss(short_1, short_2, args, all_quast_results, simple_quast_results):
     os.chdir(starting_path)
 
     run_quast(abyss_scaffolds, args, all_quast_results, simple_quast_results, 'ABySS scaffolds',
-              0, 0.0, abyss_time, run_name, abyss_dir)
+              0, 0.0, abyss_time, abyss_time, run_name, abyss_dir)
     run_quast(abyss_contigs, args, all_quast_results, simple_quast_results, 'ABySS contigs',
-              0, 0.0, abyss_time, run_name, abyss_dir)
+              0, 0.0, abyss_time, abyss_time, run_name, abyss_dir)
 
-    return os.path.abspath(abyss_dir)
+    return os.path.abspath(abyss_dir), abyss_time
 
 
 def run_regular_spades(short_1, short_2, args, all_quast_results, simple_quast_results):
@@ -808,14 +787,14 @@ def run_regular_spades(short_1, short_2, args, all_quast_results, simple_quast_r
     spades_time = time.time() - spades_start_time
 
     run_quast(spades_scaffolds, args, all_quast_results, simple_quast_results, 'SPAdes scaffolds',
-              0, 0.0, spades_time, run_name, spades_dir)
+              0, 0.0, spades_time, spades_time, run_name, spades_dir)
     run_quast(spades_contigs, args, all_quast_results, simple_quast_results, 'SPAdes contigs',
-              0, 0.0, spades_time, run_name, spades_dir)
+              0, 0.0, spades_time, spades_time, run_name, spades_dir)
     run_quast(spades_before_rr, args, all_quast_results, simple_quast_results, 'SPAdes before_rr',
-              0, 0.0, spades_time, run_name, spades_dir)
+              0, 0.0, spades_time, spades_time, run_name, spades_dir)
 
     clean_up_spades_dir(spades_dir)
-    return os.path.abspath(spades_dir)
+    return os.path.abspath(spades_dir), spades_time
 
 
 def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args, all_quast_results,
@@ -870,13 +849,13 @@ def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args, all_
 
     spades_time = time.time() - spades_start_time
     run_quast(spades_assembly, args, all_quast_results, simple_quast_results, 'SPAdes hybrid',
-              long_count, long_depth, spades_time, run_name, spades_dir)
+              long_count, long_depth, spades_time, spades_time, run_name, spades_dir)
     clean_up_spades_dir(spades_dir)
     return os.path.abspath(spades_dir)
 
 
 def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_quast_results,
-                 simple_quast_results, spades_dir, np_scarf_all_long_dir=None):
+                 simple_quast_results, spades_dir, np_scarf_all_long_dir=None, extra_time=0.0):
     """
     Runs npScarf using the SPAdes assembly results:
 
@@ -970,15 +949,16 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
         np_scarf_assembly = None
 
     np_scarf_time = time.time() - np_scarf_start_time
+    full_time = np_scarf_time + extra_time
     run_quast(np_scarf_assembly, args, all_quast_results, simple_quast_results, 'npScarf',
-              long_count, long_depth, np_scarf_time, run_name, np_scarf_dir)
+              long_count, long_depth, np_scarf_time, full_time, run_name, np_scarf_dir)
 
     clean_up_np_scarf_dir(np_scarf_dir)
     return os.path.abspath(np_scarf_dir)
 
 
 def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_quast_results,
-                 simple_quast_results, abyss_dir, cerulean_all_long_dir=None):
+                 simple_quast_results, abyss_dir, cerulean_all_long_dir=None, extra_time=0.0):
     run_name, cerulean_dir = get_run_name_and_run_dir_name('Cerulean', args.reference, long_depth,
                                                            args)
     starting_path = os.path.abspath('.')
@@ -1123,16 +1103,18 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
         clean_up_cerulean_dir(cerulean_dir)
 
     cerulean_time = time.time() - cerulean_start_time
+    full_time = cerulean_time + extra_time
     os.chdir(starting_path)
     run_quast(cerulean_assembly, args, all_quast_results, simple_quast_results, 'Cerulean',
-              long_count, long_depth, cerulean_time, run_name, cerulean_dir)
+              long_count, long_depth, cerulean_time, full_time, run_name, cerulean_dir)
 
     return os.path.abspath(cerulean_dir)
 
 
 def run_unicycler(args, short_1, short_2, long_read_filename, long_read_count,
                   long_read_depth, all_quast_results, simple_quast_results, bridging_mode,
-                  unicycler_no_long_dir=None, unicycler_all_long_dir=None):
+                  unicycler_no_long_dir=None, unicycler_all_long_dir=None, replacement_time=None,
+                  extra_time=0.0):
     run_name, unicycler_dir = get_run_name_and_run_dir_name('Unicycler_' + bridging_mode,
                                                             args.reference, long_read_depth, args)
     unicycler_assembly = os.path.join(unicycler_dir, 'assembly.fasta')
@@ -1179,13 +1161,20 @@ def run_unicycler(args, short_1, short_2, long_read_filename, long_read_count,
             f.write(unicycler_out)
     except subprocess.CalledProcessError as e:
         quit_with_error('Unicycler encountered an error:\n' + e.output.decode())
+
     unicycler_time = time.time() - unicycler_start_time
+    if replacement_time:
+        full_time = replacement_time
+    else:
+        full_time = unicycler_time
+    full_time += extra_time
+
     run_quast(unicycler_assembly, args, all_quast_results, simple_quast_results,
               'Unicycler (' + bridging_mode + ')', long_read_count, long_read_depth, unicycler_time,
-              run_name, unicycler_dir)
+              full_time, run_name, unicycler_dir)
 
     clean_up_unicycler_dir(unicycler_dir)
-    return os.path.abspath(unicycler_dir)
+    return os.path.abspath(unicycler_dir), full_time
 
 
 # def run_canu(long, long_count, long_depth, args, all_quast_results, simple_quast_results):
@@ -1232,16 +1221,18 @@ def create_quast_results_tables(args):
         simple_quast_results.write("Reference name\t"
                                    "Assembler\t")
         if args.real_long:
-            simple_quast_results.write("Long read filename\t")
+            simple_quast_results.write("Full long read filename\t")
         else:
             simple_quast_results.write("Synthetic long read accuracy (%)\t"
                                        "Synthetic long read mean length (bp)\t")
         simple_quast_results.write("Long read depth\t"
                                    "Run time (seconds)\t"
+                                   "Full run time (seconds)\t"
                                    "Reference pieces\t"
                                    "# contigs\t"
                                    "NGA50\t"
                                    "Completeness (%)\t"
+                                   "Complete\t"
                                    "# misassemblies\t"
                                    "# local misassemblies\t"
                                    "# mismatches and indels per 100 kbp\n")
@@ -1254,7 +1245,7 @@ def create_quast_results_tables(args):
                             "Reference pieces\t"
                             "Assembler\t")
         if args.real_long:
-            quast_results.write("Long read filename\t")
+            quast_results.write("Full long read filename\t")
         else:
             quast_results.write("Synthetic long read accuracy (%)\t"
                                 "Synthetic long read mean length (bp)\t")
@@ -1317,7 +1308,7 @@ def create_quast_results_tables(args):
 
 
 def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler_name,
-              long_read_count, long_read_depth, run_time, run_name, run_dir_name):
+              long_read_count, long_read_depth, run_time, full_time, run_name, run_dir_name):
     reference_name = get_reference_name_from_filename(args.reference)
     long_read_acc = float_to_str(args.long_acc, 1) if long_read_count > 0 else ''
     long_read_len = str(args.long_len) if long_read_count > 0 else ''
@@ -1335,15 +1326,15 @@ def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler
         simple_quast_line.append(args.real_long)
     else:
         simple_quast_line += [long_read_acc, long_read_len]
-    simple_quast_line += [float_to_str(long_read_depth, 5), str(run_time)]
+    simple_quast_line += [float_to_str(long_read_depth, 5), str(run_time), str(full_time)]
 
     if assembly is None:
-        print_with_timestamp('Skipping QUAST for' + run_name)
+        print_with_timestamp('Skipping QUAST for ' + run_name)
         quast_line += [''] * 51
         simple_quast_line += [''] * 3
 
     else:
-        print_with_timestamp('Running QUAST for' + run_name)
+        print_with_timestamp('Running QUAST for ' + run_name)
         quast_dir = os.path.join(os.path.dirname(os.path.normpath(run_dir_name)), 'quast_results',
                                  os.path.basename(os.path.normpath(run_dir_name)))
         this_quast_results = os.path.join(quast_dir, 'transposed_report.tsv')
@@ -1366,14 +1357,39 @@ def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler
                 headers = results.readline().strip().split('\t')
                 results = results.readline().strip().split('\t')
                 quast_line += results[1:]
+
+                try:
+                    contig_count = int(get_quast_result(headers, results, '# contigs (>= 0 bp)'))
+                except ValueError:
+                    contig_count = 0
+                try:
+                    percent_complete = float(get_quast_result(headers, results,
+                                                              'Percent complete total'))
+                except ValueError:
+                    percent_complete = 0.0
+                try:
+                    misassemblies = int(get_quast_result(headers, results, '# misassemblies'))
+                except ValueError:
+                    misassemblies = 0
+
+                complete_per_ref = get_quast_result(headers, results,
+                                                    'Percent complete per reference')
+                if not complete_per_ref:
+                    complete = 'N'
+                else:
+                    percents = [float(x.split(':')[1]) for x in complete_per_ref.split(' ')]
+                    if all(x >= 99.0 for x in percents) and ref_count == contig_count and \
+                            misassemblies == 0:
+                        complete = 'Y'
+                    else:
+                        complete = 'N'
+
                 simple_quast_line.append(str(ref_count))
-                simple_quast_line.append(get_quast_result(headers, results,
-                                                          '# contigs (>= 0 bp)'))
-                simple_quast_line.append(get_quast_result(headers, results,
-                                                          'NGA50'))
-                simple_quast_line.append(get_quast_result(headers, results,
-                                                          'Percent complete total'))
-                simple_quast_line.append(get_quast_result(headers, results, '# misassemblies'))
+                simple_quast_line.append(str(contig_count))
+                simple_quast_line.append(get_quast_result(headers, results, 'NGA50'))
+                simple_quast_line.append(str(percent_complete))
+                simple_quast_line.append(complete)
+                simple_quast_line.append(str(misassemblies))
                 simple_quast_line.append(get_quast_result(headers, results,
                                                           '# local misassemblies'))
                 try:

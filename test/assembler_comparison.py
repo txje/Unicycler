@@ -18,6 +18,7 @@ import sys
 import time
 import shutil
 import gzip
+import datetime
 
 
 def main():
@@ -81,12 +82,8 @@ def get_args():
                              'positions')
 
     # Used for both real and simulated reads.
-    parser.add_argument('--max_long_depth', type=float, default=10.0,
+    parser.add_argument('--long_depths', type=str, default='1,2,3,4,5,6,7,8,9,10',
                         help='Maximum read depth for long reads')
-    parser.add_argument('--long_depth_steps', type=int, default=10,
-                        help='Number of long read depths to assemble')
-
-    # Used to skip particular assemblers.
     parser.add_argument('--no_cerulean', action='store_true',
                         help='Skips Cerulean and ABySS assemblies')
     parser.add_argument('--no_npscarf', action='store_true',
@@ -114,10 +111,8 @@ def real_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref
     """
     Runs tests using real reads.
     """
-    print('Running in real read mode:')
-    print(' ', args.real_short_1)
-    print(' ', args.real_short_2)
-    print(' ', args.real_long)
+    print_with_timestamp('Running in real read mode: ' + args.real_short_1 +  args.real_short_2 +
+                         args.real_long)
 
     long_reads = load_fastq(args.real_long, '')
     long_read_count = len(long_reads)
@@ -126,7 +121,7 @@ def real_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref
     # Create and move into a directory for this iteration.
     dir_name, dir_num = get_next_available_set_number(ref_dir, 1)
     iter_dir = os.path.join(ref_dir, dir_name)
-    print('\nChanging to new directory:', iter_dir)
+    print_with_timestamp('Changing to new directory: ' + str(iter_dir))
     os.chdir(iter_dir)
 
     abyss_dir, spades_no_long_dir, unicycler_no_long_dir = \
@@ -141,10 +136,7 @@ def real_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref
 
     # The program runs indefinitely, always running more tests until the user kills it.
     while True:
-        # Randomly subsample this read set.
-        depths = [args.max_long_depth * x / args.long_depth_steps
-                  for x in range(args.long_depth_steps, 0, -1)]
-
+        depths = [float(x) for x in args.long_depths.split(',')]
         for subsampled_depth in depths:
 
             subsampled_reads, subsampled_filename, subsampled_long_read_depth = \
@@ -168,9 +160,10 @@ def simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results
     accuracies_and_lengths = []
     for accuracy in accuracies:
         accuracies_and_lengths += [(accuracy, length) for length in lengths]
-    print('Running in simulated read mode with these accuracy and length combinations:')
-    for accuracy, length in accuracies_and_lengths:
-        print(' ', str(accuracy) + '%, ' + str(length) + ' bp')
+
+    acc_len_str = ', '.join(str(x) + '% ' + str(y) + 'bp' for x, y in accuracies_and_lengths)
+    print_with_timestamp('Running in simulated read mode with these accuracy and length '
+                         'combinations: ' + acc_len_str)
 
     # The program runs indefinitely, always running more tests until the user kills it.
     dir_num = 1
@@ -179,7 +172,7 @@ def simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results
         # Create and move into a directory for this iteration.
         dir_name, dir_num = get_next_available_set_number(ref_dir, dir_num)
         iter_dir = os.path.join(ref_dir, dir_name)
-        print('\nChanging to new directory:', iter_dir)
+        print_with_timestamp('Changing to new directory: ' + str(iter_dir))
         os.chdir(iter_dir)
 
         # Make new short reads every time through this loop.
@@ -194,10 +187,7 @@ def simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results
 
         for accuracy, length in accuracies_and_lengths:
             args.long_acc, args.long_len = accuracy, length
-
-            depths = [args.max_long_depth * x / args.long_depth_steps
-                      for x in range(args.long_depth_steps, 0, -1)]
-
+            depths = [float(x) for x in args.long_depths.split(',')]
             for depth in depths:
                 long_filename, long_reads = make_fake_long_reads(args, depth)
                 long_read_count = len(long_reads)
@@ -370,7 +360,7 @@ def subsample_long_reads(args, long_reads, subsampled_depth, scaled_ref_length, 
         else:
             file_index += 1
 
-    print('\nSubsampling to', str(subsampled_depth) + 'x')
+    print_with_timestamp('\nSubsampling to ' + str(subsampled_depth) + 'x')
     save_long_reads_to_fastq(subsampled_reads, full_subsampled_filename)
     try:
         subprocess.check_output(['gzip', full_subsampled_filename], stderr=subprocess.STDOUT)
@@ -403,7 +393,7 @@ def make_fake_short_reads(args):
     if os.path.isfile(read_filename_2 + '.gz'):
         os.remove(read_filename_2 + '.gz')
 
-    print('\nGenerating synthetic short reads', flush=True)
+    print_with_timestamp('Generating synthetic short reads')
 
     references = load_fasta(args.reference)
     relative_depths = get_relative_depths(args.reference)
@@ -468,8 +458,8 @@ def make_fake_short_reads(args):
         quit_with_error('gzip encountered an error:\n' + e.output.decode())
     read_filename_1 += '.gz'
     read_filename_2 += '.gz'
-    print(read_filename_1)
-    print(read_filename_2)
+    print_with_timestamp(read_filename_1)
+    print_with_timestamp(read_filename_2)
 
     return read_filename_1, read_filename_2
 
@@ -484,8 +474,10 @@ def make_fake_long_reads(args, long_depth):
         '{0:g}'.format(long_depth) + 'x'
     long_filename = long_filename.replace('.', '_')
     long_filename = os.path.abspath(long_filename + '.fastq')
-    print('\nGenerating synthetic long reads:', str(args.long_acc) + '% accuracy,',
-          str(args.long_len) + ' bp', flush=True)
+
+    print_with_timestamp('\nGenerating synthetic long reads: ' + str(args.long_acc) +
+                         '% accuracy, ' + str(args.long_len) + ' bp, ' +
+                         '{0:g}'.format(long_depth) + 'x')
 
     references = load_fasta(args.reference)
     relative_depths = get_relative_depths(args.reference)
@@ -546,7 +538,7 @@ def make_fake_long_reads(args, long_depth):
         quit_with_error('gzip encountered an error:\n' + e.output.decode())
     long_filename += '.gz'
 
-    print(long_filename)
+    print_with_timestamp(long_filename)
     return long_filename, long_reads
 
 
@@ -741,7 +733,7 @@ def run_abyss(short_1, short_2, args, all_quast_results, simple_quast_results):
 
     abyss_start_time = time.time()
     try:
-        print('\nRunning', run_name, flush=True)
+        print_with_timestamp('Running ' + run_name)
         if not os.path.exists(abyss_dir):
             os.makedirs(abyss_dir)
         shutil.copyfile(short_1, os.path.join(abyss_dir, 'reads_1.fastq.gz'))
@@ -755,13 +747,13 @@ def run_abyss(short_1, short_2, args, all_quast_results, simple_quast_results):
 
         abyss_command = "abyss-pe k=64 j=" + str(args.threads) + \
                         " in='reads_1.fastq reads_2.fastq' name=run"
-        print(abyss_command)
+        print_with_timestamp(abyss_command)
         try:
             abyss_out = subprocess.check_output(abyss_command, stderr=subprocess.STDOUT, shell=True)
             with open(os.path.join('abyss.out'), 'wb') as f:
                 f.write(abyss_out)
         except subprocess.CalledProcessError as e:
-            print('ABySS encountered an error:\n' + e.output.decode())
+            print_with_timestamp('ABySS encountered an error:\n' + e.output.decode())
             raise AssemblyError
 
     except AssemblyError:
@@ -790,7 +782,7 @@ def run_regular_spades(short_1, short_2, args, all_quast_results, simple_quast_r
 
     spades_start_time = time.time()
     try:
-        print('\nRunning', run_name, flush=True)
+        print_with_timestamp('Running ' + run_name)
         if not os.path.exists(spades_dir):
             os.makedirs(spades_dir)
         spades_command = ['spades.py',
@@ -799,13 +791,13 @@ def run_regular_spades(short_1, short_2, args, all_quast_results, simple_quast_r
                           '--careful',
                           '--threads', str(args.threads),
                           '-o', spades_dir]
-        print(' '.join(spades_command), flush=True)
+        print_with_timestamp(' '.join(spades_command))
         try:
             spades_out = subprocess.check_output(spades_command, stderr=subprocess.STDOUT)
             with open(os.path.join(spades_dir, 'spades.out'), 'wb') as f:
                 f.write(spades_out)
         except subprocess.CalledProcessError as e:
-            print('SPAdes encountered an error:\n' + e.output.decode())
+            print_with_timestamp('SPAdes encountered an error:\n' + e.output.decode())
             raise AssemblyError
 
     except AssemblyError:
@@ -848,7 +840,7 @@ def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args, all_
 
     spades_start_time = time.time()
     try:
-        print('\nRunning', run_name, flush=True)
+        print_with_timestamp('Running ' + run_name)
         if not os.path.exists(spades_dir):
             os.makedirs(spades_dir)
         spades_command = ['spades.py']
@@ -864,13 +856,13 @@ def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args, all_
                            '--careful',
                            '--threads', str(args.threads),
                            '-o', spades_dir]
-        print(' '.join(spades_command), flush=True)
+        print_with_timestamp(' '.join(spades_command))
         try:
             spades_out = subprocess.check_output(spades_command, stderr=subprocess.STDOUT)
             with open(os.path.join(spades_dir, 'spades.out'), 'wb') as f:
                 f.write(spades_out)
         except subprocess.CalledProcessError as e:
-            print('SPAdes encountered an error:\n' + e.output.decode())
+            print_with_timestamp('SPAdes encountered an error:\n' + e.output.decode())
             raise AssemblyError
 
     except AssemblyError:
@@ -900,7 +892,7 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
 
     np_scarf_start_time = time.time()
     try:
-        print('\nRunning', run_name, flush=True)
+        print_with_timestamp('Running ' + run_name)
         if not os.path.exists(np_scarf_dir):
             os.makedirs(np_scarf_dir)
 
@@ -910,11 +902,11 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
                                 '-n',
                                 '--input', os.path.join(spades_dir, 'contigs.fasta'),
                                 '--output', np_scarf_fasta]
-        print(' '.join(jsa_seq_sort_command), flush=True)
+        print_with_timestamp(' '.join(jsa_seq_sort_command))
         try:
             subprocess.check_output(jsa_seq_sort_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
-            print('jsa.seq.sort encountered an error:\n' + e.output.decode(), flush=True)
+            print_with_timestamp('jsa.seq.sort encountered an error:\n' + e.output.decode())
             raise AssemblyError
 
         # If we are running npScarf with all long reads, then we run BWA Mem to get the SAM file.
@@ -922,11 +914,11 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
         if not np_scarf_all_long_dir:
             bwa_index_command = ['bwa', 'index',
                                  np_scarf_fasta]
-            print(' '.join(bwa_index_command), flush=True)
+            print_with_timestamp(' '.join(bwa_index_command))
             try:
                 subprocess.check_output(bwa_index_command, stderr=subprocess.STDOUT)
             except subprocess.CalledProcessError as e:
-                print('BWA index encountered an error:\n' + e.output.decode())
+                print_with_timestamp('BWA index encountered an error:\n' + e.output.decode())
                 raise AssemblyError
 
             alignments_sam = open(alignments_file, 'w')
@@ -940,13 +932,13 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
                                '-a', '-Y',
                                np_scarf_fasta,
                                long_read_file]
-            print(' '.join(bwa_mem_command), flush=True)
+            print_with_timestamp(' '.join(bwa_mem_command))
             bwa_mem = subprocess.Popen(bwa_mem_command, stdout=alignments_sam, stderr=dev_null)
             try:
                 bwa_mem.communicate()
                 bwa_mem.wait()
             except subprocess.CalledProcessError:
-                print('BWA Mem encountered an error')
+                print_with_timestamp('BWA Mem encountered an error')
                 raise AssemblyError
             dev_null.close()
             alignments_sam.close()
@@ -960,7 +952,7 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
         jsa_np_gapcloser_command = ['jsa.np.gapcloser',
                                     '-b', alignments_file,
                                     '-seq', np_scarf_fasta]
-        print(' '.join(jsa_np_gapcloser_command), flush=True)
+        print_with_timestamp(' '.join(jsa_np_gapcloser_command))
         try:
             np_scarf_out = subprocess.check_output(jsa_np_gapcloser_command,
                                                    stderr=subprocess.STDOUT)
@@ -968,7 +960,7 @@ def run_np_scarf(long_read_file, long_reads, long_count, long_depth, args, all_q
                 f.write(np_scarf_out)
 
         except subprocess.CalledProcessError as e:
-            print('jsa.np.gapcloser encountered an error:\n' + e.output.decode())
+            print_with_timestamp('jsa.np.gapcloser encountered an error:\n' + e.output.decode())
             raise AssemblyError
 
         shutil.move('out.fin.fasta', np_scarf_assembly)
@@ -992,7 +984,7 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
     starting_path = os.path.abspath('.')
     cerulean_assembly = os.path.join(cerulean_dir, 'cerulean_final.fasta')
 
-    print('\nRunning', run_name, flush=True)
+    print_with_timestamp('Running ' + run_name)
     if not os.path.exists(cerulean_dir):
         os.makedirs(cerulean_dir)
 
@@ -1015,19 +1007,19 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
             fakequals_path = os.path.join(jelly_path, 'bin', 'fakeQuals.py')
             jelly_py_path = os.path.join(jelly_path, 'bin', 'Jelly.py')
         except KeyError:
-            print('JELLYPATH not set', flush=True)
+            print_with_timestamp('JELLYPATH not set')
             raise AssemblyError
         try:
             cerulean_path = os.path.join(os.environ['CERULEANPATH'], 'Cerulean.py')
         except KeyError:
-            print('CERULEANPATH not set', flush=True)
+            print_with_timestamp('CERULEANPATH not set')
             raise AssemblyError
         try:
             sawriter_command = ['sawriter', 'run-contigs.fa']
-            print(' '.join(sawriter_command), flush=True)
+            print_with_timestamp(' '.join(sawriter_command))
             subprocess.check_output(sawriter_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
-            print('sawriter encountered an error:\n' + e.output.decode(), flush=True)
+            print_with_timestamp('sawriter encountered an error:\n' + e.output.decode())
             raise AssemblyError
         fastq_to_fasta('long_reads.fastq', 'long_reads.fasta')
         os.remove('long_reads.fastq')
@@ -1049,10 +1041,10 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
                                  '-nproc', str(args.threads),
                                  '-noSplitSubreads',
                                  '-out', 'long_reads_contigs_mapping.fasta.m4']
-                print(' '.join(blasr_command), flush=True)
-                subprocess.check_output(blasr_command, stderr=subprocess.STDOUT)
+                print_with_timestamp(' '.join(blasr_command))
+                subprocess.check_output(blasr_command, stderr=subprocess.STDOUT, timeout=3600)
             except subprocess.CalledProcessError as e:
-                print('blasr encountered an error:\n' + e.output.decode(), flush=True)
+                print_with_timestamp('blasr encountered an error:\n' + e.output.decode())
                 raise AssemblyError
             os.rename('long_reads_contigs_mapping.fasta.m4', 'run_pacbio_contigs_mapping.fasta.m4')
         try:
@@ -1060,25 +1052,25 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
                                 '--dataname', 'run',
                                 '--basedir', '.',
                                 '--nproc', str(args.threads)]
-            print(' '.join(cerulean_command), flush=True)
+            print_with_timestamp(' '.join(cerulean_command))
             subprocess.check_output(cerulean_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
-            print('Cerulean.py encountered an error:\n' + e.output.decode(), flush=True)
+            print_with_timestamp('Cerulean.py encountered an error:\n' + e.output.decode())
             raise AssemblyError
         try:
             fakequals_command = ['python', fakequals_path, 'run_cerulean.fasta',
                                  'run_cerulean.qual']
-            print(' '.join(fakequals_command), flush=True)
+            print_with_timestamp(' '.join(fakequals_command))
             subprocess.check_output(fakequals_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
-            print('fakeQuals.py encountered an error:\n' + e.output.decode(), flush=True)
+            print_with_timestamp('fakeQuals.py encountered an error:\n' + e.output.decode())
             raise AssemblyError
         try:
             fakequals_command = ['python', fakequals_path, 'long_reads.fasta', 'long_reads.qual']
-            print(' '.join(fakequals_command), flush=True)
+            print_with_timestamp(' '.join(fakequals_command))
             subprocess.check_output(fakequals_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
-            print('fakeQuals.py encountered an error:\n' + e.output.decode(), flush=True)
+            print_with_timestamp('fakeQuals.py encountered an error:\n' + e.output.decode())
             raise AssemblyError
         if not os.path.exists('PBJelly'):
             os.makedirs('PBJelly')
@@ -1107,20 +1099,20 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
             extraction_command = ['python', jelly_py_path, 'extraction', 'Protocol.xml']
             assembly_command = ['python', jelly_py_path, 'assembly', 'Protocol.xml']
             output_command = ['python', jelly_py_path, 'output', 'Protocol.xml']
-            print(' '.join(setup_command), flush=True)
+            print_with_timestamp(' '.join(setup_command))
             subprocess.check_output(setup_command, stderr=subprocess.STDOUT)
-            print(' '.join(mapping_command), flush=True)
+            print_with_timestamp(' '.join(mapping_command))
             subprocess.check_output(mapping_command, stderr=subprocess.STDOUT)
-            print(' '.join(support_command), flush=True)
+            print_with_timestamp(' '.join(support_command))
             subprocess.check_output(support_command, stderr=subprocess.STDOUT)
-            print(' '.join(extraction_command), flush=True)
+            print_with_timestamp(' '.join(extraction_command))
             subprocess.check_output(extraction_command, stderr=subprocess.STDOUT)
-            print(' '.join(assembly_command), flush=True)
+            print_with_timestamp(' '.join(assembly_command))
             subprocess.check_output(assembly_command, stderr=subprocess.STDOUT)
-            print(' '.join(output_command), flush=True)
+            print_with_timestamp(' '.join(output_command))
             subprocess.check_output(output_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
-            print('Jelly.py encountered an error:\n' + e.output.decode(), flush=True)
+            print_with_timestamp('Jelly.py encountered an error:\n' + e.output.decode())
             raise AssemblyError
         shutil.copy(os.path.join(cerulean_dir, 'PBJelly', 'jelly.out.fasta'),
                     cerulean_assembly)
@@ -1164,7 +1156,7 @@ def run_unicycler(args, short_1, short_2, long_read_filename, long_read_count,
                             os.path.join(read_align_dir, 'long_read_alignments.sam'))
 
     unicycler_start_time = time.time()
-    print('\nRunning', run_name, flush=True)
+    print_with_timestamp('Running ' + run_name)
     if not os.path.exists(unicycler_dir):
         os.makedirs(unicycler_dir)
     unicycler_command = ['unicycler',
@@ -1180,7 +1172,7 @@ def run_unicycler(args, short_1, short_2, long_read_filename, long_read_count,
                           '--threads', str(args.threads),
                           '--verbosity', '2',
                           '--no_rotate']
-    print(' '.join(unicycler_command), flush=True)
+    print_with_timestamp(' '.join(unicycler_command))
     try:
         unicycler_out = subprocess.check_output(unicycler_command, stderr=subprocess.STDOUT)
         with open(os.path.join(unicycler_dir, 'unicycler.out'), 'wb') as f:
@@ -1205,20 +1197,20 @@ def run_unicycler(args, short_1, short_2, long_read_filename, long_read_count,
 #
 #     canu_start_time = time.time()
 #     try:
-#         print('\nRunning', run_name, flush=True)
+#         print_with_timestamp('Running ' + run_name)
 #         if not os.path.exists(canu_dir):
 #             os.makedirs(canu_dir)
 #         canu_command = ['canu',
 #                         '-p', 'canu_out',
 #                         '-d', canu_dir,
 #                         '-nanopore-raw', long]
-#         print(' '.join(canu_command), flush=True)
+#         print_with_timestamp(' '.join(canu_command))
 #         try:
 #             canu_out = subprocess.check_output(canu_command, stderr=subprocess.STDOUT)
 #             with open(os.path.join(canu_dir, 'canu.out'), 'wb') as f:
 #                 f.write(canu_out)
 #         except subprocess.CalledProcessError as e:
-#             print('Canu encountered an error:\n' + e.output.decode())
+#             print_with_timestamp('Canu encountered an error:\n' + e.output.decode())
 #             raise AssemblyError
 #
 #     except AssemblyError:
@@ -1346,12 +1338,12 @@ def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler
     simple_quast_line += [float_to_str(long_read_depth, 5), str(run_time)]
 
     if assembly is None:
-        print('\nSkipping QUAST for', run_name, flush=True)
+        print_with_timestamp('Skipping QUAST for' + run_name)
         quast_line += [''] * 51
         simple_quast_line += [''] * 3
 
     else:
-        print('\nRunning QUAST for', run_name, flush=True)
+        print_with_timestamp('Running QUAST for' + run_name)
         quast_dir = os.path.join(os.path.dirname(os.path.normpath(run_dir_name)), 'quast_results',
                                  os.path.basename(os.path.normpath(run_dir_name)))
         this_quast_results = os.path.join(quast_dir, 'transposed_report.tsv')
@@ -1362,11 +1354,11 @@ def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler
                          '-o', quast_dir,
                          '-l', '"' + run_name.replace(',', '') + '"',
                          '--threads', str(args.threads)]
-        print(' '.join(quast_command), flush=True)
+        print_with_timestamp(' '.join(quast_command))
         try:
             subprocess.check_output(quast_command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as e:
-            print('QUAST encountered an error:\n' + e.output.decode(), flush=True)
+            print_with_timestamp('QUAST encountered an error:\n' + e.output.decode())
             quast_line += [''] * 51
             simple_quast_line += [''] * 3
         else:
@@ -1441,7 +1433,7 @@ def get_fasta_length_and_seq_count(filename):
 
 
 def quit_with_error(message):
-    print('\nError:', message, file=sys.stderr, flush=True)
+    print_with_timestamp('Error: ' + message)
     sys.exit(1)
 
 
@@ -1660,6 +1652,10 @@ def set_up_env_var():
         os.environ['JELLYPATH'] = local_pb_path
     if 'CERULEANPATH' not in os.environ:
         os.environ['CERULEANPATH'] = local_cerulean_path
+
+
+def print_with_timestamp(string):
+    print('{:%Y-%m-%d %H:%M:%S}'.format(datetime.datetime.now()) + '  ' + string, flush=True)
 
 
 if __name__ == '__main__':

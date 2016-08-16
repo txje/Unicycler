@@ -1457,7 +1457,14 @@ def load_fasta(filename):
             continue
         if line[0] == '>':  # Header line = start of new contig
             if name:
-                fasta_seqs.append((name.split()[0], sequence, name.split()[-1]))
+                name_parts = name.split()
+                seq_name = name_parts[0]
+                relative_depth = name_parts[1]
+                if len(name_parts) > 2 and name_parts[2] == 'linear':
+                    circular = False
+                else:
+                    circular = True
+                fasta_seqs.append((seq_name, sequence, relative_depth, circular))
                 sequence = ''
             name = line[1:]
         else:

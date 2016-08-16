@@ -82,7 +82,7 @@ def get_args():
                              'positions')
 
     # Used for both real and simulated reads.
-    parser.add_argument('--long_depths', type=str, default='1,2,3,4,5,6,7,8,9,10',
+    parser.add_argument('--long_depths', type=str, default='0.25,0.5,1,2,4,8,16',
                         help='Maximum read depth for long reads')
     parser.add_argument('--iterations', type=int, default=10,
                         help='Number of replicate tests')
@@ -163,13 +163,12 @@ def simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results
     for accuracy in accuracies:
         accuracies_and_lengths += [(accuracy, length) for length in lengths]
 
-    acc_len_str = ', '.join(str(x) + '% ' + str(y) + 'bp' for x, y in accuracies_and_lengths)
+    acc_len_str = ', '.join(str(x) + '% + ' + str(y) + ' bp' for x, y in accuracies_and_lengths)
     print_with_timestamp('Running in simulated read mode with these accuracy and length '
                          'combinations: ' + acc_len_str)
 
-    # The program runs indefinitely, always running more tests until the user kills it.
     dir_num = 1
-    for i in range(1000000):
+    for i in range(args.iterations):
 
         # Create and move into a directory for this iteration.
         dir_name, dir_num = get_next_available_set_number(ref_dir, dir_num)

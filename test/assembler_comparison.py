@@ -722,8 +722,7 @@ def run_abyss(short_1, short_2, args, all_quast_results, simple_quast_results):
         except subprocess.CalledProcessError as e:
             quit_with_error('gzip encountered an error:\n' + e.output.decode())
 
-        thread_str = str(args.threads)
-        abyss_command = "abyss-pe k=64 j=" + thread_str + " np=" + thread_str + \
+        abyss_command = "abyss-pe k=64 j=" + str(args.threads) + \
                         " in='reads_1.fastq reads_2.fastq' name=run"
         print_with_timestamp(abyss_command)
         try:

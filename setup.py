@@ -56,7 +56,7 @@ class UnicycleBuild(build):
         def compile_cpp():
             subprocess.call(make_cmd)
 
-        self.execute(clean_cpp, [], 'Cleaning previous compilations: ' + ' '.join(clean_cmd))
+        self.execute(clean_cpp, [], 'Cleaning previous compilation: ' + ' '.join(clean_cmd))
         self.execute(compile_cpp, [], 'Compiling Unicycler: ' + ' '.join(make_cmd))
 
 

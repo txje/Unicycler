@@ -686,6 +686,9 @@ def make_output_directory(out_dir, verbosity):
     elif os.listdir(out_dir) and verbosity > 1:
         print('The directory already exists and files may be reused and/or overwritten:')
         print('  ' + out_dir)
+    else:  # directory exists but is empty
+        print('The directory already exists:')
+        print('  ' + out_dir)
 
 
 def get_single_copy_segments(graph, verbosity, min_single_copy_length):

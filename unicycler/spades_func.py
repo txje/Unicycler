@@ -23,6 +23,9 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
     graphs have the same dead-end count (e.g. zero!) then the highest kmer is used.
     """
     spades_dir = os.path.join(out_dir, 'spades_assembly_temp')
+    if not os.path.exists(spades_dir):
+        os.makedirs(spades_dir)
+
     if no_spades_correct:
         reads = (short1, short2, None)
     else:

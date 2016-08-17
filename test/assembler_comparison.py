@@ -414,7 +414,7 @@ def make_fake_short_reads(args):
             temp_fasta.write(ref_seq + '\n')
             temp_fasta.close()
 
-            short_read_pairs = run_art(temp_fasta_filename, short_depth, str(read_prefix))
+            short_read_pairs += run_art(temp_fasta_filename, short_depth, str(read_prefix))
             os.remove(temp_fasta_filename)
             read_prefix += 1
 

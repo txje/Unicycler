@@ -275,17 +275,17 @@ def main():
             graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa'),
                               verbosity)
 
-    # If we are getting long reads incrementally, then we do the process iteratively.
-    elif args.long_dir:
-        finished = False
-        while not finished:
-            # TO DO: WAIT FOR NEW READS TO BECOME AVAILABLE
-            # TO DO: ALIGN LONG READS TO GRAPH
-            # TO DO: PRODUCE BRIDGES USING LONG READ ALIGNMENTS
-            # TO DO: APPLY THE BRIDGES TO THE GRAPH
-            # TO DO: SAVE THE RESULTS
-            # TO DO: ASSESS WHETHER THE PROCESS IS COMPLETE
-            finished = True  # TEMP
+    # # If we are getting long reads incrementally, then we do the process iteratively.
+    # elif args.long_dir:
+    #     finished = False
+    #     while not finished:
+    #         # TO DO: WAIT FOR NEW READS TO BECOME AVAILABLE
+    #         # TO DO: ALIGN LONG READS TO GRAPH
+    #         # TO DO: PRODUCE BRIDGES USING LONG READ ALIGNMENTS
+    #         # TO DO: APPLY THE BRIDGES TO THE GRAPH
+    #         # TO DO: SAVE THE RESULTS
+    #         # TO DO: ASSESS WHETHER THE PROCESS IS COMPLETE
+    #         finished = True  # TEMP
 
     # Perform a final clean on the graph, including overlap removal.
     graph.final_clean(verbosity)
@@ -472,8 +472,8 @@ def get_arguments():
     input_group.add_argument('-l', '--long', required=False, default=argparse.SUPPRESS,
                              help='FASTQ or FASTA file of long reads, if all reads are available '
                                   'at start.')
-    input_group.add_argument('-d', '--long_dir', required=False, default=argparse.SUPPRESS,
-                             help='Directory where FASTQ or FASTA read files will be deposited.')
+    # input_group.add_argument('-d', '--long_dir', required=False, default=argparse.SUPPRESS,
+    #                          help='Directory where FASTQ or FASTA read files will be deposited.')
     input_group.add_argument('--no_long', action='store_true',
                              help='Do not use any long reads (assemble with short reads only)')
 
@@ -618,10 +618,10 @@ def get_arguments():
         args.long
     except AttributeError:
         args.long = None
-    try:
-        args.long_dir
-    except AttributeError:
-        args.long_dir = None
+    # try:
+    #     args.long_dir
+    # except AttributeError:
+    #     args.long_dir = None
 
     try:
         args.threads
@@ -636,14 +636,14 @@ def get_arguments():
 
     # Make sure that only one of the three long read arguments was used.
     long_arg_count = 1 if args.long else 0
-    long_arg_count += 1 if args.long_dir else 0
+    # long_arg_count += 1 if args.long_dir else 0
     long_arg_count += 1 if args.no_long else 0
     if long_arg_count == 0:
         quit_with_error('One of the following options is required: '
-                        '--long, --long_dir or --no_long')
+                        '--long or --no_long')
     if long_arg_count > 1:
         quit_with_error('Only one of the following options can be used: '
-                        '--long, --long_dir or --no_long')
+                        '--long or --no_long')
 
     # Set up bridging mode related stuff.
     user_set_bridge_qual = hasattr(args, 'min_bridge_qual')
@@ -668,8 +668,8 @@ def get_arguments():
     args.short2 = os.path.abspath(args.short2)
     if args.long:
         args.long = os.path.abspath(args.long)
-    if args.long_dir:
-        args.long_dir = os.path.abspath(args.long_dir)
+    # if args.long_dir:
+    #     args.long_dir = os.path.abspath(args.long_dir)
 
     return args
 

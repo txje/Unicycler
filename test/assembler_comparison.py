@@ -115,7 +115,7 @@ def get_args():
     return args
 
 
-def real_reads(args, scaled_ref_length, ref_dir, using_ref):
+def real_reads(args, scaled_ref_length, ref_dir):
     """
     Runs tests using real reads and comparing to a reference.
     """
@@ -137,6 +137,7 @@ def real_reads(args, scaled_ref_length, ref_dir, using_ref):
         if not os.path.exists(long_read_set_dir):
             os.makedirs(long_read_set_dir)
         os.chdir(long_read_set_dir)
+        ref_dir = long_read_set_dir
         quast_results, simple_quast_results = create_quast_results_tables(args)
     else:
         quast_results, simple_quast_results = None, None
@@ -882,8 +883,11 @@ def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args, all_
         else:
             spades_command += ['-1', short_1,
                                '-2', short_2]
-        spades_command += ['--nanopore', long,
-                           '--careful',
+        if 'PACBIO' in long.upper() or args.long_acc >= 80.0:
+            spades_command += ['--pacbio', long]
+        else:
+            spades_command += ['--nanopore', long]
+        spades_command += ['--careful',
                            '--threads', str(args.threads),
                            '-o', spades_dir]
         print_with_timestamp(' '.join(spades_command))

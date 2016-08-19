@@ -25,8 +25,12 @@ def main():
     set_up_env_var()
     args = get_args()
 
-    scaled_ref_length = get_scaled_ref_length(args)
-    ref_name = get_reference_name_from_filename(args.reference)
+    if args.reference:
+        ref_name = get_reference_name_from_filename(args.reference)
+        scaled_ref_length = get_scaled_ref_length(args)
+    else:
+        ref_name = args.genome_name
+        scaled_ref_length = args.genome_size
 
     # Make a directory for this ref, if necessary.
     ref_dir = os.path.abspath(ref_name)
@@ -34,13 +38,11 @@ def main():
         os.makedirs(ref_dir)
     os.chdir(ref_dir)
 
-    quast_results, simple_quast_results = create_quast_results_tables(args)
-
     if args.real_short_1 and args.real_short_2 and args.real_long:
-        real_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref_dir)
+        real_reads(args, scaled_ref_length, ref_dir)
 
     elif args.short_depth and args.long_accs and args.long_lens and args.model_qc:
-        simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref_dir)
+        simulated_reads(args, scaled_ref_length, ref_dir)
 
     else:
         quit_with_error('Options not compatible with either real or simulated reads')
@@ -53,20 +55,22 @@ def get_args():
     parser = argparse.ArgumentParser(description='Assembly tester')
 
     # Used for both real and simulated reads.
-    parser.add_argument('--reference', type=str, required=True,
+    parser.add_argument('--reference', type=str,
                         help='The reference genome to shred and reassemble')
-    parser.add_argument('--threads', type=int, required=False, default=8,
-                        help='Number of CPU threads')
-    parser.add_argument('--subsample_count', type=int, required=False, default=4,
-                        help='Number of times to subsample long reads')
 
-    # Used for real reads:
+    # Used for real reads.
     parser.add_argument('--real_short_1', type=str,
                         help='Real short reads, forward half of pair')
     parser.add_argument('--real_short_2', type=str,
                         help='Real short reads, second half of pair')
     parser.add_argument('--real_long', type=str,
                         help='Real long reads')
+
+    # Used for real reads (no reference).
+    parser.add_argument('--genome_name', type=str,
+                        help='The name of the genome being assembled')
+    parser.add_argument('--genome_size', type=int,
+                        help='The size of the whole genome, scaled for relative depths')
 
     # Used for simulated reads.
     parser.add_argument('--short_depth', type=float, default=50.0,
@@ -82,6 +86,8 @@ def get_args():
                              'positions')
 
     # Used for both real and simulated reads.
+    parser.add_argument('--threads', type=int, required=False, default=8,
+                        help='Number of CPU threads')
     parser.add_argument('--long_depths', type=str, default='0.25,0.5,1,2,4,8,16',
                         help='Maximum read depth for long reads')
     parser.add_argument('--iterations', type=int, default=10,
@@ -109,14 +115,31 @@ def get_args():
     return args
 
 
-def real_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref_dir):
+def real_reads(args, scaled_ref_length, ref_dir, using_ref):
     """
-    Runs tests using real reads.
+    Runs tests using real reads and comparing to a reference.
     """
-    print_with_timestamp('Running in real read mode: ' + args.real_short_1 + ', ' +
-                         args.real_short_2 + ', ' + args.real_long)
+    using_ref = args.reference is not None
+
+    if using_ref:
+        print_with_timestamp('Running in real read mode (with reference): ' + args.real_short_1
+                             + ', ' + args.real_short_2 + ', ' + args.real_long)
+    else:
+        print_with_timestamp('Running in real read mode (with reference): ' + args.real_short_1
+                             + ', ' + args.real_short_2 + ', ' + args.real_long)
 
     long_reads = load_fastq(args.real_long, '')
+
+    if using_ref:
+        # Create and move into a directory for the specific long read set being used.
+        long_read_set_name = get_reference_name_from_filename(args.real_long)
+        long_read_set_dir = os.path.abspath(long_read_set_name)
+        if not os.path.exists(long_read_set_dir):
+            os.makedirs(long_read_set_dir)
+        os.chdir(long_read_set_dir)
+        quast_results, simple_quast_results = create_quast_results_tables(args)
+    else:
+        quast_results, simple_quast_results = None, None
 
     # Create and move into a directory for the short-only and all-long assemblies.
     dir_name, dir_num = get_next_available_set_number(ref_dir, 1)
@@ -152,10 +175,12 @@ def real_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref
                                 unicycler_no_long_time, spades_no_long_time, abyss_time)
 
 
-def simulated_reads(args, scaled_ref_length, quast_results, simple_quast_results, ref_dir):
+def simulated_reads(args, scaled_ref_length, ref_dir):
     """
     Runs tests using fake reads.
     """
+    quast_results, simple_quast_results = create_quast_results_tables(args)
+
     # Set up each read accuracy-length combination.
     accuracies = [float(x) for x in args.long_accs.split(',')]
     lengths = [int(x) for x in args.long_lens.split(',')]
@@ -291,7 +316,6 @@ def assemble_long_reads(args, short_1, short_2, long_reads, long_filename, long_
 
 
 def subsample_long_reads(args, long_reads, subsampled_depth, scaled_ref_length, include_acc_len):
-
     read_indices = list(range(len(long_reads)))
     subsampled_reads = []
     random.shuffle(read_indices)
@@ -1336,6 +1360,9 @@ def create_quast_results_tables(args):
 
 def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler_name,
               long_read_count, long_read_depth, run_time, full_time, run_name, run_dir_name):
+    if all_quast_results is None or simple_quast_results is None:
+        return
+
     reference_name = get_reference_name_from_filename(args.reference)
     long_read_acc = float_to_str(args.long_acc, 1) if long_read_count > 0 else ''
     long_read_len = str(args.long_len) if long_read_count > 0 else ''
@@ -1638,19 +1665,6 @@ def get_next_available_set_number(starting_path, num):
             os.makedirs(full_dir_path)
             return full_dir_path, num
         num += 1
-
-
-def subsample(full_count, subsample_times):
-    subsample_counts = []
-    long_read_count_interval = full_count / subsample_times
-    for j in reversed(range(subsample_times)):
-        subsampled_count = int(round(long_read_count_interval * j))
-        next_subsampled_count = int(round(long_read_count_interval * (j+1)))
-        subsampled_count += int(round(random.uniform(0.0, long_read_count_interval)))
-        subsampled_count = min(next_subsampled_count - 1, subsampled_count)
-        subsampled_count = max(1, subsampled_count)
-        subsample_counts.append(subsampled_count)
-    return subsample_counts
 
 
 def fastq_to_fasta(fastq_filename, fasta_filename):

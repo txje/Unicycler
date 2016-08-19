@@ -85,7 +85,7 @@ class AssemblyGraph(object):
         """
         Loads a Graph from a GFA file. It does not load any GFA file, but makes some restrictions:
         1) The segment names must be integers.
-        2) The depths should be stored in a DP tag.
+        2) The depths should be stored in a dp tag.
         3) All link overlaps are the same (equal to the graph overlap value).
         """
         # Load in the segments.
@@ -96,7 +96,7 @@ class AssemblyGraph(object):
                 num = int(line_parts[1])
                 depth = 1.0
                 for part in line_parts:
-                    if part.startswith('DP:'):
+                    if part.startswith('DP:') or part.startswith('dp:'):
                         depth = float(part[5:])
                 sequence = line_parts[2]
                 self.segments[num] = Segment(num, depth, sequence, True)
@@ -2516,7 +2516,7 @@ class Segment(object):
         s_line += str(self.number) + '\t'
         s_line += self.forward_sequence + '\t'
         s_line += 'LN:i:' + str(self.get_length()) + '\t'
-        s_line += 'DP:f:' + str(self.depth) + '\n'
+        s_line += 'dp:f:' + str(self.depth) + '\n'
         return s_line
 
     def save_to_fasta(self, fasta_filename):

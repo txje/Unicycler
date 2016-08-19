@@ -403,9 +403,10 @@ class LongReadBridge(object):
             actual_scaled_score = self.all_paths[0][3]
             self.quality = math.sqrt(1.0 /
                                      (1.0 + 2.0 ** (expected_scaled_score - actual_scaled_score)))
-            if best_path_len > 0 and len(self.consensus_sequence) > 0:
+            best_path_len_no_overlap = best_path_len - (self.graph.overlap * 2)
+            if best_path_len_no_overlap > 0 and len(self.consensus_sequence) > 0:
                 actual_consensus_to_ref_ratio = len(self.consensus_sequence) / \
-                                                (best_path_len - (self.graph.overlap * 2))
+                                                best_path_len_no_overlap
             else:
                 actual_consensus_to_ref_ratio = 1.0
 

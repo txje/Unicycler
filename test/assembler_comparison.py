@@ -167,7 +167,7 @@ def real_reads(args, scaled_ref_length, ref_dir):
         for subsampled_depth in depths:
 
             subsampled_reads, subsampled_filename, subsampled_long_read_depth = \
-                subsample_long_reads(args, long_reads, subsampled_depth, scaled_ref_length, False)
+                subsample_long_reads(long_reads, subsampled_depth, scaled_ref_length)
 
             assemble_long_reads(args, args.real_short_1, args.real_short_2, subsampled_reads,
                                 subsampled_filename, len(subsampled_reads),
@@ -291,8 +291,10 @@ def assemble_long_reads(args, short_1, short_2, long_reads, long_filename, long_
 
     # Run hybridSPAdes on the full set of long reads.
     if not args.no_spades:
+        pacbio = (args.real_long and 'PACBIO' in args.real_long.upper()) or args.long_acc >= 80.0
         run_hybrid_spades(short_1, short_2, long_filename, long_read_count, long_read_depth,
-                          args, quast_results, simple_quast_results, spades_no_long_dir)
+                          args, quast_results, simple_quast_results, spades_no_long_dir,
+                          pacbio)
 
     # Run npScarf on the full set of long reads - will be the source of alignments for
     # subsampled npScarf runs.
@@ -316,7 +318,7 @@ def assemble_long_reads(args, short_1, short_2, long_reads, long_filename, long_
     return unicycler_all_long_dir, np_scarf_all_long_dir, cerulean_all_long_dir
 
 
-def subsample_long_reads(args, long_reads, subsampled_depth, scaled_ref_length, include_acc_len):
+def subsample_long_reads(long_reads, subsampled_depth, scaled_ref_length):
     read_indices = list(range(len(long_reads)))
     subsampled_reads = []
     random.shuffle(read_indices)
@@ -341,11 +343,7 @@ def subsample_long_reads(args, long_reads, subsampled_depth, scaled_ref_length, 
             break
 
     subsampled_long_read_depth = get_long_read_depth(subsampled_reads, scaled_ref_length)
-    if include_acc_len:
-        subsampled_filename = 'long_subsampled_' + str(args.long_acc) + '_' + \
-                              str(args.long_len) + '_' + str(subsampled_depth)
-    else:
-        subsampled_filename = 'long_subsampled_' + str(subsampled_depth)
+    subsampled_filename = 'long_subsampled_' + str(subsampled_depth)
     subsampled_filename = subsampled_filename.replace('.', '_')
     file_index = 1
     full_subsampled_filename = ''
@@ -850,7 +848,7 @@ def run_regular_spades(short_1, short_2, args, all_quast_results, simple_quast_r
 
 
 def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args, all_quast_results,
-                      simple_quast_results, spades_no_long_dir):
+                      simple_quast_results, spades_no_long_dir, pacbio):
     """
     Runs hybridSPAdes using the --nanopore option.
     """
@@ -883,7 +881,7 @@ def run_hybrid_spades(short_1, short_2, long, long_count, long_depth, args, all_
         else:
             spades_command += ['-1', short_1,
                                '-2', short_2]
-        if 'PACBIO' in long.upper() or args.long_acc >= 80.0:
+        if pacbio:
             spades_command += ['--pacbio', long]
         else:
             spades_command += ['--nanopore', long]
@@ -1553,7 +1551,10 @@ def get_relative_depths(reference):
 
 
 def get_run_name_and_run_dir_name(assembler_name, reference, long_read_depth, args):
-    ref_name = get_reference_name_from_filename(reference)
+    if reference:
+        ref_name = get_reference_name_from_filename(reference)
+    else:
+        ref_name = args.genome_name
     read_accuracy = '{0:g}'.format(args.long_acc)
     read_length = '{0:g}'.format(args.long_len)
     read_depth = '{:0>5.2f}'.format(long_read_depth)

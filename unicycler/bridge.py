@@ -689,7 +689,7 @@ class LoopUnrollingBridge(object):
         # We'll use a mean loop count that's weighted by the middle and repeat segment lengths.
         self.depth = get_mean_depth(start_seg, end_seg, graph)
         loop_count_by_middle = middle_seg.depth / self.depth
-        loop_count_by_repeat = (repeat_seg.depth - self.depth) / self.depth
+        loop_count_by_repeat = max((repeat_seg.depth - self.depth) / self.depth, 0.0)
         mean_loop_count = weighted_average(loop_count_by_middle, loop_count_by_repeat,
                                            middle_seg.get_length_no_overlap(graph.overlap),
                                            repeat_seg.get_length_no_overlap(graph.overlap))

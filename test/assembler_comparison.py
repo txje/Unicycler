@@ -1075,8 +1075,8 @@ def run_cerulean(long_read_file, long_reads, long_count, long_depth, args, all_q
                                  '-noSplitSubreads',
                                  '-out', 'long_reads_contigs_mapping.fasta.m4']
                 print_with_timestamp(' '.join(blasr_command))
-                subprocess.check_output(blasr_command, stderr=subprocess.STDOUT, timeout=3600)
-            except subprocess.CalledProcessError as e:
+                subprocess.check_output(blasr_command, stderr=subprocess.STDOUT, timeout=7200)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
                 print_with_timestamp('blasr encountered an error:\n' + e.output.decode())
                 raise AssemblyError
             os.rename('long_reads_contigs_mapping.fasta.m4', 'run_pacbio_contigs_mapping.fasta.m4')

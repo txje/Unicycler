@@ -197,7 +197,11 @@ def print_progress_line(completed, total, base_pairs=None, prefix=None, end_newl
     if prefix:
         progress_str += prefix
     progress_str += int_to_str(completed) + ' / ' + int_to_str(total)
-    progress_str += ' (' + '%.1f' % (100.0 * completed / total) + '%)'
+    if total > 0:
+        percent = 100.0 * completed / total
+    else:
+        percent = 0.0
+    progress_str += ' (' + '%.1f' % percent + '%)'
     if base_pairs is not None:
         progress_str += ' - ' + int_to_str(base_pairs) + ' bp'
     end_char = '\n' if end_newline else ''

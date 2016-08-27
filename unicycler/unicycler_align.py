@@ -624,6 +624,11 @@ def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme,
     if verbosity > 0:
         print_progress_line(0, num_alignments)
 
+    if not sam_lines:
+        if verbosity > 0:
+            print('No alignments to load')
+        return []
+
     # If single-threaded, just do the work in a simple loop.
     threads = 1  # TEMP
     sam_alignments = []

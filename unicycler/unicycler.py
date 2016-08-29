@@ -753,19 +753,19 @@ def print_intro_message(args, verbosity, full_command):
         if args.mode == 0:
             print('Bridging mode: conservative')
             if args.min_bridge_qual == settings.CONSERVATIVE_MIN_BRIDGE_QUAL:
-                print('  using default conservative bridge quality cutoff: ', end='')
+                print('  Using default conservative bridge quality cutoff: ', end='')
             else:
-                print('  using user-specified bridge quality cutoff: ', end='')
+                print('  Using user-specified bridge quality cutoff: ', end='')
         elif args.mode == 1:
             print('Bridging mode: normal')
             if args.min_bridge_qual == settings.CONSERVATIVE_MIN_BRIDGE_QUAL:
-                print('  using default normal bridge quality cutoff: ', end='')
+                print('  Using default normal bridge quality cutoff: ', end='')
             else:
-                print('  using user-specified bridge quality cutoff: ', end='')
+                print('  Using user-specified bridge quality cutoff: ', end='')
         else:  # args.mode == 2
             print('Bridging mode: bold')
             if args.min_bridge_qual == settings.CONSERVATIVE_MIN_BRIDGE_QUAL:
-                print('  using default bold bridge quality cutoff: ', end='')
+                print('  Using default bold bridge quality cutoff: ', end='')
             else:
-                print('  using user-specified bridge quality cutoff: ', end='')
-        print(float_to_str(args.min_bridge_qual, 1))
+                print('  Using user-specified bridge quality cutoff: ', end='')
+        print(float_to_str(args.min_bridge_qual, 2))

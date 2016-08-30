@@ -308,7 +308,7 @@ class AssemblyGraph(object):
             fastg.write(add_line_breaks_to_sequence(segment.reverse_sequence, 60))
 
     def save_to_gfa(self, filename, verbosity, save_copy_depth_info=False,
-                    save_seg_type_info=False, single_copy_segments=None):
+                    save_seg_type_info=False):
         """
         Saves whole graph to a GFA file.
         """
@@ -316,24 +316,18 @@ class AssemblyGraph(object):
         if verbosity > 0:
             print('\nSaving', filename)
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
-        if single_copy_segments is not None:
-            single_copy_segments = set([x.number for x in single_copy_segments])
         for segment in sorted_segments:
             segment_line = segment.gfa_segment_line()
+            colour, label = '', ''
             if save_copy_depth_info and segment.number in self.copy_depths:
+                colour = self.get_copy_number_colour(segment)
+                label = self.get_depth_string(segment)
+            if save_seg_type_info and segment.bridge is not None:
+                colour = 'pink'
+                label = segment.get_seg_type_label()
+            if colour or label:
                 segment_line = segment_line[:-1]  # Remove newline
-                segment_line += '\tLB:z:' + self.get_depth_string(segment)
-                segment_line += '\tCL:z:' + self.get_copy_number_colour(segment)
-                segment_line += '\n'
-            if save_seg_type_info:
-                segment_line = segment_line[:-1]  # Remove newline
-                segment_line += '\tLB:z:' + segment.get_seg_type_label()
-                if segment.number in single_copy_segments:
-                    colour = 'forestgreen'
-                elif segment.bridge is None:
-                    colour = 'grey'
-                else:
-                    colour = 'pink'
+                segment_line += '\tLB:z:' + label
                 segment_line += '\tCL:z:' + colour
                 segment_line += '\n'
 
@@ -1011,13 +1005,15 @@ class AssemblyGraph(object):
         Given a particular segment, this function returns a colour string based on the copy number.
         """
         if segment.number not in self.copy_depths:
-            return 'black'
+            return 'grey'
         copy_number = len(self.copy_depths[segment.number])
-        if copy_number == 1:
+        if copy_number == 0:
+            return 'grey'
+        elif copy_number == 1:
             return 'forestgreen'
-        if copy_number == 2:
+        elif copy_number == 2:
             return 'gold'
-        if copy_number == 3:
+        elif copy_number == 3:
             return 'darkorange'
         else:  # 4+
             return 'red'

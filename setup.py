@@ -3,7 +3,12 @@
 Run 'python3 setup.py install' to install Unicycler.
 """
 
+# Make sure this is being run with Python 3.4 or later.
 import sys
+if sys.version_info.major != 3 or sys.version_info.minor < 4:
+    print('Error: you must execute setup.py using Python 3.4 or later')
+    sys.exit(1)
+
 import os
 import shutil
 from distutils.command.build import build
@@ -13,20 +18,12 @@ import multiprocessing
 import fnmatch
 import importlib.util
 
-# Make sure this is being run with Python 3.4 or later.
-if sys.version_info.major != 3 or sys.version_info.minor < 4:
-    print('Error: you must execute setup.py using Python 3.4 or later')
-    sys.exit(1)
-
 # Install setuptools if not already present.
 if not importlib.util.find_spec("setuptools"):
-    # noinspection PyPackageRequirements
     import ez_setup
     ez_setup.use_setuptools()
 
-# noinspection PyPep8
 from setuptools import setup
-# noinspection PyPep8
 from setuptools.command.install import install
 
 # Get the program version from another file.

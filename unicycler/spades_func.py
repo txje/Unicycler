@@ -79,7 +79,7 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
             score = 1.0 / (segment_count * ((dead_ends + 1) ** 2))
         if verbosity == 1:
             print(int_to_str(kmer).rjust(7) + int_to_str(segment_count).rjust(11) +
-                  int_to_str(dead_ends).rjust(12) + '{:.2e}'.format(score).rjust(14))
+                  int_to_str(dead_ends).rjust(12) + '{:.2e}'.format(score).rjust(14), flush=True)
         if verbosity > 1:
             print_section_header('SPAdes k=' + int_to_str(kmer) + ' assembly graph summary',
                                  verbosity)

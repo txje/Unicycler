@@ -754,7 +754,7 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
                 if alignment.alignment_type != 'SAM':
                     output += '  ' + alignment.get_str_no_read_name() + '\n'
                     if VERBOSITY > 3:
-                        output += alignment.cigar + '\n'
+                        output += ''.join(alignment.cigar_parts) + '\n'
 
     read.remove_conflicting_alignments(allowed_overlap)
     if not keep_bad:

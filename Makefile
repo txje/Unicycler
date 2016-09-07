@@ -1,4 +1,4 @@
-# This makefile will build the C++ components of the semi-global long read aligner.
+# This makefile will build the C++ components of Unicycler.
 
 # Example commands:
 #   make (build in release mode)

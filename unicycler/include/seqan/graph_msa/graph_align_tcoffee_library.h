@@ -641,12 +641,12 @@ getAlignmentStatistics(String<TFragment, TSpec1> const& matches,
     TSize maxId2 = 0;
     TSize matchMismatch_length = 0;
 
-    TFragIter itFrag = begin(matches, Standard());
-    TFragIter itFragEnd = itFrag;
-    itFrag += from;
-    itFragEnd += to;
-    if (itFrag != itFragEnd)
+    if (length(matches) > 0)
     {
+        TFragIter itFrag = begin(matches, Standard());
+        TFragIter itFragEnd = itFrag;
+        itFrag += from;
+        itFragEnd += to;
         TId id1 = sequenceId(*itFrag, 0);
         TId id2 = sequenceId(*itFrag, 1);
         TSize fragLen = 0;

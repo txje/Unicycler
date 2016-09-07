@@ -43,7 +43,7 @@ class UnicycleBuild(build):
 
         clean_cmd = ['make', 'clean']
         try:
-            make_cmd = ['make', '-j', str(max(8, multiprocessing.cpu_count()))]
+            make_cmd = ['make', '-j', str(min(8, multiprocessing.cpu_count()))]
         except NotImplementedError:
             make_cmd = ['make']
 

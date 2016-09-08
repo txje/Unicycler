@@ -1015,13 +1015,19 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     if verbosity == 1:
         print_progress_line(0, num_long_read_bridges, prefix='Bridge: ')
     completed_count = 0
+    last_progress = 0.0
+    step = settings.BUILDING_BRIDGES_PROGRESS_STEP
     if threads == 1:
         for bridge in long_read_bridges:
             output = bridge.finalise(scoring_scheme, min_alignment_length, read_lengths,
                                      estimated_genome_size, verbosity)
             completed_count += 1
             if verbosity == 1:
-                print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')
+                progress = 100.0 * completed_count / num_long_read_bridges
+                progress_rounded_down = math.floor(progress / step) * step
+                if progress == 100.0 or progress_rounded_down > last_progress:
+                    print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')
+                    last_progress = progress_rounded_down
             if verbosity > 1:
                 fraction = str(completed_count) + '/' + str(num_long_read_bridges) + ': '
                 print('\n' + fraction + output, end='', flush=True)
@@ -1043,7 +1049,11 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
         for output in pool.imap_unordered(finalise_bridge, arg_list):
             completed_count += 1
             if verbosity == 1:
-                print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')
+                progress = 100.0 * completed_count / num_long_read_bridges
+                progress_rounded_down = math.floor(progress / step) * step
+                if progress == 100.0 or progress_rounded_down > last_progress:
+                    print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')
+                    last_progress = progress_rounded_down
             if verbosity > 1:
                 fraction = str(completed_count) + '/' + str(num_long_read_bridges) + ': '
                 print('\n' + fraction + output, end='', flush=True)

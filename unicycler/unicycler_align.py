@@ -33,6 +33,7 @@ import argparse
 import time
 import random
 import shutil
+import math
 from multiprocessing.dummy import Pool as ThreadPool
 from multiprocessing import cpu_count
 import threading
@@ -547,6 +548,7 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     line = ''
     last_progress = -1.0
+    step = settings.GRAPHMAP_PROGRESS_STEP
     read_progress_started = False
     read_progress_finished = False
     while process.poll() is None:
@@ -559,8 +561,8 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
                         read_progress_started = True
                         trimmed_line = line.strip().split('] ')[2].split(', l')[0]
                         progress = float(trimmed_line.split('(')[1].split(')')[0][:-1])
-                        progress_rounded_down = float(int(10 * progress) / 10)
-                        if progress_rounded_down > last_progress:
+                        progress_rounded_down = math.floor(progress / step) * step
+                        if progress == 100.0 or progress_rounded_down > last_progress:
                             print('\r' + trimmed_line, end='')
                             last_progress = progress_rounded_down
                     elif VERBOSITY > 1:
@@ -632,13 +634,19 @@ def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme,
     # If single-threaded, just do the work in a simple loop.
     threads = 1  # TEMP
     sam_alignments = []
+    last_progress = 0.0
+    step = settings.LOADING_ALIGNMENTS_PROGRESS_STEP
     if threads == 1:
         for line in sam_lines:
             sam_alignments.append(Alignment(sam_line=line, read_dict=read_dict,
                                             reference_dict=reference_dict,
                                             scoring_scheme=scoring_scheme))
             if verbosity > 0:
-                print_progress_line(len(sam_alignments), num_alignments)
+                progress = 100.0 * len(sam_alignments) / num_alignments
+                progress_rounded_down = math.floor(progress / step) * step
+                if progress == 100.0 or progress_rounded_down > last_progress:
+                    print_progress_line(len(sam_alignments), num_alignments)
+                    last_progress = progress_rounded_down
 
     # # If multi-threaded, use processes.
     # else:

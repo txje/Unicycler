@@ -106,3 +106,12 @@ CONSERVATIVE_MIN_BRIDGE_QUAL = 25.0
 NORMAL_MIN_BRIDGE_QUAL = 10.0
 BOLD_MIN_BRIDGE_QUAL = 5.0
 
+# These control how often progress lines are updated in the stdout. They define the percentage step
+# used. E.g. if set to 5.0, the progress will go 5%, 10%, 15%, etc.
+# Setting these to higher values helps to prevent excessive progress updates, which is a pain when
+# piping Unicycler output to file.
+LOADING_REFERENCES_PROGRESS_STEP = 1.0
+LOADING_READS_PROGRESS_STEP = 1.0
+GRAPHMAP_PROGRESS_STEP = 1.0
+LOADING_ALIGNMENTS_PROGRESS_STEP = 1.0
+BUILDING_BRIDGES_PROGRESS_STEP = 1.0

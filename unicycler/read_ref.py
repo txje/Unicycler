@@ -8,8 +8,10 @@ email: rrwick@gmail.com
 import random
 import gzip
 import os
+import math
 from .misc import quit_with_error, print_progress_line, get_nice_header, get_compression_type, \
     print_section_header, get_sequence_file_type, strip_read_extensions
+from . import settings
 
 
 def load_references(fasta_filename, verbosity):
@@ -40,6 +42,7 @@ def load_references(fasta_filename, verbosity):
     name = ''
     sequence = ''
     last_progress = 0.0
+    step = settings.LOADING_REFERENCES_PROGRESS_STEP
     for line in fasta_file:
         line = line.strip()
         if not line:
@@ -50,8 +53,8 @@ def load_references(fasta_filename, verbosity):
                 total_bases += len(sequence)
                 if verbosity > 0:
                     progress = 100.0 * len(references) / num_refs
-                    progress_rounded_down = float(int(progress))
-                    if progress_rounded_down > last_progress:
+                    progress_rounded_down = math.floor(progress / step) * step
+                    if progress == 100.0 or progress_rounded_down > last_progress:
                         print_progress_line(len(references), num_refs, total_bases)
                         last_progress = progress_rounded_down
                 sequence = ''
@@ -94,6 +97,7 @@ def load_long_reads(filename, verbosity):
     read_names = []
     total_bases = 0
     last_progress = 0.0
+    step = settings.LOADING_READS_PROGRESS_STEP
     duplicate_read_names_found = False
 
     if file_type == 'FASTQ':
@@ -126,8 +130,8 @@ def load_long_reads(filename, verbosity):
             total_bases += len(sequence)
             if verbosity > 0:
                 progress = 100.0 * len(read_dict) / num_reads
-                progress_rounded_down = float(int(progress))
-                if progress_rounded_down > last_progress:
+                progress_rounded_down = math.floor(progress / step) * step
+                if progress == 100.0 or progress_rounded_down > last_progress:
                     print_progress_line(len(read_dict), num_reads, total_bases)
                     last_progress = progress_rounded_down
         fastq.close()
@@ -148,8 +152,8 @@ def load_long_reads(filename, verbosity):
                     total_bases += len(sequence)
                     if verbosity > 0:
                         progress = 100.0 * len(read_dict) / num_reads
-                        progress_rounded_down = float(int(progress))
-                        if progress_rounded_down > last_progress:
+                        progress_rounded_down = math.floor(progress / step) * step
+                        if progress == 100.0 or progress_rounded_down > last_progress:
                             print_progress_line(len(read_dict), num_reads, total_bases)
                             last_progress = progress_rounded_down
                     sequence = ''

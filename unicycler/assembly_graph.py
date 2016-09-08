@@ -1052,11 +1052,11 @@ class AssemblyGraph(object):
         # Assign single-copy status to segments within the tolerance of the single-copy depth.
         max_depth = single_copy_depth + settings.INITIAL_SINGLE_COPY_TOLERANCE
         initial_single_copy_segments = []
-        for seg_num, segment in self.segments.items():
-            if segment.depth <= max_depth and \
-                    self.at_most_one_link_per_end(segment):
+        for segment in sorted([x for x in self.segments.values()],
+                              key=lambda x: x.get_length(), reverse=True):
+            if segment.depth <= max_depth and self.okay_for_initial_single_copy(segment):
                 self.copy_depths[segment.number] = [segment.depth]
-                initial_single_copy_segments.append(seg_num)
+                initial_single_copy_segments.append(segment.number)
         if verbosity > 1:
             if initial_single_copy_segments:
                 print()
@@ -1210,16 +1210,59 @@ class AssemblyGraph(object):
                     return 1
         return 0
 
-    def at_most_one_link_per_end(self, segment):
+    def okay_for_initial_single_copy(self, segment):
         """
-        Returns True if the given segment has no more than one link on either end.
+        Returns True if the given segment's links don't preclude calling this a single-copy segment
+        for the initial round of copy depth assignment.
         """
         num = segment.number
-        if num in self.forward_links and len(self.forward_links[num]) > 1:
-            return False
-        if num in self.reverse_links and len(self.reverse_links[num]) > 1:
-            return False
-        return True
+        forward_count, reverse_count = 0, 0
+        if num in self.forward_links:
+            forward_count = len(self.forward_links[num])
+        if num in self.reverse_links:
+            reverse_count = len(self.reverse_links[num])
+
+        # If a segment is short, then we want to be particularly strict about assigning initial
+        # single copy status. The only way for a short segment to pass is by having exactly one
+        # link per side and for the segments it is linked to not be single copy themselves.
+        if segment.get_length() < settings.MIN_SINGLE_COPY_LENGTH:
+            if forward_count != 1 or reverse_count != 1:
+                return False
+            downstream_seg = abs(self.forward_links[num][0])
+            if downstream_seg in self.copy_depths and len(self.copy_depths[downstream_seg]) == 1:
+                return False
+            upstream_seg = abs(self.reverse_links[num][0])
+            if upstream_seg in self.copy_depths and len(self.copy_depths[upstream_seg]) == 1:
+                return False
+            return True
+
+        # If the code got here, then the segment is longer and we're a bit more lenient with
+        # allowing initial single copy status.
+
+        # Having 1 link per side is ideal, but 0 links are okay too.
+        forward_okay = forward_count <= 1
+        reverse_okay = reverse_count <= 1
+
+        # If either direction has too many links, we'll still accept it if the copy depths are
+        # very inconsistent. This is because very inconsistent depths (e.g. 1 + 1 = 1) tend to
+        # indicate bogus connections.
+        if not forward_okay:
+            exclusive_outputs = self.get_exclusive_outputs(num)
+            if exclusive_outputs:
+                downstream_depth_sum = sum(self.segments[x].depth for x in exclusive_outputs)
+                error = get_error(downstream_depth_sum, segment.depth)
+                if error > settings.COPY_PROPAGATION_TOLERANCE:
+                    forward_okay = True
+        if not reverse_okay:
+            exclusive_inputs = self.get_exclusive_inputs(num)
+            if exclusive_inputs:
+                upstream_depth_sum = sum(self.segments[x].depth for x in exclusive_inputs)
+                error = get_error(upstream_depth_sum, segment.depth)
+                if error > settings.COPY_PROPAGATION_TOLERANCE:
+                    reverse_okay = True
+
+        # Both sides have to be okay for the segment to pass.
+        return forward_okay and reverse_okay
 
     def exactly_one_link_per_end(self, segment):
         """

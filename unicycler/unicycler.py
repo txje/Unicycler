@@ -39,7 +39,6 @@ def main():
     full_command = ' '.join(sys.argv)
     args = get_arguments()
     verbosity = args.verbosity
-    print_intro_message(args, verbosity, full_command)
 
     files = [args.short1, args.short2]
     if not args.no_long:
@@ -56,6 +55,8 @@ def main():
                              bowtie2_path=(None if args.no_pilon else args.bowtie2_path),
                              bowtie2_build_path=(None if args.no_pilon
                                                  else args.bowtie2_build_path))
+
+    print_intro_message(args, verbosity, full_command)
     make_output_directory(args.out, verbosity)
 
     file_num = 1

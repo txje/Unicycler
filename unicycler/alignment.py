@@ -236,6 +236,7 @@ class Alignment(object):
         """
         This function extends the start of the alignment to remove any missing start bases.
         """
+        cigar_length_before = 0
         if verbosity > 3:
             print()
             print(self)
@@ -248,6 +249,8 @@ class Alignment(object):
 
         # We will try the start extension a few times, if necessary, with increasing margin sizes.
         # The first try should usually be sufficient.
+        seqan_parts = []
+        realigned_ref_start = 0
         for i in range(3):
             margin_size = 2 ** (i + 1)  # 2, 4, 8
             missing_start_bases = self.get_missing_bases_at_start()
@@ -310,6 +313,7 @@ class Alignment(object):
         """
         This function extends the end of the alignment to remove any missing end bases.
         """
+        cigar_length_before = 0
         if verbosity > 3:
             print()
             print(self)
@@ -322,6 +326,7 @@ class Alignment(object):
 
         # We will try the end extension a few times, if necessary, with increasing margin sizes.
         # The first try should usually be sufficient.
+        seqan_parts = []
         for i in range(3):
             margin_size = 2 ** (i + 1)  # 2, 4, 8
             missing_end_bases = self.get_missing_bases_at_end()

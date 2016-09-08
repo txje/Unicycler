@@ -286,6 +286,7 @@ def count_depth_and_errors_per_base(references, reference_dict, alignments):
             print_progress_line(i + 1, len(alignments))
 
     finished_bases = 0
+    base_sum = 0
     if VERBOSITY > 0:
         print()
         base_sum = sum([x.get_length() for x in references])
@@ -450,7 +451,7 @@ def determine_thresholds(scoring_scheme, references, alignments, threads, depth_
     # The mean error rate should not be as big as the random alignment error rate.
     if mean_error_rate >= random_seq_error_rate:
         quit_with_error('the mean error rate (' + float_to_str(mean_error_rate * 100.0, 2) +
-                        '%) is too high and exceeds the randoml alignment error rate (' +
+                        '%) is too high and exceeds the random alignment error rate (' +
                         float_to_str(random_seq_error_rate * 100.0, 2) + '%)')
 
     difference = random_seq_error_rate - mean_error_rate

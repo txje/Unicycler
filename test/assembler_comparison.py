@@ -1400,7 +1400,8 @@ def run_quast(assembly, args, all_quast_results, simple_quast_results, assembler
                          '-R', args.reference,
                          '-o', quast_dir,
                          '-l', '"' + run_name.replace(',', '') + '"',
-                         '--threads', str(args.threads)]
+                         '--threads', str(args.threads),
+                         '--no-plots']
         print_with_timestamp(' '.join(quast_command))
         try:
             subprocess.check_output(quast_command, stderr=subprocess.STDOUT)

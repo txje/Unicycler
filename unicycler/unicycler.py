@@ -75,7 +75,8 @@ def main():
                                                 settings.READ_DEPTH_FILTER, verbosity,
                                                 args.spades_path, args.threads, args.keep_temp,
                                                 args.kmer_count, args.min_kmer_frac,
-                                                args.max_kmer_frac, args.no_spades_correct)
+                                                args.max_kmer_frac, args.no_spades_correct,
+                                                args.expected_linear_seqs)
 
     # Determine copy number and get single-copy segments.
     single_copy_segments = get_single_copy_segments(unbridged_graph, verbosity, 0)
@@ -508,6 +509,9 @@ def get_arguments():
                                   '  bold mode default: ' +
                                   str(settings.BOLD_MIN_BRIDGE_QUAL)
                                   if show_all_args else argparse.SUPPRESS)
+    other_group.add_argument('--expected_linear_seqs', type=int, required=False, default=0,
+                             help='The expected number of linear (i.e non-circular) sequences in '
+                                  'the underlying sequence')
 
     # SPAdes assembly options
     spades_group = parser.add_argument_group('SPAdes assembly',

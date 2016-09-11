@@ -1930,13 +1930,16 @@ class AssemblyGraph(object):
             new_paths[name] = [changes[x] for x in path_nums]
         self.paths = new_paths
 
-    def get_summary(self, verbosity, file=None, score=None, show_components=False):
+    def get_summary(self, verbosity, file=None, score=None, show_components=False,
+                    adjusted_dead_ends=None):
         """
         Returns a nice table describing the graph.
         """
         total_length = self.get_total_length()
         max_v = max(total_length, 1000000)
         n50, shortest, lower_quartile, median, upper_quartile, longest = self.get_contig_stats()
+        dead_ends = self.total_dead_end_count()
+
         summary = ''
         if file:
             summary += file + '\n'
@@ -1950,7 +1953,10 @@ class AssemblyGraph(object):
             summary += 'median segment (bp):   ' + int_to_str(median, max_v) + '\n'
             summary += 'upper quartile (bp):   ' + int_to_str(upper_quartile, max_v) + '\n'
         summary += 'longest segment (bp):  ' + int_to_str(longest, max_v) + '\n'
-        summary += 'dead ends:             ' + int_to_str(self.total_dead_end_count(), max_v) + '\n'
+        summary += 'dead ends:             ' + int_to_str(dead_ends, max_v) + '\n'
+        if adjusted_dead_ends and adjusted_dead_ends != dead_ends:
+            summary += 'adjusted dead ends:    ' + int_to_str(adjusted_dead_ends, max_v) + '\n'
+
         if show_components:
             components = self.get_connected_components()
             for i, component in enumerate(components):

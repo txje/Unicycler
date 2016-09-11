@@ -16,7 +16,7 @@ from .assembly_graph import AssemblyGraph
 
 def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity, spades_path,
                           threads, keep_temp, kmer_count, min_kmer_frac, max_kmer_frac,
-                          no_spades_correct):
+                          no_spades_correct, expected_linear_seqs):
     """
     This function tries a SPAdes assembly at different kmers and returns the best.
     'The best' is defined as the smallest dead-end count after low-depth filtering.  If multiple
@@ -70,20 +70,25 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
             assembly_graph.clean(read_depth_filter)
             assembly_graph.save_to_gfa(os.path.join(spades_dir, clean_graph_filename), 0)
 
-        dead_ends = assembly_graph.total_dead_end_count()
         segment_count = len(assembly_graph.segments)
+        dead_ends = assembly_graph.total_dead_end_count()
+
+        # If the user is expecting some linear sequences, then the dead end count can be adjusted
+        # down so expected dead ends don't penalise this k-mer.
+        adjusted_dead_ends = max(0, dead_ends - (2 * expected_linear_seqs))
 
         if segment_count == 0:
             score = 0.0
         else:
-            score = 1.0 / (segment_count * ((dead_ends + 1) ** 2))
+            score = 1.0 / (segment_count * ((adjusted_dead_ends + 1) ** 2))
         if verbosity == 1:
             print(int_to_str(kmer).rjust(7) + int_to_str(segment_count).rjust(11) +
                   int_to_str(dead_ends).rjust(12) + '{:.2e}'.format(score).rjust(14), flush=True)
         if verbosity > 1:
             print_section_header('SPAdes k=' + int_to_str(kmer) + ' assembly graph summary',
                                  verbosity)
-            print(assembly_graph.get_summary(verbosity, file=clean_graph_filename, score=score))
+            print(assembly_graph.get_summary(verbosity, file=clean_graph_filename, score=score,
+                                             adjusted_dead_ends=adjusted_dead_ends))
             print()
         if score >= best_score:
             best_kmer = kmer

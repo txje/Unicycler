@@ -100,6 +100,9 @@ def get_args():
                         help='Skips SPAdes and hybridSPAdes assemblies')
     parser.add_argument('--no_unicycler', action='store_true',
                         help='Skips Unicycler assemblies')
+    parser.add_argument('--expected_linear_seqs', type=int, required=False, default=0,
+                        help='The expected number of linear (i.e non-circular) sequences in '
+                             'the underlying sequence')
 
     args = parser.parse_args()
     if args.reference:
@@ -1207,6 +1210,8 @@ def run_unicycler(args, short_1, short_2, long_read_filename, long_read_count,
                           '--threads', str(args.threads),
                           '--verbosity', '2',
                           '--no_rotate']
+    if args.expected_linear_seqs:
+        unicycler_command += ['--expected_linear_seqs', args.expected_linear_seqs]
     print_with_timestamp(' '.join(unicycler_command))
     try:
         unicycler_out = subprocess.check_output(unicycler_command, stderr=subprocess.STDOUT)

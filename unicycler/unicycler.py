@@ -240,10 +240,11 @@ def main():
 
         # Do the long read bridging - this is the good part!
         print_section_header('Building long read bridges', verbosity, last_newline=(verbosity == 1))
+        expected_linear_seqs = args.expected_linear_seqs > 0
         bridges = create_long_read_bridges(unbridged_graph, read_dict, read_names,
                                            single_copy_segments, verbosity, bridges,
                                            min_scaled_score, args.threads, scoring_scheme,
-                                           min_alignment_length)
+                                           min_alignment_length, expected_linear_seqs)
         graph = copy.deepcopy(unbridged_graph)
         print_section_header('Bridging graph with long reads', verbosity,
                              last_newline=(verbosity > 1))

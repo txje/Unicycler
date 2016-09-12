@@ -115,3 +115,18 @@ LOADING_READS_PROGRESS_STEP = 1.0
 GRAPHMAP_PROGRESS_STEP = 1.0
 LOADING_ALIGNMENTS_PROGRESS_STEP = 1.0
 BUILDING_BRIDGES_PROGRESS_STEP = 1.0
+
+# These settings control how willing Unicycler is to make bridges that don't have a graph path.
+# This depends on whether one or both of the segments being bridged ends in a dead end and
+# whether we have any expected linear sequences (i.e. whether real dead ends are expected).
+# If we don't expect any linear sequences, then bridging two dead ends with a pathless bridge is
+# great (not at all penalised), bridging a dead end with a non-dead end is okay, and bridging two
+# non-dead ends is very much discouraged (quite penalised). If we do expect linear sequences, then
+# we are less willing to make bridges between dead ends because it's possible those dead ends are
+# genuine and should remain dead ends.
+PATHLESS_BRIDGE_QUAL_TWO_DEAD_ENDS = 1.0
+PATHLESS_BRIDGE_QUAL_ONE_DEAD_END = 0.7
+PATHLESS_BRIDGE_QUAL_NO_DEAD_ENDS = 0.2
+PATHLESS_BRIDGE_QUAL_TWO_DEAD_ENDS_WITH_LINEAR_SEQS = 0.6
+PATHLESS_BRIDGE_QUAL_ONE_DEAD_END_WITH_LINEAR_SEQS = 0.4
+PATHLESS_BRIDGE_QUAL_NO_DEAD_ENDS_WITH_LINEAR_SEQS = 0.2

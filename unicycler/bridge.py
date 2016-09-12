@@ -205,7 +205,7 @@ class LongReadBridge(object):
         return predicted_consensus_time + predicted_path_time
 
     def finalise(self, scoring_scheme, min_alignment_length, read_lengths, estimated_genome_size,
-                 verbosity):
+                 verbosity, expected_linear_seqs):
         """
         Determines the consensus sequence for the bridge, attempts to find it in the graph and
         assigns a quality score to the bridge. This is the big performance-intensive step of long
@@ -464,22 +464,29 @@ class LongReadBridge(object):
                     actual_overlap = 0
                 self.bridge_sequence = start_overlap + end_overlap[actual_overlap:]
 
-            # The quality of non-graph-path-supported bridges depends on the dead ends. If this
-            # bridge is connecting two dead ends, then it isn't penalised at all (because there
-            # couldn't be a graph path). If only one of the two segments is a dead end, then it gets
-            # a small penalty. If neither are a dead end, then it gets a large penalty (because in
-            # this case we'd expect a graph path).
+            # The quality of non-graph-path-supported bridges depends on the number of dead ends
+            # and whether or not linear sequences are expected.
             dead_end_count = 0
             if self.graph.ends_with_dead_end(self.start_segment):
                 dead_end_count += 1
             if self.graph.starts_with_dead_end(self.end_segment):
                 dead_end_count += 1
-            if dead_end_count == 2:
-                self.quality = 1.0
-            elif dead_end_count == 1:
-                self.quality = 0.7
-            else:  # dead_end_count == 0
-                self.quality = 0.2
+
+            if expected_linear_seqs:
+                if dead_end_count == 2:
+                    self.quality = settings.PATHLESS_BRIDGE_QUAL_TWO_DEAD_ENDS_WITH_LINEAR_SEQS
+                elif dead_end_count == 1:
+                    self.quality = settings.PATHLESS_BRIDGE_QUAL_ONE_DEAD_END_WITH_LINEAR_SEQS
+                else:  # dead_end_count == 0
+                    self.quality = settings.PATHLESS_BRIDGE_QUAL_NO_DEAD_ENDS_WITH_LINEAR_SEQS
+            else:
+                if dead_end_count == 2:
+                    self.quality = settings.PATHLESS_BRIDGE_QUAL_TWO_DEAD_ENDS
+                elif dead_end_count == 1:
+                    self.quality = settings.PATHLESS_BRIDGE_QUAL_ONE_DEAD_END
+                else:  # dead_end_count == 0
+                    self.quality = settings.PATHLESS_BRIDGE_QUAL_NO_DEAD_ENDS
+
             if verbosity > 2:
                 output += '  dead end score factor:     ' + float_to_str(self.quality, 2) + '\n'
 
@@ -846,7 +853,7 @@ def create_loop_unrolling_bridges(graph):
 
 def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments, verbosity,
                              existing_bridges, min_scaled_score, threads, scoring_scheme,
-                             min_alignment_length):
+                             min_alignment_length, expected_linear_seqs):
     """
     Makes bridges between single-copy segments using the alignments in the long reads.
     """
@@ -1020,7 +1027,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     if threads == 1:
         for bridge in long_read_bridges:
             output = bridge.finalise(scoring_scheme, min_alignment_length, read_lengths,
-                                     estimated_genome_size, verbosity)
+                                     estimated_genome_size, verbosity, expected_linear_seqs)
             completed_count += 1
             if verbosity == 1:
                 progress = 100.0 * completed_count / num_long_read_bridges
@@ -1044,7 +1051,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
 
         for bridge in long_read_bridges:
             arg_list.append((bridge, scoring_scheme, min_alignment_length, read_lengths,
-                             estimated_genome_size, verbosity))
+                             estimated_genome_size, verbosity, expected_linear_seqs))
 
         for output in pool.imap_unordered(finalise_bridge, arg_list):
             completed_count += 1
@@ -1107,10 +1114,10 @@ def finalise_bridge(all_args):
     """
     Just a one-argument version of bridge.finalise, for pool.imap.
     """
-    bridge, scoring_scheme, min_alignment_length, read_lengths, estimated_genome_size, verbosity = \
-        all_args
+    bridge, scoring_scheme, min_alignment_length, read_lengths, estimated_genome_size, verbosity,\
+        expected_linear_seqs = all_args
     return bridge.finalise(scoring_scheme, min_alignment_length, read_lengths,
-                           estimated_genome_size, verbosity)
+                           estimated_genome_size, verbosity, expected_linear_seqs)
 
 
 def get_bridge_str(start, middle, end):

@@ -1716,12 +1716,22 @@ def set_up_env_var():
     """
     if os.path.isdir('/Users/Ryan/Applications/PBSuite_15.8.24'):
         local_pb_path = '/Users/Ryan/Applications/PBSuite_15.8.24'
-    else:
+    elif os.path.isdir('/vlsci/SG0006/rwick/PBSuite_15.8.24'):
         local_pb_path = '/vlsci/SG0006/rwick/PBSuite_15.8.24'
+    elif os.path.isdir('/home/rrwick/PBSuite_15.8.24'):
+        local_pb_path = '/home/rrwick/PBSuite_15.8.24'
+    else:
+        local_pb_path = ''
+
     if os.path.isdir('/Users/Ryan/Applications/Cerulean/src'):
         local_cerulean_path = '/Users/Ryan/Applications/Cerulean/src'
-    else:
+    elif os.path.isdir('/vlsci/SG0006/rwick/Cerulean/src'):
         local_cerulean_path = '/vlsci/SG0006/rwick/Cerulean/src'
+    elif os.path.isdir('/home/rrwick/Cerulean/src'):
+        local_cerulean_path = '/home/rrwick/Cerulean/src'
+    else:
+        local_cerulean_path = ''
+
     if 'SWEETPATH' not in os.environ:
         os.environ['SWEETPATH'] = local_pb_path
     if 'PYTHONPATH' not in os.environ:

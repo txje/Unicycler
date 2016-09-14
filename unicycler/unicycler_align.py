@@ -157,7 +157,7 @@ def add_aligning_arguments(parser, show_help):
                              '(default: set threshold automatically)'
                              if show_help else argparse.SUPPRESS)
     parser.add_argument('--min_len', type=float, required=False, default=100,
-                        help='Minimum alignment length (bp) - exclude alignments shorter than this'
+                        help='Minimum alignment length (bp) - exclude alignments shorter than this '
                              'length'
                              if show_help else argparse.SUPPRESS)
     parser.add_argument('--keep_bad', action='store_true', default=argparse.SUPPRESS,

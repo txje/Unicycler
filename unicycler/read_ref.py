@@ -391,6 +391,8 @@ class Read(object):
         This function returns the fraction of the read which is covered by any of the read's
         alignments.
         """
+        if len(self.sequence) == 0:
+            return 0.0
         read_ranges = [x.read_start_end_positive_strand()
                        for x in self.alignments]
         read_ranges = simplify_ranges(read_ranges)

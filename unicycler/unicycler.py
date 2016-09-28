@@ -154,7 +154,7 @@ def main():
                                              scoring_scheme, args.threads, verbosity)
             for alignment in alignments:
                 read_dict[alignment.read.name].alignments.append(alignment)
-            print_alignment_summary_table(read_dict, verbosity)
+            print_alignment_summary_table(read_dict, verbosity, False)
 
         # Conduct the alignment if an existing SAM is not available.
         else:
@@ -171,14 +171,15 @@ def main():
                                          args.threads, scoring_scheme, low_score_threshold,
                                          not args.no_graphmap, False, args.kmer,
                                          min_alignment_length, alignments_1_in_progress,
-                                         full_command, allowed_overlap, False, verbosity,
-                                         stdout_header='Aligning reads (first pass)')
+                                         full_command, allowed_overlap, False, args.contamination,
+                                         verbosity, stdout_header='Aligning reads (first pass)')
             shutil.move(alignments_1_in_progress, alignments_1_sam)
 
             # Reads with a lot of unaligned parts are tried again, this time on extra sensitive
             # mode.
             retry_read_names = [x.name for x in read_dict.values()
-                                if x.get_fraction_aligned() < settings.MIN_READ_FRACTION_ALIGNED]
+                                if x.get_fraction_aligned() < settings.MIN_READ_FRACTION_ALIGNED
+                                and x.get_length() >= min_alignment_length]
             if retry_read_names:
                 semi_global_align_long_reads(references, single_copy_segments_fasta, read_dict,
                                              retry_read_names, long_read_filename,
@@ -186,7 +187,7 @@ def main():
                                              args.threads, scoring_scheme, low_score_threshold,
                                              False, False, args.kmer, min_alignment_length,
                                              alignments_2_in_progress, full_command,
-                                             allowed_overlap, True, verbosity,
+                                             allowed_overlap, True, args.contamination, verbosity,
                                              stdout_header='Aligning reads (second pass)',
                                              display_low_score=False)
                 shutil.move(alignments_2_in_progress, alignments_2_sam)
@@ -224,6 +225,22 @@ def main():
                 os.remove(graph_fasta)
             if args.keep_temp < 2 and os.path.isfile(single_copy_segments_fasta):
                 os.remove(single_copy_segments_fasta)
+
+        # Discard any reads that mostly align to known contamination.
+        if args.contamination:
+            filtered_read_names = []
+            filtered_read_dict = {}
+            contaminant_read_count = 0
+            for read_name in read_names:
+                if read_dict[read_name].mostly_aligns_to_contamination():
+                    contaminant_read_count += 1
+                else:
+                    filtered_read_names.append(read_name)
+                    filtered_read_dict[read_name] = read_dict[read_name]
+            read_names = filtered_read_names
+            read_dict = filtered_read_dict
+            if verbosity > 1:
+                print('\nDiscarded', contaminant_read_count, 'reads as contamination')
 
         # Use the long reads which aligned entirely within contigs (which are most likely correct)
         # to determine a minimum score.
@@ -474,8 +491,6 @@ def get_arguments():
     input_group.add_argument('-l', '--long', required=False, default=argparse.SUPPRESS,
                              help='FASTQ or FASTA file of long reads, if all reads are available '
                                   'at start.')
-    # input_group.add_argument('-d', '--long_dir', required=False, default=argparse.SUPPRESS,
-    #                          help='Directory where FASTQ or FASTA read files will be deposited.')
     input_group.add_argument('--no_long', action='store_true',
                              help='Do not use any long reads (assemble with short reads only)')
 
@@ -623,11 +638,6 @@ def get_arguments():
         args.long
     except AttributeError:
         args.long = None
-    # try:
-    #     args.long_dir
-    # except AttributeError:
-    #     args.long_dir = None
-
     try:
         args.threads
     except AttributeError:

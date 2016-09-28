@@ -14,7 +14,7 @@ from .misc import quit_with_error, print_progress_line, get_nice_header, get_com
 from . import settings
 
 
-def load_references(fasta_filename, verbosity):
+def load_references(fasta_filename, verbosity, contamination=False):
     """
     This function loads in sequences from a FASTA file and returns a list of Reference objects.
     """
@@ -49,6 +49,8 @@ def load_references(fasta_filename, verbosity):
             continue
         if line.startswith('>'):  # Header line = start of new contig
             if name:
+                if contamination:
+                    name = 'CONTAMINATION_' + name
                 references.append(Reference(name, sequence))
                 total_bases += len(sequence)
                 if verbosity > 0:
@@ -63,6 +65,8 @@ def load_references(fasta_filename, verbosity):
             sequence += line
     fasta_file.close()
     if name:
+        if contamination:
+            name = 'CONTAMINATION_' + name
         references.append(Reference(name, sequence))
         total_bases += len(sequence)
         if verbosity > 0:
@@ -412,3 +416,17 @@ class Read(object):
         return len(self.alignments) == 1 and \
             self.alignments[0].read_start_pos == 0 and \
             self.alignments[0].read_end_gap == 0
+
+    def mostly_aligns_to_contamination(self):
+        """
+        Returns true if 50% or more of the alignments are to contaminant sequences.
+        """
+        if len(self.sequence) == 0:
+            return False
+        if not self.alignments:
+            return False
+        contamination_alignment_length = sum(x.get_aligned_read_length() for x in self.alignments
+                                             if x.ref.name.startswith('CONTAMINATION_'))
+        good_alignment_length = sum(x.get_aligned_read_length() for x in self.alignments
+                                    if not x.ref.name.startswith('CONTAMINATION_'))
+        return contamination_alignment_length >= good_alignment_length

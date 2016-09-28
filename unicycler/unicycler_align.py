@@ -39,7 +39,7 @@ from multiprocessing import cpu_count
 import threading
 from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
     get_mean_and_st_dev, print_progress_line, print_section_header, \
-    weighted_average_list
+    weighted_average_list, get_sequence_file_type
 from .cpp_function_wrappers import semi_global_alignment, new_kmer_positions, add_kmer_positions, \
     delete_all_kmer_positions, \
     get_random_sequence_alignment_mean_and_std_dev
@@ -91,7 +91,7 @@ def main():
                                  args.temp_dir, args.graphmap_path, args.threads, scoring_scheme,
                                  [args.low_score], not args.no_graphmap, args.keep_bad, args.kmer,
                                  args.min_len, args.sam, full_command, args.allowed_overlap,
-                                 args.extra_sensitive, VERBOSITY)
+                                 args.extra_sensitive, args.contamination, VERBOSITY)
     sys.exit(0)
 
 
@@ -140,6 +140,10 @@ def add_aligning_arguments(parser, show_help):
     parser.add_argument('--temp_dir', type=str, required=False, default='align_temp_PID',
                         help='Temp directory for working files ("PID" will be replaced with the '
                              'process ID)'
+                             if show_help else argparse.SUPPRESS)
+    parser.add_argument('--contamination', required=False, default=argparse.SUPPRESS,
+                        help='FASTA file of known contamination in long reads, e.g. lambda phage '
+                             'spike-in (default: none).'
                              if show_help else argparse.SUPPRESS)
     parser.add_argument('--no_graphmap', action='store_true', default=argparse.SUPPRESS,
                         help='Do not use GraphMap as a first-pass aligner (default: GraphMap is '
@@ -196,6 +200,17 @@ def fix_up_arguments(args):
         if VERBOSITY > 2:
             print('\nThread count set to', args.threads)
 
+    try:
+        args.contamination
+    except AttributeError:
+        args.contamination = None
+
+    # If a contamination file was given, make sure it's FASTA.
+    if args.contamination:
+        contamination_type = get_sequence_file_type(args.contamination)
+        if contamination_type != 'FASTA':
+            quit_with_error('Long read contamination file must be FASTA format')
+
     # Add the process ID to the default temp directory so multiple instances can run at once in the
     # same directory.
     args.temp_dir = args.temp_dir.replace('PID', str(os.getpid()))
@@ -205,8 +220,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
                                  temp_dir, graphmap_path, threads, scoring_scheme,
                                  low_score_threshold_list, use_graphmap, keep_bad, kmer_size,
                                  min_align_length, sam_filename, full_command, allowed_overlap,
-                                 extra_sensitive, verbosity=None, stdout_header='Aligning reads',
-                                 display_low_score=True):
+                                 extra_sensitive, contamination_fasta, verbosity=None,
+                                 stdout_header='Aligning reads', display_low_score=True):
     """
     This function does the primary work of this module: aligning long reads to references in an
     end-gap-free, semi-global manner. It returns a list of Read objects which contain their
@@ -243,6 +258,10 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
             print('Low score threshold = ' + float_to_str(rand_mean, 2) + ' + ' +
                   str(std_devs_over_mean) + ' x ' + float_to_str(rand_std_dev, 2) + ' = ' +
                   float_to_str(low_score_threshold, 2))
+
+    using_contamination = contamination_fasta is not None
+    if using_contamination:
+        references += load_references(contamination_fasta, VERBOSITY, contamination=True)
 
     reference_dict = {x.name: x for x in references}
 
@@ -332,8 +351,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
                 completed_reads.append(read)
 
         if VERBOSITY > 0:
-            print_graphmap_summary_table(graphmap_alignments,
-                                         percent_id_mean, percent_id_std_dev,
+            print_graphmap_summary_table(graphmap_alignments, percent_id_mean, percent_id_std_dev,
                                          score_mean, score_std_dev)
             max_v = len(read_dict)
             print()
@@ -345,7 +363,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
             sam_file = open(sam_filename, 'a')
             for read in completed_reads:
                 for alignment in read.alignments:
-                    sam_file.write(alignment.get_sam_line())
+                    if not alignment.ref.name.startswith('CONTAMINATION_'):
+                        sam_file.write(alignment.get_sam_line())
             sam_file.close()
 
             # OPTIONAL TO DO: for reads which are completed, I could still try to refine GraphMap
@@ -412,11 +431,39 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     if VERBOSITY == 1:
         print()
 
-    print_alignment_summary_table(read_dict, VERBOSITY)
+    print_alignment_summary_table(read_dict, VERBOSITY, using_contamination)
     return read_dict
 
 
-def print_alignment_summary_table(read_dict, verbosity):
+def get_percent_contamination(read_dict):
+    """
+    Returns the number and percentage of reads which mostly align to contamination, both by base
+    count and read count.
+    """
+    contamination_count, some_alignment_count = 0, 0
+    contamination_bases, some_alignment_bases = 0, 0
+    for read in read_dict.values():
+        if read.get_fraction_aligned() > 0.0:
+            some_alignment_count += 1
+            some_alignment_bases += read.get_length()
+            if read.mostly_aligns_to_contamination():
+                contamination_count += 1
+                contamination_bases += read.get_length()
+
+    if some_alignment_count == 0:
+        percentage_by_count = 0.0
+    else:
+        percentage_by_count = 100.0 * contamination_count / some_alignment_count
+
+    if some_alignment_bases == 0:
+        percentage_by_bases = 0.0
+    else:
+        percentage_by_bases = 100.0 * contamination_bases / some_alignment_bases
+
+    return contamination_count, percentage_by_count, contamination_bases, percentage_by_bases
+
+
+def print_alignment_summary_table(read_dict, verbosity, using_contamination):
     """
     Outputs a summary of the reads' alignments, grouping them by fully aligned, partially aligned
     and unaligned.
@@ -430,6 +477,13 @@ def print_alignment_summary_table(read_dict, verbosity):
         ref_bases_aligned += read.get_reference_bases_aligned()
     print_section_header('Read alignment summary', verbosity)
     max_v = max(len(read_dict), ref_bases_aligned)
+
+    if using_contamination:
+        contaminant_reads, contaminant_read_per, contaminant_bases, contaminant_base_per = \
+            get_percent_contamination(read_dict)
+    else:
+        contaminant_reads, contaminant_read_per, contaminant_bases, contaminant_base_per = \
+            None, None, None, None
     print('Total read count:       ', int_to_str(len(read_dict), max_v))
     print('Fully aligned reads:    ', int_to_str(len(fully_aligned), max_v))
     print('Partially aligned reads:', int_to_str(len(partially_aligned), max_v))
@@ -438,7 +492,15 @@ def print_alignment_summary_table(read_dict, verbosity):
     print('Unaligned reads:        ', int_to_str(len(unaligned), max_v))
     if VERBOSITY > 2 and unaligned:
         print('    ' + ', '.join([x.name for x in unaligned]))
+
+    if using_contamination:
+        print('Contaminant reads:      ', int_to_str(contaminant_reads, max_v))
+        print('Contaminant reads:      ', float_to_str(contaminant_read_per, 1, max_v) + '%')
+
     print('Total bases aligned:    ', int_to_str(ref_bases_aligned, max_v) + ' bp')
+    if using_contamination:
+        print('Contaminant bases:      ', int_to_str(contaminant_bases, max_v) + ' bp')
+        print('Contaminant bases:      ', float_to_str(contaminant_base_per, 1, max_v) + '%')
 
     identities = []
     lengths = []
@@ -483,7 +545,7 @@ def print_graphmap_summary_table(graphmap_alignments, percent_id_mean, percent_i
     for line in table_lines:
         print(line)
     print()
-    print('Current mean reference length / read length:', float_to_str(EXPECTED_SLOPE, 5))
+    print('Mean reference length / read length:', float_to_str(EXPECTED_SLOPE, 5))
 
 
 def extend_to_semi_global(alignments, scoring_scheme):
@@ -735,8 +797,6 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
             output += '  too short to align\n'
         return output
 
-    # print(read, EXPECTED_SLOPE, flush=True) # TEMP
-
     results = semi_global_alignment(read.name, read.sequence, VERBOSITY,
                                     EXPECTED_SLOPE, kmer_positions_ptr,
                                     scoring_scheme.match, scoring_scheme.mismatch,
@@ -783,7 +843,8 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
         SAM_WRITE_LOCK.acquire()
         sam_file = open(sam_filename, 'a')
         for alignment in read.alignments:
-            sam_file.write(alignment.get_sam_line())
+            if not alignment.ref.name.startswith('CONTAMINATION_'):
+                sam_file.write(alignment.get_sam_line())
         sam_file.close()
         SAM_WRITE_LOCK.release()
 

@@ -398,6 +398,8 @@ def get_sequence_file_type(filename):
     """
     Determines whether a file is FASTA or FASTQ.
     """
+    if not os.path.isfile(filename):
+        quit_with_error('could not find ' + filename)
     if get_compression_type(filename) == 'gz':
         open_func = gzip.open
     else:  # plain text

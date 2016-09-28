@@ -205,8 +205,19 @@ def fix_up_arguments(args):
     except AttributeError:
         args.contamination = None
 
+    # If the user just said 'lambda' for the contamination, then we use the lambda phage FASTA
+    # included with Unicycler.
+    if args.contamination == 'lambda':
+        lambda_phage_fasta = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                          'gene_data', 'lambda_phage.fasta')
+        if not os.path.isfile(lambda_phage_fasta):
+            quit_with_error('Could not find lambda_phage.fasta - please reinstall')
+        args.contamination = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                          'gene_data', 'lambda_phage.fasta')
+
     # If a contamination file was given, make sure it's FASTA.
     if args.contamination:
+        args.contamination = os.path.abspath(args.contamination)
         contamination_type = get_sequence_file_type(args.contamination)
         if contamination_type != 'FASTA':
             quit_with_error('Long read contamination file must be FASTA format')

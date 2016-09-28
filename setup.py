@@ -71,6 +71,8 @@ class UnicycleInstall(install):
             os.makedirs(gene_data_dir)
         shutil.copyfile(os.path.join('unicycler', 'gene_data', 'start_genes.fasta'),
                         os.path.join(gene_data_dir, 'start_genes.fasta'))
+        shutil.copyfile(os.path.join('unicycler', 'gene_data', 'lambda_phage.fasta'),
+                        os.path.join(gene_data_dir, 'lambda_phage.fasta'))
 
 
 class UnicycleClean(Command):

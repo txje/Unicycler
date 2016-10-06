@@ -714,7 +714,7 @@ class LoopUnrollingBridge(object):
         self.quality *= closeness_to_whole_num
 
         # Finally, we reduce the quality for higher loop counts, as those are harder to call.
-        loop_count_penalty = (1 / loop_count) ** 0.5
+        loop_count_penalty = 1 / (2 ** (loop_count - 1))
         self.quality *= loop_count_penalty
 
         self.graph_path = [repeat]

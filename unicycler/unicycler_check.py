@@ -276,11 +276,55 @@ def count_depth_and_errors_per_base(references, reference_dict, alignments):
             ref.depths[j] += 1
             if ref.error_rates[j] is None:
                 ref.error_rates[j] = 0.0
-        for j in alignment.ref_mismatch_positions:
+
+        mismatch_positions = []
+        insertion_positions = []
+        deletion_positions = []
+
+        cigar_parts = alignment.cigar_parts[:]
+        if cigar_parts[0][-1] == 'S':
+            cigar_parts.pop(0)
+        if cigar_parts and cigar_parts[-1][-1] == 'S':
+            cigar_parts.pop()
+
+        read_len = alignment.read.get_length()
+        if alignment.rev_comp:
+            read_seq = reverse_complement(alignment.read.sequence)
+        else:
+            read_seq = alignment.read.sequence
+        read_i = alignment.read_start_pos
+        ref_len = alignment.ref.get_length()
+        ref_seq = alignment.ref.sequence
+        ref_i = alignment.ref_start_pos
+        for cigar_part in cigar_parts:
+            cigar_count = int(cigar_part[:-1])
+            cigar_type = cigar_part[-1]
+            if cigar_type == 'I':
+                insertion_positions += [ref_i]
+                read_i += cigar_count
+            elif cigar_type == 'D':
+                for j in range(cigar_count):
+                    deletion_positions.append(ref_i + j)
+                ref_i += cigar_count
+            else:  # match/mismatch
+                for _ in range(cigar_count):
+                    # If all is good with the CIGAR, then we should never end up with a sequence
+                    # index out of the sequence range. But a CIGAR error (which has occurred in
+                    # GraphMap) can cause this, so check here.
+                    if read_i >= read_len or ref_i >= ref_len:
+                        break
+                    read_base = read_seq[read_i]
+                    ref_base = ref_seq[ref_i]
+                    if read_base != ref_base:
+                        mismatch_positions.append(ref_i)
+                    read_i += 1
+                    ref_i += 1
+
+        for j in mismatch_positions:
             ref.mismatch_counts[j] += 1
-        for j in alignment.ref_insertion_positions:
+        for j in insertion_positions:
             ref.insertion_counts[j] += 1
-        for j in alignment.ref_deletion_positions:
+        for j in deletion_positions:
             ref.deletion_counts[j] += 1
         if VERBOSITY > 0:
             print_progress_line(i + 1, len(alignments))

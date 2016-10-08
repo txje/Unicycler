@@ -822,7 +822,11 @@ def get_error_rate_plotly_plot(ref, py, go, include_javascript, high_error_rate,
     if all(y_val is None for y_val in y):
         return ''
 
-    max_error_rate = max(y)
+    no_none_y = [z for z in y if z is not None]
+    if no_none_y:
+        max_error_rate = max(no_none_y)
+    else:
+        max_error_rate = 0.0
 
     # Prepare the points.
     error_trace = go.Scatter(x=x, y=y, mode='lines',

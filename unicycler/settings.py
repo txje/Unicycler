@@ -101,10 +101,10 @@ MAX_READS_FOR_CONSENSUS = 25
 # this, if doing so will not break up the graph.
 READ_DEPTH_FILTER = 0.5
 
-# The difference bridging modes have different minimum bridge quality thresholds.
+# The different bridging modes have different minimum bridge quality thresholds.
 CONSERVATIVE_MIN_BRIDGE_QUAL = 25.0
 NORMAL_MIN_BRIDGE_QUAL = 10.0
-BOLD_MIN_BRIDGE_QUAL = 5.0
+BOLD_MIN_BRIDGE_QUAL = 1.0
 
 # These control how often progress lines are updated in the stdout. They define the percentage step
 # used. E.g. if set to 5.0, the progress will go 5%, 10%, 15%, etc.

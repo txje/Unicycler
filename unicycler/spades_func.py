@@ -108,7 +108,7 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
         quit_with_error('none of the SPAdes assemblies produced assembled sequence')
 
     if verbosity > 0:
-        print('Best kmer: ' + str(best_kmer))
+        print('Best k-mer: ' + str(best_kmer))
 
     return best_assembly_graph
 

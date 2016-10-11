@@ -2848,17 +2848,15 @@ def build_reverse_links(links):
     return reverse_links
 
 
-def add_line_breaks_to_sequence(sequence, length):
+def add_line_breaks_to_sequence(sequence, line_length):
     """
     Wraps sequences to the defined length.  All resulting sequences end in a line break.
     """
     seq_with_breaks = ''
-    while len(sequence) > length:
-        seq_with_breaks += sequence[:length] + '\n'
-        sequence = sequence[length:]
-    if len(sequence) > 0:
-        seq_with_breaks += sequence
-        seq_with_breaks += '\n'
+    pos = 0
+    while pos < len(sequence):
+        seq_with_breaks += sequence[pos:pos+line_length] + '\n'
+        pos += line_length
     return seq_with_breaks
 
 

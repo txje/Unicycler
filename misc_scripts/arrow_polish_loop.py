@@ -135,10 +135,11 @@ def make_reads_bam(bax):
 def polish_assembly(fasta, round_num, min_align_length, reads_bam, threads, min_ref_length,
                     max_homopolymer):
     align_reads(fasta, min_align_length, reads_bam, threads)
-    raw_variants = '%03d' % round_num + '_raw_variants.gff'
+    raw_variants_gff = '%03d' % round_num + '_raw_variants.gff'
+    raw_variants = load_variants(raw_variants_gff)
     genomic_consensus(fasta, threads, raw_variants)
     clean_up()
-    filtered_variants = filter_variants(fasta, raw_variants, min_ref_length, max_homopolymer)
+    filtered_variants = filter_variants(fasta, raw_variants_gff, min_ref_length, max_homopolymer)
     polished_fasta = '%03d' % round_num + '_polish.fasta'
     apply_variants(fasta, filtered_variants, polished_fasta)
     print_result(raw_variants, filtered_variants, polished_fasta)
@@ -235,7 +236,7 @@ def print_round_header(text):
 def print_result(raw_variants, filtered_variants, latest_assembly):
     print_result_line('Unfiltered variants:        ' + str(len(raw_variants)))
     print_result_line('Filtered variants:          ' + str(len(filtered_variants)))
-    filtered_variant_positions = ', '.join([x.start_pos for x in filtered_variants])
+    filtered_variant_positions = ', '.join([str(x.start_pos) for x in filtered_variants])
     filtered_variant_position_lines = textwrap.wrap(filtered_variant_positions, 50)
     print_result_line('Filtered variant positions: ' + filtered_variant_position_lines[0])
     for line in filtered_variant_position_lines[1:]:

@@ -237,10 +237,11 @@ def print_result(raw_variants, filtered_variants, latest_assembly):
     print_result_line('Unfiltered variants:        ' + str(len(raw_variants)))
     print_result_line('Filtered variants:          ' + str(len(filtered_variants)))
     filtered_variant_positions = ', '.join([str(x.start_pos) for x in filtered_variants])
-    filtered_variant_position_lines = textwrap.wrap(filtered_variant_positions, 50)
-    print_result_line('Filtered variant positions: ' + filtered_variant_position_lines[0])
-    for line in filtered_variant_position_lines[1:]:
-        print_result_line('                            ' + line)
+    if filtered_variants:
+        filtered_variant_position_lines = textwrap.wrap(filtered_variant_positions, 70)
+        print_result_line('Filtered variant positions: ' + filtered_variant_position_lines[0])
+        for line in filtered_variant_position_lines[1:]:
+            print_result_line('                            ' + line)
     print_result_line('Polished FASTA:             ' + latest_assembly)
 
 

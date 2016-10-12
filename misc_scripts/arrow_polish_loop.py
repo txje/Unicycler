@@ -136,9 +136,9 @@ def polish_assembly(fasta, round_num, min_align_length, reads_bam, threads, min_
                     max_homopolymer):
     align_reads(fasta, min_align_length, reads_bam, threads)
     raw_variants_gff = '%03d' % round_num + '_raw_variants.gff'
-    raw_variants = load_variants(raw_variants_gff)
-    genomic_consensus(fasta, threads, raw_variants)
+    genomic_consensus(fasta, threads, raw_variants_gff)
     clean_up()
+    raw_variants = load_variants(raw_variants_gff)
     filtered_variants = filter_variants(fasta, raw_variants_gff, min_ref_length, max_homopolymer)
     polished_fasta = '%03d' % round_num + '_polish.fasta'
     apply_variants(fasta, filtered_variants, polished_fasta)

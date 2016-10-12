@@ -773,13 +773,13 @@ def print_intro_message(args, verbosity, full_command):
                 print('  Using user-specified bridge quality cutoff: ', end='')
         elif args.mode == 1:
             print('Bridging mode: normal')
-            if args.min_bridge_qual == settings.CONSERVATIVE_MIN_BRIDGE_QUAL:
+            if args.min_bridge_qual == settings.NORMAL_MIN_BRIDGE_QUAL:
                 print('  Using default normal bridge quality cutoff: ', end='')
             else:
                 print('  Using user-specified bridge quality cutoff: ', end='')
         else:  # args.mode == 2
             print('Bridging mode: bold')
-            if args.min_bridge_qual == settings.CONSERVATIVE_MIN_BRIDGE_QUAL:
+            if args.min_bridge_qual == settings.BOLD_MIN_BRIDGE_QUAL:
                 print('  Using default bold bridge quality cutoff: ', end='')
             else:
                 print('  Using user-specified bridge quality cutoff: ', end='')

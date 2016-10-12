@@ -4,8 +4,8 @@ import argparse
 import os
 import sys
 import subprocess
-import statistics
 import collections
+import textwrap
 
 
 def main():
@@ -25,18 +25,14 @@ def main():
         round_num += 1
 
     latest_assembly = args.fasta
-    while True:
+    done = False
+    while not done:
         print_round_header('Round ' + str(round_num))
-        change_positions, latest_assembly = polish_assembly(latest_assembly, round_num,
-                                                            args.min_align_length, args.bam,
-                                                            args.threads, args.min_ref_length,
-                                                            args.max_homopolymer)
-        if not change_positions:
-            print_finished(latest_assembly)
-            break
-        else:
-            print_result(change_positions, latest_assembly)
-            round_num += 1
+        done, latest_assembly = polish_assembly(latest_assembly, round_num,
+                                                args.min_align_length, args.bam, args.threads,
+                                                args.min_ref_length, args.max_homopolymer)
+        round_num += 1
+    print_finished(latest_assembly)
 
 
 def get_arguments():
@@ -145,8 +141,9 @@ def polish_assembly(fasta, round_num, min_align_length, reads_bam, threads, min_
     filtered_variants = filter_variants(fasta, raw_variants, min_ref_length, max_homopolymer)
     polished_fasta = '%03d' % round_num + '_polish.fasta'
     apply_variants(fasta, filtered_variants, polished_fasta)
-    change_positions = [x.start_pos for x in filtered_variants]
-    return change_positions, polished_fasta
+    print_result(raw_variants, filtered_variants, polished_fasta)
+    done = len(filtered_variants) == 0
+    return done, polished_fasta
 
 
 def align_reads(fasta, min_align_length, reads_bam, threads):
@@ -235,15 +232,25 @@ def print_round_header(text):
     print('\033[1m' + '\033[36m' + '\033[4m' + text + '\033[0m', flush=True)
 
 
-def print_result(change_positions, latest_assembly):
-    result = str(len(change_positions)) + ' changes in ' + latest_assembly + ':\n' + \
-             ', '.join(change_positions)
-    print('\033[1m' + '\033[32m' + result + '\033[0m', flush=True)
+def print_result(raw_variants, filtered_variants, latest_assembly):
+    print_result_line('Unfiltered variants:        ' + str(len(raw_variants)))
+    print_result_line('Filtered variants:          ' + str(len(filtered_variants)))
+    filtered_variant_positions = ', '.join([x.start_pos for x in filtered_variants])
+    filtered_variant_position_lines = textwrap.wrap(filtered_variant_positions, 50)
+    print_result_line('Filtered variant positions: ' + filtered_variant_position_lines[0])
+    for line in filtered_variant_position_lines[1:]:
+        print_result_line('                            ' + line)
+    print_result_line('Polished FASTA:             ' + latest_assembly)
+
+
+def print_result_line(text):
+    print('\033[1m' + '\033[32m' + text + '\033[0m', flush=True)
 
 
 def print_finished(latest_assembly):
+    print()
     result = 'No changes in ' + latest_assembly + '. All done!'
-    print('\033[1m' + '\033[92m' + result + '\033[0m', flush=True)
+    print('\033[1m' + '\033[32m' + result + '\033[0m', flush=True)
 
 
 def print_warning(warning):
@@ -316,7 +323,7 @@ def homopolymer_size(seq, pos):
     return size
 
 
-def add_line_breaks_to_sequence(sequence, length):
+def add_line_breaks_to_sequence(sequence, line_length):
     seq_with_breaks = ''
     pos = 0
     while pos < len(sequence):

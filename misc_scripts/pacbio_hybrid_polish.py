@@ -28,16 +28,21 @@ def main():
     done = False
     while not done:
         print_round_header('Round ' + str(round_num))
-        done, latest_assembly = polish_assembly(latest_assembly, round_num,
-                                                args.min_align_length, args.bam, args.threads,
-                                                args.min_ref_length, args.max_homopolymer)
+        done, latest_assembly = polish_assembly(latest_assembly, round_num, args.short1,
+                                                args.short2, args.min_align_length, args.bam,
+                                                args.threads, args.min_ref_length,
+                                                args.homopolymer, args.illumina_alt)
         round_num += 1
     print_finished(latest_assembly)
 
 
 def get_arguments():
-    parser = argparse.ArgumentParser(description='PacBio polishing loop - runs arrow algorithm '
-                                                 'until results no longer change')
+    parser = argparse.ArgumentParser(description='PacBio hybrid polishing',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('--short1', type=str, required=True,
+                        help='Short read FASTQ - first reads in pair')
+    parser.add_argument('--short2', type=str, required=True,
+                        help='Short read FASTQ - second reads in pair')
     parser.add_argument('--bax', nargs='+', type=str,
                         help='PacBio raw bax.h5 read files')
     parser.add_argument('--bam', type=str,
@@ -51,10 +56,12 @@ def get_arguments():
     parser.add_argument('--min_align_length', type=int, default=1000,
                         help='Minimum BLASR alignment length')
     parser.add_argument('--min_ref_length', type=int, default=10000,
-                        help='Minimum reference size for PacBio polishing')
-    parser.add_argument('--max_homopolymer', type=int, default=3,
-                        help='Changes to the length of homopolymers larger than this will be '
-                             'ignored')
+                        help='Contigs shorter than this will not be polished')
+    parser.add_argument('--homopolymer', type=int, default=3,
+                        help='Changes to a homopolymer of this length or greater will be ignored')
+    parser.add_argument('--illumina_alt', type=float, default=0.05,
+                        help='Fraction of Illumina reads which must vary from the reference in '
+                             'order for a base to be eligible for PacBio polishing')
 
     args = parser.parse_args()
     if not args.bax and not args.bam:
@@ -78,16 +85,18 @@ def check_files(args):
 
 def clean_up():
     files_to_delete = []
-    for f in ['pbalign_alignments.bam', 'pbalign_alignments.bam.pbi', 'pbalign_alignments.bam.bai']:
+    for f in ['pbalign_alignments.bam', 'pbalign_alignments.bam.pbi',  'pbalign_alignments.bam.bai',
+              'illumina_alignments.bam', 'illumina_alignments.bam.bai']:
         if os.path.isfile(f):
             files_to_delete.append(f)
-    fai_files = [f for f in os.listdir('.') if os.path.isfile(f) and f.endswith('.fai')]
-    for f in fai_files:
+    for f in [f for f in os.listdir('.') if os.path.isfile(f) and f.endswith('.fai')]:
+        files_to_delete.append(f)
+    for f in [f for f in os.listdir('.') if os.path.isfile(f) and f.endswith('.bt2')]:
         files_to_delete.append(f)
     if files_to_delete:
         print_command(['rm'] + files_to_delete)
-    for f in files_to_delete:
-        os.remove(f)
+        for f in files_to_delete:
+            os.remove(f)
 
 
 def set_env_vars(pb_path):
@@ -132,14 +141,22 @@ def make_reads_bam(bax):
         sys.exit('Error: bax2bam failed to make subreads.bam.pbi')
 
 
-def polish_assembly(fasta, round_num, min_align_length, reads_bam, threads, min_ref_length,
-                    max_homopolymer):
-    align_reads(fasta, min_align_length, reads_bam, threads)
+def polish_assembly(fasta, round_num, short1, short2, min_align_length, reads_bam, threads,
+                    min_ref_length, max_homopolymer, illumina_alt):
+    # Conduct PacBio alignment and consensus
+    align_pacbio_reads(fasta, min_align_length, reads_bam, threads)
     raw_variants_gff = '%03d' % round_num + '_raw_variants.gff'
     genomic_consensus(fasta, threads, raw_variants_gff)
+    raw_variants = load_variants(raw_variants_gff, fasta, min_ref_length, max_homopolymer)
     clean_up()
-    raw_variants = load_variants(raw_variants_gff)
-    filtered_variants = filter_variants(fasta, raw_variants_gff, min_ref_length, max_homopolymer)
+
+    # Conduct Illumina alignment
+    align_illumina_reads(fasta, short1, short2, threads)
+    for variant in raw_variants:
+        variant.assess_against_illumina_alignments(fasta)
+
+    filtered_variants = filter_variants(fasta, raw_variants_gff, min_ref_length, max_homopolymer,
+                                        illumina_alt)
     polished_fasta = '%03d' % round_num + '_polish.fasta'
     apply_variants(fasta, filtered_variants, polished_fasta)
     print_result(raw_variants, filtered_variants, polished_fasta)
@@ -147,7 +164,7 @@ def polish_assembly(fasta, round_num, min_align_length, reads_bam, threads, min_
     return done, polished_fasta
 
 
-def align_reads(fasta, min_align_length, reads_bam, threads):
+def align_pacbio_reads(fasta, min_align_length, reads_bam, threads):
     command = ['pbalign',
                '--nproc', str(threads),
                '--minLength', str(min_align_length),
@@ -166,6 +183,37 @@ def align_reads(fasta, min_align_length, reads_bam, threads):
         sys.exit('Error: pbalign failed to make pbalign_alignments.bam.bai')
 
 
+def align_illumina_reads(fasta, short1, short2, threads):
+    bowtie2build_command = ['bowtie2-build', fasta, fasta]
+    print_command(bowtie2build_command)
+    subprocess.check_output(bowtie2build_command, stderr=subprocess.STDOUT)
+
+    bowtie2_command = ['bowtie2',
+                       '--end-to-end',
+                       '--very-sensitive',
+                       '--threads', str(threads),
+                       '--no-unal',
+                       '-I', '0', '-X', '2000',
+                       '-x', fasta,
+                       '-1', short1, '-2', short2]
+    samtools_view_command = ['samtools', 'view', '-@', str(threads), '-Sb', '-']
+    samtools_sort_command = ['samtools', 'sort', '-@', str(threads), '-',
+                             '-o', 'illumina_alignments.bam']
+    bowtie2 = subprocess.Popen(bowtie2_command, stdout=subprocess.PIPE)
+    samtools_view = subprocess.Popen(samtools_view_command,
+                                     stdin=bowtie2.stdout, stdout=subprocess.PIPE)
+    samtools_sort = subprocess.Popen(samtools_sort_command,
+                                     stdin=samtools_view.stdout, stdout=subprocess.PIPE)
+    print_command(bowtie2_command + ['|'] + samtools_view_command + ['|'] + samtools_sort_command)
+    bowtie2.stdout.close()
+    samtools_view.stdout.close()
+    samtools_sort.communicate()
+
+    samtools_index_command = ['samtools', 'index', 'illumina_alignments.bam']
+    print_command(samtools_index_command)
+    run_command_print_output(samtools_index_command)
+
+
 def genomic_consensus(fasta, threads, raw_variants_filename):
     subprocess.call(['samtools', 'faidx', fasta])
     command = ['arrow',
@@ -181,7 +229,7 @@ def genomic_consensus(fasta, threads, raw_variants_filename):
         sys.exit('Error: arrow failed to make ' + raw_variants_filename)
 
 
-def filter_variants(fasta, raw_variants_gff, min_ref_length, max_homopolymer):
+def filter_variants(fasta, raw_variants_gff, min_ref_length, max_homopolymer, illumina_alt):
     """
     This function produces a new GFF file without variants:
       * in homopolymer runs
@@ -189,10 +237,21 @@ def filter_variants(fasta, raw_variants_gff, min_ref_length, max_homopolymer):
       * TO DO: in regions where the Illumina mapping is super-solid
     """
     reference = load_fasta(fasta)
-    raw_variants = load_variants(raw_variants_gff)
-    filtered_variants = [x for x in raw_variants if
-                         not x.is_homopolymer_change(reference, max_homopolymer) and
-                         not x.has_small_reference(reference, min_ref_length)]
+    raw_variants = load_variants(raw_variants_gff, fasta, max_homopolymer, min_ref_length)
+
+    print(get_out_header())
+    filtered_variants = []
+    for variant in raw_variants:
+        variant_output = variant.get_out_line() + '\t'
+        if not variant.is_homopolymer_change(reference, max_homopolymer) and \
+                not variant.has_small_reference(reference, min_ref_length) and \
+                variant.illumina_alt_fraction >= illumina_alt:
+            filtered_variants.append(variant)
+            variant_output += '\033[32m' + 'PASS' + '\033[0m'
+        else:
+            variant_output += '\033[31m' + 'FAIL' + '\033[0m'
+        print(variant_output, flush=True)
+
     filtered_variants_gff = raw_variants_gff.replace('_raw_', '_filtered_')
     with open(filtered_variants_gff, 'wt') as new_gff:
         with open(raw_variants_gff, 'rt') as old_gff:
@@ -263,9 +322,12 @@ def print_warning(warning):
 
 
 def run_command_print_output(command):
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    for line in iter(process.stdout.readline, b''):
-        print(line.rstrip().decode(), flush=True)
+    try:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        for line in iter(process.stdout.readline, b''):
+            print(line.rstrip().decode(), flush=True)
+    except subprocess.CalledProcessError as e:
+        sys.exit(e.output.decode())
 
 
 def load_fasta(filename):
@@ -293,13 +355,14 @@ def load_fasta(filename):
     return fasta_seqs
 
 
-def load_variants(gff_file):
+def load_variants(gff_file, fasta, min_ref_length, max_homopolymer):
+    reference = load_fasta(fasta)
     variants = []
     with open(gff_file, 'rt') as gff:
         for line in gff:
             line = line.strip()
             if line and not line.startswith('##'):
-                variants.append(Variant(line))
+                variants.append(PacBioVariant(line, reference, min_ref_length, max_homopolymer))
     return variants
 
 
@@ -337,8 +400,8 @@ def add_line_breaks_to_sequence(sequence, line_length):
     return seq_with_breaks
 
 
-class Variant(object):
-    def __init__(self, gff_line):
+class PacBioVariant(object):
+    def __init__(self, gff_line, reference, min_ref_length, max_homopolymer):
         """
         https://github.com/PacificBiosciences/GenomicConsensus/blob/master/doc/VariantsGffSpecification.rst
         """
@@ -355,16 +418,67 @@ class Variant(object):
         self.confidence = int(attributes['confidence'])
         self.coverage = int(attributes['coverage'])
 
-    def has_small_reference(self, reference, min_ref_length):
-        return len(reference[self.ref_name]) < min_ref_length
-
-    def is_homopolymer_change(self, reference, max_homopolymer):
-        if self.type != 'insertion' and self.type != 'deletion':
-            return False
-        if has_multiple_bases(self.ref_seq) or has_multiple_bases(self.variant_seq):
-            return False
         ref_seq = reference[self.ref_name]
-        return homopolymer_size(ref_seq, self.start_pos) > max_homopolymer
+        self.has_small_reference = len(ref_seq) < min_ref_length
+
+        if self.type != 'insertion' and self.type != 'deletion':
+            self.is_homopolymer_change = False
+        elif has_multiple_bases(self.ref_seq) or has_multiple_bases(self.variant_seq):
+            self.is_homopolymer_change = False
+        else:
+            self.is_homopolymer_change = homopolymer_size(ref_seq, self.start_pos) > max_homopolymer
+
+        self.illumina_alt_fraction = 0.0
+
+    def assess_against_illumina_alignments(self, reference_fasta):
+        ref_location = self.ref_name + ':' + str(self.start_pos - 5) + '-' + str(self.end_pos + 5)
+        freebayes_command = ['freebayes',
+                             '-f', reference_fasta,
+                             '-p', '1',
+                             '-r', ref_location,
+                             '--report-monomorphic',
+                             '--min-alternate-fraction', '0',
+                             '--pooled-continuous',
+                             '--min-alternate-count', '1',
+                             '--haplotype-length', '0',
+                             'illumina_alignments.bam']
+        freebayes_out = subprocess.check_output(freebayes_command, stderr=subprocess.STDOUT)
+        freebayes_lines = [x for x in freebayes_out.decode().split('\n')
+                           if x and not x.startswith('#')]
+        for line in freebayes_lines:
+            line_parts = line.split('\t')
+            start_pos = int(line_parts[1]) - 1
+            end_pos = start_pos + len(line_parts[3]) - 1  # inclusive end
+            if start_pos <= self.start_pos <= end_pos:
+                ref_occurrences = int(line.split(';RO=')[1].split(';')[0])
+                if ';AO=' in line:
+                    alt_occurrences = int(line.split(';AO=')[1].split(';')[0])
+                else:
+                    alt_occurrences = 0
+                alt_fraction = alt_occurrences / (ref_occurrences + alt_occurrences)
+                self.illumina_alt_fraction = max(self.illumina_alt_fraction, alt_fraction)
+
+    def get_out_line(self):
+        homopolymer = 'yes' if self.is_homopolymer_change else 'no'
+        small = 'yes' if self.has_small_reference else 'no'
+        return '\t'.join([self.ref_name,
+                          str(self.start_pos + 1),
+                          self.ref_seq,
+                          self.variant_seq,
+                          homopolymer,
+                          small,
+                          "%.2f" % self.illumina_alt_fraction])
+
+
+def get_out_header():
+    return '\033[1m' + '\t'.join(['CONTIG',
+                                  'POSITION',
+                                  'REF',
+                                  'ALT',
+                                  'HOMO',
+                                  'SMALL',
+                                  'ILLUMINA',
+                                  'RESULT']) + '\033[0m'
 
 
 if __name__ == '__main__':

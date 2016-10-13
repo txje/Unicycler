@@ -183,7 +183,10 @@ def genomic_consensus(fasta, threads, raw_variants_filename):
 
 def filter_variants(fasta, raw_variants_gff, min_ref_length, max_homopolymer):
     """
-    This function produces a new GFF file without variants in homopolymer runs.
+    This function produces a new GFF file without variants:
+      * in homopolymer runs
+      * in small references
+      * TO DO: in regions where the Illumina mapping is super-solid
     """
     reference = load_fasta(fasta)
     raw_variants = load_variants(raw_variants_gff)

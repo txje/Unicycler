@@ -143,6 +143,11 @@ def get_tool_paths(args):
     if not args.arrow:
         sys.exit('Error: could not find arrow')
 
+    if not args.freebayes:
+        args.freebayes = shutil.which('freebayes')
+    if not args.freebayes:
+        sys.exit('Error: could not find freebayes')
+
 
 def make_reads_bam(args):
     command = [args.bax2bam] + args.bax

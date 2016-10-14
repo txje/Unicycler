@@ -264,7 +264,7 @@ def filter_variants(raw_variants, raw_variants_gff, illumina_alt):
     filtered_variants = []
     for variant in raw_variants:
         variant_output = variant.get_out_line() + '\t'
-        if variant.illumina_alt_fraction >= illumina_alt:
+        if variant.illumina_alt_fraction >= illumina_alt and not variant.is_homopolymer_change:
             filtered_variants.append(variant)
             variant_output += '\033[32m' + 'PASS' + '\033[0m'
         else:

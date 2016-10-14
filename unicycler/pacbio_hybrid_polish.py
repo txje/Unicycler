@@ -190,7 +190,7 @@ def align_pacbio_reads(fasta, args):
                '--nproc', str(args.threads),
                '--minLength', str(args.min_align_length),
                '--algorithmOptions="--minRawSubreadScore 800 --bestn 1"',
-               args.reads_bam,
+               args.bam,
                fasta,
                'pbalign_alignments.bam']
     run_command_print_output(command)

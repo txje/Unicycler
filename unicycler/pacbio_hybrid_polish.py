@@ -426,6 +426,8 @@ class PacBioVariant(object):
             self.is_homopolymer_change = homopolymer_size(ref_seq, self.start_pos) > max_homopolymer
 
         self.illumina_alt_fraction = 0.0
+        self.ro = 0
+        self.ao = 0
 
     def assess_against_illumina_alignments(self, reference_fasta, args):
         ref_location = self.ref_name + ':' + str(self.start_pos - 5) + '-' + str(self.end_pos + 5)
@@ -442,14 +444,11 @@ class PacBioVariant(object):
         freebayes_out = subprocess.check_output(freebayes_command, stderr=subprocess.STDOUT)
         freebayes_lines = [x for x in freebayes_out.decode().split('\n')
                            if x and not x.startswith('#')]
-        print()  # TEMP
-        print('\033[1m' + self.original_line + '\033[0m')  # TEMP
         for line in freebayes_lines:
             line_parts = line.split('\t')
             start_pos = int(line_parts[1]) - 1
             end_pos = start_pos + len(line_parts[3]) - 1  # inclusive end
             if start_pos <= self.start_pos <= end_pos:
-                print('\033[1m' + line + '\033[0m')  # TEMP
                 ref_occurrences = int(line.split(';RO=')[1].split(';')[0])
                 if ';AO=' in line:
                     alt_occurrences = sum(int(x) for x in
@@ -457,12 +456,10 @@ class PacBioVariant(object):
                 else:
                     alt_occurrences = 0
                 alt_fraction = alt_occurrences / (ref_occurrences + alt_occurrences)
-                self.illumina_alt_fraction = max(self.illumina_alt_fraction, alt_fraction)
-                print('    RO=' + str(ref_occurrences) + ', AO=' + str(alt_occurrences))  # TEMP
-                print('    alt_fraction=' + str(alt_fraction))  # TEMP
-            else:  # TEMP
-                print(line)  # TEMP
-        print()  # TEMP
+                if alt_fraction > self.illumina_alt_fraction:
+                    self.ao = alt_occurrences
+                    self.ro = ref_occurrences
+                    self.illumina_alt_fraction = alt_fraction
 
     def get_out_line(self):
         homopolymer = 'yes' if self.is_homopolymer_change else 'no'
@@ -471,14 +468,18 @@ class PacBioVariant(object):
                           self.ref_seq,
                           self.variant_seq,
                           homopolymer,
+                          str(self.ao),
+                          str(self.ro),
                           "%.3f" % self.illumina_alt_fraction])
 
 
 def get_out_header():
     return '\033[1m' + '\t'.join(['CONTIG',
-                                  'POSITION',
+                                  'POS',
                                   'REF',
                                   'ALT',
                                   'HOMO',
-                                  'ILLUMINA',
+                                  'AO',
+                                  'RO',
+                                  'AO/(RO+AO)',
                                   'RESULT']) + '\033[0m'

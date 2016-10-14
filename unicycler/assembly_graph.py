@@ -8,7 +8,7 @@ email: rrwick@gmail.com
 import math
 from collections import deque, defaultdict
 from .misc import int_to_str, float_to_str, weighted_average_list, print_section_header, \
-     reverse_complement, score_function
+     reverse_complement, score_function, add_line_breaks_to_sequence
 from .bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge
 from . import settings
 
@@ -2846,18 +2846,6 @@ def build_reverse_links(links):
                 reverse_links[end] = []
             reverse_links[end].append(start)
     return reverse_links
-
-
-def add_line_breaks_to_sequence(sequence, line_length):
-    """
-    Wraps sequences to the defined length.  All resulting sequences end in a line break.
-    """
-    seq_with_breaks = ''
-    pos = 0
-    while pos < len(sequence):
-        seq_with_breaks += sequence[pos:pos+line_length] + '\n'
-        pos += line_length
-    return seq_with_breaks
 
 
 def remove_nums_from_links(links, nums_to_remove):

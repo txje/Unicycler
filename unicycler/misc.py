@@ -496,3 +496,15 @@ def strip_read_extensions(read_file_name):
         if len(name_parts) > 1 and len(name_parts[-1]) <= 5:
             name_parts = name_parts[:-1]
     return '.'.join(name_parts)
+
+
+def add_line_breaks_to_sequence(sequence, line_length):
+    """
+    Wraps sequences to the defined length.  All resulting sequences end in a line break.
+    """
+    seq_with_breaks = ''
+    pos = 0
+    while pos < len(sequence):
+        seq_with_breaks += sequence[pos:pos+line_length] + '\n'
+        pos += line_length
+    return seq_with_breaks

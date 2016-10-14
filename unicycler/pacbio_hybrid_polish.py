@@ -1,21 +1,29 @@
 #!/usr/bin/env python3
+"""
+This script is for polishing a PacBio genome that was finished using Unicycler.
+
+Author: Ryan Wick
+email: rrwick@gmail.com
+"""
 
 import argparse
 import os
+import shutil
 import sys
 import subprocess
 import collections
 import textwrap
+from .misc import add_line_breaks_to_sequence, load_fasta
 
 
 def main():
     args = get_arguments()
-    check_files(args)
+    get_tool_paths(args)
     clean_up()
 
     if args.bax:
         print_round_header('Converting bax.h5 reads to BAM format')
-        make_reads_bam(args.bax)
+        make_reads_bam(args)
         args.bam = 'subreads.bam'
 
     round_num = 1
@@ -27,10 +35,7 @@ def main():
     done = False
     while not done:
         print_round_header('Round ' + str(round_num))
-        done, latest_assembly = polish_assembly(latest_assembly, round_num, args.short1,
-                                                args.short2, args.min_align_length, args.bam,
-                                                args.threads, args.homopolymer, args.illumina_alt,
-                                                args.pb_path)
+        done, latest_assembly = polish_assembly(latest_assembly, round_num, args)
         clean_up()
         round_num += 1
     print_finished(latest_assembly)
@@ -51,7 +56,7 @@ def get_arguments():
                         help='Assembly to polish')
     parser.add_argument('--threads', type=int, required=True,
                         help='CPU threads to use in alignment and consensus')
-    parser.add_argument('--pb_path', type=str, default='',
+    parser.add_argument('--pitchfork', type=str, default='',
                         help='Path to PacBio tools (should contain bin and lib directories)')
     parser.add_argument('--min_align_length', type=int, default=1000,
                         help='Minimum BLASR alignment length')
@@ -60,21 +65,27 @@ def get_arguments():
     parser.add_argument('--illumina_alt', type=float, default=0.05,
                         help='Fraction of Illumina reads which must vary from the reference in '
                              'order for a base to be eligible for PacBio polishing')
+    parser.add_argument('--samtools', type=str, default=None,
+                        help='path to samtools executable')
+    parser.add_argument('--bowtie2', type=str, default=None,
+                        help='path to bowtie2 executable')
+    parser.add_argument('--bax2bam', type=str, default=None,
+                        help='path to bax2bam executable')
+    parser.add_argument('--pbalign', type=str, default=None,
+                        help='path to pbalign executable')
+    parser.add_argument('--arrow', type=str, default=None,
+                        help='path to arrow executable')
+    parser.add_argument('--freebayes', type=str, default=None,
+                        help='path to freebayes executable')
 
     args = parser.parse_args()
     if not args.bax and not args.bam:
         parser.error('either --bax or --bam is required')
     if args.bax and args.bam:
         parser.error('only one of the following can be used: --bax or --bam')
-    return args
-
-
-def check_files(args):
     if args.bam and not os.path.isfile(args.bam + '.pbi'):
         sys.exit('Error: missing ' + args.bam + '.pbi')
-    args.bax2bam = os.path.join(args.pb_path, 'bin', 'bax2bam')
-    args.pbalign = os.path.join(args.pb_path, 'bin', 'pbalign')
-    args.arrow = os.path.join(args.pb_path, 'bin', 'arrow')
+    return args
 
 
 def clean_up():
@@ -94,36 +105,46 @@ def clean_up():
             os.remove(f)
 
 
-def add_to_env_vars(pb_path):
-    def add_to_env_var(key, new_val):
-        if key in os.environ:
-            original_val = os.environ[key]
-            os.environ[key] = new_val + ':' + os.environ[key]
-        else:
-            original_val = None
-            os.environ[key] = new_val
-        return original_val
-    original_lib = add_to_env_var('LD_LIBRARY_PATH', os.path.join(pb_path, 'lib'))
-    original_bin = add_to_env_var('PATH', os.path.join(pb_path, 'bin'))
-    original_python = add_to_env_var('PYTHONPATH', os.path.join(pb_path, 'lib', 'python2.7',
-                                                                'dist-packages'))
-    return original_lib, original_bin, original_python
+def get_tool_paths(args):
+    if not args.samtools:
+        args.samtools = shutil.which('samtools')
+    if not args.samtools:
+        sys.exit('Error: could not find samtools')
+
+    if args.bowtie2:
+        args.bowtie2_build = args.bowtie2 + '-build'
+    else:
+        args.bowtie2 = shutil.which('bowtie2')
+        args.bowtie2 = shutil.which('bowtie2-build')
+    if not args.bowtie2:
+        sys.exit('Error: could not find bowtie2')
+    if not args.bowtie2_build:
+        sys.exit('Error: could not find bowtie2-build')
+
+    if args.pitchfork:
+        def add_to_env_var(key, new_val):
+            if key in os.environ:
+                os.environ[key] = new_val + ':' + os.environ[key]
+            else:
+                os.environ[key] = new_val
+        add_to_env_var('LD_LIBRARY_PATH', os.path.join(args.pitchfork, 'lib'))
+        add_to_env_var('PATH', os.path.join(args.pitchfork, 'bin'))
+        add_to_env_var('PYTHONPATH', os.path.join(args.pitchfork, 'lib', 'python2.7',
+                                                  'dist-packages'))
+
+    if not args.pbalign:
+        args.pbalign = shutil.which('pbalign')
+    if not args.pbalign:
+        sys.exit('Error: could not find pbalign')
+
+    if not args.arrow:
+        args.pb_align = shutil.which('arrow')
+    if not args.arrow:
+        sys.exit('Error: could not find arrow')
 
 
-def restore_env_vars(original_vars):
-    def restore_env_var(key, original_val):
-        if original_val:
-            os.environ[key] = original_val
-        else:
-            del os.environ[key]
-    original_lib, original_bin, original_python = original_vars
-    restore_env_var('LD_LIBRARY_PATH', original_lib)
-    restore_env_var('PATH', original_bin)
-    restore_env_var('PYTHONPATH', original_python)
-
-
-def make_reads_bam(bax):
-    command = ['bax2bam'] + bax
+def make_reads_bam(args):
+    command = [args.bax2bam] + args.bax
     run_command_print_output(command)
     files = [f for f in os.listdir('.') if os.path.isfile(f)]
     files_to_delete = []
@@ -145,18 +166,17 @@ def make_reads_bam(bax):
         sys.exit('Error: bax2bam failed to make subreads.bam.pbi')
 
 
-def polish_assembly(fasta, round_num, short1, short2, min_align_length, reads_bam, threads,
-                    max_homopolymer, illumina_alt, pb_path):
+def polish_assembly(fasta, round_num, args):
 
-    align_illumina_reads(fasta, short1, short2, threads)
-    align_pacbio_reads(fasta, min_align_length, reads_bam, threads, pb_path)
+    align_illumina_reads(fasta, args)
+    align_pacbio_reads(fasta, args)
     raw_variants_gff = '%03d' % round_num + '_raw_variants.gff'
-    genomic_consensus(fasta, threads, raw_variants_gff)
-    raw_variants = load_variants(raw_variants_gff, fasta, max_homopolymer)
+    genomic_consensus(fasta, args, raw_variants_gff)
+    raw_variants = load_variants(raw_variants_gff, fasta, args.max_homopolymer)
 
     for variant in raw_variants:
-        variant.assess_against_illumina_alignments(fasta)
-    filtered_variants = filter_variants(raw_variants, raw_variants_gff, illumina_alt)
+        variant.assess_against_illumina_alignments(fasta, args)
+    filtered_variants = filter_variants(raw_variants, raw_variants_gff, args.illumina_alt)
     polished_fasta = '%03d' % round_num + '_polish.fasta'
     apply_variants(fasta, filtered_variants, polished_fasta)
     print_result(raw_variants, filtered_variants, polished_fasta)
@@ -164,19 +184,12 @@ def polish_assembly(fasta, round_num, short1, short2, min_align_length, reads_ba
     return done, polished_fasta
 
 
-def align_pacbio_reads(fasta, min_align_length, reads_bam, threads, pb_path):
-    print('1) PATH:', os.environ['PATH'])  # TEMP
-    if pb_path:
-        original_vars = add_to_env_vars(pb_path)
-    else:
-        original_vars = None
-    print('2) PATH:', os.environ['PATH'])  # TEMP
-
-    command = ['pbalign',
-               '--nproc', str(threads),
-               '--minLength', str(min_align_length),
+def align_pacbio_reads(fasta, args):
+    command = [args.pbalign,
+               '--nproc', str(args.threads),
+               '--minLength', str(args.min_align_length),
                '--algorithmOptions="--minRawSubreadScore 800 --bestn 1"',
-               reads_bam,
+               args.reads_bam,
                fasta,
                'pbalign_alignments.bam']
     run_command_print_output(command)
@@ -188,29 +201,24 @@ def align_pacbio_reads(fasta, min_align_length, reads_bam, threads, pb_path):
     if 'pbalign_alignments.bam.bai' not in files:
         sys.exit('Error: pbalign failed to make pbalign_alignments.bam.bai')
 
-    print('3) PATH:', os.environ['PATH'])  # TEMP
-    if pb_path:
-        restore_env_vars(original_vars)
-    print('4) PATH:', os.environ['PATH'])  # TEMP
 
-
-def align_illumina_reads(fasta, short1, short2, threads):
+def align_illumina_reads(fasta, args):
     index = 'bowtie_index'
     bam = 'illumina_alignments.bam'
 
-    run_command_no_output(['bowtie2-build', fasta, index])
+    run_command_no_output([args.bowtie2_build, fasta, index])
 
-    bowtie2_command = ['bowtie2',
+    bowtie2_command = [args.bowtie2,
                        '--end-to-end',
                        '--very-sensitive',
-                       '--threads', str(threads),
+                       '--threads', str(args.threads),
                        '--no-unal',
                        '-I', '0', '-X', '2000',
                        '-x', index,
-                       '-1', short1, '-2', short2]
-    samtools_view_command = ['samtools', 'view', '-hu', '-']
-    samtools_sort_command = ['samtools', 'sort',
-                             '-@', str(threads),
+                       '-1', args.short1, '-2', args.short2]
+    samtools_view_command = [args.samtools, 'view', '-hu', '-']
+    samtools_sort_command = [args.samtools, 'sort',
+                             '-@', str(args.threads),
                              '-o', 'illumina_alignments.bam',
                              '-']
     print_command(bowtie2_command + ['|'] + samtools_view_command + ['|'] + samtools_sort_command)
@@ -224,14 +232,14 @@ def align_illumina_reads(fasta, short1, short2, threads):
     samtools_view.stdout.close()
     samtools_sort.communicate()
 
-    run_command_no_output(['samtools', 'index', bam])
+    run_command_no_output([args.samtools, 'index', bam])
 
 
-def genomic_consensus(fasta, threads, raw_variants_filename):
-    subprocess.call(['samtools', 'faidx', fasta])
-    command = ['arrow',
+def genomic_consensus(fasta, args, raw_variants_filename):
+    subprocess.call([args.samtools, 'faidx', fasta])
+    command = [args.arrow,
                'pbalign_alignments.bam',
-               '-j', str(threads),
+               '-j', str(args.threads),
                '--noEvidenceConsensusCall', 'reference',
                '-r', fasta,
                '-o', raw_variants_filename]
@@ -272,7 +280,7 @@ def apply_variants(in_fasta, variants, out_fasta):
     """
     This function creates a new FASTA file by applying the variants to an existing FASTA file.
     """
-    in_seqs = load_fasta(in_fasta)
+    in_seqs = collections.OrderedDict(load_fasta(in_fasta))
     out_seqs = collections.OrderedDict()
     for name, seq in in_seqs.items():
         seq_variants = sorted([x for x in variants if x.ref_name == name],
@@ -349,33 +357,8 @@ def run_command_no_output(command, shell=False):
         sys.exit(e.output.decode())
 
 
-def load_fasta(filename):
-    """
-    Returns a dictionary (header: seq) for each record in the fasta file.
-    """
-    fasta_seqs = collections.OrderedDict()
-    fasta_file = open(filename, 'rt')
-    name = ''
-    sequence = ''
-    for line in fasta_file:
-        line = line.strip()
-        if not line:
-            continue
-        if line[0] == '>':  # Header line = start of new contig
-            if name:
-                fasta_seqs[name.split()[0]] = sequence
-                sequence = ''
-            name = line[1:]
-        else:
-            sequence += line
-    if name:
-        fasta_seqs[name.split()[0]] = sequence
-    fasta_file.close()
-    return fasta_seqs
-
-
 def load_variants(gff_file, fasta, max_homopolymer):
-    reference = load_fasta(fasta)
+    reference = dict(load_fasta(fasta))
     variants = []
     with open(gff_file, 'rt') as gff:
         for line in gff:
@@ -410,15 +393,6 @@ def homopolymer_size(seq, pos):
     return size
 
 
-def add_line_breaks_to_sequence(sequence, line_length):
-    seq_with_breaks = ''
-    pos = 0
-    while pos < len(sequence):
-        seq_with_breaks += sequence[pos:pos+line_length] + '\n'
-        pos += line_length
-    return seq_with_breaks
-
-
 class PacBioVariant(object):
     def __init__(self, gff_line, reference, max_homopolymer):
         """
@@ -447,9 +421,9 @@ class PacBioVariant(object):
 
         self.illumina_alt_fraction = 0.0
 
-    def assess_against_illumina_alignments(self, reference_fasta):
+    def assess_against_illumina_alignments(self, reference_fasta, args):
         ref_location = self.ref_name + ':' + str(self.start_pos - 5) + '-' + str(self.end_pos + 5)
-        freebayes_command = ['freebayes',
+        freebayes_command = [args.freebayes,
                              '-f', reference_fasta,
                              '-p', '1',
                              '-r', ref_location,
@@ -502,7 +476,3 @@ def get_out_header():
                                   'HOMO',
                                   'ILLUMINA',
                                   'RESULT']) + '\033[0m'
-
-
-if __name__ == '__main__':
-    main()

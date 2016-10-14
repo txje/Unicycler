@@ -39,7 +39,7 @@ from multiprocessing import cpu_count
 import threading
 from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
     get_mean_and_st_dev, print_progress_line, print_section_header, \
-    weighted_average_list, get_sequence_file_type
+    weighted_average_list, get_sequence_file_type, MyHelpFormatter
 from .cpp_function_wrappers import semi_global_alignment, new_kmer_positions, add_kmer_positions, \
     delete_all_kmer_positions, \
     get_random_sequence_alignment_mean_and_std_dev
@@ -104,7 +104,7 @@ def get_arguments():
 
     parser = argparse.ArgumentParser(description='Unicycler align - a sensitive semi-global long '
                                                  'read aligner',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+                                     formatter_class=MyHelpFormatter)
 
     parser.add_argument('--ref', type=str, required=True, default=argparse.SUPPRESS,
                         help='FASTA file containing one or more reference sequences')

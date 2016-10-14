@@ -13,7 +13,7 @@ import sys
 import subprocess
 import collections
 import textwrap
-from .misc import add_line_breaks_to_sequence, load_fasta
+from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter
 
 
 def main():
@@ -43,7 +43,7 @@ def main():
 
 def get_arguments():
     parser = argparse.ArgumentParser(description='PacBio hybrid polishing',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+                                     formatter_class=MyHelpFormatter)
     parser.add_argument('--short1', type=str, required=True,
                         help='Short read FASTQ - first reads in pair')
     parser.add_argument('--short2', type=str, required=True,

@@ -15,7 +15,8 @@ import argparse
 import random
 import shutil
 from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
-    get_nice_header, reverse_complement, print_progress_line, print_section_header
+    get_nice_header, reverse_complement, print_progress_line, print_section_header, \
+    MyHelpFormatter
 from .read_ref import load_references, load_long_reads
 from .alignment import AlignmentScoringScheme
 from .cpp_function_wrappers import simulate_depths, get_random_sequence_alignment_error_rates
@@ -96,7 +97,7 @@ def get_arguments():
     os.environ['COLUMNS'] = str(terminal_width)
 
     parser = argparse.ArgumentParser(description='Long read assembly checker',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+                                     formatter_class=MyHelpFormatter)
 
     parser.add_argument('--sam', type=str, required=True, default=argparse.SUPPRESS,
                         help="Input SAM file of alignments (if this file doesn't exist, the "

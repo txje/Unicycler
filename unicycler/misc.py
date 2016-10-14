@@ -11,6 +11,8 @@ import subprocess
 import random
 import math
 import gzip
+import argparse
+import shutil
 
 
 def float_to_str(num, decimals, max_num=0):
@@ -508,3 +510,56 @@ def add_line_breaks_to_sequence(sequence, line_length):
         seq_with_breaks += sequence[pos:pos+line_length] + '\n'
         pos += line_length
     return seq_with_breaks
+
+
+class MyHelpFormatter(argparse.RawDescriptionHelpFormatter):
+    """
+    This is a custom formatter class for argparse. It allows for some custom formatting,
+    in particular for the help texts with multiple options (like bridging mode and verbosity level).
+    http://stackoverflow.com/questions/3853722
+    """
+    def __init__(self, prog):
+        terminal_width = shutil.get_terminal_size().columns
+        os.environ['COLUMNS'] = str(terminal_width)
+        max_help_position = min(max(24, terminal_width // 3), 40)
+        super().__init__(prog, max_help_position=max_help_position)
+
+    def _split_lines(self, text, width):
+        if text.startswith('B|') or text.startswith('R|'):
+            text_lines = text[2:].splitlines()
+            wrapped_text_lines = []
+            for line in text_lines:
+                if len(line) <= width:
+                    wrapped_text_lines.append(line)
+                else:
+                    wrap_column = 2
+
+                    # The bridging mode help text should wrap each line around to the column of
+                    # the equals sign.
+                    if text.startswith('B|'):
+                        line_parts = line.split()
+                        wrap_column += line.find('=')
+                        join = ''
+                        current_line = '  ' + line_parts[0]
+
+                    # The other multi-option help texts should wrap an entire option at a time.
+                    else:  # text.startswith('R|')
+                        line_parts = line.split(', ')
+                        join = ','
+                        current_line = line_parts[0]
+                    for part in line_parts[1:]:
+                        if len(current_line) + len(join) + 1 + len(part) <= width:
+                            current_line += join + ' ' + part
+                        else:
+                            wrapped_text_lines.append(current_line + join)
+                            current_line = ' ' * wrap_column + part
+                    wrapped_text_lines.append(current_line)
+            return wrapped_text_lines
+        else:
+            return argparse.HelpFormatter._split_lines(self, text, width)
+
+    def _fill_text(self, text, width, indent):
+        if text.startswith('R|'):
+            return argparse.RawDescriptionHelpFormatter._fill_text(self, text[2:], width, indent)
+        else:
+            return argparse.HelpFormatter._fill_text(self, text, width, indent)

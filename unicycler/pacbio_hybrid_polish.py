@@ -57,7 +57,8 @@ def get_arguments():
     parser.add_argument('--threads', type=int, required=True,
                         help='CPU threads to use in alignment and consensus')
     parser.add_argument('--pitchfork', type=str, default='',
-                        help='Path to PacBio tools (should contain bin and lib directories)')
+                        help='Path to Pitchfork installation of PacBio tools (should contain bin '
+                             'and lib directories)')
     parser.add_argument('--min_align_length', type=int, default=1000,
                         help='Minimum BLASR alignment length')
     parser.add_argument('--homopolymer', type=int, default=3,
@@ -115,7 +116,7 @@ def get_tool_paths(args):
         args.bowtie2_build = args.bowtie2 + '-build'
     else:
         args.bowtie2 = shutil.which('bowtie2')
-        args.bowtie2 = shutil.which('bowtie2-build')
+        args.bowtie2_build = shutil.which('bowtie2-build')
     if not args.bowtie2:
         sys.exit('Error: could not find bowtie2')
     if not args.bowtie2_build:

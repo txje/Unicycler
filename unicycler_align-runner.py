@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Convenience wrapper for running Antpath directly from source tree.
+Convenience wrapper for running Unicycler align directly from source tree.
 """
 
 from unicycler.unicycler_align import main

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Convenience wrapper for running Scrutinate directly from source tree.
+Convenience wrapper for running Unicycler check directly from source tree.
 """
 
 from unicycler.unicycler_check import main

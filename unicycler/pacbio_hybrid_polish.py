@@ -139,7 +139,7 @@ def get_tool_paths(args):
         sys.exit('Error: could not find pbalign')
 
     if not args.arrow:
-        args.pb_align = shutil.which('arrow')
+        args.arrow = shutil.which('arrow')
     if not args.arrow:
         sys.exit('Error: could not find arrow')
 

@@ -173,7 +173,7 @@ def polish_assembly(fasta, round_num, args):
     align_pacbio_reads(fasta, args)
     raw_variants_gff = '%03d' % round_num + '_raw_variants.gff'
     genomic_consensus(fasta, args, raw_variants_gff)
-    raw_variants = load_variants(raw_variants_gff, fasta, args.max_homopolymer)
+    raw_variants = load_variants(raw_variants_gff, fasta, args.homopolymer)
 
     for variant in raw_variants:
         variant.assess_against_illumina_alignments(fasta, args)

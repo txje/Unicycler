@@ -61,7 +61,7 @@ def get_arguments():
                              'and lib directories)')
     parser.add_argument('--min_align_length', type=int, default=1000,
                         help='Minimum BLASR alignment length')
-    parser.add_argument('--homopolymer', type=int, default=3,
+    parser.add_argument('--homopolymer', type=int, default=4,
                         help='Changes to a homopolymer of this length or greater will be ignored')
     parser.add_argument('--illumina_alt', type=float, default=0.05,
                         help='Fraction of Illumina reads which must vary from the reference in '
@@ -173,16 +173,16 @@ def make_reads_bam(args):
 
 
 def polish_assembly(fasta, round_num, args):
-
     align_illumina_reads(fasta, args)
     align_pacbio_reads(fasta, args)
     raw_variants_gff = '%03d' % round_num + '_raw_variants.gff'
     genomic_consensus(fasta, args, raw_variants_gff)
-    raw_variants = load_variants(raw_variants_gff, fasta, args.homopolymer)
+    raw_variants = load_variants(raw_variants_gff, fasta)
 
     for variant in raw_variants:
         variant.assess_against_illumina_alignments(fasta, args)
-    filtered_variants = filter_variants(raw_variants, raw_variants_gff, args.illumina_alt)
+    filtered_variants = filter_variants(raw_variants, raw_variants_gff, args.illumina_alt,
+                                        args.homopolymer)
     polished_fasta = '%03d' % round_num + '_polish.fasta'
     apply_variants(fasta, filtered_variants, polished_fasta)
     print_result(raw_variants, filtered_variants, polished_fasta)
@@ -255,7 +255,7 @@ def genomic_consensus(fasta, args, raw_variants_filename):
         sys.exit('Error: arrow failed to make ' + raw_variants_filename)
 
 
-def filter_variants(raw_variants, raw_variants_gff, illumina_alt):
+def filter_variants(raw_variants, raw_variants_gff, illumina_alt, max_homopolymer):
     """
     This function produces a new GFF file without variants in regions where the Illumina mapping
     is quite solid
@@ -264,7 +264,8 @@ def filter_variants(raw_variants, raw_variants_gff, illumina_alt):
     filtered_variants = []
     for variant in raw_variants:
         variant_output = variant.get_out_line() + '\t'
-        if variant.illumina_alt_fraction >= illumina_alt and not variant.is_homopolymer_change:
+        if variant.illumina_alt_fraction >= illumina_alt and \
+                variant.homopolymer_size < max_homopolymer:
             filtered_variants.append(variant)
             variant_output += '\033[32m' + 'PASS' + '\033[0m'
         else:
@@ -363,14 +364,14 @@ def run_command_no_output(command, shell=False):
         sys.exit(e.output.decode())
 
 
-def load_variants(gff_file, fasta, max_homopolymer):
+def load_variants(gff_file, fasta):
     reference = dict(load_fasta(fasta))
     variants = []
     with open(gff_file, 'rt') as gff:
         for line in gff:
             line = line.strip()
             if line and not line.startswith('##'):
-                variants.append(PacBioVariant(line, reference, max_homopolymer))
+                variants.append(PacBioVariant(line, reference))
     return variants
 
 
@@ -400,7 +401,7 @@ def homopolymer_size(seq, pos):
 
 
 class PacBioVariant(object):
-    def __init__(self, gff_line, reference, max_homopolymer):
+    def __init__(self, gff_line, reference):
         """
         https://github.com/PacificBiosciences/GenomicConsensus/blob/master/doc/VariantsGffSpecification.rst
         """
@@ -418,12 +419,11 @@ class PacBioVariant(object):
         self.coverage = int(attributes['coverage'])
 
         if self.type != 'insertion' and self.type != 'deletion':
-            self.is_homopolymer_change = False
+            self.homopolymer_size = 0
         elif has_multiple_bases(self.ref_seq) or has_multiple_bases(self.variant_seq):
-            self.is_homopolymer_change = False
+            self.homopolymer_size = 0
         else:
-            ref_seq = reference[self.ref_name]
-            self.is_homopolymer_change = homopolymer_size(ref_seq, self.start_pos) > max_homopolymer
+            self.homopolymer_size = homopolymer_size(reference[self.ref_name], self.start_pos)
 
         self.illumina_alt_fraction = 0.0
         self.ro = 0
@@ -455,18 +455,27 @@ class PacBioVariant(object):
                                           line.split(';AO=')[1].split(';')[0].split(','))
                 else:
                     alt_occurrences = 0
-                alt_fraction = alt_occurrences / (ref_occurrences + alt_occurrences)
-                if alt_fraction > self.illumina_alt_fraction:
+                total_occurrences = ref_occurrences + alt_occurrences
+                if total_occurrences:
+                    alt_fraction = alt_occurrences / total_occurrences
+                else:
+                    alt_fraction = 0.0
+                if alt_fraction >= self.illumina_alt_fraction:
                     self.ao = alt_occurrences
                     self.ro = ref_occurrences
                     self.illumina_alt_fraction = alt_fraction
 
     def get_out_line(self):
-        homopolymer = 'yes' if self.is_homopolymer_change else 'no'
+        if self.homopolymer_size > 0:
+            homopolymer = str(self.homopolymer_size)
+        else:
+            homopolymer = 'n/a'
+        ref_seq = self.ref_seq if self.ref_seq else '.'
+        variant_seq = self.variant_seq if self.variant_seq else '.'
         return '\t'.join([self.ref_name,
                           str(self.start_pos + 1),
-                          self.ref_seq,
-                          self.variant_seq,
+                          ref_seq,
+                          variant_seq,
                           homopolymer,
                           str(self.ao),
                           str(self.ro),

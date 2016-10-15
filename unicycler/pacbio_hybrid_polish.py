@@ -63,8 +63,8 @@ def get_arguments():
                         help='Minimum BLASR alignment length')
     parser.add_argument('--homopolymer', type=int, default=4,
                         help='Changes to a homopolymer of this length or greater will be ignored')
-    parser.add_argument('--illumina_alt', type=float, default=0.05,
-                        help='Fraction of Illumina reads which must vary from the reference in '
+    parser.add_argument('--illumina_alt', type=float, default=10.0,
+                        help='Percent of Illumina reads which must vary from the reference in '
                              'order for a base to be eligible for PacBio polishing')
     parser.add_argument('--samtools', type=str, default=None,
                         help='path to samtools executable')
@@ -264,8 +264,8 @@ def filter_variants(raw_variants, raw_variants_gff, illumina_alt, max_homopolyme
     filtered_variants = []
     for variant in raw_variants:
         variant_output = variant.get_out_line() + '\t'
-        if variant.illumina_alt_fraction >= illumina_alt and \
-                variant.homopolymer_size < max_homopolymer:
+        if variant.illumina_alt_percent >= illumina_alt and \
+                variant.homo_size_before < max_homopolymer:
             filtered_variants.append(variant)
             variant_output += '\033[32m' + 'PASS' + '\033[0m'
         else:
@@ -418,14 +418,29 @@ class PacBioVariant(object):
         self.confidence = int(attributes['confidence'])
         self.coverage = int(attributes['coverage'])
 
-        if self.type != 'insertion' and self.type != 'deletion':
-            self.homopolymer_size = 0
-        elif has_multiple_bases(self.ref_seq) or has_multiple_bases(self.variant_seq):
-            self.homopolymer_size = 0
-        else:
-            self.homopolymer_size = homopolymer_size(reference[self.ref_name], self.start_pos)
+        full_ref_sequence = reference[self.ref_name]
 
-        self.illumina_alt_fraction = 0.0
+        # Figure out the change if homopolymer length (if applicable) using this rules:
+        # Only indels change homopolymer length
+        if self.type != 'insertion' and self.type != 'deletion':
+            self.homo_size_before = 0
+            self.homo_size_after = 0
+        # Any indel which contains multiple different bases doesn't change the homopolymer length
+        elif has_multiple_bases(self.ref_seq) or has_multiple_bases(self.variant_seq):
+            self.homo_size_before = 0
+            self.homo_size_after = 0
+        # Insertions only change the homopolymer length if they are inserting the same base
+        elif self.type == 'insertion' and self.variant_seq[0] != full_ref_sequence[self.start_pos]:
+            self.homo_size_before = 0
+            self.homo_size_after = 0
+        else:
+            self.homo_size_before = homopolymer_size(full_ref_sequence, self.start_pos)
+            if self.type == 'insertion':
+                self.homo_size_after = self.homo_size_before + len(self.variant_seq)
+            else:  # deletion
+                self.homo_size_after = max(self.homo_size_before - len(self.ref_seq), 0)
+
+        self.illumina_alt_percent = 0.0
         self.ro = 0
         self.ao = 0
 
@@ -460,14 +475,14 @@ class PacBioVariant(object):
                     alt_fraction = alt_occurrences / total_occurrences
                 else:
                     alt_fraction = 0.0
-                if alt_fraction >= self.illumina_alt_fraction:
+                if alt_fraction >= self.illumina_alt_percent:
                     self.ao = alt_occurrences
                     self.ro = ref_occurrences
-                    self.illumina_alt_fraction = alt_fraction
+                    self.illumina_alt_percent = alt_fraction * 100.0
 
     def get_out_line(self):
-        if self.homopolymer_size > 0:
-            homopolymer = str(self.homopolymer_size)
+        if self.homo_size_before > 1:
+            homopolymer = str(self.homo_size_before) + '->' + str(self.homo_size_after)
         else:
             homopolymer = 'n/a'
         ref_seq = self.ref_seq if self.ref_seq else '.'
@@ -479,7 +494,7 @@ class PacBioVariant(object):
                           homopolymer,
                           str(self.ao),
                           str(self.ro),
-                          "%.3f" % self.illumina_alt_fraction])
+                          "%.3f" % self.illumina_alt_percent])
 
 
 def get_out_header():
@@ -490,5 +505,5 @@ def get_out_header():
                                   'HOMO',
                                   'AO',
                                   'RO',
-                                  'AO/(RO+AO)',
+                                  'AO %',
                                   'RESULT']) + '\033[0m'

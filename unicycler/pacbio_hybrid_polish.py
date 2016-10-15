@@ -311,7 +311,7 @@ def apply_variants(in_fasta, variants, out_fasta):
 
 
 def print_command(command):
-    timestamp = 'Timestamp: {:%Y-%m-%d %H:%M:%S}'.format(datetime.datetime.now())
+    timestamp = '{:%Y-%m-%d %H:%M:%S}'.format(datetime.datetime.now())
     print('\033[1m' + timestamp + '\033[0m' + '  ' + ' '.join(command), flush=True)
 
 

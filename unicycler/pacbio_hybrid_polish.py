@@ -494,7 +494,7 @@ class PacBioVariant(object):
                           homopolymer,
                           str(self.ao),
                           str(self.ro),
-                          "%.3f" % self.illumina_alt_percent])
+                          "%.1f" % self.illumina_alt_percent])
 
 
 def get_out_header():

@@ -648,7 +648,8 @@ def get_read_pairs_around_variant(variant, args):
     try:
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         for sam_line in iter(process.stdout.readline, b''):
-            name = sam_line.decode().split('\t')[0]
+            sam_line = sam_line.decode()
+            name = sam_line.split('\t')[0]
             if not name:
                 continue
             if name not in read_pairs:

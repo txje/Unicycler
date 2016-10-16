@@ -13,7 +13,10 @@ import sys
 import subprocess
 import collections
 import datetime
+import statistics
+import re
 from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter
+from .alignment import get_ref_shift_from_cigar_part
 
 
 def main():
@@ -177,15 +180,15 @@ def make_reads_bam(args):
 
 def polish_assembly(fasta, round_num, args):
     align_illumina_reads(fasta, args)
+    insert_mean, _ = analyse_all_insert_sizes(args)
     align_pacbio_reads(fasta, args)
     raw_variants_gff = '%03d' % round_num + '_raw_variants.gff'
     genomic_consensus(fasta, args, raw_variants_gff)
     raw_variants = load_variants(raw_variants_gff, fasta, args.large)
 
     for variant in raw_variants:
-        variant.assess_against_illumina_alignments(fasta, args)
-    filtered_variants = filter_variants(raw_variants, raw_variants_gff, args.illumina_alt,
-                                        args.homopolymer)
+        variant.assess_against_illumina_alignments(fasta, args, insert_mean)
+    filtered_variants = filter_variants(raw_variants, raw_variants_gff, args)
     polished_fasta = '%03d' % round_num + '_polish.fasta'
     apply_variants(fasta, filtered_variants, polished_fasta)
     print_result(raw_variants, filtered_variants, polished_fasta)
@@ -258,18 +261,23 @@ def genomic_consensus(fasta, args, raw_variants_filename):
         sys.exit('Error: arrow failed to make ' + raw_variants_filename)
 
 
-def filter_variants(raw_variants, raw_variants_gff, illumina_alt, max_homopolymer):
+def filter_variants(raw_variants, raw_variants_gff, args):
     """
     This function produces a new GFF file without variants in regions where the Illumina mapping
-    is quite solid
+    is quite solid.
     """
     print()
     print(get_out_header())
     filtered_variants = []
     for variant in raw_variants:
         variant_output = variant.get_out_line() + '\t'
-        if variant.illumina_alt_percent >= illumina_alt and \
-                variant.homo_size_before < max_homopolymer:
+        if variant.large:
+            passed = variant.illumina_insert_support
+        else:  # substitutions and small indels
+            passed = (variant.illumina_alt_percent and
+                      variant.illumina_alt_percent >= args.illumina_alt and
+                      variant.homo_size_before < args.homopolymer)
+        if passed:
             filtered_variants.append(variant)
             variant_output += '\033[32m' + 'PASS' + '\033[0m'
         else:
@@ -447,11 +455,19 @@ class PacBioVariant(object):
         else:
             self.large = False
 
-        self.illumina_alt_percent = 0.0
         self.ro = 0
         self.ao = 0
+        self.illumina_alt_percent = None
+        self.actual_illumina_insert = None
+        self.expected_illumina_insert = None
+        self.illumina_insert_support = None
 
-    def assess_against_illumina_alignments(self, reference_fasta, args):
+    def assess_against_illumina_alignments(self, reference_fasta, args, insert_mean):
+
+        # The first way to assess a variant against the illumina alignments is to use freebayes to
+        # see how many alternate bases are present at the variant location and what fraction of
+        # the bases are alternates. A high alternate fraction indicates that something's a bit
+        # screwy and we should probably apply the PacBio variant.
         ref_location = self.ref_name + ':' + str(self.start_pos - 5) + '-' + str(self.end_pos + 5)
         freebayes_command = [args.freebayes,
                              '-f', reference_fasta,
@@ -482,14 +498,36 @@ class PacBioVariant(object):
                     alt_fraction = alt_occurrences / total_occurrences
                 else:
                     alt_fraction = 0.0
-                if alt_fraction >= self.illumina_alt_percent:
+                if self.illumina_alt_percent is None or alt_fraction >= self.illumina_alt_percent:
                     self.ao = alt_occurrences
                     self.ro = ref_occurrences
                     self.illumina_alt_percent = alt_fraction * 100.0
 
+        # The second way to assess a variant against the illumina alignments is to see what the
+        # insert size looks like around this variant. We compare the mean insert size to two
+        # different values: the overall mean insert (what we'd expect if there is no variant) and
+        # an adjusted insert (what we'd expect if there is a variant).
+        if self.type == 'insertion':
+            self.expected_illumina_insert = insert_mean - len(self.variant_seq)
+        elif self.type == 'deletion':
+            self.expected_illumina_insert = insert_mean + len(self.ref_seq)
+        else:
+            self.expected_illumina_insert = insert_mean
+
+        read_pairs = get_read_pairs_around_variant(self, args)
+        try:
+            self.actual_illumina_insert = statistics.mean(x.first_read.insert_size
+                                                          for x in read_pairs)
+            if self.large and (self.type == 'insertion' or self.type == 'deletion'):
+                diff_if_true = abs(self.actual_illumina_insert - self.expected_illumina_insert)
+                diff_if_false = abs(self.actual_illumina_insert - insert_mean)
+                self.illumina_insert_support = diff_if_true < diff_if_false
+        except statistics.StatisticsError:
+            pass
+
     def get_out_line(self):
         if self.homo_size_before > 1:
-            variant_type = 'homopolymer ' + str(self.homo_size_before) + '->' + str(
+            variant_type = 'homo ' + str(self.homo_size_before) + ' -> ' + str(
                 self.homo_size_after)
         else:
             variant_type = self.type
@@ -498,6 +536,18 @@ class PacBioVariant(object):
 
         ref_seq = self.ref_seq if self.ref_seq else '.'
         variant_seq = self.variant_seq if self.variant_seq else '.'
+
+        alt_percent = 'n/a' if self.illumina_alt_percent is None \
+            else '%.1f' % self.illumina_alt_percent
+        actual_insert = 'n/a' if self.actual_illumina_insert is None \
+            else '%.1f' % self.actual_illumina_insert
+        expected_insert = 'n/a' if self.expected_illumina_insert is None \
+            else '%.1f' % self.expected_illumina_insert
+        if self.illumina_insert_support is None:
+            insert_support = 'n/a'
+        else:
+            insert_support = 'yes' if self.illumina_insert_support else 'no'
+
         return '\t'.join([self.ref_name,
                           str(self.start_pos + 1),
                           ref_seq,
@@ -505,7 +555,10 @@ class PacBioVariant(object):
                           variant_type,
                           str(self.ao),
                           str(self.ro),
-                          "%.1f" % self.illumina_alt_percent])
+                          alt_percent,
+                          actual_insert,
+                          expected_insert,
+                          insert_support])
 
 
 def get_out_header():
@@ -517,4 +570,132 @@ def get_out_header():
                                   'AO',
                                   'RO',
                                   'AO %',
+                                  'ACTUAL INSERT',
+                                  'EXPECTED INSERT',
+                                  'INSERT SUPPORT',
                                   'RESULT']) + '\033[0m'
+
+
+class AlignedRead(object):
+    def __init__(self, sam_line):
+        sam_parts = sam_line.split('\t')
+        self.name = sam_parts[0]
+        self.sam_flags = int(sam_parts[1])
+        self.ref_name = sam_parts[2]
+        self.cigar_parts = re.findall(r'\d+\w', sam_parts[5])
+        self.insert_size = abs(float(sam_parts[8]))
+        self.read_seq = sam_parts[9]
+
+        if self.sam_flags & 64:
+            self.strand = '-'
+        else:
+            self.strand = '+'
+
+        self.start_pos = int(sam_parts[3]) - 1
+        self.end_pos = self.start_pos + 1
+        for cigar_part in self.cigar_parts:
+            self.end_pos += get_ref_shift_from_cigar_part(cigar_part)
+        self.mid_point = (self.start_pos + self.end_pos) / 2
+
+
+class AlignedReadPair(object):
+    def __init__(self, name, sam_line):
+        self.name = name
+        self.first_read = None
+        self.second_read = None
+        self.add_sam_line(sam_line)
+
+    def add_sam_line(self, sam_line):
+        sam_line_parts = sam_line.split('\t')
+        sam_flags = int(sam_line_parts[1])
+        if sam_flags & 64:
+            self.first_read = AlignedRead(sam_line)
+        elif sam_flags & 128:
+            self.second_read = AlignedRead(sam_line)
+
+    def has_both_reads(self):
+        return self.first_read is not None and self.second_read is not None
+
+    def one_read_per_strand(self):
+        """
+        A normally mapped read pair has one read on each strand. This function returns true if
+        that's the case for this pair.
+        """
+        if not self.has_both_reads():
+            return False
+        if self.first_read.strand == '+' and self.second_read.strand == '-':
+            return True
+        if self.first_read.strand == '-' and self.second_read.strand == '+':
+            return True
+        return False
+
+    def order_first_second_by_ref_pos(self):
+        """
+        This function makes first_read and second_read in order of reference position, instead of
+        being based on sam flags.
+        """
+        if self.has_both_reads() and self.first_read.start_pos > self.second_read.start_pos:
+            self.first_read, self.second_read = self.second_read, self.first_read
+
+
+def get_read_pairs_around_variant(variant, args):
+    read_pairs = {}
+    margin = 10000  # Just a big distance to either side to ensure we get all relevant read pairs
+    pos_range = variant.ref_name + ':' + str(variant.start_pos - margin) + '-' + \
+        str(variant.end_pos + margin)
+    command = [args.samtools, 'view', 'illumina_alignments.bam', pos_range]
+
+    try:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        for sam_line in iter(process.stdout.readline, b''):
+            name = sam_line.decode().split('\t')[0]
+            if not name:
+                continue
+            if name not in read_pairs:
+                read_pairs[name] = AlignedReadPair(name, sam_line)
+            else:
+                read_pairs[name].add_sam_line(sam_line)
+        process.wait()
+    except subprocess.CalledProcessError as e:
+        sys.exit(e.output.decode())
+
+    read_pairs = [x for x in read_pairs.values() if x.one_read_per_strand()]
+    for pair in read_pairs:
+        pair.order_first_second_by_ref_pos()
+
+    # Find all read pairs where the variant resides in the gap between the reads.
+    filtered_read_pairs = [x for x in read_pairs
+                           if x.first_read.end_pos <= variant.start_pos and
+                           x.second_read.start_pos >= variant.end_pos]
+
+    # If that was too stringent (e.g. the read pairs overlap so we don't have any cases where the
+    # variant is in a gap between them), try again allowing the variant to be in the reads.
+    if not filtered_read_pairs:
+        filtered_read_pairs = [x for x in read_pairs
+                               if x.first_read.mid_point <= variant.start_pos and
+                               x.second_read.mid_point >= variant.end_pos]
+    return filtered_read_pairs
+
+
+def analyse_all_insert_sizes(args):
+    insert_sizes = []
+    command = [args.samtools, 'view', 'illumina_alignments.bam']
+    try:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        for sam_line in iter(process.stdout.readline, b''):
+            try:
+                sam_parts = sam_line.decode().split('\t')
+                sam_flags = int(sam_parts[1])
+                if sam_flags & 2:
+                    insert_size = float(sam_parts[8])
+                    if 0.0 < insert_size < 10000.0:  # Just a sanity check...
+                        insert_sizes.append(insert_size)
+            except (ValueError, IndexError):
+                pass
+        process.wait()
+    except subprocess.CalledProcessError as e:
+        sys.exit(e.output.decode())
+    try:
+        return statistics.mean(insert_sizes), statistics.stdev(insert_sizes)
+    except statistics.StatisticsError:
+        return 0.0, 0.0

@@ -43,7 +43,7 @@ def main():
     files = [args.short1, args.short2]
     if not args.no_long:
         files.append(args.long)
-    check_files_and_programs(files,
+    check_files_and_programs(files, args,
                              spades_path=args.spades_path,
                              graphmap_path=(None if (args.no_graphmap or args.no_long)
                                             else args.graphmap_path),
@@ -51,6 +51,7 @@ def main():
                              tblastn_path=(None if args.no_rotate else args.tblastn_path),
                              gene_db_path=(None if args.no_rotate else args.start_genes),
                              pilon_path=(None if args.no_pilon else args.pilon_path),
+                             java_path=(None if args.no_pilon else args.java_path),
                              samtools_path=(None if args.no_pilon else args.samtools_path),
                              bowtie2_path=(None if args.no_pilon else args.bowtie2_path),
                              bowtie2_build_path=(None if args.no_pilon
@@ -365,8 +366,8 @@ def main():
             os.makedirs(polish_dir)
         try:
             polish_with_pilon(graph, args.bowtie2_path, args.bowtie2_build_path, args.pilon_path,
-                              args.samtools_path, args.min_polish_size, polish_dir, verbosity,
-                              args.short1, args.short2, args.threads)
+                              args.java_path, args.samtools_path, args.min_polish_size, polish_dir,
+                              verbosity, args.short1, args.short2, args.threads)
         except CannotPolish as e:
             if verbosity > 0:
                 print('Unable to polish assembly using Pilon: ', end='')
@@ -545,8 +546,11 @@ def get_arguments():
     polish_group.add_argument('--samtools_path', type=str, default='samtools',
                               help='Path to the samtools executable'
                                    if show_all_args else argparse.SUPPRESS)
-    polish_group.add_argument('--pilon_path', type=str, default='pilon.jar',
+    polish_group.add_argument('--pilon_path', type=str, default='pilon*.jar',
                               help='Path to the executable Pilon Java archive file'
+                                   if show_all_args else argparse.SUPPRESS)
+    polish_group.add_argument('--java_path', type=str, default='java',
+                              help='Path to the java executable'
                                    if show_all_args else argparse.SUPPRESS)
     polish_group.add_argument('--min_polish_size', type=int, default=10000,
                               help='Sequences shorter than this value will not be polished using '

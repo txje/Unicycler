@@ -21,7 +21,7 @@ class CannotPolish(Exception):
         return repr(self.message)
 
 
-def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, samtools_path,
+def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, java_path, samtools_path,
                       min_polish_size, polish_dir, verbosity, short_1, short_2, threads):
     """
     Runs Pilon on the graph to hopefully fix up small mistakes.
@@ -140,7 +140,7 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, samto
         raise CannotPolish('Samtools encountered an error:\n' + e.output.decode())
 
     # Polish with Pilon.
-    pilon_command = ['java', '-jar', pilon_path, '--genome', polish_input_filename, '--frags',
+    pilon_command = [java_path, '-jar', pilon_path, '--genome', polish_input_filename, '--frags',
                      bam_filename, '--fix', 'bases', '--changes', '--outdir', polish_dir]
     if verbosity > 1:
         print()

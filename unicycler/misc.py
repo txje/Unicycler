@@ -50,10 +50,10 @@ def int_to_str(num, max_num=0):
     return num_str.rjust(len(max_str))
 
 
-def check_files_and_programs(files, spades_path=None, graphmap_path=None,
+def check_files_and_programs(files, args, spades_path=None, graphmap_path=None,
                              makeblastdb_path=None, tblastn_path=None, gene_db_path=None,
-                             pilon_path=None, samtools_path=None, bowtie2_path=None,
-                             bowtie2_build_path=None):
+                             pilon_path=None, java_path=None, samtools_path=None,
+                             bowtie2_path=None, bowtie2_build_path=None):
     """
     Checks to make sure all files in the list are present and either program, as needed.
     """
@@ -66,7 +66,7 @@ def check_files_and_programs(files, spades_path=None, graphmap_path=None,
     if makeblastdb_path and tblastn_path:
         check_blast(makeblastdb_path, tblastn_path, gene_db_path)
     if pilon_path:
-        check_pilon(pilon_path, samtools_path, bowtie2_path, bowtie2_build_path)
+        check_pilon(pilon_path, java_path, samtools_path, bowtie2_path, bowtie2_build_path, args)
 
 
 def check_file_exists(filename):  # type: (str) -> bool
@@ -89,7 +89,7 @@ def check_graphmap(graphmap_path):
     """
     Makes sure the GraphMap executable is available.
     """
-    if not find_program_with_which(graphmap_path):
+    if shutil.which(graphmap_path) is None:
         quit_with_error('could not find GraphMap at ' + graphmap_path +
                         ', either fix path or run with --no_graphmap')
 
@@ -98,7 +98,7 @@ def check_spades(spades_path):
     """
     Makes sure the SPAdes executable is available.
     """
-    if not find_program_with_which(spades_path):
+    if shutil.which(spades_path) is None:
         quit_with_error('could not find SPAdes at ' + spades_path)
 
     command = [spades_path, '-h']
@@ -114,10 +114,10 @@ def check_blast(makeblastdb_path, tblastn_path, gene_db_path):
     """
     Makes sure the BLAST executables are available.
     """
-    if not find_program_with_which(makeblastdb_path):
+    if shutil.which(makeblastdb_path) is None:
         quit_with_error('could not find makeblastdb - either specify its location using '
                         '--makeblastdb_path or use --no_rotate to remove BLAST dependency')
-    if not find_program_with_which(tblastn_path):
+    if shutil.which(tblastn_path) is None:
         quit_with_error('could not find tblastn - either specify its location using '
                         '--tblastn_path or use --no_rotate to remove BLAST dependency')
     if not os.path.isfile(gene_db_path):
@@ -126,53 +126,48 @@ def check_blast(makeblastdb_path, tblastn_path, gene_db_path):
                         'or use --no_rotate')
 
 
-def check_pilon(pilon_path, samtools_path, bowtie2_path, bowtie2_build_path):
+def check_pilon(pilon_path, java_path, samtools_path, bowtie2_path, bowtie2_build_path, args):
     """
-    Makes sure the Pilon executable is available.
+    Makes sure the Pilon executable is available. Unlike the other tools, Pilon's target name may
+    change based on the version (e.g. pilon-1.18.jar, pilon-1.19.jar, etc.). This function will
+    therefore set args.pilon_path to the first matching jar file it finds.
     """
-    if not find_program_with_which('java'):
+    if shutil.which(java_path) is None:
         quit_with_error('could not find java - either specify its location using '
-                        '--pilon_path or use --no_pilon to remove Java dependency')
-    if not find_program_with_which(samtools_path):
+                        '--java_path or use --no_pilon to remove Java dependency')
+    if shutil.which(samtools_path) is None:
         quit_with_error('could not find samtools - either specify its location using '
                         '--samtools_path or use --no_pilon to remove Samtools dependency')
-    if not find_program_with_which(bowtie2_path):
+    if shutil.which(bowtie2_path) is None:
         quit_with_error('could not find bowtie2 - either specify its location using '
                         '--bowtie2_path or use --no_pilon to remove Bowtie2 dependency')
-    if not find_program_with_which(bowtie2_build_path):
+    if shutil.which(bowtie2_build_path) is None:
         quit_with_error('could not find bowtie2-build - either specify its location using '
                         '--bowtie2_build_path or use --no_pilon to remove Bowtie2 dependency')
-    if not get_pilon_jar_path(pilon_path):
-        quit_with_error('could not find pilon.jar - either specify its location using --pilon_path '
-                        'or use --no_pilon to remove Pilon dependency')
+    found_pilon_path = get_pilon_jar_path(pilon_path)
+    if found_pilon_path:
+        args.pilon_path = found_pilon_path
+    else:
+        quit_with_error('could not find pilon*.jar - either specify its location using '
+                        '--pilon_path or use --no_pilon to remove Pilon dependency')
 
 
 def get_pilon_jar_path(pilon_path):
     """
-    Returns the path to pilon.jar. If the given path is correct, it just returns that,
-    as an absolute path. Otherwise it tries to use the which command to find it.
+    Returns the path to pilon.jar. If the given path is correct, it just returns that, as an
+    absolute path. Otherwise it tries to find it.
     """
-    if os.path.isfile(pilon_path):
+    if pilon_path and os.path.isfile(pilon_path):
         return os.path.abspath(pilon_path)
-    try:
-        pilon_path = subprocess.check_output(['which', 'pilon.jar'],
-                                             stderr=subprocess.STDOUT).decode().strip()
-    except subprocess.CalledProcessError:
-        pass
-    if os.path.isfile(pilon_path):
-        return pilon_path
-    else:
-        return None
-
-
-def find_program_with_which(executable_path):
-    """
-    Returns whether or not the executable was found.
-    """
-    process = subprocess.Popen(['which', executable_path], stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
-    out, err = process.communicate()
-    return bool(out) and not bool(err)
+    for directory in os.environ['PATH'].split(':'):
+        try:
+            path_files = [f for f in os.listdir(directory) if os.path.isfile(f)]
+        except FileNotFoundError:
+            path_files = []
+        pilon_jars = [f for f in path_files if f.startswith('pilon') and f.endswith('.jar')]
+        if pilon_jars:
+            return sorted(pilon_jars)[-1]  # return the latest version, if more than one
+    return None
 
 
 def get_mean_and_st_dev(num_list):

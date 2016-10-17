@@ -14,9 +14,8 @@ import subprocess
 import collections
 import datetime
 import statistics
-import re
-from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter
-from .alignment import get_ref_shift_from_cigar_part
+from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter, \
+    get_percentile_sorted, get_pilon_jar_path
 
 
 def main():
@@ -29,19 +28,45 @@ def main():
         make_reads_bam(args)
         args.bam = 'subreads.bam'
 
+    current = args.fasta
     round_num = 1
     files = [f for f in os.listdir('.') if os.path.isfile(f)]
     while any(f.startswith('%03d' % round_num) for f in files):
         round_num += 1
 
-    latest_assembly = args.fasta
-    done = False
-    while not done:
-        print_round_header('Round ' + str(round_num))
-        done, latest_assembly = polish_assembly(latest_assembly, round_num, args)
-        clean_up()
+    # Do a first round of Illumina alignments just for finding the insert size mean and stdev.
+    print_round_header('Determining insert size')
+    align_illumina_reads(current, args, 0, 2000)
+    min_insert, mean_insert, max_insert = analyse_insert_sizes(args)
+    if min_insert == 0.0 or max_insert == 0.0:
+        sys.exit('Error: could not determine Illumina reads insert size')
+    print('Mean insert size: ', '%.1f' % mean_insert)
+    print('2.5th percentile: ', '%.1f' % min_insert)
+    print('97.5th percentile: ', '%.1f' % max_insert)
+    clean_up()
+
+    # The main polishing loop:
+    #   1) Run Arrow and Pilon to generate both small and large variants
+    #   2) Apply any small variants which are supported by the Illumina alignments
+    #   3) If small variants were applied, go back to step 1 and repeat.
+    #   4) Assess each large variant with ALE and apply the best one (if any).
+    #   5) If a large variant was applied, go back to step 1 and repeat.
+    while True:
+        large_variants = []
+        while True:
+            current, change_count, large_variants = polish_small_changes(current, round_num, args,
+                                                                         min_insert, max_insert)
+            round_num += 1
+            if not change_count:
+                break
+        if not large_variants:
+            break
+        current, change_count = polish_large_changes(current, round_num, args, large_variants)
         round_num += 1
-    print_finished(latest_assembly)
+        if not change_count:
+            break
+
+    print_finished(current)
 
 
 def get_arguments():
@@ -71,18 +96,24 @@ def get_arguments():
     parser.add_argument('--pitchfork', type=str, default='',
                         help='Path to Pitchfork installation of PacBio tools (should contain bin '
                              'and lib directories)')
-    parser.add_argument('--samtools', type=str, default=None,
+    parser.add_argument('--samtools', type=str, default='samtools',
                         help='path to samtools executable')
-    parser.add_argument('--bowtie2', type=str, default=None,
+    parser.add_argument('--bowtie2', type=str, default='bowtie2',
                         help='path to bowtie2 executable')
-    parser.add_argument('--bax2bam', type=str, default=None,
+    parser.add_argument('--bax2bam', type=str, default='bax2bam',
                         help='path to bax2bam executable')
-    parser.add_argument('--pbalign', type=str, default=None,
+    parser.add_argument('--pbalign', type=str, default='pbalign',
                         help='path to pbalign executable')
-    parser.add_argument('--arrow', type=str, default=None,
+    parser.add_argument('--arrow', type=str, default='arrow',
                         help='path to arrow executable')
-    parser.add_argument('--freebayes', type=str, default=None,
+    parser.add_argument('--freebayes', type=str, default='freebayes',
                         help='path to freebayes executable')
+    parser.add_argument('--pilon', type=str, default='pilon*.jar',
+                        help='path to pilon jar file')
+    parser.add_argument('--java', type=str, default='java',
+                        help='path to java executable')
+    parser.add_argument('--ale', type=str, default='ale',
+                        help='path to ale executable')
 
     args = parser.parse_args()
     if not args.bax and not args.bam:
@@ -99,11 +130,9 @@ def clean_up():
     for f in ['pbalign_alignments.bam', 'pbalign_alignments.bam.pbi', 'pbalign_alignments.bam.bai']:
         if os.path.isfile(f):
             files_to_delete.append(f)
-    for f in [f for f in os.listdir('.') if os.path.isfile(f) and f.endswith('.fai')]:
-        files_to_delete.append(f)
-    for f in [f for f in os.listdir('.') if os.path.isfile(f) and f.endswith('.bt2')]:
-        files_to_delete.append(f)
-    for f in [f for f in os.listdir('.') if os.path.isfile(f) and f.startswith('illumina_align')]:
+    for f in [f for f in os.listdir('.') if os.path.isfile(f) and
+              (f.endswith('.fai') or f.endswith('.bt2') or f.startswith('illumina_align') or
+               f.startswith('large_indel_'))]:
         files_to_delete.append(f)
     if files_to_delete:
         print()
@@ -113,20 +142,16 @@ def clean_up():
 
 
 def get_tool_paths(args):
-    if not args.samtools:
-        args.samtools = shutil.which('samtools')
+    args.samtools = shutil.which(args.samtools)
     if not args.samtools:
         sys.exit('Error: could not find samtools')
 
-    if args.bowtie2:
-        args.bowtie2_build = args.bowtie2 + '-build'
-    else:
-        args.bowtie2 = shutil.which('bowtie2')
-        args.bowtie2_build = shutil.which('bowtie2-build')
+    args.bowtie2 = shutil.which(args.bowtie2)
     if not args.bowtie2:
         sys.exit('Error: could not find bowtie2')
+    args.bowtie2_build = shutil.which(args.bowtie2 + '-build')
     if not args.bowtie2_build:
-        sys.exit('Error: could not find bowtie2-build')
+        sys.exit('Error: could not find bowtie2-build (it should be in the same place as bowtie2)')
 
     if args.pitchfork:
         def add_to_env_var(key, new_val):
@@ -139,20 +164,32 @@ def get_tool_paths(args):
         add_to_env_var('PYTHONPATH', os.path.join(args.pitchfork, 'lib', 'python2.7',
                                                   'dist-packages'))
 
-    if not args.pbalign:
-        args.pbalign = shutil.which('pbalign')
+    args.pbalign = shutil.which(args.pbalign)
     if not args.pbalign:
         sys.exit('Error: could not find pbalign')
 
-    if not args.arrow:
-        args.arrow = shutil.which('arrow')
+    args.arrow = shutil.which(args.arrow)
     if not args.arrow:
         sys.exit('Error: could not find arrow')
 
-    if not args.freebayes:
-        args.freebayes = shutil.which('freebayes')
+    args.freebayes = shutil.which(args.freebayes)
     if not args.freebayes:
         sys.exit('Error: could not find freebayes')
+
+    if args.pilon == 'pilon*.jar':
+        args.pilon = get_pilon_jar_path(None)
+    else:
+        args.pilon = get_pilon_jar_path(args.pilon)
+    if not args.pilon:
+        sys.exit('Error: could not find pilon jar file')
+
+    args.java = shutil.which(args.java)
+    if not args.java:
+        sys.exit('Error: could not find java')
+
+    args.ale = shutil.which(args.ale)
+    if not args.ale:
+        sys.exit('Error: could not find ale')
 
 
 def make_reads_bam(args):
@@ -178,22 +215,78 @@ def make_reads_bam(args):
         sys.exit('Error: bax2bam failed to make subreads.bam.pbi')
 
 
-def polish_assembly(fasta, round_num, args):
-    align_illumina_reads(fasta, args)
-    insert_mean, _ = analyse_all_insert_sizes(args)
+def polish_small_changes(fasta, round_num, args, min_insert, max_insert):
+    print_round_header('Round ' + str(round_num) + ': small changes')
+
+    align_illumina_reads(fasta, args, min_insert, max_insert)
     align_pacbio_reads(fasta, args)
+
+    raw_pilon_changes = '%03d' % round_num + '_pilon.changes'
+    pilon(fasta, args, raw_pilon_changes)
+    raw_variants = load_variants_from_pilon_changes(raw_pilon_changes, fasta, args.large)
+
     raw_variants_gff = '%03d' % round_num + '_raw_variants.gff'
     genomic_consensus(fasta, args, raw_variants_gff)
-    raw_variants = load_variants(raw_variants_gff, fasta, args.large)
+    raw_variants += load_variants_from_gff(raw_variants_gff, fasta, args.large)
 
-    for variant in raw_variants:
-        variant.assess_against_illumina_alignments(fasta, args, insert_mean)
-    filtered_variants = filter_variants(raw_variants, raw_variants_gff, args)
+    large_variants = [x for x in raw_variants if x.large]
+    small_variants = [x for x in raw_variants if not x.large]
+
+    for variant in small_variants:
+        variant.assess_against_illumina_alignments(fasta, args)
+
+    filtered_variants = filter_small_variants(small_variants, raw_variants_gff, args)
     polished_fasta = '%03d' % round_num + '_polish.fasta'
     apply_variants(fasta, filtered_variants, polished_fasta)
+
     print_result(raw_variants, filtered_variants, polished_fasta)
-    done = len(filtered_variants) == 0
-    return done, polished_fasta
+
+    clean_up()
+    return polished_fasta, len(filtered_variants), large_variants
+
+
+def polish_large_changes(fasta, round_num, args, large_variants):
+    print_round_header('Round ' + str(round_num) + ': large changes')
+
+    print_large_indel_header()
+    best_ale_score = run_ale(fasta, args)
+    print_large_indel_result('none', None, best_ale_score)
+
+    best_modification = None
+    for i, variant in enumerate(large_variants):
+        modified_assembly = 'large_indel_' + str(i) + '.fasta'
+        apply_variants(fasta, [variant], modified_assembly)
+        ale_score = run_ale(modified_assembly, args)
+        print_large_indel_result(variant.source, variant, ale_score)
+        if ale_score > best_ale_score:
+            best_ale_score = ale_score
+            best_modification = modified_assembly
+
+    polished_fasta = '%03d' % round_num + '_polish.fasta'
+    if best_modification:
+        os.rename(best_modification, polished_fasta)
+    else:
+        shutil.copyfile(fasta, polished_fasta)
+
+    clean_up()
+    change_count = 1 if best_modification else 0
+    return polished_fasta, change_count
+
+
+def run_ale(fasta, args):
+    ale_output = 'ale.out'
+    command = [args.ale,
+               'illumina_alignments.bam',
+               fasta,
+               ale_output]
+    run_command_no_output(command)
+    if not os.path.isfile(ale_output):
+        sys.exit('Error: ALE did not generate ' + ale_output)
+    with open(ale_output, 'rt') as out:
+        for line in out:
+            if 'ALE_score:' in line:
+                return float(line.split('ALE_score:')[1].strip().split()[0])
+    return 0.0
 
 
 def align_pacbio_reads(fasta, args):
@@ -214,7 +307,7 @@ def align_pacbio_reads(fasta, args):
         sys.exit('Error: pbalign failed to make pbalign_alignments.bam.bai')
 
 
-def align_illumina_reads(fasta, args):
+def align_illumina_reads(fasta, args, min_insert, max_insert):
     index = 'bowtie_index'
     bam = 'illumina_alignments.bam'
 
@@ -225,7 +318,7 @@ def align_illumina_reads(fasta, args):
                        '--very-sensitive',
                        '--threads', str(args.threads),
                        '--no-unal',
-                       '-I', '0', '-X', '2000',
+                       '-I', str(min_insert), '-X', str(max_insert),
                        '-x', index,
                        '-1', args.short1, '-2', args.short2]
     samtools_view_command = [args.samtools, 'view', '-hu', '-']
@@ -247,6 +340,21 @@ def align_illumina_reads(fasta, args):
     run_command_no_output([args.samtools, 'index', bam])
 
 
+def pilon(fasta, args, raw_pilon_changes_filename):
+    pilon_command = [args.java, '-jar', args.pilon,
+                     '--genome', fasta,
+                     '--frags', 'illumina_alignments.bam',
+                     '--fix', 'local',
+                     '--changes',
+                     '--outdir', 'temp_pilon']
+    run_command_no_output(pilon_command)
+
+    pilon_changes = os.path.join('temp_pilon', 'pilon.changes')
+    if not os.path.isfile(pilon_changes):
+        sys.exit('Pilon did not produce pilon.changes')
+    shutil.copy(pilon_changes, raw_pilon_changes_filename)
+
+
 def genomic_consensus(fasta, args, raw_variants_filename):
     subprocess.call([args.samtools, 'faidx', fasta])
     command = [args.arrow,
@@ -261,22 +369,18 @@ def genomic_consensus(fasta, args, raw_variants_filename):
         sys.exit('Error: arrow failed to make ' + raw_variants_filename)
 
 
-def filter_variants(raw_variants, raw_variants_gff, args):
+def filter_small_variants(raw_variants, raw_variants_gff, args):
     """
     This function produces a new GFF file without variants in regions where the Illumina mapping
     is quite solid.
     """
-    print()
-    print(get_out_header())
+    print_small_variant_header()
     filtered_variants = []
     for variant in raw_variants:
         variant_output = variant.get_out_line() + '\t'
-        if variant.large:
-            passed = variant.illumina_insert_support
-        else:  # substitutions and small indels
-            passed = (variant.illumina_alt_percent and
-                      variant.illumina_alt_percent >= args.illumina_alt and
-                      variant.homo_size_before < args.homopolymer)
+        passed = (variant.illumina_alt_percent and                       # must have an alt%
+                  variant.illumina_alt_percent >= args.illumina_alt and  # must have a big alt%
+                  variant.homo_size_before < args.homopolymer)           # must not be homopolymer
         if passed:
             filtered_variants.append(variant)
             variant_output += '\033[32m' + 'PASS' + '\033[0m'
@@ -291,7 +395,7 @@ def filter_variants(raw_variants, raw_variants_gff, args):
                 if line.startswith('##'):
                     new_gff.write(line)
         for variant in filtered_variants:
-            new_gff.write(variant.original_line + '\n')
+            new_gff.write(variant.original_gff_line + '\n')
     return filtered_variants
 
 
@@ -328,35 +432,24 @@ def print_round_header(text):
     print('\033[1m' + '\033[93m' + '\033[4m' + text + '\033[0m', flush=True)
 
 
-def print_result(raw_variants, filtered_variants, latest_assembly):
+def print_result(raw_variants, filtered_variants, fasta):
     print_result_line('Unfiltered variants:        ' + str(len(raw_variants)))
     print_result_line('Filtered variants:          ' + str(len(filtered_variants)))
-    print_result_line('Polished FASTA:             ' + latest_assembly)
+    print_result_line('Polished FASTA:             ' + fasta)
 
 
 def print_result_line(text):
     print('\033[1m' + '\033[32m' + text + '\033[0m', flush=True)
 
 
-def print_finished(latest_assembly):
+def print_finished(fasta):
     print()
-    result = 'No changes in ' + latest_assembly + '. All done!'
+    result = 'All done! Final product: ' + fasta
     print('\033[1m' + '\033[32m' + result + '\033[0m', flush=True)
 
 
 def print_warning(warning):
     print('\033[31m' + warning + '\033[0m', flush=True)
-
-
-# def run_command_print_output(command):
-#     print_command(command)
-#     try:
-#         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-#         for line in iter(process.stdout.readline, b''):
-#             print(line.rstrip().decode(), flush=True)
-#         process.wait()
-#     except subprocess.CalledProcessError as e:
-#         sys.exit(e.output.decode())
 
 
 def run_command_no_output(command, shell=False):
@@ -370,14 +463,25 @@ def run_command_no_output(command, shell=False):
         sys.exit(e.output.decode())
 
 
-def load_variants(gff_file, fasta, large_var_size):
+def load_variants_from_gff(gff_file, fasta, large_var_size):
     reference = dict(load_fasta(fasta))
     variants = []
     with open(gff_file, 'rt') as gff:
         for line in gff:
             line = line.strip()
             if line and not line.startswith('##'):
-                variants.append(PacBioVariant(line, reference, large_var_size))
+                variants.append(Variant(reference, large_var_size, gff_line=line))
+    return variants
+
+
+def load_variants_from_pilon_changes(pilon_changes_file, fasta, large_var_size):
+    reference = dict(load_fasta(fasta))
+    variants = []
+    with open(pilon_changes_file, 'rt') as changes:
+        for line in changes:
+            line = line.strip()
+            if line and not line.startswith('##'):
+                variants.append(Variant(line, reference, large_var_size, changes_line=line))
     return variants
 
 
@@ -406,23 +510,38 @@ def homopolymer_size(seq, pos):
     return size
 
 
-class PacBioVariant(object):
-    def __init__(self, gff_line, reference, large_var_size):
-        """
-        https://github.com/PacificBiosciences/GenomicConsensus/blob/master/doc/VariantsGffSpecification.rst
-        """
-        line_parts = gff_line.split('\t')
-        attributes = {x.split('=')[0]: x.split('=')[1] for x in line_parts[8].split(';')}
+class Variant(object):
+    def __init__(self, reference, large_var_size, gff_line=None, changes_line=None):
+        self.original_gff_line = gff_line
+        self.original_changes_line = changes_line
 
-        self.original_line = gff_line
-        self.ref_name = line_parts[0]
-        self.type = line_parts[2]
-        self.ref_seq = attributes['reference'].replace('.', '')
-        self.variant_seq = attributes['variantSeq'].replace('.', '')
-        self.start_pos = int(line_parts[3]) - 1
-        self.end_pos = self.start_pos + len(self.ref_seq)
-        self.confidence = int(attributes['confidence'])
-        self.coverage = int(attributes['coverage'])
+        if gff_line:
+            # https://github.com/PacificBiosciences/GenomicConsensus/blob/master/doc/VariantsGffSpecification.rst
+            line_parts = gff_line.split('\t')
+            attributes = {x.split('=')[0]: x.split('=')[1] for x in line_parts[8].split(';')}
+            self.source = 'Arrow'
+            self.ref_name = line_parts[0]
+            self.type = line_parts[2]
+            self.ref_seq = attributes['reference'].replace('.', '')
+            self.variant_seq = attributes['variantSeq'].replace('.', '')
+            self.start_pos = int(line_parts[3]) - 1
+            self.end_pos = self.start_pos + len(self.ref_seq)
+
+        elif changes_line:
+            # https://github.com/broadinstitute/pilon/wiki/Output-File-Descriptions
+            line_parts = gff_line.split(' ')
+            self.source = 'Pilon'
+            self.ref_name = line_parts[0].split(':')[0]
+            self.ref_seq = line_parts[2].replace('.', '')
+            self.variant_seq = line_parts[3].replace('.', '')
+            self.start_pos = int(line_parts[0].split(':')[1]) - 1
+            self.end_pos = self.start_pos + len(self.ref_seq)
+            if len(self.ref_seq) > len(self.variant_seq):
+                self.type = 'deletion'
+            elif len(self.ref_seq) < len(self.variant_seq):
+                self.type = 'insertion'
+            else:
+                self.type = 'substitution'
 
         full_ref_sequence = reference[self.ref_name]
 
@@ -447,7 +566,10 @@ class PacBioVariant(object):
                 self.homo_size_after = max(self.homo_size_before - len(self.ref_seq), 0)
 
         # Categorise indel variants as small or large. These two categories are assessed
-        # differently regarding whether or not to apply them.
+        # differently regarding whether or not to apply them. All Pilon changes are 'large',
+        # because it is run only asking for 'local' fixes, not 'bases' fixes.
+        if self.source == 'Pilon':
+            self.large = True
         if self.type == 'insertion':
             self.large = len(self.variant_seq) >= large_var_size
         elif self.type == 'deletion':
@@ -458,16 +580,14 @@ class PacBioVariant(object):
         self.ro = 0
         self.ao = 0
         self.illumina_alt_percent = None
-        self.actual_illumina_insert = None
-        self.expected_illumina_insert = None
-        self.illumina_insert_support = None
 
-    def assess_against_illumina_alignments(self, reference_fasta, args, insert_mean):
-
-        # The first way to assess a variant against the illumina alignments is to use freebayes to
-        # see how many alternate bases are present at the variant location and what fraction of
-        # the bases are alternates. A high alternate fraction indicates that something's a bit
-        # screwy and we should probably apply the PacBio variant.
+    def assess_against_illumina_alignments(self, reference_fasta, args):
+        """
+        To assess a variant against the illumina alignments, we use freebayes to see how many
+        alternate bases are present at the variant location and what fraction of the bases are
+        alternates. A high alternate fraction indicates that something's a bit screwy and we
+        should probably apply the PacBio polishing suggestion.
+        """
         ref_location = self.ref_name + ':' + str(self.start_pos - 5) + '-' + str(self.end_pos + 5)
         freebayes_command = [args.freebayes,
                              '-f', reference_fasta,
@@ -503,28 +623,6 @@ class PacBioVariant(object):
                     self.ro = ref_occurrences
                     self.illumina_alt_percent = alt_fraction * 100.0
 
-        # The second way to assess a variant against the illumina alignments is to see what the
-        # insert size looks like around this variant. We compare the mean insert size to two
-        # different values: the overall mean insert (what we'd expect if there is no variant) and
-        # an adjusted insert (what we'd expect if there is a variant).
-        if self.type == 'insertion':
-            self.expected_illumina_insert = insert_mean - len(self.variant_seq)
-        elif self.type == 'deletion':
-            self.expected_illumina_insert = insert_mean + len(self.ref_seq)
-        else:
-            self.expected_illumina_insert = insert_mean
-
-        read_pairs = get_read_pairs_around_variant(self, args)
-        try:
-            self.actual_illumina_insert = statistics.mean(x.first_read.insert_size
-                                                          for x in read_pairs)
-            if self.large and (self.type == 'insertion' or self.type == 'deletion'):
-                diff_if_true = abs(self.actual_illumina_insert - self.expected_illumina_insert)
-                diff_if_false = abs(self.actual_illumina_insert - insert_mean)
-                self.illumina_insert_support = diff_if_true < diff_if_false
-        except statistics.StatisticsError:
-            pass
-
     def get_out_line(self):
         if self.homo_size_before > 1:
             variant_type = 'homo ' + str(self.homo_size_before) + ' -> ' + str(
@@ -536,17 +634,9 @@ class PacBioVariant(object):
 
         ref_seq = self.ref_seq if self.ref_seq else '.'
         variant_seq = self.variant_seq if self.variant_seq else '.'
-
+        # noinspection PyStringFormat
         alt_percent = 'n/a' if self.illumina_alt_percent is None \
             else '%.1f' % self.illumina_alt_percent
-        actual_insert = 'n/a' if self.actual_illumina_insert is None \
-            else '%.1f' % self.actual_illumina_insert
-        expected_insert = 'n/a' if self.expected_illumina_insert is None \
-            else '%.1f' % self.expected_illumina_insert
-        if self.illumina_insert_support is None:
-            insert_support = 'n/a'
-        else:
-            insert_support = 'yes' if self.illumina_insert_support else 'no'
 
         return '\t'.join([self.ref_name,
                           str(self.start_pos + 1),
@@ -555,137 +645,52 @@ class PacBioVariant(object):
                           variant_type,
                           str(self.ao),
                           str(self.ro),
-                          alt_percent,
-                          actual_insert,
-                          expected_insert,
-                          insert_support])
+                          alt_percent])
 
 
-def get_out_header():
-    return '\033[1m' + '\t'.join(['CONTIG',
-                                  'POS',
-                                  'REF',
-                                  'ALT',
-                                  'VARIANT TYPE',
-                                  'AO',
-                                  'RO',
-                                  'AO %',
-                                  'ACTUAL INSERT',
-                                  'EXPECTED INSERT',
-                                  'INSERT SUPPORT',
-                                  'RESULT']) + '\033[0m'
+def print_small_variant_header():
+    print()
+    print('\033[1m' + '\t'.join(['CONTIG',
+                                 'POS',
+                                 'REF',
+                                 'ALT',
+                                 'VARIANT TYPE',
+                                 'AO',
+                                 'RO',
+                                 'AO %',
+                                 'RESULT']) + '\033[0m')
 
 
-class AlignedRead(object):
-    def __init__(self, sam_line):
-        sam_parts = sam_line.split('\t')
-        self.name = sam_parts[0]
-        self.sam_flags = int(sam_parts[1])
-        self.ref_name = sam_parts[2]
-        self.cigar_parts = re.findall(r'\d+\w', sam_parts[5])
-        self.insert_size = abs(float(sam_parts[8]))
-        self.read_seq = sam_parts[9]
-
-        if self.sam_flags & 64:
-            self.strand = '-'
-        else:
-            self.strand = '+'
-
-        self.start_pos = int(sam_parts[3]) - 1
-        self.end_pos = self.start_pos + 1
-        for cigar_part in self.cigar_parts:
-            self.end_pos += get_ref_shift_from_cigar_part(cigar_part)
-        self.mid_point = (self.start_pos + self.end_pos) / 2
+def print_large_indel_header():
+    print()
+    print('\033[1m' + '\t'.join(['SOURCE',
+                                 'CONTIG',
+                                 'POS',
+                                 'REF',
+                                 'ALT',
+                                 'ALE SCORE']) + '\033[0m')
 
 
-class AlignedReadPair(object):
-    def __init__(self, name, sam_line):
-        self.name = name
-        self.first_read = None
-        self.second_read = None
-        self.add_sam_line(sam_line)
-
-    def add_sam_line(self, sam_line):
-        sam_line_parts = sam_line.split('\t')
-        sam_flags = int(sam_line_parts[1])
-        if sam_flags & 64:
-            self.first_read = AlignedRead(sam_line)
-        elif sam_flags & 128:
-            self.second_read = AlignedRead(sam_line)
-
-    def has_both_reads(self):
-        return self.first_read is not None and self.second_read is not None
-
-    def one_read_per_strand(self):
-        """
-        A normally mapped read pair has one read on each strand. This function returns true if
-        that's the case for this pair.
-        """
-        if not self.has_both_reads():
-            return False
-        if self.first_read.strand == '+' and self.second_read.strand == '-':
-            return True
-        if self.first_read.strand == '-' and self.second_read.strand == '+':
-            return True
-        return False
-
-    def order_first_second_by_ref_pos(self):
-        """
-        This function makes first_read and second_read in order of reference position, instead of
-        being based on sam flags.
-        """
-        if self.has_both_reads() and self.first_read.start_pos > self.second_read.start_pos:
-            self.first_read, self.second_read = self.second_read, self.first_read
+def print_large_indel_result(source, variant, ale_score):
+    if variant:
+        contig = variant.ref_name
+        pos = variant.start_pos
+        ref = variant.ref_seq
+        alt = variant.variant_seq
+    else:
+        contig, pos, ref, alt = '', '', '', ''
+    print('\t'.join([source, contig, pos, ref, alt, '%.4f' % ale_score]))
 
 
-def get_read_pairs_around_variant(variant, args):
-    read_pairs = {}
-    margin = 10000  # Just a big distance to either side to ensure we get all relevant read pairs
-    pos_range = variant.ref_name + ':' + str(variant.start_pos - margin) + '-' + \
-        str(variant.end_pos + margin)
-    command = [args.samtools, 'view', 'illumina_alignments.bam', pos_range]
-
-    try:
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        for sam_line in iter(process.stdout.readline, b''):
-            sam_line = sam_line.decode()
-            name = sam_line.split('\t')[0]
-            if not name:
-                continue
-            if name not in read_pairs:
-                read_pairs[name] = AlignedReadPair(name, sam_line)
-            else:
-                read_pairs[name].add_sam_line(sam_line)
-        process.wait()
-    except subprocess.CalledProcessError as e:
-        sys.exit(e.output.decode())
-
-    read_pairs = [x for x in read_pairs.values() if x.one_read_per_strand()]
-    for pair in read_pairs:
-        pair.order_first_second_by_ref_pos()
-
-    # Find all read pairs where the variant resides in the gap between the reads.
-    filtered_read_pairs = [x for x in read_pairs
-                           if x.first_read.end_pos <= variant.start_pos and
-                           x.second_read.start_pos >= variant.end_pos]
-
-    # If that was too stringent (e.g. the read pairs overlap so we don't have any cases where the
-    # variant is in a gap between them), try again allowing the variant to be in the reads.
-    if not filtered_read_pairs:
-        filtered_read_pairs = [x for x in read_pairs
-                               if x.first_read.mid_point <= variant.start_pos and
-                               x.second_read.mid_point >= variant.end_pos]
-    return filtered_read_pairs
-
-
-def analyse_all_insert_sizes(args):
+def analyse_insert_sizes(args):
     insert_sizes = []
     command = [args.samtools, 'view', 'illumina_alignments.bam']
     try:
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         for sam_line in iter(process.stdout.readline, b''):
+            sam_line = sam_line.decode()
             try:
-                sam_parts = sam_line.decode().split('\t')
+                sam_parts = sam_line.split('\t')
                 sam_flags = int(sam_parts[1])
                 if sam_flags & 2:
                     insert_size = float(sam_parts[8])
@@ -696,7 +701,10 @@ def analyse_all_insert_sizes(args):
         process.wait()
     except subprocess.CalledProcessError as e:
         sys.exit(e.output.decode())
-    try:
-        return statistics.mean(insert_sizes), statistics.stdev(insert_sizes)
-    except statistics.StatisticsError:
-        return 0.0, 0.0
+    insert_sizes = sorted(insert_sizes)
+
+    min_insert = get_percentile_sorted(insert_sizes, 2.5)
+    mean_insert = statistics.mean(insert_sizes)
+    max_insert = get_percentile_sorted(insert_sizes, 97.5)
+
+    return min_insert, mean_insert, max_insert

@@ -559,3 +559,34 @@ class MyHelpFormatter(argparse.RawDescriptionHelpFormatter):
             return argparse.RawDescriptionHelpFormatter._fill_text(self, text[2:], width, indent)
         else:
             return argparse.HelpFormatter._fill_text(self, text, width, indent)
+
+
+def print_table(table, align='', max_col_width=30, col_separation=3, indent=2):
+    """
+    Args:
+        table: a list of lists of strings (one row is one list, all rows must be the same length)
+        align: a string of L and R, indicating the alignment for each row
+        max_col_width: values longer than this will be wrapped
+        col_separation: the number of spaces between columns
+        indent: the number of spaces between the table and the left side of the terminal
+
+    Returns:
+        nothing, just prints the table
+    """
+    align += 'L' * (len(table[0]) - len(align))  # Fill out with L, if incomplete
+    align_func = [str.ljust if x == 'L' else str.rjust for x in align]
+    col_widths = [0] * len(table[0])
+    for row in table:
+        col_widths = [min(max(col_widths[i], len(x)), max_col_width) for i, x in enumerate(row)]
+    separator = ' ' * col_separation
+    indenter = ' ' * indent
+    for i, row in enumerate(table):
+        while any(x for x in row):
+            row_str = separator.join([align_func[i](x, col_widths[i])[:col_widths[i]]
+                                      for i, x in enumerate(row)])
+            if i == 0:  # First line is header, so make it bold and underline
+                row_str = '\033[1m' + '\033[4m' + row_str + '\033[0m'
+            row_str = row_str.replace('PASS', '\033[32m' + 'PASS' + '\033[0m')
+            row_str = row_str.replace('FAIL', '\033[31m' + 'FAIL' + '\033[0m')  # FAIL is green
+            print(indenter + row_str, flush=True)
+            row = [x[col_widths[i]:] for i, x in enumerate(row)]

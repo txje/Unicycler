@@ -161,12 +161,13 @@ def get_pilon_jar_path(pilon_path):
         return os.path.abspath(pilon_path)
     for directory in os.environ['PATH'].split(':'):
         try:
-            path_files = [f for f in os.listdir(directory) if os.path.isfile(f)]
+            path_files = [f for f in os.listdir(directory)
+                          if os.path.isfile(os.path.join(directory, f))]
         except FileNotFoundError:
             path_files = []
         pilon_jars = [f for f in path_files if f.startswith('pilon') and f.endswith('.jar')]
         if pilon_jars:
-            return sorted(pilon_jars)[-1]  # return the latest version, if more than one
+            return os.path.join(directory, sorted(pilon_jars)[-1])  # return the latest version
     return None
 
 

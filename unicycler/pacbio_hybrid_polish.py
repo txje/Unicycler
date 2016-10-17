@@ -16,7 +16,7 @@ import datetime
 import statistics
 import math
 from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter, print_table, \
-    get_percentile_sorted, get_pilon_jar_path
+    get_percentile_sorted, get_pilon_jar_path, colour
 
 
 def main():
@@ -51,6 +51,7 @@ def main():
     #   4) Run Pilon to look for larger variants.
     #   5) Assess each large variant with ALE and apply the best one (if any).
     #   6) If a large variant was applied, go back to step 1 and repeat.
+    shutil.copy(current, '%03d' % round_num + '_starting_sequence.fasta')
     while True:
         large_variants = []
         while True:
@@ -124,15 +125,21 @@ def get_arguments():
     return args
 
 
-def clean_up():
+def clean_up(pbalign_alignments=True, illumina_alignments=True, indices=True, large_variants=True):
+    all_files = [f for f in os.listdir('.') if os.path.isfile(f)]
     files_to_delete = []
-    for f in ['pbalign_alignments.bam', 'pbalign_alignments.bam.pbi', 'pbalign_alignments.bam.bai']:
-        if os.path.isfile(f):
+    if pbalign_alignments:
+        for f in [f for f in all_files if f.startswith('pbalign_align')]:
             files_to_delete.append(f)
-    for f in [f for f in os.listdir('.') if os.path.isfile(f) and
-              (f.endswith('.fai') or f.endswith('.bt2') or f.startswith('illumina_align') or
-               f.startswith('large_indel_'))]:
-        files_to_delete.append(f)
+    if illumina_alignments:
+        for f in [f for f in all_files if f.startswith('illumina_align')]:
+            files_to_delete.append(f)
+    if indices:
+        for f in [f for f in all_files if f.endswith('.bt2') or f.endswith('.fai')]:
+            files_to_delete.append(f)
+    if large_variants:
+        for f in [f for f in all_files if f.startswith('large_indel_')]:
+            files_to_delete.append(f)
     if files_to_delete:
         print_command(['rm'] + files_to_delete)
         for f in files_to_delete:
@@ -216,8 +223,11 @@ def make_reads_bam(args):
 def polish_small_changes(fasta, round_num, args, min_insert, max_insert):
     print_round_header('Round ' + str(round_num) + ': small variants')
 
+    raw_variants_gff = '%03d' % round_num + '_1_raw_variants.gff'
+    filtered_variants_gff = '%03d' % round_num + '_2_filtered_variants.gff'
+    polished_fasta = '%03d' % round_num + '_3_polish.fasta'
+
     align_pacbio_reads(fasta, args)
-    raw_variants_gff = '%03d' % round_num + '_raw_variants.gff'
     genomic_consensus(fasta, args, raw_variants_gff)
     raw_variants = load_variants_from_gff(raw_variants_gff, fasta, args.large)
 
@@ -230,18 +240,18 @@ def polish_small_changes(fasta, round_num, args, min_insert, max_insert):
         variant.assess_against_illumina_alignments(fasta, args)
     clean_up()
 
-    filtered_variants = filter_small_variants(small_variants, raw_variants_gff, args)
-    polished_fasta = '%03d' % round_num + '_polish.fasta'
+    filtered_variants = filter_small_variants(small_variants, raw_variants_gff,
+                                              filtered_variants_gff, args)
     apply_variants(fasta, filtered_variants, polished_fasta)
 
-    if large_variants:
-        # If small variants were applied, then large variants are discarded because another small
-        # change round is coming up. If no small variants were applied, then we'll use the large
-        # variants in the next round.
-        print()
-        print('Discarded large variants:' if filtered_variants
-              else 'Large variants for the next round:')
-        print_simple_large_variant_table(large_variants)
+    # if large_variants:
+    #     # If small variants were applied, then large variants are discarded because another small
+    #     # change round is coming up. If no small variants were applied, then we'll use the large
+    #     # variants in the next round.
+    #     print()
+    #     print('Unused large variants:' if filtered_variants
+    #           else 'Large variants for the next round:')
+    #     print_simple_large_variant_table(large_variants)
 
     print_result(filtered_variants, polished_fasta)
     return polished_fasta, len(filtered_variants), large_variants
@@ -255,47 +265,62 @@ def polish_large_changes(fasta, round_num, args, large_variants, min_insert, max
         print('\nNo variants found')
         return fasta, 0
 
+    raw_variants_gff = '%03d' % round_num + '_1_raw_variants.gff'
+    filtered_variants_gff = '%03d' % round_num + '_2_filtered_variants.gff'
+    polished_fasta = '%03d' % round_num + '_3_polish.fasta'
+
+    save_large_variants(large_variants, raw_variants_gff)
+    open(filtered_variants_gff, 'a').close()
+
     initial_ale_score = run_ale(fasta, args, min_insert, max_insert)
     best_ale_score = initial_ale_score
 
     best_modification = None
-    applied_variants = []
+    applied_variant = []
     for i, variant in enumerate(large_variants):
-        modified_assembly = 'large_indel_' + str(i) + '.fasta'
+        modified_assembly = 'large_indel_' + str(i+1) + '.fasta'
         apply_variants(fasta, [variant], modified_assembly)
         variant.ale_score = run_ale(modified_assembly, args, min_insert, max_insert)
         if variant.ale_score > best_ale_score:
             best_ale_score = variant.ale_score
             best_modification = modified_assembly
-            applied_variants = [variant]
-    clean_up()
+            applied_variant = [variant]
+            save_large_variants(applied_variant, filtered_variants_gff)
 
-    print_large_variant_table(large_variants, best_ale_score, initial_ale_score)
-    polished_fasta = '%03d' % round_num + '_polish.fasta'
     if best_modification:
         os.rename(best_modification, polished_fasta)
     else:
         shutil.copyfile(fasta, polished_fasta)
+    clean_up()
 
-    print_result(applied_variants, polished_fasta)
-    return polished_fasta, len(applied_variants)
+    print_large_variant_table(large_variants, best_ale_score, initial_ale_score)
+
+    print_result(applied_variant, polished_fasta)
+    return polished_fasta, len(applied_variant)
 
 
 def run_ale(fasta, args, min_insert, max_insert):
+    """
+    ALE is run in --metagenome mode because this polishing script is presumed to be used on
+    completed bacterial genomes, where each contig is different replicon (chromosome or plasmid)
+    with potentially different depth.
+    """
     align_illumina_reads(fasta, args, min_insert, max_insert, local=False)
     ale_output = 'ale.out'
-    command = [args.ale,
-               'illumina_alignments.bam',
-               fasta,
-               ale_output]
-    run_command_no_output(command)
+    run_command_no_output([args.ale,
+                           '--nout',
+                           '--metagenome',
+                           'illumina_alignments.bam', fasta, ale_output])
     if not os.path.isfile(ale_output):
         sys.exit('Error: ALE did not generate ' + ale_output)
+    ale_score = float('-inf')
     with open(ale_output, 'rt') as out:
         for line in out:
             if 'ALE_score:' in line:
-                return float(line.split('ALE_score:')[1].strip().split()[0])
-    return 0.0
+                ale_score = float(line.split('ALE_score:')[1].strip().split()[0])
+                break
+    clean_up(large_variants=False)
+    return ale_score
 
 
 def align_pacbio_reads(fasta, args):
@@ -395,7 +420,7 @@ def genomic_consensus(fasta, args, raw_variants_filename):
         sys.exit('Error: arrow failed to make ' + raw_variants_filename)
 
 
-def filter_small_variants(raw_variants, raw_variants_gff, args):
+def filter_small_variants(raw_variants, raw_variants_gff, filtered_variants_gff, args):
     """
     This function produces a new GFF file without variants in regions where the Illumina mapping
     is quite solid.
@@ -415,7 +440,6 @@ def filter_small_variants(raw_variants, raw_variants_gff, args):
         variant_rows.append(variant_row)
     print_small_variant_table(variant_rows)
 
-    filtered_variants_gff = raw_variants_gff.replace('_raw_', '_filtered_')
     with open(filtered_variants_gff, 'wt') as new_gff:
         with open(raw_variants_gff, 'rt') as old_gff:
             for line in old_gff:
@@ -424,6 +448,12 @@ def filter_small_variants(raw_variants, raw_variants_gff, args):
         for variant in filtered_variants:
             new_gff.write(variant.original_gff_line + '\n')
     return filtered_variants
+
+
+def save_large_variants(variants, filename):
+    with open(filename, 'wt') as output_file:
+        for variant in variants:
+            output_file.write(variant.get_original_line() + '\n')
 
 
 def apply_variants(in_fasta, variants, out_fasta):
@@ -463,7 +493,7 @@ def print_round_header(text):
 def print_result(variants, fasta):
     print()
     print(str(len(variants)) + (' variant' if len(variants) == 1 else ' variants') + ' applied')
-    print('Polished FASTA:', fasta, flush=True)
+    print('Result:', fasta, flush=True)
 
 
 def print_finished(fasta):
@@ -666,11 +696,17 @@ class Variant(object):
         return [self.ref_name, str(self.start_pos + 1), ref_seq, variant_seq, variant_type,
                 str(self.ao), str(self.ro), alt_percent]
 
+    def get_original_line(self):
+        if self.original_gff_line:
+            return self.original_gff_line
+        else:
+            return self.original_changes_line
+
 
 def print_small_variant_table(rows):
     print()
-    header = ['Contig', 'Pos', 'Ref', 'Alt', 'Variant type', 'AO', 'RO', 'AO %', 'Result']
-    print_table([header] + rows, align='LRLLLRRRR')
+    header = ['Contig', 'Pos', 'Ref', 'Alt', 'Type', 'AO', 'RO', 'AO%', 'Result']
+    print_table([header] + rows, alignments='LRLLLRRRR')
 
 
 def print_simple_large_variant_table(variants):
@@ -679,34 +715,21 @@ def print_simple_large_variant_table(variants):
         ref_seq = v.ref_seq if v.ref_seq else '.'
         variant_seq = v.variant_seq if v.variant_seq else '.'
         table.append([v.ref_name, str(v.start_pos), ref_seq, variant_seq])
-    print_table(table, align='LRLL')
+    print_table(table, alignments='LRLL')
 
 
 def print_large_variant_table(variants, best_ale_score, initial_ale_score):
     print()
     table = [['Source', 'Contig', 'Pos', 'Ref', 'Alt', 'ALE score']]
+    text_colour = 'green' if initial_ale_score == best_ale_score else 'red'
+    table.append(['No variant', '', '', '', '', colour('%.6f' % initial_ale_score, text_colour)])
     for v in variants:
-        if v is None:
-            source = 'none'
-            contig, pos, ref_seq, variant_seq = '', '', '', ''
-            ale_score = initial_ale_score
-            table.append(['No variant', '', '', '', '', ale_score])
-        else:
-            source = v.source
-            contig = v.ref_name
-            pos = str(v.start_pos)
-            ref_seq = v.ref_seq
-            variant_seq = v.variant_seq
-            ale_score = v.ale_score
-        ref_seq = ref_seq if ref_seq else '.'
-        variant_seq = variant_seq if variant_seq else '.'
-        ale_score_str = '%.6f' % ale_score
-        if ale_score == best_ale_score:
-            ale_score_str = '\033[32m' + ale_score_str + '\033[0m'
-        else:
-            ale_score_str = '\033[31m' + ale_score_str + '\033[0m'
-        table.append([source, contig, pos, ref_seq, variant_seq, ale_score_str])
-    print_table(table, align='LLRLLR')
+        ref_seq = v.ref_seq if v.ref_seq else '.'
+        variant_seq = v.variant_seq if v.variant_seq else '.'
+        text_colour = 'green' if v.ale_score == best_ale_score else 'red'
+        ale_score_str = colour('%.6f' % v.ale_score, text_colour)
+        table.append([v.source, v.ref_name, str(v.start_pos), ref_seq, variant_seq, ale_score_str])
+    print_table(table, alignments='LLRLLR')
 
 
 def analyse_insert_sizes(args):

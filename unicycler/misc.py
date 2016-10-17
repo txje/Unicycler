@@ -561,11 +561,11 @@ class MyHelpFormatter(argparse.RawDescriptionHelpFormatter):
             return argparse.HelpFormatter._fill_text(self, text, width, indent)
 
 
-def print_table(table, align='', max_col_width=30, col_separation=3, indent=2):
+def print_table(table, alignments='', max_col_width=30, col_separation=3, indent=2):
     """
     Args:
         table: a list of lists of strings (one row is one list, all rows must be the same length)
-        align: a string of L and R, indicating the alignment for each row
+        alignments: a string of L and R, indicating the alignment for each row
         max_col_width: values longer than this will be wrapped
         col_separation: the number of spaces between columns
         indent: the number of spaces between the table and the left side of the terminal
@@ -573,8 +573,7 @@ def print_table(table, align='', max_col_width=30, col_separation=3, indent=2):
     Returns:
         nothing, just prints the table
     """
-    align += 'L' * (len(table[0]) - len(align))  # Fill out with L, if incomplete
-    align_func = [str.ljust if x == 'L' else str.rjust for x in align]
+    alignments += 'L' * (len(table[0]) - len(alignments))  # Fill out with L, if incomplete
     col_widths = [0] * len(table[0])
     for row in table:
         col_widths = [min(max(col_widths[i], len(x)), max_col_width) for i, x in enumerate(row)]
@@ -582,11 +581,37 @@ def print_table(table, align='', max_col_width=30, col_separation=3, indent=2):
     indenter = ' ' * indent
     for i, row in enumerate(table):
         while any(x for x in row):
-            row_str = separator.join([align_func[i](x, col_widths[i])[:col_widths[i]]
-                                      for i, x in enumerate(row)])
-            if i == 0:  # First line is header, so make it bold and underline
-                row_str = '\033[1m' + '\033[4m' + row_str + '\033[0m'
-            row_str = row_str.replace('PASS', '\033[32m' + 'PASS' + '\033[0m')
-            row_str = row_str.replace('FAIL', '\033[31m' + 'FAIL' + '\033[0m')  # FAIL is green
+            aligned_row = []
+            for value, col_width, alignment in zip(row, col_widths, alignments):
+                if i == 0 or alignment == 'L':
+                    aligned_row.append(value.ljust(col_width)[:col_width])
+                else:
+                    aligned_row.append(value.rjust(col_width)[:col_width])
+            row_str = separator.join(aligned_row)
+            if i == 0:
+                row_str = bold_underline(row_str)
+            row_str = row_str.replace('PASS', green('PASS'))
+            row_str = row_str.replace('FAIL', red('FAIL'))
             print(indenter + row_str, flush=True)
-            row = [x[col_widths[i]:] for i, x in enumerate(row)]
+            row = [x[col_widths[j]:] for j, x in enumerate(row)]
+
+
+def colour(text, text_colour):
+    if text_colour.lower() == 'green':
+        return green(text)
+    elif text_colour.lower() == 'red':
+        return red(text)
+    else:
+        return text
+
+
+def green(text):
+    return '\033[32m' + text + '\033[0m'
+
+
+def red(text):
+    return '\033[31m' + text + '\033[0m'
+
+
+def bold_underline(text):
+    return '\033[1m' + '\033[4m' + text + '\033[0m'

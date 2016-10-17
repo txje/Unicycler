@@ -139,7 +139,7 @@ def clean_up(pbalign_alignments=True, illumina_alignments=True, indices=True, la
         for f in [f for f in all_files if f.endswith('.bt2') or f.endswith('.fai')]:
             files_to_delete.append(f)
     if large_variants:
-        for f in [f for f in all_files if f.startswith('large_indel_')]:
+        for f in [f for f in all_files if f.startswith('large_variant_')]:
             files_to_delete.append(f)
     if files_to_delete:
         print_command(['rm'] + files_to_delete)
@@ -259,7 +259,7 @@ def polish_small_changes(fasta, round_num, args, min_insert, max_insert):
 
 
 def polish_large_changes(fasta, round_num, args, large_variants, min_insert, max_insert):
-    print_round_header('Round ' + str(round_num) + ': larger variants')
+    print_round_header('Round ' + str(round_num) + ': larger variants and Pilon')
 
     large_variants += get_pilon_variants(fasta, args, min_insert, max_insert, round_num)
     if not large_variants:
@@ -281,7 +281,7 @@ def polish_large_changes(fasta, round_num, args, large_variants, min_insert, max
     best_modification = None
     applied_variant = []
     for i, variant in enumerate(large_variants):
-        modified_assembly = 'large_indel_' + str(i+1) + '.fasta'
+        modified_assembly = 'large_variant_' + str(i+1) + '.fasta'
         apply_variants(fasta, [variant], modified_assembly)
         variant.ale_score = run_ale(modified_assembly, args, min_insert, max_insert, ale_outputs)
         if variant.ale_score > best_ale_score:
@@ -393,7 +393,7 @@ def pilon(fasta, args, raw_pilon_changes_filename):
     pilon_command = [args.java, '-jar', args.pilon,
                      '--genome', fasta,
                      '--frags', 'illumina_alignments.bam',
-                     '--fix', 'local',
+                     '--fix', 'all',
                      '--changes',
                      '--outdir', 'temp_pilon']
     run_command_no_output(pilon_command)
@@ -545,8 +545,8 @@ def load_variants_from_pilon_changes(pilon_changes_file, fasta, large_var_size):
     with open(pilon_changes_file, 'rt') as changes:
         for line in changes:
             line = line.strip()
-            if line and not line.startswith('##'):
-                variants.append(Variant(line, reference, large_var_size, changes_line=line))
+            if line:
+                variants.append(Variant(reference, large_var_size, changes_line=line))
     return variants
 
 

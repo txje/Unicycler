@@ -66,7 +66,8 @@ def main():
         if not change_count:
             break
 
-    print_finished(current)
+    shutil.copy(current, 'final_polish.fasta')
+    print_finished('final_polish.fasta')
 
 
 def get_arguments():
@@ -267,12 +268,14 @@ def polish_large_changes(fasta, round_num, args, large_variants, min_insert, max
 
     raw_variants_gff = '%03d' % round_num + '_1_raw_variants.gff'
     filtered_variants_gff = '%03d' % round_num + '_2_filtered_variants.gff'
-    polished_fasta = '%03d' % round_num + '_3_polish.fasta'
+    ale_outputs = '%03d' % round_num + '_3_ALE_output'
+    polished_fasta = '%03d' % round_num + '_4_polish.fasta'
 
     save_large_variants(large_variants, raw_variants_gff)
     open(filtered_variants_gff, 'a').close()
+    open(ale_outputs, 'a').close()
 
-    initial_ale_score = run_ale(fasta, args, min_insert, max_insert)
+    initial_ale_score = run_ale(fasta, args, min_insert, max_insert, ale_outputs)
     best_ale_score = initial_ale_score
 
     best_modification = None
@@ -280,7 +283,7 @@ def polish_large_changes(fasta, round_num, args, large_variants, min_insert, max
     for i, variant in enumerate(large_variants):
         modified_assembly = 'large_indel_' + str(i+1) + '.fasta'
         apply_variants(fasta, [variant], modified_assembly)
-        variant.ale_score = run_ale(modified_assembly, args, min_insert, max_insert)
+        variant.ale_score = run_ale(modified_assembly, args, min_insert, max_insert, ale_outputs)
         if variant.ale_score > best_ale_score:
             best_ale_score = variant.ale_score
             best_modification = modified_assembly
@@ -299,26 +302,34 @@ def polish_large_changes(fasta, round_num, args, large_variants, min_insert, max
     return polished_fasta, len(applied_variant)
 
 
-def run_ale(fasta, args, min_insert, max_insert):
+def run_ale(fasta, args, min_insert, max_insert, all_ale_outputs):
     """
     ALE is run in --metagenome mode because this polishing script is presumed to be used on
     completed bacterial genomes, where each contig is different replicon (chromosome or plasmid)
     with potentially different depth.
     """
-    align_illumina_reads(fasta, args, min_insert, max_insert, local=False)
     ale_output = 'ale.out'
+    ale_score = float('-inf')
+    previous_output_exists = os.path.getsize(all_ale_outputs) > 0
+
+    align_illumina_reads(fasta, args, min_insert, max_insert, local=False)
+
     run_command_no_output([args.ale,
                            '--nout',
                            '--metagenome',
                            'illumina_alignments.bam', fasta, ale_output])
     if not os.path.isfile(ale_output):
         sys.exit('Error: ALE did not generate ' + ale_output)
-    ale_score = float('-inf')
-    with open(ale_output, 'rt') as out:
-        for line in out:
-            if 'ALE_score:' in line:
-                ale_score = float(line.split('ALE_score:')[1].strip().split()[0])
-                break
+
+    with open(ale_output, 'rt') as ale_output_file:
+        with open(all_ale_outputs, 'at') as all_ale_outputs_file:
+            if previous_output_exists:
+                all_ale_outputs_file.write('\n\n\n\n\n')
+            for line in ale_output_file:
+                all_ale_outputs_file.write(line)
+                if 'ALE_score:' in line and ale_score == float('-inf'):
+                    ale_score = float(line.split('ALE_score:')[1].strip().split()[0])
+
     clean_up(large_variants=False)
     return ale_score
 
@@ -498,7 +509,7 @@ def print_result(variants, fasta):
 
 def print_finished(fasta):
     print()
-    result = 'All done! Final product: ' + fasta
+    result = 'All done! Final assembly: ' + fasta
     print('\033[1m' + '\033[32m' + result + '\033[0m', flush=True)
 
 

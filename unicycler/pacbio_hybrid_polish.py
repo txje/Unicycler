@@ -126,21 +126,20 @@ def get_arguments():
     return args
 
 
-def clean_up(pbalign_alignments=True, illumina_alignments=True, indices=True, large_variants=True):
+def clean_up(pbalign_alignments=True, illumina_alignments=True, indices=True, large_variants=True,
+             ale_scores=True):
     all_files = [f for f in os.listdir('.') if os.path.isfile(f)]
     files_to_delete = []
     if pbalign_alignments:
-        for f in [f for f in all_files if f.startswith('pbalign_align')]:
-            files_to_delete.append(f)
+        files_to_delete += [f for f in all_files if f.startswith('pbalign_align')]
     if illumina_alignments:
-        for f in [f for f in all_files if f.startswith('illumina_align')]:
-            files_to_delete.append(f)
+        files_to_delete += [f for f in all_files if f.startswith('illumina_align')]
     if indices:
-        for f in [f for f in all_files if f.endswith('.bt2') or f.endswith('.fai')]:
-            files_to_delete.append(f)
+        files_to_delete += [f for f in all_files if f.endswith('.bt2') or f.endswith('.fai')]
     if large_variants:
-        for f in [f for f in all_files if f.startswith('large_variant_')]:
-            files_to_delete.append(f)
+        files_to_delete += [f for f in all_files if f.startswith('large_variant_')]
+    if ale_scores:
+        files_to_delete += [f for f in all_files if f.startswith('ale.out')]
     if files_to_delete:
         print_command(['rm'] + files_to_delete)
         for f in files_to_delete:

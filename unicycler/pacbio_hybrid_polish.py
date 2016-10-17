@@ -112,7 +112,7 @@ def get_arguments():
                         help='path to pilon jar file')
     parser.add_argument('--java', type=str, default='java',
                         help='path to java executable')
-    parser.add_argument('--ale', type=str, default='ale',
+    parser.add_argument('--ale', type=str, default='ALE',
                         help='path to ale executable')
 
     args = parser.parse_args()

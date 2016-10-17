@@ -311,7 +311,7 @@ def run_ale(fasta, args, min_insert, max_insert, all_ale_outputs):
     ale_score = float('-inf')
     previous_output_exists = os.path.getsize(all_ale_outputs) > 0
 
-    align_illumina_reads(fasta, args, min_insert, max_insert, local=False)
+    align_illumina_reads(fasta, args, min_insert, max_insert, local=False, keep_unaligned=True)
 
     run_command_no_output([args.ale,
                            '--nout',
@@ -351,23 +351,24 @@ def align_pacbio_reads(fasta, args):
         sys.exit('Error: pbalign failed to make pbalign_alignments.bam.bai')
 
 
-def align_illumina_reads(fasta, args, min_insert, max_insert, make_index=True, local=False):
+def align_illumina_reads(fasta, args, min_insert, max_insert, make_index=True, local=False,
+                         keep_unaligned=False):
     index = 'bowtie_index'
     bam = 'illumina_alignments.bam'
 
     run_command_no_output([args.bowtie2_build, fasta, index])
 
     if local:
-        preset = ['--local', '--very-sensitive-local']
+        bowtie2_command = [args.bowtie2, '--local', '--very-sensitive-local']
     else:
-        preset = ['--end-to-end', '--very-sensitive']
+        bowtie2_command = [args.bowtie2, '--end-to-end', '--very-sensitive']
+    if not keep_unaligned:
+        bowtie2_command += ['--no-unal']
+    bowtie2_command += ['--threads', str(args.threads),
+                        '-I', str(min_insert), '-X', str(max_insert),
+                        '-x', index,
+                        '-1', args.short1, '-2', args.short2]
 
-    bowtie2_command = [args.bowtie2] + preset + \
-                      ['--threads', str(args.threads),
-                       '--no-unal',
-                       '-I', str(min_insert), '-X', str(max_insert),
-                       '-x', index,
-                       '-1', args.short1, '-2', args.short2]
     samtools_view_command = [args.samtools, 'view', '-hu', '-']
     samtools_sort_command = [args.samtools, 'sort',
                              '-@', str(args.threads),
@@ -405,8 +406,9 @@ def pilon(fasta, args, raw_pilon_changes_filename):
 
 
 def get_pilon_variants(fasta, args, min_insert, max_insert, round_num):
-    # Pilon needs local alignment to help spot misassembly regions.
-    align_illumina_reads(fasta, args, min_insert, max_insert, local=True)
+    # Pilon needs local alignment to help spot misassembly regions and unaligned reads to use
+    # when reassembling.
+    align_illumina_reads(fasta, args, min_insert, max_insert, local=True, keep_unaligned=True)
     raw_pilon_changes = '%03d' % round_num + '_pilon.changes'
     pilon(fasta, args, raw_pilon_changes)
     clean_up()

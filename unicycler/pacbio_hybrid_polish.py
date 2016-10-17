@@ -14,6 +14,7 @@ import subprocess
 import collections
 import datetime
 import statistics
+import math
 from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter, \
     get_percentile_sorted, get_pilon_jar_path
 
@@ -40,9 +41,11 @@ def main():
     min_insert, mean_insert, max_insert = analyse_insert_sizes(args)
     if min_insert == 0.0 or max_insert == 0.0:
         sys.exit('Error: could not determine Illumina reads insert size')
+    print()
     print('Mean insert size: ', '%.1f' % mean_insert)
     print('2.5th percentile: ', '%.1f' % min_insert)
     print('97.5th percentile: ', '%.1f' % max_insert)
+    print()
     clean_up()
 
     # The main polishing loop:
@@ -135,7 +138,6 @@ def clean_up():
                f.startswith('large_indel_'))]:
         files_to_delete.append(f)
     if files_to_delete:
-        print()
         print_command(['rm'] + files_to_delete)
         for f in files_to_delete:
             os.remove(f)
@@ -703,8 +705,8 @@ def analyse_insert_sizes(args):
         sys.exit(e.output.decode())
     insert_sizes = sorted(insert_sizes)
 
-    min_insert = get_percentile_sorted(insert_sizes, 2.5)
+    min_insert = math.floor(get_percentile_sorted(insert_sizes, 2.5))
     mean_insert = statistics.mean(insert_sizes)
-    max_insert = get_percentile_sorted(insert_sizes, 97.5)
+    max_insert = math.ceil(get_percentile_sorted(insert_sizes, 97.5))
 
     return min_insert, mean_insert, max_insert

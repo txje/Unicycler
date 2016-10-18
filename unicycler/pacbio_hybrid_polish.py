@@ -600,7 +600,7 @@ class Variant(object):
             self.ref_name = line_parts[0].split(':')[0]
             self.ref_seq = line_parts[2].replace('.', '')
             self.variant_seq = line_parts[3].replace('.', '')
-            self.start_pos = int(line_parts[0].split(':')[1]) - 1
+            self.start_pos = int(line_parts[0].split(':')[1].split('-')[0]) - 1
             self.end_pos = self.start_pos + len(self.ref_seq)
             if len(self.ref_seq) > len(self.variant_seq):
                 self.type = 'deletion'

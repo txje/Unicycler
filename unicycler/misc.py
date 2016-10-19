@@ -615,3 +615,7 @@ def red(text):
 
 def bold_underline(text):
     return '\033[1m' + '\033[4m' + text + '\033[0m'
+
+
+def get_all_files_in_current_dir():
+    return [f for f in os.listdir('.') if os.path.isfile(f)]

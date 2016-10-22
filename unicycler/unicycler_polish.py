@@ -34,9 +34,13 @@ def main():
 
     if short:
         current, round_num = pilon_polish_small_changes_loop(current, round_num, args)
-    if pacbio or nanopore:
-        current, round_num = long_read_polish_small_changes_loop(current, round_num, args,
-                                                                 short, pacbio, nanopore)
+
+    if pacbio:
+        current, round_num = arrow_polish_small_changes_loop(current, round_num, args, short)
+
+    if nanopore:
+        current, round_num = nanopolish_small_changes_loop(current, round_num, args, short)
+
     current, round_num = polish_large_changes_loop(current, round_num, args,
                                                    short, pacbio, nanopore)
 
@@ -292,38 +296,82 @@ def make_reads_bam(args):
 
 def pilon_polish_small_changes_loop(current, round_num, args):
     """
-    Repeated makes applies small variants using Pilon until no more changes are suggested,
-    or all changes overlap with previous changes. This last condition is to prevent an infinite
-    loop where one base keeps changing back and forth.
+    Repeatedly apply small variants using Pilon.
     """
     previously_applied_variants = []
     while True:
         current, round_num, variants = pilon_polish_small_changes(current, round_num, args)
+
+        # If no more changes are suggested, then we're done!
         if not variants:
             break
-        all_variants_overlap_previous = TO DO
-        if all_variants_overlap_previous:
+
+        # If every one of the suggested changes overlaps with a previous change, then we stop. This
+        # is to prevent an infinite loop caused by bases that keep changing back and forth.
+        if all_changes_overlap_previous(variants, previously_applied_variants):
             break
-        previously_applied_variants += variants
+        else:
+            previously_applied_variants += variants
+
     return current, round_num
 
 
-def long_read_polish_small_changes_loop(current, round_num, args, short, pacbio, nanopore):
-    if nanopore:
-        while True:
-            current, round_num, changes = nanopore_polish_small_changes(current, round_num,
-                                                                        args, short)
-            if not changes:
-                break
-    if pacbio:
-        if args.bax and not args.bam:
-            make_reads_bam(args)
-        while True:
-            current, round_num, changes = pacbio_polish_small_changes(current, round_num,
-                                                                      args, short)
-            if not changes:
-                break
+def arrow_polish_small_changes_loop(current, round_num, args, short):
+    """
+    Repeatedly apply small variants using Arrow.
+    """
+    # Convert bax.h5 files to a PacBio BAM, if necessary.
+    if args.bax and not args.bam:
+        make_reads_bam(args)
+
+    previously_applied_variants = []
+    while True:
+        current, round_num, variants = arrow_polish_small_changes(current, round_num, args, short)
+
+        # If no more changes are suggested, then we're done!
+        if not variants:
+            break
+
+        # If every one of the suggested changes overlaps with a previous change, then we stop. This
+        # is to prevent an infinite loop caused by bases that keep changing back and forth.
+        if all_changes_overlap_previous(variants, previously_applied_variants):
+            break
+        else:
+            previously_applied_variants += variants
+
     return current, round_num
+
+
+def nanopolish_small_changes_loop(current, round_num, args, short):
+    """
+    Repeatedly apply small variants using Nanopolish.
+    """
+    previously_applied_variants = []
+    while True:
+        current, round_num, variants = nanopolish_small_changes(current, round_num, args, short)
+
+        # If no more changes are suggested, then we're done!
+        if not variants:
+            break
+
+        # If every one of the suggested changes overlaps with a previous change, then we stop. This
+        # is to prevent an infinite loop caused by bases that keep changing back and forth.
+        if all_changes_overlap_previous(variants, previously_applied_variants):
+            break
+        else:
+            previously_applied_variants += variants
+
+    return current, round_num
+
+
+def all_changes_overlap_previous(variants, previous_variants):
+    """
+    Returns True if all of the variants overlap with a previous variant.
+    """
+    for variant in variants:
+        if not any(variant.overlaps(x) for x in previous_variants):
+            return False
+    return True
 
 
 def polish_large_changes_loop(current, round_num, args, short, pacbio, nanopore):
@@ -333,14 +381,22 @@ def polish_large_changes_loop(current, round_num, args, short, pacbio, nanopore)
     round of small variant polishing is done and we repeat!
     """
     while True:
-        current, round_num, changes = polish_large_changes(current, round_num, args,
-                                                           short, pacbio, nanopore)
-        if not changes:
+        current, round_num, variants = polish_large_changes(current, round_num, args,
+                                                            short, pacbio, nanopore)
+        if not variants:
             break
+
+        # If long reads are available, we use them for the follow-up small variant polishing.
         if pacbio or nanopore:
-            long_read_polish_small_changes_loop(current, round_num, args, short, pacbio, nanopore)
+            if pacbio:
+                arrow_polish_small_changes_loop(current, round_num, args, short)
+            if nanopore:
+                nanopolish_small_changes_loop(current, round_num, args, short)
+
+        # We only use short reads for follow-up small variant polishing if there are no long reads.
         else:
             pilon_polish_small_changes_loop(current, round_num, args)
+
     return current, round_num
 
 
@@ -364,7 +420,7 @@ def pilon_polish_small_changes(fasta, round_num, args):
         return polished_fasta, round_num, variants
 
 
-def nanopore_polish_small_changes(fasta, round_num, args, short):
+def nanopolish_small_changes(fasta, round_num, args, short):
     round_num += 1
     print_round_header('Round ' + str(round_num) + ': Nanopore polish, small variants',
                        args.verbosity)
@@ -389,10 +445,10 @@ def nanopore_polish_small_changes(fasta, round_num, args, short):
     apply_variants(fasta, filtered_variants, polished_fasta)
 
     print_result(filtered_variants, polished_fasta, args.verbosity)
-    return polished_fasta, round_num, len(filtered_variants)
+    return polished_fasta, round_num, filtered_variants
 
 
-def pacbio_polish_small_changes(fasta, round_num, args, short):
+def arrow_polish_small_changes(fasta, round_num, args, short):
     round_num += 1
     print_round_header('Round ' + str(round_num) + ': PacBio polish, small variants',
                        args.verbosity)
@@ -417,7 +473,7 @@ def pacbio_polish_small_changes(fasta, round_num, args, short):
     apply_variants(fasta, filtered_variants, polished_fasta)
 
     print_result(filtered_variants, polished_fasta, args.verbosity)
-    return polished_fasta, round_num, len(filtered_variants)
+    return polished_fasta, round_num, filtered_variants
 
 
 def polish_large_changes(fasta, round_num, args, short, pacbio, nanopore):
@@ -474,7 +530,7 @@ def polish_large_changes(fasta, round_num, args, short, pacbio, nanopore):
     print_large_variant_table(variants, best_ale_score, initial_ale_score)
 
     print_result(applied_variant, polished_fasta, args.verbosity)
-    return polished_fasta, len(applied_variant)
+    return polished_fasta, applied_variant
 
 
 def run_ale(fasta, args, all_ale_outputs):
@@ -972,6 +1028,14 @@ class Variant(object):
             return self.original_gff_line
         else:
             return self.original_changes_line
+
+    def overlaps(self, other):
+        """
+        Returns True if this variant and the other overlap in terms of reference position.
+        """
+        range_1 = range(self.start_pos, self.end_pos + 1)
+        range_2 = range(other.start_pos, other.end_pos + 1)
+        return bool(set(range_1) & set(range_2))
 
 
 def print_small_variant_table(rows, short_read_assessed, verbosity):

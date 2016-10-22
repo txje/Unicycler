@@ -336,7 +336,7 @@ def polish_large_changes_loop(current, round_num, args, short, pacbio, nanopore)
 
 def pilon_polish_small_changes(fasta, round_num, args):
     round_num += 1
-    print_round_header('Round ' + str(round_num) + ': small variants', args.verbosity)
+    print_round_header('Round ' + str(round_num) + ': Pilon polish, small variants', args.verbosity)
 
     variants_file = '%03d' % round_num + '_1_pilon_changes'
     polished_fasta = '%03d' % round_num + '_2_polish.fasta'
@@ -356,7 +356,7 @@ def pilon_polish_small_changes(fasta, round_num, args):
 
 def nanopore_polish_small_changes(fasta, round_num, args, short):
     round_num += 1
-    print_round_header('Round ' + str(round_num) + ': Nanopore polish of small variants',
+    print_round_header('Round ' + str(round_num) + ': Nanopore polish, small variants',
                        args.verbosity)
 
     raw_variants_file = '%03d' % round_num + '_1_raw_variants'
@@ -384,11 +384,11 @@ def nanopore_polish_small_changes(fasta, round_num, args, short):
 
 def pacbio_polish_small_changes(fasta, round_num, args, short):
     round_num += 1
-    print_round_header('Round ' + str(round_num) + ': PacBio polish of small variants',
+    print_round_header('Round ' + str(round_num) + ': PacBio polish, small variants',
                        args.verbosity)
 
-    raw_variants_file = '%03d' % round_num + '_1_raw_variants'
-    filtered_variants_file = '%03d' % round_num + '_2_filtered_variants'
+    raw_variants_file = '%03d' % round_num + '_1_raw_variants.gff'
+    filtered_variants_file = '%03d' % round_num + '_2_filtered_variants.gff'
     polished_fasta = '%03d' % round_num + '_3_polish.fasta'
 
     align_pacbio_reads(fasta, args)
@@ -734,7 +734,7 @@ def print_empty_result(verbosity):
     if verbosity > 1:
         print()
     if verbosity > 0:
-        print('No variants found', flush=True)
+        print('No variants found!', flush=True)
 
 
 def print_result(variants, fasta, verbosity):

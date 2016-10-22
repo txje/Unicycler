@@ -16,7 +16,8 @@ import datetime
 import statistics
 import math
 from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter, print_table, \
-    get_percentile_sorted, get_pilon_jar_path, colour, get_all_files_in_current_dir
+    get_percentile_sorted, get_pilon_jar_path, colour, get_all_files_in_current_dir, \
+    bold_yellow_underline
 
 
 def main():
@@ -61,13 +62,13 @@ def get_arguments():
                               help='PacBio raw bax.h5 read files')
     pacbio_group.add_argument('--bam', type=str,
                               help='PacBio BAM of subreads')
-    pacbio_group.add_argument('--pb_fasta', type=str, required=True,
+    pacbio_group.add_argument('--pb_fasta', type=str,
                               help='FASTA file of PacBio reads')
 
     nanopore_group = parser.add_argument_group('Nanopore read input')
-    nanopore_group.add_argument('--on_fasta', type=str, required=True,
+    nanopore_group.add_argument('--on_fasta', type=str,
                                 help='FASTA file of Oxford Nanopore reads')
-    nanopore_group.add_argument('--on_fastq', type=str, required=True,
+    nanopore_group.add_argument('--on_fastq', type=str,
                                 help='FASTQ file of Oxford Nanopore reads')
 
     settings_group = parser.add_argument_group('Polishing settings')
@@ -683,7 +684,7 @@ def print_command(command, verbosity):
 def print_round_header(text, verbosity):
     if verbosity > 0:
         print('\n')
-        print('\033[1m' + '\033[93m' + '\033[4m' + text + '\033[0m', flush=True)
+        print(bold_yellow_underline(text), flush=True)
 
 
 def print_empty_result(verbosity):

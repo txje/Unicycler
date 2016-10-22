@@ -103,7 +103,7 @@ def get_arguments():
     other_group.add_argument('--threads', type=int, required=True,
                              help='CPU threads to use in alignment and consensus (default: '
                                   'number of CPUs)')
-    other_group.add_argument('--verbosity', type=int, required=False, default=1,
+    other_group.add_argument('--verbosity', type=int, required=False, default=2,
                              help='R|Level of stdout information (0 to 3, default: 2)\n  '
                                   '0 = no stdout, 1 = basic progress indicators, '
                                   '2 = extra info, 3 = debugging info')
@@ -347,6 +347,8 @@ def pilon_polish_small_changes(fasta, round_num, args):
         return fasta, round_num, 0
     else:
         apply_variants(fasta, variants, polished_fasta)
+        variant_rows = [x.get_output_row(False) for x in variants]
+        print_small_variant_table(variant_rows, False, args.verbosity)
         print_result(variants, polished_fasta, args.verbosity)
         return polished_fasta, round_num, len(variants)
 
@@ -672,8 +674,9 @@ def filter_small_variants(raw_variants, raw_variants_gff, filtered_variants_gff,
             variant_row.append('PASS')
         else:
             variant_row.append('FAIL')
+        variant_rows.append(variant_row)
 
-    print_small_variant_table(variant_rows, short_read_assessed)
+    print_small_variant_table(variant_rows, short_read_assessed, args.verbosity)
 
     with open(filtered_variants_gff, 'wt') as new_gff:
         with open(raw_variants_gff, 'rt') as old_gff:
@@ -965,7 +968,9 @@ class Variant(object):
             return self.original_changes_line
 
 
-def print_small_variant_table(rows, short_read_assessed):
+def print_small_variant_table(rows, short_read_assessed, verbosity):
+    if verbosity < 2:
+        return
     print()
     if short_read_assessed:
         header = ['Contig', 'Pos', 'Ref', 'Alt', 'Type', 'AO', 'RO', 'AO%', 'Result']

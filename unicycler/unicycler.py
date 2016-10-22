@@ -12,7 +12,7 @@ import sys
 import shutil
 import copy
 import random
-from multiprocessing import cpu_count
+import multiprocessing
 from .assembly_graph import AssemblyGraph
 from .bridge import create_spades_contig_bridges, \
     create_long_read_bridges, create_loop_unrolling_bridges
@@ -592,7 +592,7 @@ def get_arguments():
     try:
         args.threads
     except AttributeError:
-        args.threads = cpu_count()
+        args.threads = multiprocessing.cpu_count()
         if args.verbosity > 2:
             print('\nThread count set to', args.threads)
     try:

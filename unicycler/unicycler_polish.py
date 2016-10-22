@@ -15,14 +15,15 @@ import collections
 import datetime
 import statistics
 import math
+import multiprocessing
 from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter, print_table, \
     get_percentile_sorted, get_pilon_jar_path, colour, get_all_files_in_current_dir, \
-    bold_yellow_underline
+    bold_yellow_underline, check_file_exists
 
 
 def main():
     args, short, pacbio, nanopore = get_arguments()
-    get_tool_paths(args)
+    get_tool_paths(args, short, pacbio, nanopore)
     clean_up(args)
     current = args.assembly
     round_num = get_starting_round_number()
@@ -44,84 +45,104 @@ def main():
 
 
 def get_arguments():
-    parser = argparse.ArgumentParser(description='PacBio hybrid polishing',
+    parser = argparse.ArgumentParser(description='Unicycler polish - hybrid assembly polishing',
                                      formatter_class=MyHelpFormatter)
 
-    assembly_group = parser.add_argument_group('Assembly input')
+    assembly_group = parser.add_argument_group('Assembly')
     assembly_group.add_argument('-a', '--assembly', type=str, required=True,
-                                help='Assembly for polishing')
+                                help='Input assembly to be polished')
 
-    short_group = parser.add_argument_group('Short read input')
+    short_group = parser.add_argument_group('Short reads',
+                                            'To polish with short reads (using Pilon), provide '
+                                            'two FASTQ files of paired-end reads')
     short_group.add_argument('-1', '--short1', type=str,
                              help='FASTQ file of short reads (first reads in each pair)')
     short_group.add_argument('-2', '--short2', type=str,
                              help='FASTQ file of short reads (second reads in each pair)')
-    short_group.add_argument('--min_insert', type=int, default=argparse.SUPPRESS,
-                             help='minimum acceptable short read insert size (default: auto)')
-    short_group.add_argument('--max_insert', type=int, default=argparse.SUPPRESS,
-                             help='maximum acceptable short read insert size (default: auto)')
 
-    pacbio_group = parser.add_argument_group('PacBio read input')
+    pacbio_group = parser.add_argument_group('PacBio reads',
+                                             'To polish with PacBio reads (using Arrow), provide '
+                                             'one of the following')
     pacbio_group.add_argument('--bax', nargs='+', type=str,
                               help='PacBio raw bax.h5 read files')
     pacbio_group.add_argument('--bam', type=str,
-                              help='PacBio BAM of subreads')
+                              help='PacBio BAM read file')
     pacbio_group.add_argument('--pb_fasta', type=str,
                               help='FASTA file of PacBio reads')
 
-    nanopore_group = parser.add_argument_group('Nanopore read input')
+    nanopore_group = parser.add_argument_group('Nanopore reads',
+                                               'To polish with Nanopore reads (using Nanopolish), '
+                                               'provide one of the following')
     nanopore_group.add_argument('--on_fasta', type=str,
                                 help='FASTA file of Oxford Nanopore reads')
     nanopore_group.add_argument('--on_fastq', type=str,
                                 help='FASTQ file of Oxford Nanopore reads')
 
-    settings_group = parser.add_argument_group('Polishing settings')
+    settings_group = parser.add_argument_group('Polishing settings',
+                                               'Various settings for polishing behaviour '
+                                               '(defaults should work well in most cases)')
+    settings_group.add_argument('--min_insert', type=int, default=argparse.SUPPRESS,
+                                help='minimum valid short read insert size (default: auto)')
+    settings_group.add_argument('--max_insert', type=int, default=argparse.SUPPRESS,
+                                help='maximum valid short read insert size (default: auto)')
     settings_group.add_argument('--min_align_length', type=int, default=1000,
-                                help='Minimum long read alignment length')
+                                help='Minimum long read alignment length (default: 1000)')
     settings_group.add_argument('--homopolymer', type=int, default=4,
                                 help='Long read polish changes to a homopolymer of this length or '
-                                     'greater will be ignored')
+                                     'greater will be ignored (default: 4)')
     settings_group.add_argument('--large', type=int, default=10,
                                 help='Variants of this size or greater will be assess as large '
-                                     'variants')
+                                     'variants (default: 10)')
     settings_group.add_argument('--illumina_alt', type=float, default=10.0,
                                 help='When assessing long read changes with short read '
                                      'alignments, a variant will only be applied if the '
                                      'alternative occurrences in the short read alignments '
-                                     'exceed this percentage')
+                                     'exceed this percentage (default: 10)')
 
     other_group = parser.add_argument_group('Other settings')
     other_group.add_argument('--threads', type=int, required=True,
-                             help='CPU threads to use in alignment and consensus')
+                             help='CPU threads to use in alignment and consensus (default: '
+                                  'number of CPUs)')
     other_group.add_argument('--verbosity', type=int, required=False, default=1,
                              help='R|Level of stdout information (0 to 3, default: 2)\n  '
                                   '0 = no stdout, 1 = basic progress indicators, '
                                   '2 = extra info, 3 = debugging info')
 
-    tools_group = parser.add_argument_group('Tool locations')
-    tools_group.add_argument('--pitchfork', type=str, default='',
-                             help='Path to Pitchfork installation of PacBio tools (should contain '
-                                  'bin and lib directories)')
+    tools_group = parser.add_argument_group('Tool locations',
+                                            'If these required tools are not available in your '
+                                            'PATH variable, specify their location here '
+                                            '(depending on which input reads are used, '
+                                            'some of these tools may not be required)')
     tools_group.add_argument('--samtools', type=str, default='samtools',
                              help='path to samtools executable')
     tools_group.add_argument('--bowtie2', type=str, default='bowtie2',
                              help='path to bowtie2 executable')
+    tools_group.add_argument('--freebayes', type=str, default='freebayes',
+                             help='path to freebayes executable')
+    tools_group.add_argument('--pitchfork', type=str, default='',
+                             help='Path to Pitchfork installation of PacBio tools (should contain '
+                                  'bin and lib directories)')
     tools_group.add_argument('--bax2bam', type=str, default='bax2bam',
                              help='path to bax2bam executable')
     tools_group.add_argument('--pbalign', type=str, default='pbalign',
                              help='path to pbalign executable')
     tools_group.add_argument('--arrow', type=str, default='arrow',
                              help='path to arrow executable')
-    tools_group.add_argument('--freebayes', type=str, default='freebayes',
-                             help='path to freebayes executable')
     tools_group.add_argument('--pilon', type=str, default='pilon*.jar',
                              help='path to pilon jar file')
     tools_group.add_argument('--java', type=str, default='java',
                              help='path to java executable')
     tools_group.add_argument('--ale', type=str, default='ALE',
-                             help='path to ale executable')
+                             help='path to ALE executable')
+    tools_group.add_argument('--nanopolish', type=str, default='ALE',
+                             help='path to nanopolish executable')
 
     args = parser.parse_args()
+
+    for f in [args.assembly, args.short1, args.short2, args.bax, args.bam, args.pb_fasta,
+              args.on_fasta, args.on_fastq]:
+        if f is not None:
+            check_file_exists(f)
 
     short_read_input_count = sum(0 if x is None else 1 for x in [args.short1, args.short2])
     if short_read_input_count == 1:
@@ -144,6 +165,11 @@ def get_arguments():
         sys.exit('Error: ' + args.bam + '.pbi is missing (PacBio bam read inputs must be indexed '
                                         'with pbindex)')
 
+    if args.threads is None:
+        args.threads = multiprocessing.cpu_count()
+        if args.verbosity > 2:
+            print('\nThread count set to', args.threads)
+
     try:
         args.min_insert
     except AttributeError:
@@ -160,8 +186,8 @@ def get_arguments():
     return args, short_reads, pacbio_reads, nanopore_reads
 
 
-def clean_up(args, pbalign_alignments=True, illumina_alignments=True, indices=True,
-             large_variants=True, ale_scores=True):
+def clean_up(args, pbalign_alignments=True, illumina_alignments=True, nanopore_alignments=True,
+             indices=True, large_variants=True, ale_scores=True):
     all_files = get_all_files_in_current_dir()
     files_to_delete = []
     if pbalign_alignments:
@@ -180,55 +206,63 @@ def clean_up(args, pbalign_alignments=True, illumina_alignments=True, indices=Tr
             os.remove(f)
 
 
-def get_tool_paths(args):
+def get_tool_paths(args, short, pacbio, nanopore):
     args.samtools = shutil.which(args.samtools)
     if not args.samtools:
         sys.exit('Error: could not find samtools')
 
-    args.bowtie2 = shutil.which(args.bowtie2)
-    if not args.bowtie2:
-        sys.exit('Error: could not find bowtie2')
-    args.bowtie2_build = shutil.which(args.bowtie2 + '-build')
-    if not args.bowtie2_build:
-        sys.exit('Error: could not find bowtie2-build (it should be in the same place as bowtie2)')
+    if short:
+        args.bowtie2 = shutil.which(args.bowtie2)
+        if not args.bowtie2:
+            sys.exit('Error: could not find bowtie2')
+        args.bowtie2_build = shutil.which(args.bowtie2 + '-build')
+        if not args.bowtie2_build:
+            sys.exit('Error: could not find bowtie2-build (it should be in the same place as '
+                     'bowtie2)')
 
-    if args.pitchfork:
-        def add_to_env_var(key, new_val):
-            if key in os.environ:
-                os.environ[key] = new_val + ':' + os.environ[key]
-            else:
-                os.environ[key] = new_val
-        add_to_env_var('LD_LIBRARY_PATH', os.path.join(args.pitchfork, 'lib'))
-        add_to_env_var('PATH', os.path.join(args.pitchfork, 'bin'))
-        add_to_env_var('PYTHONPATH', os.path.join(args.pitchfork, 'lib', 'python2.7',
-                                                  'dist-packages'))
+        if args.pilon == 'pilon*.jar':
+            args.pilon = get_pilon_jar_path(None)
+        else:
+            args.pilon = get_pilon_jar_path(args.pilon)
+        if not args.pilon:
+            sys.exit('Error: could not find pilon jar file')
 
-    args.pbalign = shutil.which(args.pbalign)
-    if not args.pbalign:
-        sys.exit('Error: could not find pbalign')
+        args.java = shutil.which(args.java)
+        if not args.java:
+            sys.exit('Error: could not find java')
 
-    args.arrow = shutil.which(args.arrow)
-    if not args.arrow:
-        sys.exit('Error: could not find arrow')
+    if pacbio:
+        if args.pitchfork:
+            def add_to_env_var(key, new_val):
+                if key in os.environ:
+                    os.environ[key] = new_val + ':' + os.environ[key]
+                else:
+                    os.environ[key] = new_val
+            add_to_env_var('LD_LIBRARY_PATH', os.path.join(args.pitchfork, 'lib'))
+            add_to_env_var('PATH', os.path.join(args.pitchfork, 'bin'))
+            add_to_env_var('PYTHONPATH', os.path.join(args.pitchfork, 'lib', 'python2.7',
+                                                      'dist-packages'))
+
+        args.pbalign = shutil.which(args.pbalign)
+        if not args.pbalign:
+            sys.exit('Error: could not find pbalign')
+
+        args.arrow = shutil.which(args.arrow)
+        if not args.arrow:
+            sys.exit('Error: could not find arrow')
+
+    if nanopore:
+        args.ale = shutil.which(args.nanopolish)
+        if not args.ale:
+            sys.exit('Error: could not find nanopolish')
 
     args.freebayes = shutil.which(args.freebayes)
     if not args.freebayes:
         sys.exit('Error: could not find freebayes')
 
-    if args.pilon == 'pilon*.jar':
-        args.pilon = get_pilon_jar_path(None)
-    else:
-        args.pilon = get_pilon_jar_path(args.pilon)
-    if not args.pilon:
-        sys.exit('Error: could not find pilon jar file')
-
-    args.java = shutil.which(args.java)
-    if not args.java:
-        sys.exit('Error: could not find java')
-
     args.ale = shutil.which(args.ale)
     if not args.ale:
-        sys.exit('Error: could not find ale')
+        sys.exit('Error: could not find ALE')
 
 
 def make_reads_bam(args):

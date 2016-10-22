@@ -35,7 +35,7 @@ import random
 import shutil
 import math
 from multiprocessing.dummy import Pool as ThreadPool
-from multiprocessing import cpu_count
+import multiprocessing
 import threading
 from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
     get_mean_and_st_dev, print_progress_line, print_section_header, \
@@ -196,7 +196,7 @@ def fix_up_arguments(args):
     try:
         args.threads
     except AttributeError:
-        args.threads = cpu_count()
+        args.threads = multiprocessing.cpu_count()
         if VERBOSITY > 2:
             print('\nThread count set to', args.threads)
 

@@ -24,7 +24,7 @@ def main():
     args, short, pacbio, nanopore = get_arguments()
     get_tool_paths(args)
     clean_up(args)
-    current = args.fasta
+    current = args.assembly
     round_num = get_starting_round_number()
     shutil.copy(current, '%03d' % round_num + '_starting_sequence.fasta')
 
@@ -46,6 +46,10 @@ def main():
 def get_arguments():
     parser = argparse.ArgumentParser(description='PacBio hybrid polishing',
                                      formatter_class=MyHelpFormatter)
+
+    assembly_group = parser.add_argument_group('Assembly input')
+    assembly_group.add_argument('-a', '--assembly', type=str, required=True,
+                                help='Assembly for polishing')
 
     short_group = parser.add_argument_group('Short read input')
     short_group.add_argument('-1', '--short1', type=str,
@@ -77,12 +81,14 @@ def get_arguments():
     settings_group.add_argument('--homopolymer', type=int, default=4,
                                 help='Long read polish changes to a homopolymer of this length or '
                                      'greater will be ignored')
-    parser.add_argument('--large', type=int, default=10,
-                        help='Variants of this size or greater will be assess as large variants')
-    parser.add_argument('--illumina_alt', type=float, default=10.0,
-                        help='When assessing long read changes with short read alignments, '
-                             'a variant will only be applied if the alternative occurrences in '
-                             'the short read alignments exceed this percentage')
+    settings_group.add_argument('--large', type=int, default=10,
+                                help='Variants of this size or greater will be assess as large '
+                                     'variants')
+    settings_group.add_argument('--illumina_alt', type=float, default=10.0,
+                                help='When assessing long read changes with short read '
+                                     'alignments, a variant will only be applied if the '
+                                     'alternative occurrences in the short read alignments '
+                                     'exceed this percentage')
 
     other_group = parser.add_argument_group('Other settings')
     other_group.add_argument('--threads', type=int, required=True,

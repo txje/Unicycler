@@ -27,7 +27,7 @@ def main():
     clean_up(args)
     current = args.assembly
     round_num = get_starting_round_number()
-    shutil.copy(current, '%03d' % round_num + '_starting_sequence.fasta')
+    copy_file(current, '%03d' % round_num + '_starting_sequence.fasta', args.verbosity)
 
     if short and (args.min_insert is None or args.max_insert is None):
         get_insert_size_range(args, current)
@@ -40,7 +40,7 @@ def main():
     current, round_num = polish_large_changes_loop(current, round_num, args,
                                                    short, pacbio, nanopore)
 
-    shutil.copy(current, 'final_polish.fasta')
+    copy_file(current, 'final_polish.fasta', args.verbosity)
     print_finished('final_polish.fasta', args.verbosity)
 
 
@@ -204,6 +204,9 @@ def clean_up(args, pbalign_alignments=True, illumina_alignments=True, nanopore_a
         print_command(['rm'] + files_to_delete, args.verbosity)
         for f in files_to_delete:
             os.remove(f)
+    if os.path.isdir('temp_pilon'):
+        print_command(['rm', '-r', 'temp_pilon'], args.verbosity)
+        shutil.rmtree('temp_pilon')
 
 
 def get_tool_paths(args, short, pacbio, nanopore):
@@ -275,11 +278,9 @@ def make_reads_bam(args):
             os.remove(filename)
             files_to_delete.append(filename)
         elif 'subreads' in filename and filename.endswith('.bam'):
-            os.rename(filename, 'subreads.bam')
-            print_command(['mv', filename, 'subreads.bam'], args.verbosity)
+            rename_file(filename, 'subreads.bam', args.verbosity)
         elif 'subreads' in filename and filename.endswith('.bam.pbi'):
-            os.rename(filename, 'subreads.bam.pbi')
-            print_command(['mv', filename, 'subreads.bam.pbi'], args.verbosity)
+            rename_file(filename, 'subreads.bam.pbi', args.verbosity)
     print_command(['rm'] + files_to_delete, args.verbosity)
     files = get_all_files_in_current_dir()
     if 'subreads.bam' not in files:
@@ -338,7 +339,7 @@ def pilon_polish_small_changes(fasta, round_num, args):
     print_round_header('Round ' + str(round_num) + ': small variants', args.verbosity)
 
     variants_file = '%03d' % round_num + '_1_pilon_changes'
-    polished_fasta = '%03d' % round_num + '_3_polish.fasta'
+    polished_fasta = '%03d' % round_num + '_2_polish.fasta'
 
     variants = get_pilon_variants(fasta, args, 'bases', variants_file)
 
@@ -454,9 +455,9 @@ def polish_large_changes(fasta, round_num, args, short, pacbio, nanopore):
             save_large_variants(applied_variant, filtered_variants_file)
 
     if best_modification:
-        os.rename(best_modification, polished_fasta)
+        rename_file(best_modification, polished_fasta, args.verbosity)
     else:
-        shutil.copyfile(fasta, polished_fasta)
+        copy_file(fasta, polished_fasta, args.verbosity)
     clean_up(args)
 
     print_large_variant_table(variants, best_ale_score, initial_ale_score)
@@ -591,8 +592,7 @@ def run_pilon(fasta, args, raw_pilon_changes_filename, fix_type):
     pilon_changes = os.path.join('temp_pilon', 'pilon.changes')
     if not os.path.isfile(pilon_changes):
         sys.exit('Pilon did not produce pilon.changes')
-    shutil.copy(pilon_changes, raw_pilon_changes_filename)
-    shutil.rmtree('temp_pilon')
+    copy_file(pilon_changes, raw_pilon_changes_filename, args.verbosity)
 
 
 def get_pilon_variants(fasta, args, fix_type, raw_pilon_changes):
@@ -741,10 +741,8 @@ def print_result(variants, fasta, verbosity):
     var = ' variant' if len(variants) == 1 else ' variants'
     if verbosity > 1:
         print()
-        print(str(len(variants)) + var + ' applied')
-        print('Result:', fasta, flush=True)
-    if verbosity == 1:
-        print(str(len(variants)) + var + ' applied: ' + fasta, flush=True)
+    if verbosity > 0:
+        print(str(len(variants)) + var + ' applied, saved to: ' + fasta, flush=True)
 
 
 def print_finished(fasta, verbosity):
@@ -1050,14 +1048,20 @@ def get_insert_size_range(args, fasta):
     if min_insert == 0 or max_insert == 0:
         sys.exit('Error: could not determine Illumina reads insert size')
     clean_up(args)
-    print_insert_sizes(min_insert, mean_insert, max_insert)
     if args.min_insert is None:
         args.min_insert = min_insert
-        print('Setting minimum insert size to', args.min_insert)
-    else:
-        print('Using user-supplied min insert size:', args.min_insert)
     if args.max_insert is None:
         args.max_insert = max_insert
-        print('Using user-supplied min insert size:', args.min_insert)
-    else:
-        print('Using user-supplied max insert size:', args.max_insert)
+    if args.verbosity > 0:
+        print_insert_sizes(min_insert, mean_insert, max_insert)
+        print('\nValid insert size range:', args.min_insert, 'to', args.max_insert)
+
+
+def copy_file(source, destination, verbosity):
+    print_command(['cp', source, destination], verbosity)
+    shutil.copy(source, destination)
+
+
+def rename_file(old_name, new_name, verbosity):
+    print_command(['mv', old_name, new_name], verbosity)
+    os.rename(old_name, new_name)

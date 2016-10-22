@@ -291,10 +291,20 @@ def make_reads_bam(args):
 
 
 def pilon_polish_small_changes_loop(current, round_num, args):
+    """
+    Repeated makes applies small variants using Pilon until no more changes are suggested,
+    or all changes overlap with previous changes. This last condition is to prevent an infinite
+    loop where one base keeps changing back and forth.
+    """
+    previously_applied_variants = []
     while True:
-        current, round_num, changes = pilon_polish_small_changes(current, round_num, args)
-        if not changes:
+        current, round_num, variants = pilon_polish_small_changes(current, round_num, args)
+        if not variants:
             break
+        all_variants_overlap_previous = TO DO
+        if all_variants_overlap_previous:
+            break
+        previously_applied_variants += variants
     return current, round_num
 
 
@@ -338,7 +348,7 @@ def pilon_polish_small_changes(fasta, round_num, args):
     round_num += 1
     print_round_header('Round ' + str(round_num) + ': Pilon polish, small variants', args.verbosity)
 
-    variants_file = '%03d' % round_num + '_1_pilon_changes'
+    variants_file = '%03d' % round_num + '_1_pilon.changes'
     polished_fasta = '%03d' % round_num + '_2_polish.fasta'
 
     variants = get_pilon_variants(fasta, args, 'bases', variants_file)
@@ -351,7 +361,7 @@ def pilon_polish_small_changes(fasta, round_num, args):
         variant_rows = [x.get_output_row(False) for x in variants]
         print_small_variant_table(variant_rows, False, args.verbosity)
         print_result(variants, polished_fasta, args.verbosity)
-        return polished_fasta, round_num, len(variants)
+        return polished_fasta, round_num, variants
 
 
 def nanopore_polish_small_changes(fasta, round_num, args, short):
@@ -411,13 +421,14 @@ def pacbio_polish_small_changes(fasta, round_num, args, short):
 
 
 def polish_large_changes(fasta, round_num, args, short, pacbio, nanopore):
+    round_num += 1
     print_round_header('Round ' + str(round_num) + ': large variants', args.verbosity)
 
     variants = []
     file_num = 0
     if short:
         file_num += 1
-        pilon_variants_file = '%03d' % round_num + '_' + str(file_num) + '_pilon_variants'
+        pilon_variants_file = '%03d' % round_num + '_' + str(file_num) + '_pilon.changes'
         variants += get_pilon_variants(fasta, args, 'local', pilon_variants_file)
     if nanopore:
         file_num += 1
@@ -425,7 +436,7 @@ def polish_large_changes(fasta, round_num, args, short, pacbio, nanopore):
         variants += get_nanopolish_large_variants(fasta, args, nano_variants_file)
     if pacbio:
         file_num += 1
-        arrow_variants_file = '%03d' % round_num + '_' + str(file_num) + '_arrow_variants'
+        arrow_variants_file = '%03d' % round_num + '_' + str(file_num) + '_arrow.gff'
         variants += get_arrow_large_variants(fasta, args, arrow_variants_file)
 
     if not variants:
@@ -601,10 +612,7 @@ def get_pilon_variants(fasta, args, fix_type, raw_pilon_changes):
     align_illumina_reads(fasta, args, local=True, keep_unaligned=True)
     run_pilon(fasta, args, raw_pilon_changes, fix_type)
     clean_up(args)
-    variants = load_variants_from_pilon_changes(raw_pilon_changes, fasta, args.large)
-    if not variants:
-        os.remove(raw_pilon_changes)
-    return variants
+    return load_variants_from_pilon_changes(raw_pilon_changes, fasta, args.large)
 
 
 def get_nanopolish_large_variants(fasta, args, raw_nanopolish_variants):
@@ -742,7 +750,7 @@ def print_result(variants, fasta, verbosity):
     if verbosity > 1:
         print()
     if verbosity > 0:
-        print(str(len(variants)) + var + ' applied, saved to: ' + fasta, flush=True)
+        print(str(len(variants)) + var + ' applied, saved to ' + fasta, flush=True)
 
 
 def print_finished(fasta, verbosity):

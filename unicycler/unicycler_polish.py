@@ -976,8 +976,8 @@ def print_small_variant_table(rows, short_read_assessed, verbosity):
         header = ['Contig', 'Pos', 'Ref', 'Alt', 'Type', 'AO', 'RO', 'AO%', 'Result']
         print_table([header] + rows, alignments='LRLLLRRRR')
     else:
-        header = ['Contig', 'Pos', 'Ref', 'Alt', 'Type', 'Result']
-        print_table([header] + rows, alignments='LRLLLR')
+        header = ['Contig', 'Pos', 'Ref', 'Alt', 'Type']
+        print_table([header] + rows, alignments='LRLLL')
 
 
 def print_simple_large_variant_table(variants):

@@ -24,12 +24,11 @@ from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter, prin
 def main():
     args, short, pacbio, nanopore = get_arguments()
     get_tool_paths(args, short, pacbio, nanopore)
+    if args.verbosity > 1:
+        print()
     clean_up(args)
     current = args.assembly
     round_num = get_starting_round_number()
-
-    if args.verbosity > 1:
-        print()
     copy_file(current, '%03d' % round_num + '_starting_sequence.fasta', args.verbosity)
 
     if short and (args.min_insert is None or args.max_insert is None):
@@ -654,7 +653,10 @@ def align_illumina_reads(fasta, args, make_bam_index=True, local=False, keep_una
     samtools_sort = subprocess.Popen(samtools_sort_command, stdin=samtools_view.stdout,
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     samtools_view.stdout.close()
-    samtools_sort.communicate()
+    out, err = samtools_sort.communicate()
+    if args.verbosity > 2:
+        out += err
+        print(dim(out.decode()))
 
     if make_bam_index:
         run_command([args.samtools, 'index', bam], args)

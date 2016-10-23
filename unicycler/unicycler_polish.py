@@ -438,15 +438,14 @@ def polish_large_changes_loop(current, round_num, args, short, pacbio, nanopore)
             break
 
         # If long reads are available, we use them for the follow-up small variant polishing.
-        if pacbio or nanopore:
-            if pacbio:
-                arrow_polish_small_changes_loop(current, round_num, args, short)
-            if nanopore:
-                nanopolish_small_changes_loop(current, round_num, args, short)
+        if pacbio:
+            current, round_num = arrow_polish_small_changes_loop(current, round_num, args, short)
+        if nanopore:
+            current, round_num = nanopolish_small_changes_loop(current, round_num, args, short)
 
         # We only use short reads for follow-up small variant polishing if there are no long reads.
-        else:
-            pilon_polish_small_changes_loop(current, round_num, args)
+        if not (pacbio or nanopore):
+            current, round_num = pilon_polish_small_changes_loop(current, round_num, args)
 
     return current, round_num
 

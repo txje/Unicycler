@@ -220,7 +220,9 @@ def clean_up(args, pbalign_alignments=True, illumina_alignments=True, nanopore_a
     if illumina_alignments:
         files_to_delete += [f for f in all_files if f.startswith('illumina_align')]
     if indices:
-        files_to_delete += [f for f in all_files if f.endswith('.bt2') or f.endswith('.fai')]
+        files_to_delete += [f for f in all_files if f.endswith('.bt2') or f.endswith('.fai') or
+                            f.endswith('.amb') or f.endswith('.ann') or f.endswith('.bwt') or
+                            f.endswith('.pac') or f.endswith('.sa') or f.endswith('.bai')]
     if large_variants:
         files_to_delete += [f for f in all_files if f.startswith('large_variant_')]
     if ale_scores:
@@ -230,6 +232,7 @@ def clean_up(args, pbalign_alignments=True, illumina_alignments=True, nanopore_a
         files_to_delete += [f for f in all_files if f.endswith('_models.fofn')]
         files_to_delete += [f for f in all_files if f.endswith('.model')]
 
+    files_to_delete = sorted(list(set(files_to_delete)))
     if files_to_delete:
         print_command(['rm'] + files_to_delete, args.verbosity)
         for f in files_to_delete:

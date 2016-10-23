@@ -18,7 +18,7 @@ import math
 import multiprocessing
 from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter, print_table, \
     get_percentile_sorted, get_pilon_jar_path, colour, bold, bold_green, bold_yellow_underline, \
-    dim, get_all_files_in_current_dir, check_file_exists, convert_fastq_to_fasta
+    dim, get_all_files_in_current_dir, check_file_exists
 
 
 def main():
@@ -68,9 +68,9 @@ def get_arguments():
     pacbio_group = parser.add_argument_group('PacBio reads',
                                              'To polish with PacBio reads (using Arrow), provide '
                                              'one of the following')
-    pacbio_group.add_argument('--bax', nargs='+', type=str,
+    pacbio_group.add_argument('--pb_bax', nargs='+', type=str,
                               help='PacBio raw bax.h5 read files')
-    pacbio_group.add_argument('--bam', type=str,
+    pacbio_group.add_argument('--pb_bam', type=str,
                               help='PacBio BAM read file')
     pacbio_group.add_argument('--pb_fasta', type=str,
                               help='FASTA file of PacBio reads')
@@ -78,11 +78,11 @@ def get_arguments():
     nanopore_group = parser.add_argument_group('Nanopore reads',
                                                'To polish with Nanopore reads (using Nanopolish), '
                                                'provide one of the following')
+    nanopore_group.add_argument('--on_fast5', type=str,
+                                help='Directory containing Oxford Nanopore fast5 files')
     nanopore_group.add_argument('--on_fasta', type=str,
-                                help='FASTA file of Oxford Nanopore reads')
-    nanopore_group.add_argument('--on_fastq', type=str,
-                                help='FASTQ file of Oxford Nanopore reads')
-
+                                help='FASTA file of Oxford Nanopore reads (must have been '
+                                     'extracted from fast5 files using nanopolish extract')
     settings_group = parser.add_argument_group('Polishing settings',
                                                'Various settings for polishing behaviour '
                                                '(defaults should work well in most cases)')
@@ -148,8 +148,8 @@ def get_arguments():
 
     args = parser.parse_args()
 
-    for f in [args.assembly, args.short1, args.short2, args.bax, args.bam, args.pb_fasta,
-              args.on_fasta, args.on_fastq]:
+    for f in [args.assembly, args.short1, args.short2, args.pb_bax, args.pb_bam, args.pb_fasta,
+              args.on_fast5, args.on_fasta]:
         if f is not None:
             check_file_exists(f)
 
@@ -157,22 +157,23 @@ def get_arguments():
     if short_read_input_count == 1:
         parser.error('you must provide both short read files (with -1 and -2) or neither of them')
 
-    pacbio_input_count = sum(0 if x is None else 1 for x in [args.bax, args.bam, args.pb_fasta])
+    pacbio_input_count = sum(0 if x is None else 1 for x in [args.pb_bax, args.pb_bam, 
+                                                             args.pb_fasta])
     if pacbio_input_count > 1:
-        parser.error('only one of the following PacBio inputs can be used: --bax, --bam, '
+        parser.error('only one of the following PacBio inputs can be used: --pb_bax, --pb_bam, '
                      '--pb_fasta')
 
-    nanopore_input_count = sum(0 if x is None else 1 for x in [args.on_fasta, args.on_fastq])
+    nanopore_input_count = sum(0 if x is None else 1 for x in [args.on_fast5, args.on_fasta])
     if nanopore_input_count > 1:
-        parser.error('only one of the following Nanopore inputs can be used: --on_fasta, '
-                     '--on_fastq')
+        parser.error('only one of the following Nanopore inputs can be used: --on_fast5, '
+                     '--on_fasta')
 
     if not short_read_input_count and not pacbio_input_count and not nanopore_input_count:
         parser.error('at least one type of input reads is required')
 
-    if args.bam and not os.path.isfile(args.bam + '.pbi'):
-        sys.exit('Error: ' + args.bam + '.pbi is missing (PacBio bam read inputs must be indexed '
-                                        'with pbindex)')
+    if args.pb_bam and not os.path.isfile(args.pb_bam + '.pbi'):
+        sys.exit('Error: ' + args.pb_bam + '.pbi is missing (PacBio bam read inputs must be '
+                                           'indexed with pbindex)')
 
     short_reads = short_read_input_count == 2
     pacbio_reads = pacbio_input_count == 1
@@ -192,6 +193,11 @@ def get_arguments():
         if not args.nanopolish_model_files:
             parser.error('Nanopolish model files are missing from ' + args.nanopolish_model_dir)
         args.nanopolish_model_files.append(nanopolish_model_fofn)
+        if args.fast5:
+            if not os.path.isdir(args.fast5):
+                parser.error(args.fast5 + ' is not a directory')
+            if not any(f.lower().endswith('.fast5') for f in os.listdir(args.fast5)):
+                parser.error('there are no *.fast5 files in ' + args.fast5)
 
     if args.threads is None:
         args.threads = multiprocessing.cpu_count()
@@ -307,24 +313,32 @@ def get_tool_paths(args, short, pacbio, nanopore):
 
 def make_reads_bam(args):
     print_round_header('Converting bax.h5 reads to BAM format', args.verbosity)
-    command = [args.bax2bam] + args.bax
-    run_command(command, args)
+    args.pb_bam = 'subreads.bam'
+    run_command([args.bax2bam] + args.pb_bax, args)
     files_to_delete = []
     for filename in get_all_files_in_current_dir():
         if 'scrap' in filename:
             os.remove(filename)
             files_to_delete.append(filename)
         elif 'subreads' in filename and filename.endswith('.bam'):
-            rename_file(filename, 'subreads.bam', args.verbosity)
+            rename_file(filename, args.pb_bam, args.verbosity)
         elif 'subreads' in filename and filename.endswith('.bam.pbi'):
-            rename_file(filename, 'subreads.bam.pbi', args.verbosity)
+            rename_file(filename, args.pb_bam + '.pbi', args.verbosity)
     print_command(['rm'] + files_to_delete, args.verbosity)
     files = get_all_files_in_current_dir()
-    if 'subreads.bam' not in files:
-        sys.exit('Error: bax2bam failed to make subreads.bam')
-    if 'subreads.bam.pbi' not in files:
-        sys.exit('Error: bax2bam failed to make subreads.bam.pbi')
-    args.bam = 'subreads.bam'
+    if args.pb_bam not in files:
+        sys.exit('Error: bax2bam failed to make ' + args.pb_bam)
+    if (args.pb_bam + '.pbi') not in files:
+        sys.exit('Error: bax2bam failed to make ' + args.pb_bam + '.pbi')
+
+
+def make_on_fasta(args):
+    print_round_header('Converting FAST5 reads to FASTA format', args.verbosity)
+    args.on_fasta = 'nanopore_reads.fasta'
+    command = [args.nanopolish, 'extract', args.on_fast5, '-o', args.on_fasta]
+    run_command(command, args)
+    if args.on_fasta not in get_all_files_in_current_dir():
+        sys.exit('Error: nanopolish extract failed to make ' + args.on_fasta)
 
 
 def pilon_polish_small_changes_loop(current, round_num, args):
@@ -354,7 +368,7 @@ def arrow_polish_small_changes_loop(current, round_num, args, short):
     Repeatedly apply small variants using Arrow.
     """
     # Convert bax.h5 files to a PacBio BAM, if necessary.
-    if args.bax and not args.bam:
+    if args.pb_bax and not args.pb_bam:
         make_reads_bam(args)
 
     previously_applied_variants = []
@@ -379,6 +393,10 @@ def nanopolish_small_changes_loop(current, round_num, args, short):
     """
     Repeatedly apply small variants using Nanopolish.
     """
+    # Convert FAST5 files to a Nanopolish FASTA, if necessary.
+    if args.on_fast5 and not args.on_fasta:
+        make_on_fasta(args)
+
     previously_applied_variants = []
     while True:
         current, round_num, variants = nanopolish_small_changes(current, round_num, args, short)
@@ -610,7 +628,7 @@ def align_pacbio_reads(fasta, args):
     command = [args.pbalign, '--nproc', str(args.threads),
                '--minLength', str(args.min_align_length),
                '--algorithmOptions="--minRawSubreadScore 800 --bestn 1"',
-               args.bam, fasta, 'pbalign_alignments.bam']
+               args.pb_bam, fasta, 'pbalign_alignments.bam']
     run_command(command, args)
     files = get_all_files_in_current_dir()
     if 'pbalign_alignments.bam' not in files:
@@ -622,12 +640,11 @@ def align_pacbio_reads(fasta, args):
 
 
 def align_nanopore_reads(fasta, args):
-    nanopore_reads = args.on_fasta if args.on_fasta else args.on_fastq
     bam = 'nanopore_alignments.bam'
 
     run_command([args.bwa, 'index', fasta], args)
 
-    bwa_command = [args.bwa, 'mem', '-x', 'ont2d', '-t', str(args.threads), fasta, nanopore_reads]
+    bwa_command = [args.bwa, 'mem', '-x', 'ont2d', '-t', str(args.threads), fasta, args.on_fasta]
     samtools_view_command = [args.samtools, 'view', '-hu', '-']
     samtools_sort_command = [args.samtools, 'sort', '-@', str(args.threads), '-o', bam, '-']
     print_command(bwa_command + ['|'] + samtools_view_command + ['|'] + samtools_sort_command,
@@ -739,16 +756,8 @@ def run_nanopolish(fasta, args, raw_variants_filename):
     bam_1 = 'nanopore_alignments.bam'
     bam_2 = 'nanopolish_eventalign.bam'
 
-    # Nanopolish needs reads in FASTA format, so if that's how the user provided them, great. If,
-    # however, the user gave FASTQ reads, then we need to convert them.
-    if args.on_fastq:
-        convert_fastq_to_fasta(args.on_fastq, 'nanopore_reads.fasta')
-        nanopore_reads = 'nanopore_reads.fasta'
-    else:
-        nanopore_reads = args.on_fasta
-
     nanopolish_command = [args.nanopolish, 'eventalign', '-t', str(args.threads), '--sam',
-                          '-r', nanopore_reads, '-b', bam_1, '-g', fasta,
+                          '-r', args.on_fasta, '-b', bam_1, '-g', fasta,
                           '--models', args.nanopolish_model_files[-1]]
     samtools_view_command = [args.samtools, 'view', '-hu', '-']
     samtools_sort_command = [args.samtools, 'sort', '-@', str(args.threads), '-o', bam_2, '-']
@@ -771,7 +780,7 @@ def run_nanopolish(fasta, args, raw_variants_filename):
 
     run_command([args.samtools, 'index', bam_2], args)
 
-    nanopolish_command = [args.nanopolish, 'variants', '-r', nanopore_reads, '-b', bam_1,
+    nanopolish_command = [args.nanopolish, 'variants', '-r', args.on_fasta, '-b', bam_1,
                           '-g', fasta, '-e', bam_2, '-t', str(args.threads),
                           '--min-candidate-frequency', '0.1', '-o', raw_variants_filename,
                           '--models', args.nanopolish_model_files[-1]]

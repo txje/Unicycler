@@ -552,6 +552,7 @@ def polish_large_changes(fasta, round_num, args, short, pacbio, nanopore):
         variants += get_arrow_large_variants(fasta, args, arrow_variants_file)
 
     if not variants:
+        clean_up(args)
         print_empty_result(args.verbosity)
         return fasta, round_num, []
 

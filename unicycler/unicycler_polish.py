@@ -46,10 +46,7 @@ def main():
     current, round_num = polish_large_changes_loop(current, round_num, args,
                                                    short, pacbio, nanopore)
 
-    if args.verbosity > 1:
-        print()
-    copy_file(current, 'final_polish.fasta', args.verbosity)
-    print_finished('final_polish.fasta', args.verbosity)
+    finish(current, round_num, args)
 
 
 def get_arguments():
@@ -189,8 +186,9 @@ def get_arguments():
         nanopolish_model_fofn = os.path.join(args.nanopolish_model_dir, 'nanopolish_models.fofn')
         if not os.path.isfile(nanopolish_model_fofn):
             parser.error(nanopolish_model_fofn + ' is missing from ' + args.nanopolish_model_dir)
-        args.nanopolish_model_files = [f for f in os.listdir(args.nanopolish_model_dir)
-                                       if os.path.isfile(f) and f.endswith('.model')]
+        args.nanopolish_model_files = [os.path.join(args.nanopolish_model_dir, f)
+                                       for f in os.listdir(args.nanopolish_model_dir)
+                                       if f.endswith('.model')]
         if not args.nanopolish_model_files:
             parser.error('Nanopolish model files are missing from ' + args.nanopolish_model_dir)
         args.nanopolish_model_files.append(nanopolish_model_fofn)
@@ -734,7 +732,7 @@ def run_arrow(fasta, args, raw_variants_filename):
 
 
 def run_nanopolish(fasta, args, raw_variants_filename):
-    copy_files(args.nanopolish_model_files, '.', args)
+    copy_files(args.nanopolish_model_files, '.', args.verbosity)
     bam_1 = 'nanopore_alignments.bam'
     bam_2 = 'nanopolish_eventalign.bam'
 
@@ -880,10 +878,15 @@ def print_result(variants, fasta, verbosity):
             print('No variants applied', flush=True)
 
 
-def print_finished(fasta, verbosity):
-    if verbosity > 0:
+def finish(current, round_num, args):
+    round_num += 1
+    final_fasta = '%03d' % round_num + '_final_polish.fasta'
+    if args.verbosity > 1:
         print()
-        print('All done! Final assembly: ' + bold_green(fasta), flush=True)
+    copy_file(current, final_fasta, args.verbosity)
+    if args.verbosity > 0:
+        print()
+        print('All done! Final assembly: ' + bold_green(final_fasta), flush=True)
         print()
 
 

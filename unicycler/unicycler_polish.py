@@ -18,7 +18,7 @@ import math
 import multiprocessing
 from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter, print_table, \
     get_percentile_sorted, get_pilon_jar_path, colour, bold, bold_green, bold_yellow_underline, \
-    dim, get_all_files_in_current_dir, check_file_exists
+    dim, get_all_files_in_current_dir, check_file_exists, convert_fastq_to_fasta
 
 
 def main():
@@ -142,8 +142,12 @@ def get_arguments():
                              help='path to java executable')
     tools_group.add_argument('--ale', type=str, default='ALE',
                              help='path to ALE executable')
-    tools_group.add_argument('--nanopolish', type=str, default='ALE',
+    tools_group.add_argument('--bwa', type=str, default='bwa',
+                             help='path to bwa executable')
+    tools_group.add_argument('--nanopolish', type=str, default='nanopolish',
                              help='path to nanopolish executable')
+    tools_group.add_argument('--nanopolish_model_dir', type=str,
+                             help='path to nanopolish models directory')
 
     args = parser.parse_args()
 
@@ -173,6 +177,24 @@ def get_arguments():
         sys.exit('Error: ' + args.bam + '.pbi is missing (PacBio bam read inputs must be indexed '
                                         'with pbindex)')
 
+    short_reads = short_read_input_count == 2
+    pacbio_reads = pacbio_input_count == 1
+    nanopore_reads = nanopore_input_count == 1
+
+    if nanopore_reads:
+        if not args.nanopolish_model_dir:
+            parser.error('--nanopolish_model_dir is required when polishing with Nanopore reads')
+        if not os.path.isdir(args.nanopolish_model_dir):
+            parser.error(args.nanopolish_model_dir + ' is not a directory')
+        nanopolish_model_fofn = os.path.join(args.nanopolish_model_dir, 'nanopolish_models.fofn')
+        if not os.path.isfile(nanopolish_model_fofn):
+            parser.error(nanopolish_model_fofn + ' is missing from ' + args.nanopolish_model_dir)
+        args.nanopolish_model_files = [f for f in os.listdir(args.nanopolish_model_dir)
+                                       if os.path.isfile(f) and f.endswith('.model')]
+        if not args.nanopolish_model_files:
+            parser.error('Nanopolish model files are missing from ' + args.nanopolish_model_dir)
+        args.nanopolish_model_files.append(nanopolish_model_fofn)
+
     if args.threads is None:
         args.threads = multiprocessing.cpu_count()
         if args.verbosity > 2:
@@ -187,10 +209,6 @@ def get_arguments():
     except AttributeError:
         args.max_insert = None
 
-    short_reads = short_read_input_count == 2
-    pacbio_reads = pacbio_input_count == 1
-    nanopore_reads = nanopore_input_count == 1
-
     return args, short_reads, pacbio_reads, nanopore_reads
 
 
@@ -198,6 +216,7 @@ def clean_up(args, pbalign_alignments=True, illumina_alignments=True, nanopore_a
              indices=True, large_variants=True, ale_scores=True):
     all_files = get_all_files_in_current_dir()
     files_to_delete = []
+
     if pbalign_alignments:
         files_to_delete += [f for f in all_files if f.startswith('pbalign_align')]
     if illumina_alignments:
@@ -208,6 +227,11 @@ def clean_up(args, pbalign_alignments=True, illumina_alignments=True, nanopore_a
         files_to_delete += [f for f in all_files if f.startswith('large_variant_')]
     if ale_scores:
         files_to_delete += [f for f in all_files if f.startswith('ale.out')]
+    if nanopore_alignments:
+        files_to_delete += [f for f in all_files if f.startswith('nanopore_align')]
+        files_to_delete += [f for f in all_files if f.endswith('_models.fofn')]
+        files_to_delete += [f for f in all_files if f.endswith('.model')]
+
     if files_to_delete:
         print_command(['rm'] + files_to_delete, args.verbosity)
         for f in files_to_delete:
@@ -263,8 +287,12 @@ def get_tool_paths(args, short, pacbio, nanopore):
             sys.exit('Error: could not find arrow')
 
     if nanopore:
-        args.ale = shutil.which(args.nanopolish)
-        if not args.ale:
+        args.bwa = shutil.which(args.bwa)
+        if not args.bwa:
+            sys.exit('Error: could not find bwa')
+
+        args.nanopolish = shutil.which(args.nanopolish)
+        if not args.nanopolish:
             sys.exit('Error: could not find nanopolish')
 
     args.freebayes = shutil.which(args.freebayes)
@@ -442,7 +470,7 @@ def nanopolish_small_changes(fasta, round_num, args, short):
         align_illumina_reads(fasta, args, local=False)
         for variant in small_variants:
             variant.assess_against_illumina_alignments(fasta, args)
-        clean_up(args)
+    clean_up(args)
 
     filtered_variants = filter_small_variants(small_variants, raw_variants_file,
                                               filtered_variants_file, args, short)
@@ -473,7 +501,7 @@ def arrow_polish_small_changes(fasta, round_num, args, short):
         align_illumina_reads(fasta, args, local=False)
         for variant in small_variants:
             variant.assess_against_illumina_alignments(fasta, args)
-        clean_up(args)
+    clean_up(args)
 
     filtered_variants = filter_small_variants(small_variants, raw_variants_file,
                                               filtered_variants_file, args, short)
@@ -578,13 +606,10 @@ def run_ale(fasta, args, all_ale_outputs):
 
 
 def align_pacbio_reads(fasta, args):
-    command = [args.pbalign,
-               '--nproc', str(args.threads),
+    command = [args.pbalign, '--nproc', str(args.threads),
                '--minLength', str(args.min_align_length),
                '--algorithmOptions="--minRawSubreadScore 800 --bestn 1"',
-               args.bam,
-               fasta,
-               'pbalign_alignments.bam']
+               args.bam, fasta, 'pbalign_alignments.bam']
     run_command(command, args)
     files = get_all_files_in_current_dir()
     if 'pbalign_alignments.bam' not in files:
@@ -596,23 +621,30 @@ def align_pacbio_reads(fasta, args):
 
 
 def align_nanopore_reads(fasta, args):
-    pass
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
+    nanopore_reads = args.on_fasta if args.on_fasta else args.on_fastq
+    bam = 'nanopore_alignments.bam'
+
+    run_command([args.bwa, 'index', fasta], args)
+
+    bwa_command = [args.bwa, 'mem', '-x', 'ont2d', '-t', str(args.threads), fasta, nanopore_reads]
+    samtools_view_command = [args.samtools, 'view', '-hu', '-']
+    samtools_sort_command = [args.samtools, 'sort', '-@', str(args.threads), '-o', bam, '-']
+    print_command(bwa_command + ['|'] + samtools_view_command + ['|'] + samtools_sort_command,
+                  args.verbosity)
+
+    bwa = subprocess.Popen(bwa_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    samtools_view = subprocess.Popen(samtools_view_command, stdin=bwa.stdout,
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    bwa.stdout.close()
+    samtools_sort = subprocess.Popen(samtools_sort_command, stdin=samtools_view.stdout,
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    samtools_view.stdout.close()
+    out, err = samtools_sort.communicate()
+    if args.verbosity > 2:
+        out = bwa.stderr.read() + samtools_view.stderr.read() + out + err
+        print(dim(out.decode()))
+
+    run_command([args.samtools, 'index', bam], args)
 
 
 def align_illumina_reads(fasta, args, make_bam_index=True, local=False, keep_unaligned=False,
@@ -635,14 +667,9 @@ def align_illumina_reads(fasta, args, make_bam_index=True, local=False, keep_una
         bowtie2_command += ['--no-unal']
     bowtie2_command += ['--threads', str(args.threads),
                         '-I', str(min_insert), '-X', str(max_insert),
-                        '-x', index,
-                        '-1', args.short1, '-2', args.short2]
-
+                        '-x', index, '-1', args.short1, '-2', args.short2]
     samtools_view_command = [args.samtools, 'view', '-hu', '-']
-    samtools_sort_command = [args.samtools, 'sort',
-                             '-@', str(args.threads),
-                             '-o', 'illumina_alignments.bam',
-                             '-']
+    samtools_sort_command = [args.samtools, 'sort', '-@', str(args.threads), '-o', bam, '-']
     print_command(bowtie2_command + ['|'] + samtools_view_command + ['|'] + samtools_sort_command,
                   args.verbosity)
 
@@ -663,11 +690,8 @@ def align_illumina_reads(fasta, args, make_bam_index=True, local=False, keep_una
 
 
 def run_pilon(fasta, args, raw_pilon_changes_filename, fix_type):
-    pilon_command = [args.java, '-jar', args.pilon,
-                     '--genome', fasta,
-                     '--frags', 'illumina_alignments.bam',
-                     '--fix', fix_type,
-                     '--changes',
+    pilon_command = [args.java, '-jar', args.pilon, '--genome', fasta,
+                     '--frags', 'illumina_alignments.bam', '--fix', fix_type, '--changes',
                      '--outdir', 'temp_pilon']
     run_command(pilon_command, args)
 
@@ -702,31 +726,60 @@ def get_arrow_large_variants(fasta, args, raw_arrow_variants):
 
 def run_arrow(fasta, args, raw_variants_filename):
     subprocess.call([args.samtools, 'faidx', fasta])
-    command = [args.arrow,
-               'pbalign_alignments.bam',
-               '-j', str(args.threads),
-               '--noEvidenceConsensusCall', 'reference',
-               '-r', fasta,
-               '-o', raw_variants_filename]
+    command = [args.arrow, 'pbalign_alignments.bam', '-j', str(args.threads),
+               '--noEvidenceConsensusCall', 'reference', '-r', fasta, '-o', raw_variants_filename]
     run_command(command, args)
     if raw_variants_filename not in get_all_files_in_current_dir():
-        sys.exit('Error: arrow failed to make ' + raw_variants_filename)
+        sys.exit('Error: Arrow failed to make ' + raw_variants_filename)
 
 
-def run_nanopolish(fasta, args, raw_variants_file):
-    pass
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
-    # TO DO
+def run_nanopolish(fasta, args, raw_variants_filename):
+    copy_files(args.nanopolish_model_files, '.', args)
+    bam_1 = 'nanopore_alignments.bam'
+    bam_2 = 'nanopolish_eventalign.bam'
+
+    # Nanopolish needs reads in FASTA format, so if that's how the user provided them, great. If,
+    # however, the user gave FASTQ reads, then we need to convert them.
+    if args.on_fastq:
+        convert_fastq_to_fasta(args.on_fastq, 'nanopore_reads.fasta')
+        nanopore_reads = 'nanopore_reads.fasta'
+    else:
+        nanopore_reads = args.on_fasta
+
+    nanopolish_command = [args.nanopolish, 'eventalign', '-t', str(args.threads), '--sam',
+                          '-r', nanopore_reads, '-b', bam_1, '-g', fasta,
+                          '--models', args.nanopolish_model_files[-1]]
+    samtools_view_command = [args.samtools, 'view', '-hu', '-']
+    samtools_sort_command = [args.samtools, 'sort', '-@', str(args.threads), '-o', bam_2, '-']
+
+    print_command(nanopolish_command + ['|'] + samtools_view_command + ['|'] +
+                  samtools_sort_command, args.verbosity)
+
+    nanopolish = subprocess.Popen(nanopolish_command, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE)
+    samtools_view = subprocess.Popen(samtools_view_command, stdin=nanopolish.stdout,
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    nanopolish.stdout.close()
+    samtools_sort = subprocess.Popen(samtools_sort_command, stdin=samtools_view.stdout,
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    samtools_view.stdout.close()
+    out, err = samtools_sort.communicate()
+    if args.verbosity > 2:
+        out = nanopolish.stderr.read() + samtools_view.stderr.read() + out + err
+        print(dim(out.decode()))
+
+    run_command([args.samtools, 'index', bam_2], args)
+
+    nanopolish_command = [args.nanopolish, 'variants', '-r', nanopore_reads, '-b', bam_1,
+                          '-g', fasta, '-e', bam_2, '-t', str(args.threads),
+                          '--min-candidate-frequency', '0.1', '-o', raw_variants_filename,
+                          '--models', args.nanopolish_model_files[-1]]
+
+    run_command(nanopolish_command, args)
+    if raw_variants_filename not in get_all_files_in_current_dir():
+        sys.exit('Error: Nanopolish failed to make ' + raw_variants_filename)
+
+    clean_up(args)
 
 
 def filter_small_variants(raw_variants, raw_variants_gff, filtered_variants_gff, args,
@@ -838,7 +891,9 @@ def run_command(command, args):
     print_command(command, args.verbosity)
     try:
         out = subprocess.check_output(command, stderr=subprocess.STDOUT, shell=False)
-        if args.verbosity > 2:
+
+        # bowtie2-build outputs too much, even for verbose mode.
+        if args.verbosity > 2 and 'bowtie2-build' not in command[0]:
             print(dim(out.decode()))
     except subprocess.CalledProcessError as e:
         sys.exit(e.output.decode())
@@ -1158,6 +1213,12 @@ def get_insert_size_range(args, fasta):
 def copy_file(source, destination, verbosity):
     print_command(['cp', source, destination], verbosity)
     shutil.copy(source, destination)
+
+
+def copy_files(source_files, destination_dir, verbosity):
+    print_command(['cp'] + source_files + [destination_dir], verbosity)
+    for source in source_files:
+        shutil.copy(source, destination_dir)
 
 
 def rename_file(old_name, new_name, verbosity):

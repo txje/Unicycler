@@ -635,3 +635,19 @@ def bold_yellow_underline(text):
 
 def get_all_files_in_current_dir():
     return [f for f in os.listdir('.') if os.path.isfile(f)]
+
+
+def convert_fastq_to_fasta(fastq, fasta):
+    if get_compression_type(fastq) == 'gz':
+        open_func = gzip.open
+    else:  # plain text
+        open_func = open
+    with open_func(fastq, 'rt') as fastq:
+        with open(fasta, 'wt') as fasta:
+            for line in fastq:
+                name = line.strip()[1:].split()[0]
+                sequence = next(fastq).strip()
+                _ = next(fastq)
+                _ = next(fastq)
+                fasta.write('>' + name + '\n')
+                fasta.write(sequence + '\n')

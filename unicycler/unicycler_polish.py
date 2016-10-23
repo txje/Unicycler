@@ -655,7 +655,7 @@ def align_illumina_reads(fasta, args, make_bam_index=True, local=False, keep_una
     samtools_view.stdout.close()
     out, err = samtools_sort.communicate()
     if args.verbosity > 2:
-        out += err
+        out = bowtie2.stderr.read() + samtools_sort.stderr.read() + out + err
         print(dim(out.decode()))
 
     if make_bam_index:

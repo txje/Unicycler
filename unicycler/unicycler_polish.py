@@ -27,6 +27,9 @@ def main():
     clean_up(args)
     current = args.assembly
     round_num = get_starting_round_number()
+
+    if args.verbosity > 1:
+        print()
     copy_file(current, '%03d' % round_num + '_starting_sequence.fasta', args.verbosity)
 
     if short and (args.min_insert is None or args.max_insert is None):
@@ -834,7 +837,7 @@ def run_command(command, args):
     try:
         out = subprocess.check_output(command, stderr=subprocess.STDOUT, shell=False)
         if args.verbosity > 2:
-            print(dim(out))
+            print(dim(out.decode()))
     except subprocess.CalledProcessError as e:
         sys.exit(e.output.decode())
 

@@ -609,8 +609,16 @@ def green(text):
     return '\033[32m' + text + '\033[0m'
 
 
+def bold_green(text):
+    return '\033[1m' + '\033[32m' + text + '\033[0m'
+
+
 def red(text):
     return '\033[31m' + text + '\033[0m'
+
+
+def bold(text):
+    return '\033[1m' + text + '\033[0m'
 
 
 def bold_underline(text):

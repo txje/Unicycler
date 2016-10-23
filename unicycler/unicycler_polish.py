@@ -17,8 +17,8 @@ import statistics
 import math
 import multiprocessing
 from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter, print_table, \
-    get_percentile_sorted, get_pilon_jar_path, colour, get_all_files_in_current_dir, \
-    bold_yellow_underline, check_file_exists
+    get_percentile_sorted, get_pilon_jar_path, colour, bold, bold_green, bold_yellow_underline, \
+    get_all_files_in_current_dir, check_file_exists
 
 
 def main():
@@ -43,6 +43,7 @@ def main():
 
     current, round_num = polish_large_changes_loop(current, round_num, args,
                                                    short, pacbio, nanopore)
+
     if args.verbosity > 1:
         print()
     copy_file(current, 'final_polish.fasta', args.verbosity)
@@ -794,7 +795,7 @@ def print_command(command, verbosity):
     if verbosity > 1:
         timestamp = '{:%Y-%m-%d %H:%M:%S}'.format(datetime.datetime.now())
         command = [os.path.basename(command[0])] + command[1:]  # Remove path from program name
-        print('\033[1m' + timestamp + '\033[0m' + '  ' + ' '.join(command), flush=True)
+        print(bold(timestamp) + '   ' + ' '.join(command), flush=True)
 
 
 def print_round_header(text, verbosity):
@@ -824,8 +825,8 @@ def print_result(variants, fasta, verbosity):
 def print_finished(fasta, verbosity):
     if verbosity > 0:
         print()
-        result = 'All done! Final assembly: ' + fasta
-        print('\033[1m' + '\033[32m' + result + '\033[0m', flush=True)
+        print('All done! Final assembly: ' + bold_green(fasta), flush=True)
+        print()
 
 
 def run_command(command, args):

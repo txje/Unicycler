@@ -16,6 +16,7 @@ import datetime
 import statistics
 import math
 import multiprocessing
+import io
 from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter, print_table, \
     get_percentile_sorted, get_pilon_jar_path, colour, bold, bold_green, bold_yellow_underline, \
     dim, get_all_files_in_current_dir, check_file_exists
@@ -646,17 +647,20 @@ def align_illumina_reads(fasta, args, make_bam_index=True, local=False, keep_una
     print_command(bowtie2_command + ['|'] + samtools_view_command + ['|'] + samtools_sort_command,
                   args.verbosity)
 
-    bowtie2 = subprocess.Popen(bowtie2_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    bowtie2_stderr = io.StringIO()
+    bowtie2 = subprocess.Popen(bowtie2_command, stdout=subprocess.PIPE, stderr=bowtie2_stderr)
+
+    samtools_view_stderr = io.StringIO()
     samtools_view = subprocess.Popen(samtools_view_command, stdin=bowtie2.stdout,
-                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                     stdout=subprocess.PIPE, stderr=samtools_view_stderr)
     bowtie2.stdout.close()
     samtools_sort = subprocess.Popen(samtools_sort_command, stdin=samtools_view.stdout,
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     samtools_view.stdout.close()
     out, err = samtools_sort.communicate()
     if args.verbosity > 2:
-        out = bowtie2.stderr.read() + samtools_sort.stderr.read() + out + err
-        print(dim(out.decode()))
+        print(dim(bowtie2_stderr.getvalue() + samtools_view_stderr.getvalue() + out.decode() +
+                  err.decode()))
 
     if make_bam_index:
         run_command([args.samtools, 'index', bam], args)

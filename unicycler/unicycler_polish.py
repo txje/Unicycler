@@ -101,11 +101,11 @@ def get_arguments():
     settings_group.add_argument('--large', type=int, default=10,
                                 help='Variants of this size or greater will be assess as large '
                                      'variants (default: 10)')
-    settings_group.add_argument('--illumina_alt', type=float, default=10.0,
+    settings_group.add_argument('--illumina_alt', type=float, default=5.0,
                                 help='When assessing long read changes with short read '
                                      'alignments, a variant will only be applied if the '
                                      'alternative occurrences in the short read alignments '
-                                     'exceed this percentage (default: 10)')
+                                     'exceed this percentage (default: 5)')
 
     other_group = parser.add_argument_group('Other settings')
     other_group.add_argument('--threads', type=int, required=True,
@@ -1000,9 +1000,13 @@ class Variant(object):
                            if x and not x.startswith('#')]
         for line in freebayes_lines:
             line_parts = line.split('\t')
+
+            # We will take the max alt percent for all the freebayes variants which overlap with
+            # this variant.
             start_pos = int(line_parts[1]) - 1
             end_pos = start_pos + len(line_parts[3]) - 1  # inclusive end
-            if start_pos <= self.start_pos <= end_pos:
+            overlap = any(start_pos <= x <= end_pos for x in range(self.start_pos, self.end_pos))
+            if overlap:
                 if args.verbosity > 2:
                     print(line)
                 ref_occurrences = int(line.split(';RO=')[1].split(';')[0])

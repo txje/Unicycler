@@ -43,7 +43,8 @@ def main():
 
     current, round_num = polish_large_changes_loop(current, round_num, args,
                                                    short, pacbio, nanopore)
-
+    if args.verbosity > 1:
+        print()
     copy_file(current, 'final_polish.fasta', args.verbosity)
     print_finished('final_polish.fasta', args.verbosity)
 
@@ -442,10 +443,13 @@ def nanopolish_small_changes(fasta, round_num, args, short):
 
     filtered_variants = filter_small_variants(small_variants, raw_variants_file,
                                               filtered_variants_file, args, short)
-    apply_variants(fasta, filtered_variants, polished_fasta)
-
+    if filtered_variants:
+        apply_variants(fasta, filtered_variants, polished_fasta)
+        current = polished_fasta
+    else:
+        current = fasta
     print_result(filtered_variants, polished_fasta, args.verbosity)
-    return polished_fasta, round_num, filtered_variants
+    return current, round_num, filtered_variants
 
 
 def arrow_polish_small_changes(fasta, round_num, args, short):
@@ -470,10 +474,13 @@ def arrow_polish_small_changes(fasta, round_num, args, short):
 
     filtered_variants = filter_small_variants(small_variants, raw_variants_file,
                                               filtered_variants_file, args, short)
-    apply_variants(fasta, filtered_variants, polished_fasta)
-
+    if filtered_variants:
+        apply_variants(fasta, filtered_variants, polished_fasta)
+        current = polished_fasta
+    else:
+        current = fasta
     print_result(filtered_variants, polished_fasta, args.verbosity)
-    return polished_fasta, round_num, filtered_variants
+    return current, round_num, filtered_variants
 
 
 def polish_large_changes(fasta, round_num, args, short, pacbio, nanopore):
@@ -497,10 +504,10 @@ def polish_large_changes(fasta, round_num, args, short, pacbio, nanopore):
 
     if not variants:
         print_empty_result(args.verbosity)
-        return fasta, 0
+        return fasta, round_num, []
 
-    filtered_variants_file = '%03d' % round_num + '_' + str(file_num+1) + '_filtered_variants'
-    ale_outputs = '%03d' % round_num + '_' + str(file_num+2) + '_ALE_output'
+    ale_outputs = '%03d' % round_num + '_' + str(file_num+1) + '_ALE_output'
+    filtered_variants_file = '%03d' % round_num + '_' + str(file_num+2) + '_filtered_variants'
     polished_fasta = '%03d' % round_num + '_' + str(file_num+3) + '_polish.fasta'
 
     open(filtered_variants_file, 'a').close()
@@ -528,9 +535,10 @@ def polish_large_changes(fasta, round_num, args, short, pacbio, nanopore):
     clean_up(args)
 
     print_large_variant_table(variants, best_ale_score, initial_ale_score)
-
     print_result(applied_variant, polished_fasta, args.verbosity)
-    return polished_fasta, applied_variant
+
+    current = polished_fasta if applied_variant else fasta
+    return current, round_num, applied_variant
 
 
 def run_ale(fasta, args, all_ale_outputs):
@@ -555,7 +563,8 @@ def run_ale(fasta, args, all_ale_outputs):
     with open(ale_output, 'rt') as ale_output_file:
         with open(all_ale_outputs, 'at') as all_ale_outputs_file:
             if previous_output_exists:
-                all_ale_outputs_file.write('\n\n\n\n\n')
+                all_ale_outputs_file.write('\n\n')
+            all_ale_outputs_file.write(fasta + ':\n')
             for line in ale_output_file:
                 all_ale_outputs_file.write(line)
                 if 'ALE_score:' in line and ale_score == float('-inf'):
@@ -798,15 +807,18 @@ def print_empty_result(verbosity):
     if verbosity > 1:
         print()
     if verbosity > 0:
-        print('No variants found!', flush=True)
+        print('No variants found', flush=True)
 
 
 def print_result(variants, fasta, verbosity):
-    var = ' variant' if len(variants) == 1 else ' variants'
     if verbosity > 1:
         print()
     if verbosity > 0:
-        print(str(len(variants)) + var + ' applied, saved to ' + fasta, flush=True)
+        if variants:
+            var = ' variant' if len(variants) == 1 else ' variants'
+            print(str(len(variants)) + var + ' applied, saved to ' + fasta, flush=True)
+        else:
+            print('No variants applied', flush=True)
 
 
 def print_finished(fasta, verbosity):
@@ -1043,15 +1055,15 @@ def print_small_variant_table(rows, short_read_assessed, verbosity):
         return
     print()
     if short_read_assessed:
-        header = ['Contig', 'Pos', 'Ref', 'Alt', 'Type', 'AO', 'RO', 'AO%', 'Result']
+        header = ['Contig', 'Position', 'Ref', 'Alt', 'Type', 'AO', 'RO', 'AO%', 'Result']
         print_table([header] + rows, alignments='LRLLLRRRR')
     else:
-        header = ['Contig', 'Pos', 'Ref', 'Alt', 'Type']
+        header = ['Contig', 'Position', 'Ref', 'Alt', 'Type']
         print_table([header] + rows, alignments='LRLLL')
 
 
 def print_simple_large_variant_table(variants):
-    table = [['Contig', 'Pos', 'Ref', 'Alt']]
+    table = [['Contig', 'Position', 'Ref', 'Alt']]
     for v in variants:
         ref_seq = v.ref_seq if v.ref_seq else '.'
         variant_seq = v.variant_seq if v.variant_seq else '.'
@@ -1061,7 +1073,7 @@ def print_simple_large_variant_table(variants):
 
 def print_large_variant_table(variants, best_ale_score, initial_ale_score):
     print()
-    table = [['Source', 'Contig', 'Pos', 'Ref', 'Alt', 'ALE score']]
+    table = [['Source', 'Contig', 'Position', 'Ref', 'Alt', 'ALE score']]
     text_colour = 'green' if initial_ale_score == best_ale_score else 'red'
     table.append(['No variant', '', '', '', '', colour('%.6f' % initial_ale_score, text_colour)])
     for v in variants:

@@ -18,7 +18,7 @@ import math
 import multiprocessing
 from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter, print_table, \
     get_percentile_sorted, get_pilon_jar_path, colour, bold, bold_green, bold_yellow_underline, \
-    get_all_files_in_current_dir, check_file_exists
+    dim, get_all_files_in_current_dir, check_file_exists
 
 
 def main():
@@ -834,7 +834,7 @@ def run_command(command, args):
     try:
         out = subprocess.check_output(command, stderr=subprocess.STDOUT, shell=False)
         if args.verbosity > 2:
-            print(out)
+            print(dim(out))
     except subprocess.CalledProcessError as e:
         sys.exit(e.output.decode())
 
@@ -998,6 +998,8 @@ class Variant(object):
             start_pos = int(line_parts[1]) - 1
             end_pos = start_pos + len(line_parts[3]) - 1  # inclusive end
             if start_pos <= self.start_pos <= end_pos:
+                if args.verbosity > 2:
+                    print(line)
                 ref_occurrences = int(line.split(';RO=')[1].split(';')[0])
                 if ';AO=' in line:
                     alt_occurrences = sum(int(x) for x in
@@ -1013,6 +1015,8 @@ class Variant(object):
                     self.ao = alt_occurrences
                     self.ro = ref_occurrences
                     self.illumina_alt_percent = alt_fraction * 100.0
+            elif args.verbosity > 2:
+                print(dim(line))
 
     def get_output_row(self, short_read_assessed):
         if self.homo_size_before > 1:

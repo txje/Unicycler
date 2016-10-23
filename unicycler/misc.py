@@ -621,6 +621,10 @@ def bold(text):
     return '\033[1m' + text + '\033[0m'
 
 
+def dim(text):
+    return '\033[2m' + text + '\033[0m'
+
+
 def bold_underline(text):
     return '\033[1m' + '\033[4m' + text + '\033[0m'
 

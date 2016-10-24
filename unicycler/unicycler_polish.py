@@ -1072,10 +1072,11 @@ class Variant(object):
             line_parts = line.split('\t')
 
             # We will take the max alt percent for all the freebayes variants which overlap with
-            # this variant.
-            start_pos = int(line_parts[1]) - 1
-            end_pos = start_pos + len(line_parts[3]) - 1  # inclusive end
-            overlap = any(start_pos <= x <= end_pos for x in range(self.start_pos, self.end_pos))
+            # this variant (with an extra margin of 1 base on either side of this variant).
+            freebayes_start_pos = int(line_parts[1]) - 1
+            freebayes_end_pos = freebayes_start_pos + len(line_parts[3]) - 1  # inclusive end
+            overlap = any(freebayes_start_pos <= x <= freebayes_end_pos
+                          for x in range(self.start_pos - 1, self.end_pos + 1))
             if overlap:
                 if args.verbosity > 2:
                     print(line)

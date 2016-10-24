@@ -1088,13 +1088,13 @@ class Variant(object):
                     alt_occurrences = 0
                 total_occurrences = ref_occurrences + alt_occurrences
                 if total_occurrences:
-                    alt_fraction = alt_occurrences / total_occurrences
+                    alt_percent = 100.0 * alt_occurrences / total_occurrences
                 else:
-                    alt_fraction = 0.0
-                if self.illumina_alt_percent is None or alt_fraction >= self.illumina_alt_percent:
+                    alt_percent = 0.0
+                if self.illumina_alt_percent is None or alt_percent >= self.illumina_alt_percent:
                     self.ao = alt_occurrences
                     self.ro = ref_occurrences
-                    self.illumina_alt_percent = alt_fraction * 100.0
+                    self.illumina_alt_percent = alt_percent
             elif args.verbosity > 2:
                 print(dim(line))
 

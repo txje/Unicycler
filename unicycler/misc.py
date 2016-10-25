@@ -341,13 +341,11 @@ def weighted_average_list(nums, weights):
 
 def print_section_header(message, verbosity, last_newline=True):
     """
-    Prints a header for std out, unless verbosity is zero, in which case it does nothing.
+    Prints a header for stdout, unless verbosity is zero, in which case it does nothing.
     """
     if verbosity > 0:
         print('\n')
-        print(message)
-        end_char = '\n' if last_newline else ''
-        print('-' * len(message), flush=True, end=end_char)
+        print(bold_yellow_underline(message), end=('\n' if last_newline else ''), flush=True)
 
 
 def round_to_nearest_odd(num):

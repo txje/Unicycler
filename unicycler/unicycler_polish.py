@@ -151,8 +151,6 @@ def get_arguments():
     for f in [args.assembly, args.short1, args.short2, args.pb_bam, args.pb_fasta, args.on_fasta]:
         if f is not None:
             check_file_exists(f)
-    if args.on_fast5:
-        check_directory_exists(args.on_fast5)
     if args.pb_bax:
         for f in args.pb_bax:
             check_file_exists(f)
@@ -197,11 +195,11 @@ def get_arguments():
         if not args.nanopolish_model_files:
             parser.error('Nanopolish model files are missing from ' + args.nanopolish_model_dir)
         args.nanopolish_model_files.append(nanopolish_model_fofn)
-        if args.fast5:
-            if not os.path.isdir(args.fast5):
-                parser.error(args.fast5 + ' is not a directory')
-            if not any(f.lower().endswith('.fast5') for f in os.listdir(args.fast5)):
-                parser.error('there are no *.fast5 files in ' + args.fast5)
+        if args.on_fast5:
+            if not os.path.isdir(args.on_fast5):
+                parser.error(args.on_fast5 + ' is not a directory')
+            if not any(f.lower().endswith('.fast5') for f in os.listdir(args.on_fast5)):
+                parser.error('there are no *.fast5 files in ' + args.on_fast5)
 
     if args.threads is None:
         args.threads = multiprocessing.cpu_count()

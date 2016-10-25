@@ -148,10 +148,12 @@ def get_arguments():
 
     args = parser.parse_args()
 
-    for f in [args.assembly, args.short1, args.short2, args.pb_bax, args.pb_bam, args.pb_fasta,
-              args.on_fast5, args.on_fasta]:
+    for f in [args.assembly, args.short1, args.short2, args.pb_bam, args.pb_fasta, args.on_fast5,
+              args.on_fasta]:
         if f is not None:
             check_file_exists(f)
+    for f in args.pb_bax:
+        check_file_exists(f)
 
     short_read_input_count = sum(0 if x is None else 1 for x in [args.short1, args.short2])
     if short_read_input_count == 1:

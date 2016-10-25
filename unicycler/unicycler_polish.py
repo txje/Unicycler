@@ -18,7 +18,7 @@ import math
 import multiprocessing
 from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter, print_table, \
     get_percentile_sorted, get_pilon_jar_path, colour, bold, bold_green, bold_yellow_underline, \
-    dim, get_all_files_in_current_dir, check_file_exists
+    dim, get_all_files_in_current_dir, check_file_exists, check_directory_exists
 
 
 def main():
@@ -148,10 +148,11 @@ def get_arguments():
 
     args = parser.parse_args()
 
-    for f in [args.assembly, args.short1, args.short2, args.pb_bam, args.pb_fasta, args.on_fast5,
-              args.on_fasta]:
+    for f in [args.assembly, args.short1, args.short2, args.pb_bam, args.pb_fasta, args.on_fasta]:
         if f is not None:
             check_file_exists(f)
+    if args.on_fast5:
+        check_directory_exists(args.on_fast5)
     for f in args.pb_bax:
         check_file_exists(f)
 

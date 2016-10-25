@@ -78,6 +78,13 @@ def check_file_exists(filename):  # type: (str) -> bool
         quit_with_error('could not find ' + filename)
 
 
+def check_directory_exists(dirname):  # type: (str) -> bool
+    """
+    Checks to make sure the single given directory exists.
+    """
+    if not os.path.isdir(dirname):
+        quit_with_error('could not find ' + dirname)
+
 def quit_with_error(message):  # type: (str) -> None
     """
     Displays the given message and ends the program's execution.

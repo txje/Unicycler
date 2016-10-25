@@ -281,8 +281,6 @@ def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity, km
     if verbosity > 0:
         read_length_digits = len(str(median_read_length))
         print('Median read length: ' + str(median_read_length))
-        print('Starting k-mer:     ' + str(starting_kmer).rjust(read_length_digits))
-        print('Maximum k-mer:      ' + str(max_kmer).rjust(read_length_digits))
         print('K-mer range:        ' + kmer_range_str)
 
     kmer_range_file = open(kmer_range_filename, 'w')

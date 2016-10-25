@@ -10,7 +10,7 @@ import subprocess
 import gzip
 import shutil
 from .misc import print_section_header, round_to_nearest_odd, get_compression_type, int_to_str, \
-    quit_with_error, strip_read_extensions, bold, dim, print_table, green
+    quit_with_error, strip_read_extensions, bold, dim, print_table
 from .assembly_graph import AssemblyGraph
 
 
@@ -105,14 +105,9 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
     # Print the SPAdes result table, highlighting the best k-mer in green.
     if verbosity > 0:
         print()
-        formatted_results_table = []
-        for row in spades_results_table:
-            if row[0] == int_to_str(best_kmer):
-                formatted_results_table.append([green(x) for x in row])
-            else:
-                formatted_results_table.append(row)
-        print_table(formatted_results_table, alignments='')
-        print('\nBest k-mer: ' + green(int_to_str(best_kmer)))
+        best_kmer_row = [x[0] for x in spades_results_table].index(int_to_str(best_kmer))
+        print_table(spades_results_table, alignments='RRRR', indent=0, green_row=best_kmer_row)
+        print('\nBest k-mer: ' + int_to_str(best_kmer))
 
     return best_assembly_graph
 
@@ -147,7 +142,7 @@ def spades_read_correction(short1, short2, spades_dir, verbosity, threads, spade
         spades_output = process.stdout.readline().rstrip().decode()
         if verbosity > 0 and 'Command line:' in spades_output:
             spades_output = ' '.join(spades_output.split()).replace('Command line: ', '')
-            print(bold(spades_output), flush=True)
+            print('Command: ' + bold(spades_output), flush=True)
         elif spades_output and verbosity > 1:
             print(dim(spades_output), flush=True)
 
@@ -214,7 +209,7 @@ def spades_assembly(read_files, out_dir, kmers, verbosity, threads, spades_path)
         if spades_output and verbosity > 1:
             if spades_output.startswith('Command line:'):
                 spades_output = ' '.join(spades_output.split()).replace('Command line: ', '')
-                print(bold(spades_output))
+                print('Command: ' + bold(spades_output))
             else:
                 print(dim(spades_output), flush=True)
         if 'Insert size =' in spades_output and 'deviation = ' in spades_output:

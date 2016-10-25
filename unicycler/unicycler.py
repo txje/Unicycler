@@ -714,7 +714,7 @@ def print_intro_message(args, verbosity, full_command):
         return
 
     print_section_header('Starting Unicycler', verbosity)
-    print(bold(full_command))
+    print('Command: ' + bold(full_command))
     if verbosity > 1:
         print()
         if args.mode == 0:

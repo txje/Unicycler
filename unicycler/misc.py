@@ -13,6 +13,7 @@ import math
 import gzip
 import argparse
 import shutil
+import re
 
 
 def float_to_str(num, decimals, max_num=0):
@@ -559,7 +560,8 @@ class MyHelpFormatter(argparse.RawDescriptionHelpFormatter):
             return argparse.HelpFormatter._fill_text(self, text, width, indent)
 
 
-def print_table(table, alignments='', max_col_width=30, col_separation=3, indent=2):
+def print_table(table, alignments='', max_col_width=30, col_separation=3, indent=2,
+                green_row=-1):
     """
     Args:
         table: a list of lists of strings (one row is one list, all rows must be the same length)
@@ -567,6 +569,7 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
         max_col_width: values longer than this will be wrapped
         col_separation: the number of spaces between columns
         indent: the number of spaces between the table and the left side of the terminal
+        green_row: the index of a row in the table to make green
 
     Returns:
         nothing, just prints the table
@@ -574,7 +577,8 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
     alignments += 'L' * (len(table[0]) - len(alignments))  # Fill out with L, if incomplete
     col_widths = [0] * len(table[0])
     for row in table:
-        col_widths = [min(max(col_widths[i], len(x)), max_col_width) for i, x in enumerate(row)]
+        col_widths = [min(max(col_widths[i], len_without_format(x)), max_col_width)
+                      for i, x in enumerate(row)]
     separator = ' ' * col_separation
     indenter = ' ' * indent
     for i, row in enumerate(table):
@@ -588,8 +592,11 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
             row_str = separator.join(aligned_row)
             if i == 0:
                 row_str = bold_underline(row_str)
-            row_str = row_str.replace('PASS', green('PASS'))
-            row_str = row_str.replace('FAIL', red('FAIL'))
+            if i == green_row:
+                row_str = green(row_str)
+            else:
+                row_str = row_str.replace('PASS', green('PASS'))
+                row_str = row_str.replace('FAIL', red('FAIL'))
             print(indenter + row_str, flush=True)
             row = [x[col_widths[j]:] for j, x in enumerate(row)]
 
@@ -629,6 +636,10 @@ def bold_underline(text):
 
 def bold_yellow_underline(text):
     return '\033[1m' + '\033[93m' + '\033[4m' + text + '\033[0m'
+
+
+def len_without_format(text):
+    return len(re.sub('\033.*?m', '', text))
 
 
 def get_all_files_in_current_dir():

@@ -10,7 +10,7 @@ import subprocess
 import gzip
 import shutil
 from .misc import print_section_header, round_to_nearest_odd, get_compression_type, int_to_str, \
-    quit_with_error, strip_read_extensions
+    quit_with_error, strip_read_extensions, bold, dim
 from .assembly_graph import AssemblyGraph
 
 
@@ -141,12 +141,11 @@ def spades_read_correction(short1, short2, spades_dir, verbosity, threads, spade
 
     while process.poll() is None:
         spades_output = process.stdout.readline().rstrip().decode()
-        print_line = verbosity > 1
         if verbosity > 0 and 'Command line:' in spades_output:
-            spades_output = ' '.join(spades_output.split()).replace('Command line:', 'Command:')
-            print_line = True
-        if spades_output and print_line:
-            print(spades_output, flush=True)
+            spades_output = ' '.join(spades_output.split()).replace('Command line: ', '')
+            print(bold(spades_output), flush=True)
+        elif spades_output and verbosity > 1:
+            print(dim(spades_output), flush=True)
 
     spades_error = process.stderr.readline().strip().decode()
     if spades_error:
@@ -210,9 +209,10 @@ def spades_assembly(read_files, out_dir, kmers, verbosity, threads, spades_path)
         spades_output = process.stdout.readline().rstrip().decode()
         if spades_output and verbosity > 1:
             if 'Command line:' in spades_output:
-                spades_output = ' '.join(spades_output.split()).replace('Command line:',
-                                                                        'Command:')
-            print(spades_output, flush=True)
+                spades_output = ' '.join(spades_output.split()).replace('Command line: ', '')
+                print(bold(spades_output))
+            else:
+                print(dim(spades_output), flush=True)
         if 'Insert size =' in spades_output and 'deviation = ' in spades_output:
             try:
                 insert_size_mean = float(spades_output.split('Insert size = ')[-1].split(',')[0])

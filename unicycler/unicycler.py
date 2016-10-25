@@ -17,7 +17,7 @@ from .assembly_graph import AssemblyGraph
 from .bridge import create_spades_contig_bridges, \
     create_long_read_bridges, create_loop_unrolling_bridges
 from .misc import int_to_str, float_to_str, quit_with_error, get_percentile, \
-    print_section_header, check_files_and_programs, MyHelpFormatter
+    print_section_header, check_files_and_programs, MyHelpFormatter, bold
 from .spades_func import get_best_spades_graph
 from .blast_func import find_start_gene, CannotFindStart
 from .unicycler_align import add_aligning_arguments, fix_up_arguments, \
@@ -713,7 +713,7 @@ def print_intro_message(args, verbosity, full_command):
         return
 
     print_section_header('Starting Unicycler', verbosity)
-    print('Command:', full_command)
+    print(bold(full_command))
     if verbosity > 1:
         print()
         if args.mode == 0:

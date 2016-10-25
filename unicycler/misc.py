@@ -85,6 +85,7 @@ def check_directory_exists(dirname):  # type: (str) -> bool
     if not os.path.isdir(dirname):
         quit_with_error('could not find ' + dirname)
 
+
 def quit_with_error(message):  # type: (str) -> None
     """
     Displays the given message and ends the program's execution.
@@ -568,7 +569,7 @@ class MyHelpFormatter(argparse.RawDescriptionHelpFormatter):
 
 
 def print_table(table, alignments='', max_col_width=30, col_separation=3, indent=2,
-                green_row=-1, colour_sub=None, leading_newline=False):
+                row_colour=None, sub_colour=None, row_extra_text=None, leading_newline=False):
     """
     Args:
         table: a list of lists of strings (one row is one list, all rows must be the same length)
@@ -576,15 +577,20 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
         max_col_width: values longer than this will be wrapped
         col_separation: the number of spaces between columns
         indent: the number of spaces between the table and the left side of the terminal
-        green_row: the index of a row in the table to make green
-        colour_sub: a dictionary of values to colour names for which the text colour will be set
+        row_colour: a dictionary of row indices and their colour names
+        sub_colour: a dictionary of values to colour names for which the text colour will be set
+        row_extra_text: a dictionary of row indices and extra text to display after the row
         leading_newline: if True, the function will print a blank line above the table
 
     Returns:
         nothing, just prints the table
     """
-    if colour_sub is None:
-        colour_sub = {}
+    if row_colour is None:
+        row_colour = {}
+    if sub_colour is None:
+        sub_colour = {}
+    if row_extra_text is None:
+        row_extra_text = {}
     if leading_newline:
         print()
     alignments += 'L' * (len(table[0]) - len(alignments))  # Fill out with L, if incomplete
@@ -603,12 +609,14 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
                 else:
                     aligned_row.append(value.rjust(col_width)[:col_width])
             row_str = separator.join(aligned_row)
+            if i in row_extra_text:
+                row_str += row_extra_text[i]
             if i == 0:
                 row_str = bold_underline(row_str)
-            elif i == green_row:
-                row_str = green(row_str)
+            if i in row_colour:
+                row_str = colour(row_str, row_colour[i])
             else:
-                for text, colour_name in colour_sub.items():
+                for text, colour_name in sub_colour.items():
                     row_str = row_str.replace(text, colour(text, colour_name))
             print(indenter + row_str, flush=True)
             row = [x[col_widths[j]:] for j, x in enumerate(row)]
@@ -619,6 +627,8 @@ def colour(text, text_colour):
         return green(text)
     elif text_colour.lower() == 'red':
         return red(text)
+    elif text_colour.lower() == 'dim':
+        return dim(text)
     else:
         return text
 

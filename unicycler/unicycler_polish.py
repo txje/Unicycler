@@ -1144,7 +1144,7 @@ def print_small_variant_table(rows, short_read_assessed, verbosity):
     if short_read_assessed:
         header = ['Contig', 'Position', 'Ref', 'Alt', 'Type', 'AO', 'RO', 'AO%', 'Result']
         print_table([header] + rows, alignments='LRLLLRRRR',
-                    colour_sub={'PASS': 'green', 'FAIL': 'red'})
+                    sub_colour={'PASS': 'green', 'FAIL': 'red'})
     else:
         header = ['Contig', 'Position', 'Ref', 'Alt', 'Type']
         print_table([header] + rows, alignments='LRLLL')

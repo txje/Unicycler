@@ -105,8 +105,9 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
     # Print the SPAdes result table, highlighting the best k-mer in green.
     if verbosity > 0:
         best_kmer_row = [x[0] for x in spades_results_table].index(int_to_str(best_kmer))
-        print_table(spades_results_table, alignments='RRRR', indent=0, green_row=best_kmer_row)
-        print('\nBest k-mer: ' + int_to_str(best_kmer))
+        print_table(spades_results_table, alignments='RRRR', indent=0,
+                    row_colour={best_kmer_row: 'green'},
+                    row_extra_text={best_kmer_row: ' \u2190 best'})
 
     return best_assembly_graph
 
@@ -279,7 +280,6 @@ def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity, km
     kmer_range_str = ', '.join([str(x) for x in kmer_range])
 
     if verbosity > 0:
-        read_length_digits = len(str(median_read_length))
         print('Median read length: ' + str(median_read_length))
         print('K-mer range:        ' + kmer_range_str)
 

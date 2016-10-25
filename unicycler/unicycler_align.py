@@ -39,7 +39,7 @@ import multiprocessing
 import threading
 from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
     get_mean_and_st_dev, print_progress_line, print_section_header, weighted_average_list, \
-    get_sequence_file_type, MyHelpFormatter, bold, dim, bold_underline
+    get_sequence_file_type, MyHelpFormatter, bold, dim, bold_underline, print_table
 from .cpp_function_wrappers import semi_global_alignment, new_kmer_positions, add_kmer_positions, \
     delete_all_kmer_positions, \
     get_random_sequence_alignment_mean_and_std_dev
@@ -531,30 +531,12 @@ def print_graphmap_summary_table(graphmap_alignments, percent_id_mean, percent_i
     print('Total alignments:', int_to_str(len(graphmap_alignments)))
     print()
 
-    table_lines = ['',
-                   'Identity:',
-                   'Score:']
-
-    pad_length = max([len(x) for x in table_lines]) + 2
-    table_lines = [x.ljust(pad_length) for x in table_lines]
-
-    table_lines[0] += 'Mean'
-    table_lines[1] += float_to_str(percent_id_mean, 2)
-    if percent_id_mean:
-        table_lines[1] += '%'
-    table_lines[2] += float_to_str(score_mean, 2)
-
-    pad_length = max([len(x) for x in table_lines]) + 2
-    table_lines = [x.ljust(pad_length) for x in table_lines]
-
-    table_lines[0] += 'Std dev'
-    table_lines[1] += float_to_str(percent_id_std_dev, 2)
-    if percent_id_std_dev:
-        table_lines[1] += '%'
-    table_lines[2] += float_to_str(score_std_dev, 2)
-
-    for line in table_lines:
-        print(line)
+    summary_table = [['', 'Mean', 'Stdev']]
+    summary_table += ['Identity:', float_to_str(percent_id_mean, 2) + '%',
+                      float_to_str(percent_id_std_dev, 2) + '%']
+    summary_table += ['Score:', float_to_str(score_mean, 2) + ' ',
+                      float_to_str(score_std_dev, 2) + ' ']
+    print_table(summary_table)
     print()
     print('Mean reference length / read length:', float_to_str(EXPECTED_SLOPE, 5))
 
@@ -636,7 +618,7 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
                         progress = float(trimmed_line.split('(')[1].split(')')[0][:-1])
                         progress_rounded_down = math.floor(progress / step) * step
                         if progress == 100.0 or progress_rounded_down > last_progress:
-                            print('\r' + trimmed_line, end='')
+                            print('\r' + dim(trimmed_line), end='')
                             last_progress = progress_rounded_down
                     elif VERBOSITY > 1:
                         if read_progress_started and not read_progress_finished:
@@ -818,7 +800,7 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
             SAM_WRITE_LOCK.release()
 
         update_expected_slope(read, low_score_threshold)
-    return output_title + dim(output)
+    return output_title + ''.join(dim(x) for x in output.splitlines(True))
 
 
 def group_reads_by_fraction_aligned(read_dict):

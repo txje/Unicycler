@@ -8,8 +8,7 @@ email: rrwick@gmail.com
 import math
 from collections import deque, defaultdict
 from .misc import int_to_str, float_to_str, weighted_average_list, print_section_header, \
-    reverse_complement, score_function, add_line_breaks_to_sequence, green, dim, red, print_v, \
-    print_table
+    reverse_complement, score_function, add_line_breaks_to_sequence, print_v, print_table, colour
 from .bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge
 from . import settings
 
@@ -315,17 +314,17 @@ class AssemblyGraph(object):
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
         for segment in sorted_segments:
             segment_line = segment.gfa_segment_line()
-            colour, label = '', ''
+            segment_colour, label = '', ''
             if save_copy_depth_info and segment.number in self.copy_depths:
-                colour = self.get_copy_number_colour(segment)
+                segment_colour = self.get_copy_number_colour(segment)
                 label = self.get_depth_string(segment)
             if save_seg_type_info and segment.bridge is not None:
-                colour = 'pink'
+                segment_colour = 'pink'
                 label = segment.get_seg_type_label()
-            if colour or label:
+            if segment_colour or label:
                 segment_line = segment_line[:-1]  # Remove newline
                 segment_line += '\tLB:z:' + label
-                segment_line += '\tCL:z:' + colour
+                segment_line += '\tCL:z:' + segment_colour
                 segment_line += '\n'
 
             gfa.write(segment_line)
@@ -1483,9 +1482,9 @@ class AssemblyGraph(object):
                     seg_nums_used_in_bridges = remove_dupes_preserve_order(seg_nums_used_in_bridges)
                     applied_bridges.append(bridge)
                 elif verbosity > 1:
-                    print(red('Rejected ' + str(bridge)))
+                    print(format_bridge_message('Rejected ' + str(bridge), 'red'))
             elif verbosity > 1:
-                print(dim('Unused ' + str(bridge)))
+                print(format_bridge_message('Unused ' + str(bridge), 'dim'))
 
         return set(seg_nums_used_in_bridges)
 
@@ -1495,7 +1494,7 @@ class AssemblyGraph(object):
         Applies a whole bridge, start to end.
         """
         if verbosity > 1:
-            print(green('Applying ' + str(bridge)))
+            print(format_bridge_message('Applying ' + str(bridge), 'green'))
 
         # Remove all existing links for the segments being bridged.
         start = bridge.start_segment
@@ -1966,7 +1965,7 @@ class AssemblyGraph(object):
             link_count = self.get_component_link_count(component)
             component_table += [str(i+1), int_to_str(segment_count), int_to_str(link_count),
                                 int_to_str(component_len), status]
-        print_table(component_table, alignments='LRRRR', colour_sub={'none': 'red'},
+        print_table(component_table, alignments='LRRRR', sub_colour={'none': 'red'},
                     leading_newline=True)
 
     def get_total_link_count(self):
@@ -3070,3 +3069,8 @@ def get_overlap_from_gfa_link(filename):
 def remove_dupes_preserve_order(lst):
     seen = set()
     return [x for x in lst if not (x in seen or seen.add(x))]
+
+
+def format_bridge_message(text, colour_name):
+    text_parts = text.split(': ', maxsplit=1)
+    print((text_parts[0] + ':').ljust(27) + colour(text_parts[1], colour_name))

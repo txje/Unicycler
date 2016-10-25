@@ -89,7 +89,7 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, java_
     if verbosity > 1:
         print()
     if verbosity > 0:
-        print('Mean fragment size = ', float_to_str(insert_mean, 2) + ' bp')
+        print('Mean fragment size =', float_to_str(insert_mean, 1) + ' bp')
     insert_sizes = sorted(insert_sizes)
     insert_size_5th = get_percentile_sorted(insert_sizes, 5.0)
     if verbosity > 1:

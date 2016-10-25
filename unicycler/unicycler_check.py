@@ -58,8 +58,7 @@ def main():
                                      args.keep_bad, args.kmer, args.min_len, args.sam,
                                      full_command, 0, False, args.contamination, VERBOSITY)
 
-    alignments = load_sam_alignments(args.sam, read_dict, reference_dict, scoring_scheme,
-                                     args.threads, VERBOSITY)
+    alignments = load_sam_alignments(args.sam, read_dict, reference_dict, scoring_scheme, VERBOSITY)
 
     count_depth_and_errors_per_base(references, reference_dict, alignments)
     high_error_rate, very_high_error_rate, random_seq_error_rate, mean_error_rate = \

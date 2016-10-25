@@ -38,8 +38,8 @@ from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing
 import threading
 from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
-    get_mean_and_st_dev, print_progress_line, print_section_header, \
-    weighted_average_list, get_sequence_file_type, MyHelpFormatter
+    get_mean_and_st_dev, print_progress_line, print_section_header, weighted_average_list, \
+    get_sequence_file_type, MyHelpFormatter, bold, dim, bold_underline
 from .cpp_function_wrappers import semi_global_alignment, new_kmer_positions, add_kmer_positions, \
     delete_all_kmer_positions, \
     get_random_sequence_alignment_mean_and_std_dev
@@ -312,7 +312,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         graphmap_sam = os.path.join(temp_dir, 'graphmap_alignments.sam')
         run_graphmap(ref_fasta, reads_fastq, graphmap_sam, graphmap_path, threads, scoring_scheme)
         graphmap_alignments = load_sam_alignments(graphmap_sam, read_dict, reference_dict,
-                                                  scoring_scheme, threads, VERBOSITY)
+                                                  scoring_scheme, VERBOSITY)
         # Clean up files and directories.
         if use_graphmap:
             os.remove(graphmap_sam)
@@ -613,7 +613,7 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
 
     print_section_header('Aligning with GraphMap', VERBOSITY)
     if VERBOSITY > 0:
-        print(' '.join(command))
+        print('Command: ' + bold(' '.join(command)))
 
     # Print the GraphMap output as it comes. I gather up and display lines so I can display fewer
     # progress lines (only at every 0.1% of progress, instead of for every read). This helps when
@@ -642,7 +642,7 @@ def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scor
                         if read_progress_started and not read_progress_finished:
                             print()
                             read_progress_finished = True
-                        print(line, end='')
+                        print(dim(line), end='')
                 line = ''
     if VERBOSITY == 1:
         print('')
@@ -679,14 +679,12 @@ def get_graphmap_version(graphmap_path):
     return float(version)
 
 
-def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme, threads,
-                        verbosity):
+def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme, verbosity):
     """
     This function returns a list of Alignment objects from the given SAM file.
     """
     print_section_header('Loading alignments', verbosity)
 
-    # Load the SAM lines into a list.
     sam_lines = []
     sam_file = open(sam_filename, 'rt')
     for line in sam_file:
@@ -704,42 +702,19 @@ def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme,
             print('No alignments to load')
         return []
 
-    # If single-threaded, just do the work in a simple loop.
-    threads = 1  # TEMP
     sam_alignments = []
     last_progress = 0.0
     step = settings.LOADING_ALIGNMENTS_PROGRESS_STEP
-    if threads == 1:
-        for line in sam_lines:
-            sam_alignments.append(Alignment(sam_line=line, read_dict=read_dict,
-                                            reference_dict=reference_dict,
-                                            scoring_scheme=scoring_scheme))
-            if verbosity > 0:
-                progress = 100.0 * len(sam_alignments) / num_alignments
-                progress_rounded_down = math.floor(progress / step) * step
-                if progress == 100.0 or progress_rounded_down > last_progress:
-                    print_progress_line(len(sam_alignments), num_alignments)
-                    last_progress = progress_rounded_down
-
-    # # If multi-threaded, use processes.
-    # else:
-    #     sam_line_groups = chunkify(sam_lines, threads)
-    #     manager = Manager()
-    #     workers = []
-    #     sam_alignments = manager.list([])
-    #     for sam_line_group in sam_line_groups:
-    #         child = Process(target=make_alignments, args=(sam_line_group, read_dict,
-    #                                                       reference_dict, scoring_scheme,
-    #                                                       sam_alignments))
-    #         child.start()
-    #         workers.append(child)
-    #     while any(i.is_alive() for i in workers):
-    #         time.sleep(0.1)
-    #         if verbosity > 0:
-    #             print_progress_line(len(sam_alignments), num_alignments)
-    #     for worker in workers:
-    #         worker.join()
-    #     sam_alignments = sam_alignments._getvalue()
+    for line in sam_lines:
+        sam_alignments.append(Alignment(sam_line=line, read_dict=read_dict,
+                                        reference_dict=reference_dict,
+                                        scoring_scheme=scoring_scheme))
+        if verbosity > 0:
+            progress = 100.0 * len(sam_alignments) / num_alignments
+            progress_rounded_down = math.floor(progress / step) * step
+            if progress == 100.0 or progress_rounded_down > last_progress:
+                print_progress_line(len(sam_alignments), num_alignments)
+                last_progress = progress_rounded_down
 
     # At this point, we should have loaded num_alignments alignments. But check to make sure and
     # fix up the progress line if any didn't load.
@@ -750,20 +725,6 @@ def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme,
 
     return sam_alignments
 
-
-# def chunkify(full_list, pieces):
-#     '''
-#     http://stackoverflow.com/questions/2130016/
-#     splitting-a-list-of-arbitrary-size-into-only-roughly-n-equal-parts
-#     '''
-#     return [full_list[i::pieces] for i in range(pieces)]
-
-# def make_alignments(sam_lines, read_dict, reference_dict, scoring_scheme, alignments):
-#     '''
-#     Produces alignments from SAM lines and deposits them in a managed list.
-#     '''
-#     for line in sam_lines:
-#         alignments.append(Alignment(line, read_dict, reference_dict, scoring_scheme))
 
 def seqan_alignment_one_arg(all_args):
     """
@@ -785,13 +746,13 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
     Aligns a single read against all reference sequences using Seqan.
     """
     start_time = time.time()
-    output = '\n'
+    output_title = '\n'
     if VERBOSITY > 2:
-        output += '\n'
-    if VERBOSITY > 1:
-        output += str(read) + '\n'
-    if VERBOSITY > 2:
-        output += '-' * len(str(read)) + '\n'
+        output_title += '\n'
+        output_title += bold_underline(str(read)) + '\n'
+    elif VERBOSITY > 1:
+        output_title += str(read) + '\n'
+    output = ''
 
     if VERBOSITY > 2 and used_graphmap:
         starting_graphmap_alignments = len(read.alignments)
@@ -806,61 +767,58 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
     if read.get_length() < min_align_length:
         if VERBOSITY > 1:
             output += '  too short to align\n'
-        return output
+    else:
+        results = semi_global_alignment(read.name, read.sequence, VERBOSITY, EXPECTED_SLOPE,
+                                        kmer_positions_ptr, scoring_scheme.match,
+                                        scoring_scheme.mismatch, scoring_scheme.gap_open,
+                                        scoring_scheme.gap_extend, low_score_threshold, keep_bad,
+                                        kmer_size, extra_sensitive).split(';')
+        alignment_strings = results[:-1]
+        output += results[-1]
 
-    results = semi_global_alignment(read.name, read.sequence, VERBOSITY,
-                                    EXPECTED_SLOPE, kmer_positions_ptr,
-                                    scoring_scheme.match, scoring_scheme.mismatch,
-                                    scoring_scheme.gap_open, scoring_scheme.gap_extend,
-                                    low_score_threshold, keep_bad, kmer_size,
-                                    extra_sensitive).split(';')
-    alignment_strings = results[:-1]
-    output += results[-1]
+        for alignment_string in alignment_strings:
+            alignment = Alignment(seqan_output=alignment_string, read=read,
+                                  reference_dict=reference_dict, scoring_scheme=scoring_scheme)
+            read.alignments.append(alignment)
 
-    for alignment_string in alignment_strings:
-        alignment = Alignment(seqan_output=alignment_string, read=read,
-                              reference_dict=reference_dict,
-                              scoring_scheme=scoring_scheme)
-        read.alignments.append(alignment)
+        if VERBOSITY > 2:
+            if not alignment_strings:
+                output += '  None\n'
+            else:
+                output += 'All Seqan alignments (time to align = ' + \
+                          float_to_str(time.time() - start_time, 3) + ' s):\n'
+                for alignment in read.alignments:
+                    if alignment.alignment_type != 'SAM':
+                        output += '  ' + alignment.get_str_no_read_name() + '\n'
+                        if VERBOSITY > 3:
+                            output += ''.join(alignment.cigar_parts) + '\n'
 
-    if VERBOSITY > 2:
-        if not alignment_strings:
-            output += '  None\n'
-        else:
-            output += 'All Seqan alignments (time to align = ' + \
-                      float_to_str(time.time() - start_time, 3) + ' s):\n'
-            for alignment in read.alignments:
-                if alignment.alignment_type != 'SAM':
+        read.remove_conflicting_alignments(allowed_overlap)
+        if not keep_bad:
+            read.remove_low_score_alignments(low_score_threshold)
+        read.remove_short_alignments(min_align_length)
+
+        if VERBOSITY > 2:
+            output += 'Final alignments:\n'
+        if VERBOSITY > 1:
+            if read.alignments:
+                for alignment in read.alignments:
                     output += '  ' + alignment.get_str_no_read_name() + '\n'
-                    if VERBOSITY > 3:
-                        output += ''.join(alignment.cigar_parts) + '\n'
+            else:
+                output += '  None\n'
 
-    read.remove_conflicting_alignments(allowed_overlap)
-    if not keep_bad:
-        read.remove_low_score_alignments(low_score_threshold)
-    read.remove_short_alignments(min_align_length)
-
-    if VERBOSITY > 2:
-        output += 'Final alignments:\n'
-    if VERBOSITY > 1:
-        if read.alignments:
+        # Write alignments to SAM.
+        if sam_filename and read.alignments:
+            SAM_WRITE_LOCK.acquire()
+            sam_file = open(sam_filename, 'a')
             for alignment in read.alignments:
-                output += '  ' + alignment.get_str_no_read_name() + '\n'
-        else:
-            output += '  None\n'
+                if not alignment.ref.name.startswith('CONTAMINATION_'):
+                    sam_file.write(alignment.get_sam_line())
+            sam_file.close()
+            SAM_WRITE_LOCK.release()
 
-    # Write alignments to SAM.
-    if sam_filename and read.alignments:
-        SAM_WRITE_LOCK.acquire()
-        sam_file = open(sam_filename, 'a')
-        for alignment in read.alignments:
-            if not alignment.ref.name.startswith('CONTAMINATION_'):
-                sam_file.write(alignment.get_sam_line())
-        sam_file.close()
-        SAM_WRITE_LOCK.release()
-
-    update_expected_slope(read, low_score_threshold)
-    return output
+        update_expected_slope(read, low_score_threshold)
+    return output_title + dim(output)
 
 
 def group_reads_by_fraction_aligned(read_dict):

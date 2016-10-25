@@ -14,15 +14,14 @@ import copy
 import random
 import multiprocessing
 from .assembly_graph import AssemblyGraph
-from .bridge import create_spades_contig_bridges, \
-    create_long_read_bridges, create_loop_unrolling_bridges
-from .misc import int_to_str, float_to_str, quit_with_error, get_percentile, print_verbosity, \
-    print_section_header, check_files_and_programs, MyHelpFormatter, bold
+from .bridge import create_spades_contig_bridges, create_long_read_bridges, \
+    create_loop_unrolling_bridges
+from .misc import int_to_str, float_to_str, quit_with_error, get_percentile, print_v, bold, \
+    print_section_header, check_files_and_programs, MyHelpFormatter, print_table
 from .spades_func import get_best_spades_graph
 from .blast_func import find_start_gene, CannotFindStart
-from .unicycler_align import add_aligning_arguments, fix_up_arguments, \
-    semi_global_align_long_reads, \
-    load_references, load_long_reads, AlignmentScoringScheme, load_sam_alignments, \
+from .unicycler_align import add_aligning_arguments, fix_up_arguments, AlignmentScoringScheme, \
+    semi_global_align_long_reads, load_references, load_long_reads, load_sam_alignments, \
     print_alignment_summary_table
 from .pilon_func import polish_with_pilon, CannotPolish
 from . import settings
@@ -81,7 +80,8 @@ def main():
 
     # Determine copy number and get single-copy segments.
     single_copy_segments = get_single_copy_segments(unbridged_graph, verbosity, 0)
-    unbridged_graph.save_to_gfa(unbridged_graph_filename, verbosity, save_copy_depth_info=True)
+    unbridged_graph.save_to_gfa(unbridged_graph_filename, verbosity, save_copy_depth_info=True,
+                                leading_newline=False)
 
     # Make an initial set of bridges using the SPAdes contig paths. This step is skipped when
     # using conservative bridging mode (in that case we don't trust SPAdes contig paths at all).
@@ -152,7 +152,7 @@ def main():
                       'a new alignment:')
                 print('  ' + alignments_sam)
             alignments = load_sam_alignments(alignments_sam, read_dict, reference_dict,
-                                             scoring_scheme, args.threads, verbosity)
+                                             scoring_scheme, verbosity)
             for alignment in alignments:
                 read_dict[alignment.read.name].alignments.append(alignment)
             print_alignment_summary_table(read_dict, verbosity, False)
@@ -309,17 +309,20 @@ def main():
 
     # Perform a final clean on the graph, including overlap removal.
     graph.final_clean(verbosity)
+    print_section_header('Bridged assembly graph', verbosity)
     if verbosity > 0:
-        print_section_header('Bridged assembly graph', verbosity)
-        print(graph.get_summary(verbosity, show_components=True), end='')
+        print(graph.get_summary(verbosity))
+        graph.print_component_table()
     file_num += 1
     cleaned_graph = os.path.join(args.out, str(file_num).zfill(3) + '_final_clean.gfa')
-    graph.save_to_gfa(cleaned_graph, verbosity)
+    graph.save_to_gfa(cleaned_graph, verbosity, leading_newline=False)
 
     # Rotate completed replicons in the graph to a standard starting gene.
     completed_replicons = graph.completed_circular_replicons()
     if not args.no_rotate and len(completed_replicons) > 0:
-        print_section_header('Rotating completed replicons', verbosity, last_newline=False)
+        print_section_header('Rotating completed replicons', verbosity)
+        rotation_result_table = [['Replicon', 'Length', 'Depth', 'Starting gene', 'Position',
+                                  'Strand']]
         blast_dir = os.path.join(args.out, 'blast_temp')
         if not os.path.exists(blast_dir):
             os.makedirs(blast_dir)
@@ -332,25 +335,23 @@ def main():
             if graph.overlap > 0:
                 sequence = sequence[:-graph.overlap]
             depth = segment.depth
-            if verbosity > 0:
-                print('\nReplicon ' + str(i+1) + ' (' + int_to_str(len(sequence)), 'bp, ' +
-                      float_to_str(depth, 2) + 'x):')
+            rotation_result_row = [str(i+1), int_to_str(len(sequence)),
+                                   float_to_str(depth, 2) + 'x']
             try:
-                start_gene, start_pos, flip = find_start_gene(sequence, args.start_genes,
-                                                              args.start_gene_id,
-                                                              args.start_gene_cov, blast_dir,
-                                                              args.makeblastdb_path,
-                                                              args.tblastn_path, args.threads,
-                                                              verbosity)
+                gene, pos, flip = find_start_gene(sequence, args.start_genes, args.start_gene_id,
+                                                  args.start_gene_cov,  blast_dir,
+                                                  args.makeblastdb_path, args.tblastn_path,
+                                                  args.threads, verbosity)
             except CannotFindStart:
-                if verbosity > 0:
-                    print('  Unable to find a starting gene - not rotating sequence')
+                rotation_result_row += ['none', '', '']
             else:
-                print('  Starting gene:', start_gene)
-                strand_str = '(reverse strand)' if flip else '(forward strand)'
-                print('  Starting position:', int_to_str(start_pos), strand_str)
-                segment.rotate_sequence(start_pos, flip, graph.overlap)
+                rotation_result_row += [gene, int_to_str(pos), 'reverse' if flip else 'forward']
+                segment.rotate_sequence(pos, flip, graph.overlap)
                 rotation_count += 1
+            rotation_result_table.append(rotation_result_row)
+
+        if verbosity > 0:
+            print_table(rotation_result_table, alignments='LRRLRL')
         if rotation_count:
             file_num += 1
             rotated_graph = os.path.join(args.out, str(file_num).zfill(3) + '_rotated.gfa')
@@ -644,18 +645,18 @@ def make_output_directory(out_dir, verbosity):
     """
     Creates the output directory, if it doesn't already exist.
     """
-    print_verbosity('', verbosity, 1)
+    print_v('', verbosity, 1)
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
-        print_verbosity('Making output directory:', verbosity, 1)
-        print_verbosity('  ' + out_dir, verbosity, 1)
+        print_v('Making output directory:', verbosity, 1)
+        print_v('  ' + out_dir, verbosity, 1)
     elif os.listdir(out_dir) and verbosity > 1:
-        print_verbosity('The output directory already exists and files may be reused and/or '
-                        'overwritten:', verbosity, 1)
-        print_verbosity('  ' + out_dir, verbosity, 1)
+        print_v('The output directory already exists and files may be reused and/or overwritten:',
+                verbosity, 1)
+        print_v('  ' + out_dir, verbosity, 1)
     else:  # directory exists but is empty
-        print_verbosity('The output directory already exists:', verbosity, 1)
-        print_verbosity('  ' + out_dir, verbosity, 1)
+        print_v('The output directory already exists:', verbosity, 1)
+        print_v('  ' + out_dir, verbosity, 1)
 
 
 def get_single_copy_segments(graph, verbosity, min_single_copy_length):

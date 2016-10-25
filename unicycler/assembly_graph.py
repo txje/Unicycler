@@ -8,7 +8,8 @@ email: rrwick@gmail.com
 import math
 from collections import deque, defaultdict
 from .misc import int_to_str, float_to_str, weighted_average_list, print_section_header, \
-     reverse_complement, score_function, add_line_breaks_to_sequence
+    reverse_complement, score_function, add_line_breaks_to_sequence, green, dim, red, print_v, \
+    print_table
 from .bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge
 from . import settings
 
@@ -268,38 +269,35 @@ class AssemblyGraph(object):
         """
         return sum([x.get_length_no_overlap(self.overlap) for x in self.segments.values()])
 
-    def save_to_fasta(self, filename, verbosity=0):
+    def save_to_fasta(self, filename, verbosity=0, leading_newline=True):
         """
         Saves whole graph (only forward sequences) to a FASTA file.
         """
         fasta = open(filename, 'w')
-        if verbosity > 0:
-            print('\nSaving', filename)
+        print_v(('\n' if leading_newline else '') + 'Saving ' + filename, verbosity, 1)
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
         for segment in sorted_segments:
             fasta.write('>' + str(segment.number) + '\n')
             fasta.write(add_line_breaks_to_sequence(segment.forward_sequence, 60))
 
     @staticmethod
-    def save_specific_segments_to_fasta(filename, segments, verbosity=0):
+    def save_specific_segments_to_fasta(filename, segments, verbosity=0, leading_newline=True):
         """
         Saves single copy segments (only forward sequences) to a FASTA file.
         """
         fasta = open(filename, 'w')
-        if verbosity > 0:
-            print('\nSaving', filename)
+        print_v(('\n' if leading_newline else '') + 'Saving ' + filename, verbosity, 1)
         sorted_segments = sorted(segments, key=lambda x: x.number)
         for segment in sorted_segments:
             fasta.write('>' + str(segment.number) + '\n')
             fasta.write(add_line_breaks_to_sequence(segment.forward_sequence, 60))
 
-    def save_to_fastg(self, filename, verbosity=0):
+    def save_to_fastg(self, filename, verbosity=0, leading_newline=True):
         """
         Saves whole graph to a SPAdes-style FASTG file.
         """
         fastg = open(filename, 'w')
-        if verbosity > 0:
-            print('\nSaving', filename)
+        print_v(('\n' if leading_newline else '') + 'Saving ' + filename, verbosity, 1)
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
         for segment in sorted_segments:
             fastg.write(self.get_fastg_header_with_links(segment, True))
@@ -308,13 +306,12 @@ class AssemblyGraph(object):
             fastg.write(add_line_breaks_to_sequence(segment.reverse_sequence, 60))
 
     def save_to_gfa(self, filename, verbosity, save_copy_depth_info=False,
-                    save_seg_type_info=False):
+                    save_seg_type_info=False, leading_newline=True):
         """
         Saves whole graph to a GFA file.
         """
         gfa = open(filename, 'w')
-        if verbosity > 0:
-            print('\nSaving', filename)
+        print_v(('\n' if leading_newline else '') + 'Saving ' + filename, verbosity, 1)
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
         for segment in sorted_segments:
             segment_line = segment.gfa_segment_line()
@@ -1064,7 +1061,6 @@ class AssemblyGraph(object):
                       ', '.join([str(x) for x in initial_single_copy_segments]))
             else:
                 print('Initial single copy segments: none')
-            print_section_header('Propagating copy numbers', verbosity)
 
         # Propagate copy depth as possible using those initial assignments.
         self.determine_copy_depth_part_2(settings.COPY_PROPAGATION_TOLERANCE, verbosity)
@@ -1100,7 +1096,7 @@ class AssemblyGraph(object):
             if self.exactly_one_link_per_end(segment):
                 self.copy_depths[segment.number] = [segment.depth]
                 if verbosity > 1:
-                    print('New single copy:', segment.number,
+                    print('Single copy:', segment.number,
                           '(' + float_to_str(segment.depth, 2) + 'x)')
                 return 1
         return 0
@@ -1146,7 +1142,7 @@ class AssemblyGraph(object):
         if best_segment_num and lowest_error < error_margin:
             self.copy_depths[best_segment_num] = best_new_depths
             if verbosity > 1:
-                print('Merged copies:  ',
+                print('Merged:     ',
                       ' + '.join([str(x) + ' (' + float_to_str(self.segments[x].depth, 2) + 'x)'
                                   for x in best_source_nums]), '->',
                       best_segment_num,
@@ -1202,7 +1198,7 @@ class AssemblyGraph(object):
                 if self.assign_copy_depths_where_needed(connections, best_arrangement,
                                                         error_margin):
                     if verbosity > 1:
-                        print('Split copies:   ', num,
+                        print('Split:      ', num,
                               '(' + float_to_str(self.segments[num].depth, 2) + 'x) ->',
                               ' + '.join([str(x) + ' (' +
                                           float_to_str(self.segments[x].depth, 2) + 'x)'
@@ -1487,9 +1483,9 @@ class AssemblyGraph(object):
                     seg_nums_used_in_bridges = remove_dupes_preserve_order(seg_nums_used_in_bridges)
                     applied_bridges.append(bridge)
                 elif verbosity > 1:
-                    print('Rejected', bridge)
+                    print(red('Rejected ' + str(bridge)))
             elif verbosity > 1:
-                print('Unused', bridge)
+                print(dim('Unused ' + str(bridge)))
 
         return set(seg_nums_used_in_bridges)
 
@@ -1499,7 +1495,7 @@ class AssemblyGraph(object):
         Applies a whole bridge, start to end.
         """
         if verbosity > 1:
-            print('Applying', bridge)
+            print(green('Applying ' + str(bridge)))
 
         # Remove all existing links for the segments being bridged.
         start = bridge.start_segment
@@ -1930,8 +1926,7 @@ class AssemblyGraph(object):
             new_paths[name] = [changes[x] for x in path_nums]
         self.paths = new_paths
 
-    def get_summary(self, verbosity, file=None, score=None, show_components=False,
-                    adjusted_dead_ends=None):
+    def get_summary(self, verbosity, file=None, score=None, adjusted_dead_ends=None):
         """
         Returns a nice table describing the graph.
         """
@@ -1956,22 +1951,23 @@ class AssemblyGraph(object):
         summary += 'dead ends:             ' + int_to_str(dead_ends, max_v) + '\n'
         if adjusted_dead_ends and adjusted_dead_ends != dead_ends:
             summary += 'adjusted dead ends:    ' + int_to_str(adjusted_dead_ends, max_v) + '\n'
-
-        if show_components:
-            components = self.get_connected_components()
-            for i, component in enumerate(components):
-                summary += 'Component ' + str(i + 1) + ' ('
-                if self.is_component_complete(component):
-                    summary += 'complete):\n'
-                else:
-                    summary += 'incomplete):\n'
-                summary += '    segments:          ' + int_to_str(len(component), max_v) + '\n'
-                component_len = sum(self.segments[x].get_length() for x in component)
-                summary += '    length (bp):       ' + int_to_str(component_len, max_v) + '\n'
         if score:
             pad_size = len(int_to_str(max_v))
             summary += 'score:                 ' + '{:.2e}'.format(score).rjust(pad_size) + '\n'
         return summary
+
+    def print_component_table(self):
+        component_table = [['Component', 'Segments', 'Links', 'Length', 'Status']]
+        components = self.get_connected_components()
+        for i, component in enumerate(components):
+            status = 'complete' if self.is_component_complete(component) else 'incomplete'
+            component_len = sum(self.segments[x].get_length() for x in component)
+            segment_count = len(component)
+            link_count = self.get_component_link_count(component)
+            component_table += [str(i+1), int_to_str(segment_count), int_to_str(link_count),
+                                int_to_str(component_len), status]
+        print_table(component_table, alignments='LRRRR', colour_sub={'none': 'red'},
+                    leading_newline=True)
 
     def get_total_link_count(self):
         """
@@ -1981,6 +1977,21 @@ class AssemblyGraph(object):
         for start, ends in self.forward_links.items():
             for end in ends:
                 if (start, end) not in links and (-end, -start) not in links:
+                    links.add((start, end))
+        return len(links)
+
+    def get_component_link_count(self, component_segs):
+        """
+        Returns the total number of forward links in the component, not counting rev comp
+        duplicates. This function assumes the given segments make up a connected component - it
+        doesn't check.
+        """
+        links = set()
+        component_segs = set(component_segs)  # positive segment numbers
+        for start, ends in self.forward_links.items():
+            for end in ends:
+                if abs(start) in component_segs and abs(end) in component_segs and \
+                        (start, end) not in links and (-end, -start) not in links:
                     links.add((start, end))
         return len(links)
 
@@ -2382,7 +2393,7 @@ class AssemblyGraph(object):
 
         self.remove_segments(segs_to_remove)
         if verbosity > 0 and segs_to_remove:
-            print('\nRemoved zero-length segments:', ', '.join(str(x) for x in segs_to_remove))
+            print('Removed zero-length segments:', ', '.join(str(x) for x in segs_to_remove))
 
     def merge_small_segments(self, verbosity, max_merge_size):
         """
@@ -2433,7 +2444,7 @@ class AssemblyGraph(object):
             self.remove_zero_length_segs(0)
 
         if verbosity > 0 and merged_seg_nums:
-            print('\nMerged small segments:', ', '.join(str(x) for x in merged_seg_nums))
+            print('Merged small segments:', ', '.join(str(x) for x in merged_seg_nums))
 
     def starts_with_dead_end(self, signed_seg_num):
         """

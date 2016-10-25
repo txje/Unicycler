@@ -561,7 +561,7 @@ class MyHelpFormatter(argparse.RawDescriptionHelpFormatter):
 
 
 def print_table(table, alignments='', max_col_width=30, col_separation=3, indent=2,
-                green_row=-1):
+                green_row=-1, colour_sub=None, leading_newline=False):
     """
     Args:
         table: a list of lists of strings (one row is one list, all rows must be the same length)
@@ -570,10 +570,16 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
         col_separation: the number of spaces between columns
         indent: the number of spaces between the table and the left side of the terminal
         green_row: the index of a row in the table to make green
+        colour_sub: a dictionary of values to colour names for which the text colour will be set
+        leading_newline: if True, the function will print a blank line above the table
 
     Returns:
         nothing, just prints the table
     """
+    if colour_sub is None:
+        colour_sub = {}
+    if leading_newline:
+        print()
     alignments += 'L' * (len(table[0]) - len(alignments))  # Fill out with L, if incomplete
     col_widths = [0] * len(table[0])
     for row in table:
@@ -592,11 +598,11 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
             row_str = separator.join(aligned_row)
             if i == 0:
                 row_str = bold_underline(row_str)
-            if i == green_row:
+            elif i == green_row:
                 row_str = green(row_str)
             else:
-                row_str = row_str.replace('PASS', green('PASS'))
-                row_str = row_str.replace('FAIL', red('FAIL'))
+                for text, colour_name in colour_sub.items():
+                    row_str = row_str.replace(text, colour(text, colour_name))
             print(indenter + row_str, flush=True)
             row = [x[col_widths[j]:] for j, x in enumerate(row)]
 
@@ -662,6 +668,6 @@ def convert_fastq_to_fasta(fastq, fasta):
                 fasta.write(sequence + '\n')
 
 
-def print_verbosity(text, verbosity, min_verbosity):
+def print_v(text, verbosity, min_verbosity):
     if verbosity >= min_verbosity:
         print(text, flush=True)

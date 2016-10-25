@@ -104,7 +104,6 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
 
     # Print the SPAdes result table, highlighting the best k-mer in green.
     if verbosity > 0:
-        print()
         best_kmer_row = [x[0] for x in spades_results_table].index(int_to_str(best_kmer))
         print_table(spades_results_table, alignments='RRRR', indent=0, green_row=best_kmer_row)
         print('\nBest k-mer: ' + int_to_str(best_kmer))

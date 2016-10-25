@@ -649,3 +649,8 @@ def convert_fastq_to_fasta(fastq, fasta):
                 _ = next(fastq)
                 fasta.write('>' + name + '\n')
                 fasta.write(sequence + '\n')
+
+
+def print_verbosity(text, verbosity, min_verbosity):
+    if verbosity >= min_verbosity:
+        print(text, flush=True)

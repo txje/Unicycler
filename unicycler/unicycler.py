@@ -16,7 +16,7 @@ import multiprocessing
 from .assembly_graph import AssemblyGraph
 from .bridge import create_spades_contig_bridges, \
     create_long_read_bridges, create_loop_unrolling_bridges
-from .misc import int_to_str, float_to_str, quit_with_error, get_percentile, \
+from .misc import int_to_str, float_to_str, quit_with_error, get_percentile, print_verbosity, \
     print_section_header, check_files_and_programs, MyHelpFormatter, bold
 from .spades_func import get_best_spades_graph
 from .blast_func import find_start_gene, CannotFindStart
@@ -644,17 +644,18 @@ def make_output_directory(out_dir, verbosity):
     """
     Creates the output directory, if it doesn't already exist.
     """
-    if verbosity > 1:
-        print_section_header('Making output directory', verbosity)
+    print_verbosity('', verbosity, 1)
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
-        print(out_dir)
+        print_verbosity('Making output directory:', verbosity, 1)
+        print_verbosity('  ' + out_dir, verbosity, 1)
     elif os.listdir(out_dir) and verbosity > 1:
-        print('The directory already exists and files may be reused and/or overwritten:')
-        print('  ' + out_dir)
+        print_verbosity('The output directory already exists and files may be reused and/or '
+                        'overwritten:', verbosity, 1)
+        print_verbosity('  ' + out_dir, verbosity, 1)
     else:  # directory exists but is empty
-        print('The directory already exists:')
-        print('  ' + out_dir)
+        print_verbosity('The output directory already exists:', verbosity, 1)
+        print_verbosity('  ' + out_dir, verbosity, 1)
 
 
 def get_single_copy_segments(graph, verbosity, min_single_copy_length):
@@ -719,19 +720,19 @@ def print_intro_message(args, verbosity, full_command):
         if args.mode == 0:
             print('Bridging mode: conservative')
             if args.min_bridge_qual == settings.CONSERVATIVE_MIN_BRIDGE_QUAL:
-                print('  Using default conservative bridge quality cutoff: ', end='')
+                print('  using default conservative bridge quality cutoff: ', end='')
             else:
-                print('  Using user-specified bridge quality cutoff: ', end='')
+                print('  using user-specified bridge quality cutoff: ', end='')
         elif args.mode == 1:
             print('Bridging mode: normal')
             if args.min_bridge_qual == settings.NORMAL_MIN_BRIDGE_QUAL:
-                print('  Using default normal bridge quality cutoff: ', end='')
+                print('  using default normal bridge quality cutoff: ', end='')
             else:
-                print('  Using user-specified bridge quality cutoff: ', end='')
+                print('  using user-specified bridge quality cutoff: ', end='')
         else:  # args.mode == 2
             print('Bridging mode: bold')
             if args.min_bridge_qual == settings.BOLD_MIN_BRIDGE_QUAL:
-                print('  Using default bold bridge quality cutoff: ', end='')
+                print('  using default bold bridge quality cutoff: ', end='')
             else:
-                print('  Using user-specified bridge quality cutoff: ', end='')
+                print('  using user-specified bridge quality cutoff: ', end='')
         print(float_to_str(args.min_bridge_qual, 2))

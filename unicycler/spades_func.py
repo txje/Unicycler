@@ -10,7 +10,7 @@ import subprocess
 import gzip
 import shutil
 from .misc import print_section_header, round_to_nearest_odd, get_compression_type, int_to_str, \
-    quit_with_error, strip_read_extensions, bold, dim
+    quit_with_error, strip_read_extensions, bold, dim, print_table, green
 from .assembly_graph import AssemblyGraph
 
 
@@ -51,8 +51,7 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
 
     # Conduct a SPAdes assembly for each k-mer (or load existing ones) and score them to choose
     # the best.
-    if verbosity == 1:
-        print('  k-mer   segments   dead ends         score')
+    spades_results_table = [['k-mer', 'segments', 'dead ends', 'score']]
     best_score = 0.0
     best_kmer = kmer_range[0]
     best_assembly_graph = None
@@ -81,9 +80,8 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
             score = 0.0
         else:
             score = 1.0 / (segment_count * ((adjusted_dead_ends + 1) ** 2))
-        if verbosity == 1:
-            print(int_to_str(kmer).rjust(7) + int_to_str(segment_count).rjust(11) +
-                  int_to_str(dead_ends).rjust(12) + '{:.2e}'.format(score).rjust(14), flush=True)
+        spades_results_table.append([int_to_str(kmer), int_to_str(segment_count),
+                                     int_to_str(dead_ends), '{:.2e}'.format(score)])
         if verbosity > 1:
             print_section_header('SPAdes k=' + int_to_str(kmer) + ' assembly graph summary',
                                  verbosity)
@@ -101,14 +99,20 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
     if keep_temp < 1 and os.path.isdir(spades_dir):
         shutil.rmtree(spades_dir)
 
-    if verbosity == 1:
-        print()
-
     if best_score == 0.0:
         quit_with_error('none of the SPAdes assemblies produced assembled sequence')
 
+    # Print the SPAdes result table, highlighting the best k-mer in green.
     if verbosity > 0:
-        print('Best k-mer: ' + str(best_kmer))
+        print()
+        formatted_results_table = []
+        for row in spades_results_table:
+            if row[0] == int_to_str(best_kmer):
+                formatted_results_table.append([green(x) for x in row])
+            else:
+                formatted_results_table.append(row)
+        print_table(formatted_results_table, alignments='')
+        print('\nBest k-mer: ' + green(int_to_str(best_kmer)))
 
     return best_assembly_graph
 
@@ -208,7 +212,7 @@ def spades_assembly(read_files, out_dir, kmers, verbosity, threads, spades_path)
     while process.poll() is None:
         spades_output = process.stdout.readline().rstrip().decode()
         if spades_output and verbosity > 1:
-            if 'Command line:' in spades_output:
+            if spades_output.startswith('Command line:'):
                 spades_output = ' '.join(spades_output.split()).replace('Command line: ', '')
                 print(bold(spades_output))
             else:
@@ -281,10 +285,11 @@ def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity, km
     kmer_range_str = ', '.join([str(x) for x in kmer_range])
 
     if verbosity > 0:
+        read_length_digits = len(str(median_read_length))
         print('Median read length: ' + str(median_read_length))
-        print('Starting k-mer:     ' + str(starting_kmer))
-        print('Maximum k-mer:      ' + str(max_kmer))
-        print('k-mer range:        ' + kmer_range_str)
+        print('Starting k-mer:     ' + str(starting_kmer).rjust(read_length_digits))
+        print('Maximum k-mer:      ' + str(max_kmer).rjust(read_length_digits))
+        print('K-mer range:        ' + kmer_range_str)
 
     kmer_range_file = open(kmer_range_filename, 'w')
     kmer_range_file.write(kmer_range_str)

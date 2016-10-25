@@ -153,8 +153,9 @@ def get_arguments():
             check_file_exists(f)
     if args.on_fast5:
         check_directory_exists(args.on_fast5)
-    for f in args.pb_bax:
-        check_file_exists(f)
+    if args.pb_bax:
+        for f in args.pb_bax:
+            check_file_exists(f)
 
     short_read_input_count = sum(0 if x is None else 1 for x in [args.short1, args.short2])
     if short_read_input_count == 1:

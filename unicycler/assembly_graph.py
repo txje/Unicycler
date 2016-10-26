@@ -9,7 +9,7 @@ import math
 from collections import deque, defaultdict
 from .misc import int_to_str, float_to_str, weighted_average_list, print_section_header, \
     reverse_complement, score_function, add_line_breaks_to_sequence, print_v, print_table, colour
-from .bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge
+from .bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge, get_bridge_str
 from . import settings
 
 
@@ -1434,6 +1434,8 @@ class AssemblyGraph(object):
         # first.
         sorted_bridges = sorted(bridges, key=lambda x: (x.get_type_score(), x.quality),
                                 reverse=True)
+        bridge_application_table = [['Type', 'Start', 'End', 'Path', 'Quality', 'Result']]
+        table_row_colours = {}
         for bridge in sorted_bridges:
 
             # Is the bridge available to be applied? The first criterion is simple: neither the
@@ -1473,6 +1475,8 @@ class AssemblyGraph(object):
                                         abs(bridge_using_this_segment.end_segment) in segs_in_path:
                             can_use_bridge = False
 
+            bridge_application_table_row = [bridge.get_type_name(), str(bridge.start_segment), str(bridge.end_segment),
+                                            ', '.join([str(x) for x in bridge.graph_path]), '%.3f' % bridge.quality]
             if can_use_bridge:
                 # Even if there's no conflict with other bridges, the quality still needs to be
                 # high enough for this bridge to be applicable.
@@ -1481,11 +1485,17 @@ class AssemblyGraph(object):
                                       seg_nums_used_in_bridges)
                     seg_nums_used_in_bridges = remove_dupes_preserve_order(seg_nums_used_in_bridges)
                     applied_bridges.append(bridge)
+                    bridge_application_table.append(bridge_application_table_row + ['applied'])
                 elif verbosity > 1:
-                    print(format_bridge_message('Rejected ' + str(bridge), 'red'))
+                    bridge_application_table.append(bridge_application_table_row + ['rejected'])
             elif verbosity > 1:
-                print(format_bridge_message('Unused ' + str(bridge), 'dim'))
+                table_row_colours[len(bridge_application_table)] = 'dim'
+                bridge_application_table.append(bridge_application_table_row + ['unused'])
 
+        if verbosity > 1:
+            print_table(bridge_application_table, alignments='LRRLRR', indent=0,
+                        sub_colour={'applied': 'green', 'rejected': 'red'}, row_colour=table_row_colours,
+                        max_col_width=40)
         return set(seg_nums_used_in_bridges)
 
     def apply_bridge(self, bridge, verbosity, right_bridged, left_bridged,
@@ -1493,9 +1503,6 @@ class AssemblyGraph(object):
         """
         Applies a whole bridge, start to end.
         """
-        if verbosity > 1:
-            print(format_bridge_message('Applying ' + str(bridge), 'green'))
-
         # Remove all existing links for the segments being bridged.
         start = bridge.start_segment
         end = bridge.end_segment
@@ -3073,4 +3080,4 @@ def remove_dupes_preserve_order(lst):
 
 def format_bridge_message(text, colour_name):
     text_parts = text.split(': ', maxsplit=1)
-    print((text_parts[0] + ':').ljust(27) + colour(text_parts[1], colour_name))
+    return (text_parts[0] + ':').ljust(27) + colour(text_parts[1], colour_name)

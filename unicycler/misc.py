@@ -14,6 +14,7 @@ import gzip
 import argparse
 import shutil
 import re
+import textwrap
 
 
 def float_to_str(num, decimals, max_num=0):
@@ -569,7 +570,8 @@ class MyHelpFormatter(argparse.RawDescriptionHelpFormatter):
 
 
 def print_table(table, alignments='', max_col_width=30, col_separation=3, indent=2,
-                row_colour=None, sub_colour=None, row_extra_text=None, leading_newline=False):
+                row_colour=None, sub_colour=None, row_extra_text=None, leading_newline=False,
+                subsequent_indent=''):
     """
     Args:
         table: a list of lists of strings (one row is one list, all rows must be the same length)
@@ -581,6 +583,7 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
         sub_colour: a dictionary of values to colour names for which the text colour will be set
         row_extra_text: a dictionary of row indices and extra text to display after the row
         leading_newline: if True, the function will print a blank line above the table
+        subsequent_indent: this string will be added to the start of wrapped text lines
 
     Returns:
         nothing, just prints the table
@@ -600,14 +603,17 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
                       for i, x in enumerate(row)]
     separator = ' ' * col_separation
     indenter = ' ' * indent
+    wrapper = textwrap.TextWrapper(subsequent_indent=subsequent_indent, width=max_col_width)
     for i, row in enumerate(table):
-        while any(x for x in row):
+        wrapped_row = [wrapper.wrap(x) for x in row]
+        for j in range(max(len(x) for x in wrapped_row)):
+            row_line = [x[j] if j < len(x) else '' for x in wrapped_row]
             aligned_row = []
-            for value, col_width, alignment in zip(row, col_widths, alignments):
+            for value, col_width, alignment in zip(row_line, col_widths, alignments):
                 if i == 0 or alignment == 'L':
-                    aligned_row.append(value.ljust(col_width)[:col_width])
+                    aligned_row.append(value.ljust(col_width))
                 else:
-                    aligned_row.append(value.rjust(col_width)[:col_width])
+                    aligned_row.append(value.rjust(col_width))
             row_str = separator.join(aligned_row)
             if i in row_extra_text:
                 row_str += row_extra_text[i]
@@ -619,7 +625,6 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
                 for text, colour_name in sub_colour.items():
                     row_str = row_str.replace(text, colour(text, colour_name))
             print(indenter + row_str, flush=True)
-            row = [x[col_widths[j]:] for j, x in enumerate(row)]
 
 
 def colour(text, text_colour):

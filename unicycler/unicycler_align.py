@@ -531,12 +531,12 @@ def print_graphmap_summary_table(graphmap_alignments, percent_id_mean, percent_i
     print('Total alignments:', int_to_str(len(graphmap_alignments)))
     print()
 
-    summary_table = [['', 'Mean', 'Stdev']]
-    summary_table += ['Identity:', float_to_str(percent_id_mean, 2) + '%',
-                      float_to_str(percent_id_std_dev, 2) + '%']
-    summary_table += ['Score:', float_to_str(score_mean, 2) + ' ',
-                      float_to_str(score_std_dev, 2) + ' ']
-    print_table(summary_table)
+    summary_table = [['', 'Mean', 'Stdev'],
+                     ['Identity:', float_to_str(percent_id_mean, 2) + '%',
+                      float_to_str(percent_id_std_dev, 2) + '%'],
+                     ['Score:', float_to_str(score_mean, 2) + ' ',
+                      float_to_str(score_std_dev, 2) + ' ']]
+    print_table(summary_table, indent=0)
     print()
     print('Mean reference length / read length:', float_to_str(EXPECTED_SLOPE, 5))
 

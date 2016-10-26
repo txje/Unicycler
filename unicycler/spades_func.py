@@ -281,7 +281,7 @@ def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity, km
 
     if verbosity > 0:
         print('Median read length: ' + str(median_read_length))
-        print('K-mer range:        ' + kmer_range_str)
+        print('K-mer range: ' + kmer_range_str)
 
     kmer_range_file = open(kmer_range_filename, 'w')
     kmer_range_file.write(kmer_range_str)

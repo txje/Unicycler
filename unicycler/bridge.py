@@ -103,8 +103,7 @@ class SpadesContigBridge(object):
         self.quality = 100.0 * math.sqrt(self.quality)
 
     def __repr__(self):
-        return 'SPAdes bridge: ' + get_bridge_str(self.start_segment, self.graph_path,
-                                                  self.end_segment) + \
+        return 'SPAdes bridge: ' + get_bridge_str(self) + \
                ' (quality = ' + float_to_str(self.quality, 2) + ')'
 
     @staticmethod
@@ -114,6 +113,13 @@ class SpadesContigBridge(object):
         LongReadBridge = 2, SpadesContigBridge = 1, LoopUnrollingBridge = 0
         """
         return 1
+
+    @staticmethod
+    def get_type_name():
+        """
+        Returns the of the bridge types.
+        """
+        return 'SPAdes bridge'
 
 
 class LongReadBridge(object):
@@ -173,8 +179,7 @@ class LongReadBridge(object):
         self.graph = graph
 
     def __repr__(self):
-        return 'long read bridge: ' + get_bridge_str(self.start_segment, self.graph_path,
-                                                     self.end_segment) + \
+        return 'long read bridge: ' + get_bridge_str(self) + \
                ' (quality = ' + float_to_str(self.quality, 2) + ')'
 
     def predicted_time_to_finalise(self):
@@ -642,6 +647,13 @@ class LongReadBridge(object):
         """
         return 2
 
+    @staticmethod
+    def get_type_name():
+        """
+        Returns the of the bridge types.
+        """
+        return 'long read bridge'
+
 
 class LoopUnrollingBridge(object):
     """
@@ -727,8 +739,7 @@ class LoopUnrollingBridge(object):
         self.quality = 100.0 * math.sqrt(self.quality)
 
     def __repr__(self):
-        return 'loop bridge: ' + get_bridge_str(self.start_segment, self.graph_path,
-                                                self.end_segment) + \
+        return 'loop bridge: ' + get_bridge_str(self) + \
                ' (quality = ' + float_to_str(self.quality, 2) + ')'
 
     @staticmethod
@@ -738,6 +749,13 @@ class LoopUnrollingBridge(object):
         LongReadBridge = 2, SpadesContigBridge = 1, LoopUnrollingBridge = 0
         """
         return 0
+
+    @staticmethod
+    def get_type_name():
+        """
+        Returns the of the bridge types.
+        """
+        return 'loop unrolling'
 
 
 def create_spades_contig_bridges(graph, single_copy_segments):
@@ -1120,14 +1138,14 @@ def finalise_bridge(all_args):
                            estimated_genome_size, verbosity, expected_linear_seqs)
 
 
-def get_bridge_str(start, middle, end):
+def get_bridge_str(bridge):
     """
     Returns a bridge sequence in human-readable form.
     """
-    bridge_str = str(start) + ' -> '
-    if middle:
-        bridge_str += ', '.join([str(x) for x in middle]) + ' -> '
-    bridge_str += str(end)
+    bridge_str = str(bridge.start_segment) + ' -> '
+    if bridge.graph_path:
+        bridge_str += ', '.join([str(x) for x in bridge.graph_path]) + ' -> '
+    bridge_str += str(bridge.end_segment)
     return bridge_str
 
 

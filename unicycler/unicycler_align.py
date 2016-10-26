@@ -769,11 +769,7 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
             else:
                 output += 'All Seqan alignments (time to align = ' + \
                           float_to_str(time.time() - start_time, 3) + ' s):\n'
-                for alignment in read.alignments:
-                    if alignment.alignment_type != 'SAM':
-                        output += '  ' + alignment.get_str_no_read_name() + '\n'
-                        if VERBOSITY > 3:
-                            output += ''.join(alignment.cigar_parts) + '\n'
+                output += read.get_alignment_table(exclude_graphmap=True)
 
         read.remove_conflicting_alignments(allowed_overlap)
         if not keep_bad:
@@ -784,8 +780,7 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
             output += 'Final alignments:\n'
         if VERBOSITY > 1:
             if read.alignments:
-                for alignment in read.alignments:
-                    output += '  ' + alignment.get_str_no_read_name() + '\n'
+                output += read.get_alignment_table()
             else:
                 output += '  None\n'
 

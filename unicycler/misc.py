@@ -571,7 +571,7 @@ class MyHelpFormatter(argparse.RawDescriptionHelpFormatter):
 
 def print_table(table, alignments='', max_col_width=30, col_separation=3, indent=2,
                 row_colour=None, sub_colour=None, row_extra_text=None, leading_newline=False,
-                subsequent_indent=''):
+                subsequent_indent='', return_str=False, header_format='bold_underline'):
     """
     Args:
         table: a list of lists of strings (one row is one list, all rows must be the same length)
@@ -584,6 +584,8 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
         row_extra_text: a dictionary of row indices and extra text to display after the row
         leading_newline: if True, the function will print a blank line above the table
         subsequent_indent: this string will be added to the start of wrapped text lines
+        return_str: if True, this function will return a string of the table instead of printing it
+        header_format: the formatting (colour, underline, etc) of the header line
 
     Returns:
         nothing, just prints the table
@@ -604,6 +606,7 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
     separator = ' ' * col_separation
     indenter = ' ' * indent
     wrapper = textwrap.TextWrapper(subsequent_indent=subsequent_indent, width=max_col_width)
+    full_table_str = ''
     for i, row in enumerate(table):
         wrapped_row = [wrapper.wrap(x) for x in row]
         for j in range(max(len(x) for x in wrapped_row)):
@@ -617,14 +620,19 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
             row_str = separator.join(aligned_row)
             if i in row_extra_text:
                 row_str += row_extra_text[i]
-            if i == 0:
-                row_str = bold_underline(row_str)
+            if i == 0 and header_format:
+                row_str = colour(row_str, header_format)
             if i in row_colour:
                 row_str = colour(row_str, row_colour[i])
             else:
                 for text, colour_name in sub_colour.items():
                     row_str = row_str.replace(text, colour(text, colour_name))
-            print(indenter + row_str, flush=True)
+            if return_str:
+                full_table_str += indenter + row_str + '\n'
+            else:
+                print(indenter + row_str, flush=True)
+    if return_str:
+        return full_table_str
 
 
 def colour(text, text_colour):
@@ -636,6 +644,8 @@ def colour(text, text_colour):
         return red(text)
     elif text_colour == 'dim':
         return dim(text)
+    elif text_colour == 'dim_underline':
+        return dim_underline(text)
     elif text_colour == 'bold_green':
         return bold_green(text)
     elif text_colour == 'bold':
@@ -666,12 +676,16 @@ def bold(text):
     return '\033[1m' + text + '\033[0m'
 
 
+def bold_underline(text):
+    return '\033[1m' + '\033[4m' + text + '\033[0m'
+
+
 def dim(text):
     return '\033[2m' + text + '\033[0m'
 
 
-def bold_underline(text):
-    return '\033[1m' + '\033[4m' + text + '\033[0m'
+def dim_underline(text):
+    return '\033[2m' + '\033[4m' + text + '\033[0m'
 
 
 def bold_yellow_underline(text):

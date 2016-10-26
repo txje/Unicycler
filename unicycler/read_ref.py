@@ -10,7 +10,7 @@ import gzip
 import os
 import math
 from .misc import quit_with_error, print_progress_line, get_nice_header, get_compression_type, \
-    print_section_header, get_sequence_file_type, strip_read_extensions
+    print_section_header, get_sequence_file_type, strip_read_extensions, print_table, float_to_str
 from . import settings
 
 
@@ -433,3 +433,31 @@ class Read(object):
 
     def aligns_to_multiple_single_copy_segments(self, single_copy_segment_names):
         return sum(x.ref.name in single_copy_segment_names for x in self.alignments) > 1
+
+    def get_alignment_table(self, exclude_graphmap=False):
+        alignment_table = [['Ref name', 'Ref start', 'Ref end', 'Read start', 'Read end', 'Strand',
+                            'Raw score', 'Scaled score', 'Identity']]
+
+        if exclude_graphmap:
+            alignments = [x for x in self.alignments if x.alignment_type != 'SAM']
+        else:
+            alignments = self.alignments
+        for alignment in alignments:
+            read_start, read_end = alignment.read_start_end_positive_strand()
+            strand = '-' if alignment.rev_comp else '+'
+            ref_name = alignment.ref.name
+            if ref_name.startswith('CONTAMINATION'):
+                ref_name = 'CONTAM'
+            alignment_row = [ref_name, str(alignment.ref_start_pos), str(alignment.ref_end_pos),
+                             str(read_start), str(read_end), strand]
+            if alignment.scaled_score is not None:
+                alignment_row += [str(alignment.raw_score), float_to_str(alignment.scaled_score, 2)]
+            else:
+                alignment_row += ['', '']
+            if alignment.percent_identity is not None:
+                alignment_row.append(float_to_str(alignment.percent_identity, 2) + '%')
+            else:
+                alignment_row.append('')
+            alignment_table.append(alignment_row)
+        return print_table(alignment_table, alignments='RRRRRRRRR', return_str=True,
+                           header_format=None, col_separation=2, indent=2)

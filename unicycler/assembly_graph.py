@@ -1055,11 +1055,11 @@ class AssemblyGraph(object):
                 initial_single_copy_segments.append(segment.number)
         if verbosity > 1:
             if initial_single_copy_segments:
-                print()
-                print('Initial single copy segments:',
+                print('\nInitial single copy segments:',
                       ', '.join([str(x) for x in initial_single_copy_segments]))
             else:
                 print('Initial single copy segments: none')
+            print()
 
         # Propagate copy depth as possible using those initial assignments.
         self.determine_copy_depth_part_2(settings.COPY_PROPAGATION_TOLERANCE, verbosity)
@@ -1970,8 +1970,8 @@ class AssemblyGraph(object):
             component_len = sum(self.segments[x].get_length() for x in component)
             segment_count = len(component)
             link_count = self.get_component_link_count(component)
-            component_table += [str(i+1), int_to_str(segment_count), int_to_str(link_count),
-                                int_to_str(component_len), status]
+            component_table.append([str(i+1), int_to_str(segment_count), int_to_str(link_count),
+                                    int_to_str(component_len), status])
         print_table(component_table, alignments='LRRRR', sub_colour={'none': 'red'},
                     leading_newline=True)
 

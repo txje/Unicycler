@@ -1029,7 +1029,7 @@ class AssemblyGraph(object):
         # depth down to half the median.
         median_depth = self.get_median_read_depth()
         if verbosity > 1:
-            print('Median graph depth:', float_to_str(median_depth, 3))
+            print('Median graph depth:', float_to_str(median_depth, 2))
         bases_near_half_median = self.get_base_count_in_depth_range(median_depth * 0.4,
                                                                     median_depth * 0.6)
         bases_near_double_median = self.get_base_count_in_depth_range(median_depth * 1.6,
@@ -1043,7 +1043,7 @@ class AssemblyGraph(object):
         else:
             single_copy_depth = median_depth
         if verbosity > 1:
-            print('Single-copy depth:', float_to_str(median_depth, 3))
+            print('Single-copy depth: ', float_to_str(median_depth, 2))
 
         # Assign single-copy status to segments within the tolerance of the single-copy depth.
         max_depth = single_copy_depth + settings.INITIAL_SINGLE_COPY_TOLERANCE
@@ -1055,7 +1055,7 @@ class AssemblyGraph(object):
                 initial_single_copy_segments.append(segment.number)
         if verbosity > 1:
             if initial_single_copy_segments:
-                print('\nInitial single copy segments:',
+                print('\nInitial single copy segments:\n',
                       ', '.join([str(x) for x in initial_single_copy_segments]))
             else:
                 print('Initial single copy segments: none')
@@ -1095,7 +1095,7 @@ class AssemblyGraph(object):
             if self.exactly_one_link_per_end(segment):
                 self.copy_depths[segment.number] = [segment.depth]
                 if verbosity > 1:
-                    print('Single:', segment.number,
+                    print('Single: ', segment.number,
                           '(' + float_to_str(segment.depth, 2) + 'x)')
                 return 1
         return 0
@@ -1141,7 +1141,7 @@ class AssemblyGraph(object):
         if best_segment_num and lowest_error < error_margin:
             self.copy_depths[best_segment_num] = best_new_depths
             if verbosity > 1:
-                print('Merged:',
+                print('Merged: ',
                       ' + '.join([str(x) + ' (' + float_to_str(self.segments[x].depth, 2) + 'x)'
                                   for x in best_source_nums]), '\u2192',
                       best_segment_num,
@@ -1197,7 +1197,7 @@ class AssemblyGraph(object):
                 if self.assign_copy_depths_where_needed(connections, best_arrangement,
                                                         error_margin):
                     if verbosity > 1:
-                        print('Split: ', num,
+                        print('Split:  ', num,
                               '(' + float_to_str(self.segments[num].depth, 2) + 'x) \u2192',
                               ' + '.join([str(x) + ' (' +
                                           float_to_str(self.segments[x].depth, 2) + 'x)'

@@ -541,7 +541,7 @@ def print_graphmap_summary_table(graphmap_alignments, percent_id_mean, percent_i
                       float_to_str(percent_id_std_dev, 2) + '%'],
                      ['Score:', float_to_str(score_mean, 2) + ' ',
                       float_to_str(score_std_dev, 2) + ' ']]
-    print_table(summary_table, indent=0)
+    print_table(summary_table, indent=0, header_format='normal')
     print()
     print('Mean reference length / read length:', float_to_str(EXPECTED_SLOPE, 5))
 

@@ -785,7 +785,7 @@ def run_nanopolish(fasta, args, raw_variants_filename):
     nanopolish_command = [args.nanopolish, 'variants', '-r', args.on_fasta, '-b', bam_1,
                           '-g', fasta, '-e', bam_2, '-t', str(args.threads),
                           '--min-candidate-frequency', '0.1', '-o', raw_variants_filename,
-                          '--models', args.nanopolish_model_files[-1]]
+                          '--models', 'nanopolish_models.fofn']
 
     run_command(nanopolish_command, args)
     if raw_variants_filename not in get_all_files_in_current_dir():

@@ -1095,7 +1095,7 @@ class AssemblyGraph(object):
             if self.exactly_one_link_per_end(segment):
                 self.copy_depths[segment.number] = [segment.depth]
                 if verbosity > 1:
-                    print('Single copy:', segment.number,
+                    print('Single:', segment.number,
                           '(' + float_to_str(segment.depth, 2) + 'x)')
                 return 1
         return 0
@@ -1141,9 +1141,9 @@ class AssemblyGraph(object):
         if best_segment_num and lowest_error < error_margin:
             self.copy_depths[best_segment_num] = best_new_depths
             if verbosity > 1:
-                print('Merged:     ',
+                print('Merged:',
                       ' + '.join([str(x) + ' (' + float_to_str(self.segments[x].depth, 2) + 'x)'
-                                  for x in best_source_nums]), '->',
+                                  for x in best_source_nums]), '\u2192',
                       best_segment_num,
                       '(' + float_to_str(self.segments[best_segment_num].depth, 2) + 'x)')
             return 1
@@ -1197,8 +1197,8 @@ class AssemblyGraph(object):
                 if self.assign_copy_depths_where_needed(connections, best_arrangement,
                                                         error_margin):
                     if verbosity > 1:
-                        print('Split:      ', num,
-                              '(' + float_to_str(self.segments[num].depth, 2) + 'x) ->',
+                        print('Split: ', num,
+                              '(' + float_to_str(self.segments[num].depth, 2) + 'x) \u2192',
                               ' + '.join([str(x) + ' (' +
                                           float_to_str(self.segments[x].depth, 2) + 'x)'
                                           for x in connections]))

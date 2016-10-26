@@ -254,14 +254,14 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     # If the user supplied a low score threshold, we use that. Otherwise, we'll use the median
     # score minus three times the MAD.
     if display_low_score:
-        print_section_header('Determining low-score threshold', VERBOSITY)
+        print_section_header('Determining low score threshold', VERBOSITY)
     low_score_threshold = low_score_threshold_list[0]
     if low_score_threshold is not None:
         if VERBOSITY > 0 and display_low_score:
             print('Using user-supplied threshold: ' + float_to_str(low_score_threshold, 2))
     else:
         if VERBOSITY > 0 and display_low_score:
-            print('Automatically choosing a threshold using random alignments.\n')
+            print('Automatically choosing a threshold using random alignment scores.\n')
         std_devs_over_mean = settings.AUTO_SCORE_STDEV_ABOVE_RANDOM_ALIGNMENT_MEAN
         low_score_threshold, rand_mean, rand_std_dev = get_auto_score_threshold(scoring_scheme,
                                                                                 std_devs_over_mean)
@@ -269,9 +269,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         if VERBOSITY > 0 and display_low_score:
             print('Random alignment mean score: ' + float_to_str(rand_mean, 2))
             print('         standard deviation: ' + float_to_str(rand_std_dev, 2, rand_mean))
-            print()
-            print('Low score threshold = ' + float_to_str(rand_mean, 2) + ' + ' +
-                  str(std_devs_over_mean) + ' x ' + float_to_str(rand_std_dev, 2) + ' = ' +
+            print('        Low score threshold: ' + float_to_str(rand_mean, 2) + ' + (' +
+                  str(std_devs_over_mean) + ' x ' + float_to_str(rand_std_dev, 2) + ') = ' +
                   float_to_str(low_score_threshold, 2))
 
     using_contamination = contamination_fasta is not None

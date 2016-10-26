@@ -89,7 +89,7 @@ def main():
         bridges = []
         graph = copy.deepcopy(unbridged_graph)
     else:
-        print_section_header('Bridging graph with SPAdes contig paths', verbosity,
+        print_section_header('Bridging graph with SPAdes contigs', verbosity,
                              last_newline=(verbosity > 1))
         bridges = create_spades_contig_bridges(unbridged_graph, single_copy_segments)
         bridges += create_loop_unrolling_bridges(unbridged_graph)

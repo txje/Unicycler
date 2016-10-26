@@ -1055,7 +1055,7 @@ class AssemblyGraph(object):
                 initial_single_copy_segments.append(segment.number)
         if verbosity > 1:
             if initial_single_copy_segments:
-                print('\nInitial single copy segments:\n',
+                print('\nInitial single copy segments:\n' +
                       ', '.join([str(x) for x in initial_single_copy_segments]))
             else:
                 print('Initial single copy segments: none')
@@ -1089,14 +1089,16 @@ class AssemblyGraph(object):
         """
         segments = sorted(self.get_segments_without_copies(),
                           key=lambda x: x.get_length(), reverse=True)
+
         for segment in segments:
             if segment.get_length() < min_single_copy_length:
                 continue
             if self.exactly_one_link_per_end(segment):
                 self.copy_depths[segment.number] = [segment.depth]
                 if verbosity > 1:
-                    print('Single: ', segment.number,
-                          '(' + float_to_str(segment.depth, 2) + 'x)')
+                    max_seg_num = max(self.segments.keys())
+                    print('Single: ',
+                          self.get_segment_name_and_depth_str(segment.number, max_seg_num))
                 return 1
         return 0
 
@@ -1117,6 +1119,7 @@ class AssemblyGraph(object):
         best_source_nums = None
         best_new_depths = []
         lowest_error = float('inf')
+        max_seg_num = max(self.segments.keys())
 
         for segment in segments:
             num = segment.number
@@ -1142,13 +1145,17 @@ class AssemblyGraph(object):
             self.copy_depths[best_segment_num] = best_new_depths
             if verbosity > 1:
                 print('Merged: ',
-                      ' + '.join([str(x) + ' (' + float_to_str(self.segments[x].depth, 2) + 'x)'
-                                  for x in best_source_nums]), '\u2192',
-                      best_segment_num,
-                      '(' + float_to_str(self.segments[best_segment_num].depth, 2) + 'x)')
+                      ' + '.join(self.get_segment_name_and_depth_str(x, max_seg_num)
+                                 for x in best_source_nums),
+                      '\u2192',
+                      self.get_segment_name_and_depth_str(best_segment_num, max_seg_num))
             return 1
         else:
             return 0
+
+    def get_segment_name_and_depth_str(self, segment_num, max_seg_num):
+        return str(segment_num).rjust(len(str(max_seg_num))) + \
+               ' (' + float_to_str(self.segments[segment_num].depth, 2) + 'x)'
 
     def redistribute_copy_depths(self, error_margin, verbosity):
         """
@@ -1161,6 +1168,8 @@ class AssemblyGraph(object):
         segments = self.get_segments_with_two_or_more_copies()
         if not segments:
             return 0
+        max_seg_num = max(self.segments.keys())
+
         for segment in segments:
             num = segment.number
             connections = self.get_exclusive_inputs(num)
@@ -1197,11 +1206,10 @@ class AssemblyGraph(object):
                 if self.assign_copy_depths_where_needed(connections, best_arrangement,
                                                         error_margin):
                     if verbosity > 1:
-                        print('Split:  ', num,
-                              '(' + float_to_str(self.segments[num].depth, 2) + 'x) \u2192',
-                              ' + '.join([str(x) + ' (' +
-                                          float_to_str(self.segments[x].depth, 2) + 'x)'
-                                          for x in connections]))
+                        print('Split:  ', self.get_segment_name_and_depth_str(num, max_seg_num),
+                              '\u2192',
+                              ' + '.join(self.get_segment_name_and_depth_str(x, max_seg_num)
+                                         for x in connections))
                     return 1
         return 0
 

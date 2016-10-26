@@ -1062,28 +1062,34 @@ class AssemblyGraph(object):
             print()
 
         # Propagate copy depth as possible using those initial assignments.
-        self.determine_copy_depth_part_2(settings.COPY_PROPAGATION_TOLERANCE, verbosity)
+        copy_depth_table = [['Input', '', 'Output']]
+        self.determine_copy_depth_part_2(settings.COPY_PROPAGATION_TOLERANCE, copy_depth_table)
 
         # Assign single-copy to the largest available segment, propagate and repeat.
         while True:
-            assignments = self.assign_single_copy_depth(verbosity, settings.MIN_SINGLE_COPY_LENGTH)
-            self.determine_copy_depth_part_2(settings.COPY_PROPAGATION_TOLERANCE, verbosity)
+            assignments = self.assign_single_copy_depth(settings.MIN_SINGLE_COPY_LENGTH,
+                                                        copy_depth_table)
+            self.determine_copy_depth_part_2(settings.COPY_PROPAGATION_TOLERANCE, copy_depth_table)
             if not assignments:
                 break
 
         # Now propagate with no tolerance threshold to complete the remaining segments.
-        self.determine_copy_depth_part_2(1.0, verbosity)
+        self.determine_copy_depth_part_2(1.0, copy_depth_table)
 
-    def determine_copy_depth_part_2(self, tolerance, verbosity):
+        if verbosity > 1:
+            print_table(copy_depth_table, alignments='RLL', max_col_width=999, hide_header=True,
+                        indent=0, col_separation=1)
+
+    def determine_copy_depth_part_2(self, tolerance, copy_depth_table):
         """
         Propagates copy depth repeatedly until assignments stop.
         """
-        while self.merge_copy_depths(tolerance, verbosity):
+        while self.merge_copy_depths(tolerance, copy_depth_table):
             pass
-        if self.redistribute_copy_depths(tolerance, verbosity):
-            self.determine_copy_depth_part_2(tolerance, verbosity)
+        if self.redistribute_copy_depths(tolerance, copy_depth_table):
+            self.determine_copy_depth_part_2(tolerance, copy_depth_table)
 
-    def assign_single_copy_depth(self, verbosity, min_single_copy_length):
+    def assign_single_copy_depth(self, min_single_copy_length, copy_depth_table):
         """
         This function assigns a single copy to the longest available segment.
         """
@@ -1095,14 +1101,13 @@ class AssemblyGraph(object):
                 continue
             if self.exactly_one_link_per_end(segment):
                 self.copy_depths[segment.number] = [segment.depth]
-                if verbosity > 1:
-                    max_seg_num = max(self.segments.keys())
-                    print('Single: ',
-                          self.get_segment_name_and_depth_str(segment.number, max_seg_num))
+                max_seg_num = max(self.segments.keys())
+                seg_name_depth_str = self.get_seg_name_depth_str(segment.number, max_seg_num)
+                copy_depth_table.append([seg_name_depth_str, '\u2192', seg_name_depth_str])
                 return 1
         return 0
 
-    def merge_copy_depths(self, error_margin, verbosity):
+    def merge_copy_depths(self, error_margin, copy_depth_table):
         """
         This function looks for segments where they have input on one end where:
           1) All input segments have copy depth assigned.
@@ -1143,21 +1148,18 @@ class AssemblyGraph(object):
                     best_new_depths = depths
         if best_segment_num and lowest_error < error_margin:
             self.copy_depths[best_segment_num] = best_new_depths
-            if verbosity > 1:
-                print('Merged: ',
-                      ' + '.join(self.get_segment_name_and_depth_str(x, max_seg_num)
-                                 for x in best_source_nums),
-                      '\u2192',
-                      self.get_segment_name_and_depth_str(best_segment_num, max_seg_num))
+            copy_depth_table.append([' + '.join(self.get_seg_name_depth_str(x, max_seg_num)
+                                     for x in best_source_nums), '\u2192',
+                                     self.get_seg_name_depth_str(best_segment_num, max_seg_num)])
             return 1
         else:
             return 0
 
-    def get_segment_name_and_depth_str(self, segment_num, max_seg_num):
+    def get_seg_name_depth_str(self, segment_num, max_seg_num):
         return str(segment_num).rjust(len(str(max_seg_num))) + \
                ' (' + float_to_str(self.segments[segment_num].depth, 2) + 'x)'
 
-    def redistribute_copy_depths(self, error_margin, verbosity):
+    def redistribute_copy_depths(self, error_margin, copy_depth_table):
         """
         This function deals with the easier case of copy depth redistribution: where one segments
         with copy depth leads exclusively to multiple segments without copy depth.
@@ -1205,11 +1207,10 @@ class AssemblyGraph(object):
             if lowest_error < error_margin:
                 if self.assign_copy_depths_where_needed(connections, best_arrangement,
                                                         error_margin):
-                    if verbosity > 1:
-                        print('Split:  ', self.get_segment_name_and_depth_str(num, max_seg_num),
-                              '\u2192',
-                              ' + '.join(self.get_segment_name_and_depth_str(x, max_seg_num)
-                                         for x in connections))
+                    copy_depth_table.append([self.get_seg_name_depth_str(num, max_seg_num),
+                                             '\u2192',
+                                             ' + '.join(self.get_seg_name_depth_str(x, max_seg_num)
+                                                        for x in connections)])
                     return 1
         return 0
 

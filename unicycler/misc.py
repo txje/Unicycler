@@ -571,7 +571,8 @@ class MyHelpFormatter(argparse.RawDescriptionHelpFormatter):
 
 def print_table(table, alignments='', max_col_width=30, col_separation=3, indent=2,
                 row_colour=None, sub_colour=None, row_extra_text=None, leading_newline=False,
-                subsequent_indent='', return_str=False, header_format='bold_underline'):
+                subsequent_indent='', return_str=False, header_format='bold_underline',
+                hide_header=False):
     """
     Args:
         table: a list of lists of strings (one row is one list, all rows must be the same length)
@@ -586,6 +587,7 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
         subsequent_indent: this string will be added to the start of wrapped text lines
         return_str: if True, this function will return a string of the table instead of printing it
         header_format: the formatting (colour, underline, etc) of the header line
+        hide_header: if True, the header is not printed
 
     Returns:
         nothing, just prints the table
@@ -608,6 +610,8 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
     wrapper = textwrap.TextWrapper(subsequent_indent=subsequent_indent, width=max_col_width)
     full_table_str = ''
     for i, row in enumerate(table):
+        if hide_header and i == 0:
+            continue
         wrapped_row = [wrapper.wrap(x) for x in row]
         for j in range(max(len(x) for x in wrapped_row)):
             row_line = [x[j] if j < len(x) else '' for x in wrapped_row]

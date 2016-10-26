@@ -18,7 +18,7 @@ import math
 import multiprocessing
 from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter, print_table, \
     get_percentile_sorted, get_pilon_jar_path, colour, bold, bold_green, bold_yellow_underline, \
-    dim, get_all_files_in_current_dir, check_file_exists, check_directory_exists
+    dim, get_all_files_in_current_dir, check_file_exists, remove_formatting
 
 
 def main():
@@ -911,7 +911,7 @@ def run_command(command, args):
 
         # bowtie2-build outputs too much, even for verbose mode.
         if args.verbosity > 2 and 'bowtie2-build' not in command[0]:
-            print(dim(out.decode()))
+            print(dim(remove_formatting(out.decode())))
     except subprocess.CalledProcessError as e:
         sys.exit(e.output.decode())
 

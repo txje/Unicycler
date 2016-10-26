@@ -726,7 +726,11 @@ def bold_red_underline(text):
 
 
 def len_without_format(text):
-    return len(re.sub('\033.*?m', '', text))
+    return len(remove_formatting(text))
+
+
+def remove_formatting(text):
+    return re.sub('\033.*?m', '', text)
 
 
 def get_all_files_in_current_dir():

@@ -12,8 +12,8 @@ import time
 import math
 import statistics
 from collections import defaultdict
-from .misc import float_to_str, reverse_complement, print_progress_line, \
-    weighted_average, get_num_agreement, flip_number_order, score_function, print_table
+from .misc import float_to_str, reverse_complement, weighted_average, get_num_agreement, \
+    flip_number_order, score_function, print_table
 from .cpp_function_wrappers import multiple_sequence_alignment
 from . import settings
 from .path_finding import get_best_paths_for_seq
@@ -381,10 +381,10 @@ class LongReadBridge(object):
             else:
                 output.append('direct connection')
             best_path_len = self.graph.get_bridge_path_length(self.all_paths[0][0])
-            output.append(str(best_path_len) + ' bp')
+            output.append(str(best_path_len))
             output.append(float_to_str(self.all_paths[0][1], 1))
             output.append(float_to_str(self.all_paths[0][3], 2))
-            output.append(str(self.all_paths[0][2]) + ' bp')
+            output.append(str(self.all_paths[0][2]))
 
             self.graph_path = self.all_paths[0][0]
             self.bridge_sequence = self.graph.get_bridge_path_sequence(self.graph_path,
@@ -571,11 +571,11 @@ class LongReadBridge(object):
         #               '\n'
         output.append(self.quality)
 
-        if verbosity > 2:
-            full_time = time.time() - start_time
-            output += '  total time:                ' + float_to_str(full_time, 2) + ' sec\n'
-            output += '    predicted time:          ' + \
-                      float_to_str(self.predicted_time_to_finalise(), 2) + ' sec\n'
+        # if verbosity > 2:
+        #     full_time = time.time() - start_time
+        #     output += '  total time:                ' + float_to_str(full_time, 2) + ' sec\n'
+        #     output += '    predicted time:          ' + \
+        #               float_to_str(self.predicted_time_to_finalise(), 2) + ' sec\n'
 
         return output
 
@@ -1035,29 +1035,19 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
 
     # We want to display this table one row at a time, so we have to fix all of the column widths
     # at the start.
-    alignments, col_widths = get_long_read_bridge_table_parameters(graph, num_long_read_bridges)
-    if verbosity == 1:
-        print_progress_line(0, num_long_read_bridges, prefix='Bridge: ')
-    elif verbosity > 1:
-        if verbosity > 1:
-            print_long_read_bridge_table_header(alignments, col_widths)
+    alignments, col_widths = get_long_read_bridge_table_parameters(graph, num_long_read_bridges,
+                                                                   verbosity)
+    if verbosity > 0:
+        print_long_read_bridge_table_header(alignments, col_widths, verbosity)
     completed_count = 0
-    last_progress = 0.0
-    step = settings.BUILDING_BRIDGES_PROGRESS_STEP
     if threads == 1:
         for bridge in long_read_bridges:
             output = bridge.finalise(scoring_scheme, min_alignment_length, read_lengths,
                                      estimated_genome_size, verbosity, expected_linear_seqs)
             completed_count += 1
-            if verbosity == 1:
-                progress = 100.0 * completed_count / num_long_read_bridges
-                progress_rounded_down = math.floor(progress / step) * step
-                if progress == 100.0 or progress_rounded_down > last_progress:
-                    print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')
-                    last_progress = progress_rounded_down
-            if verbosity > 1:
+            if verbosity > 0:
                 print_long_read_bridge_table_row(alignments, col_widths, output, completed_count,
-                                                 num_long_read_bridges, min_bridge_qual)
+                                                 num_long_read_bridges, min_bridge_qual, verbosity)
     else:
         pool = ThreadPool(threads)
         arg_list = []
@@ -1075,62 +1065,111 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
 
         for output in pool.imap_unordered(finalise_bridge, arg_list):
             completed_count += 1
-            if verbosity == 1:
-                progress = 100.0 * completed_count / num_long_read_bridges
-                progress_rounded_down = math.floor(progress / step) * step
-                if progress == 100.0 or progress_rounded_down > last_progress:
-                    print_progress_line(completed_count, num_long_read_bridges, prefix='Bridge: ')
-                    last_progress = progress_rounded_down
-            if verbosity > 1:
+            if verbosity > 0:
                 print_long_read_bridge_table_row(alignments, col_widths, output, completed_count,
-                                                 num_long_read_bridges, min_bridge_qual)
-    if verbosity == 1:
-        print()
-
+                                                 num_long_read_bridges, min_bridge_qual, verbosity)
     return all_bridges
 
 
-def get_long_read_bridge_table_parameters(graph, num_long_read_bridges):
-    table_alignments = 'RLRRRRLRRLR'
+def get_long_read_bridge_table_parameters(graph, num_long_read_bridges, verbosity):
     max_seg_num_len = len(str(max(graph.segments.keys()))) + 1
+
+    table_alignments = 'RL'
     table_col_widths = [2 * len(str(num_long_read_bridges)) + 1,  # Number
-                        max_seg_num_len + 10,                     # Start to end
-                        5,                                        # Reads
-                        9,                                        # Consensus length
-                        9,                                        # Consensus time
-                        8,                                        # Target length
-                        11,                                       # Search type
-                        8,                                        # Search time
-                        5,                                        # Path count
-                        40,                                       # Best path
-                        7]                                        # Quality
+                        max_seg_num_len + 10]                     # Start to end
+
+    if verbosity > 1:
+        table_alignments += 'RR'
+        table_col_widths += [5, 9]   # Read count, Consensus length
+
+    if verbosity > 2:
+        table_alignments += 'RR'
+        table_col_widths += [9, 8]   # Consensus time, Target length
+
+    if verbosity > 1:
+        table_alignments += 'LRR'
+        table_col_widths += [11, 8, 5]   # Search type, Search time, Path count
+
+    table_alignments += 'L'
+    table_col_widths += [40]  # Best path
+
+    if verbosity > 2:
+        table_alignments += 'RRRR'
+        table_col_widths += [9, 9, 12, 11]  # Best path length, raw score, scaled score, len disc
+
+    table_alignments += 'R'
+    table_col_widths += [7]  # Quality
+
     return table_alignments, table_col_widths
 
 
-def print_long_read_bridge_table_header(alignments, col_widths):
-    print_table([['', '', '', 'Consensus', 'Consensus', 'Target', '', 'Search', 'Path', '', '']],
-                col_separation=2, alignments=alignments, header_format='normal',
-                fixed_col_widths=col_widths, indent=0)
-    print_table([['', 'Start \u2192 end', 'Reads', 'len (bp)', 'time (s)', 'len (bp)',
-                  'Search type', 'time (s)', 'count', 'Best path', 'Quality']],
-                col_separation=2, alignments=alignments, header_format='underline',
-                fixed_col_widths=col_widths, indent=0)
+def print_long_read_bridge_table_header(alignments, col_widths, verbosity):
+    header_line_1 = ['', '']
+    header_line_2 = ['', 'Start \u2192 end']
+
+    if verbosity > 1:
+        header_line_1 += ['',      'Consensus']
+        header_line_2 += ['Reads', 'len (bp)']
+    if verbosity > 2:
+        header_line_1 += ['Consensus', 'Target']
+        header_line_2 += ['time (s)',  'len (bp)']
+    if verbosity > 1:
+        header_line_1 += ['',            'Search',   'Path']
+        header_line_2 += ['Search type', 'time (s)', 'count']
+
+    header_line_1 += ['']
+    header_line_2 += ['Best path']
+
+    if verbosity > 2:
+        header_line_1 += ['Best path', 'Best path', 'Best path',    'Best path']
+        header_line_2 += ['len (bp)',  'raw score', 'scaled score', 'length disc']
+
+    header_line_1 += ['']
+    header_line_2 += ['Quality']
+
+    if any(x for x in header_line_1):
+        print_table([header_line_1], col_separation=2, alignments=alignments,
+                    header_format='normal', fixed_col_widths=col_widths, indent=0)
+    print_table([header_line_2], col_separation=2, alignments=alignments,
+                header_format='underline', fixed_col_widths=col_widths, indent=0)
 
 
 def print_long_read_bridge_table_row(alignments, col_widths, output, completed_count,
-                                     num_long_read_bridges, min_bridge_qual):
+                                     num_long_read_bridges, min_bridge_qual, verbosity):
     fraction = str(completed_count) + '/' + str(num_long_read_bridges)
-    start_to_end = (output[0] + ' \u2192').rjust(7) + ' ' + output[1]
-    quality = output[14]
-    quality_str = float_to_str(output[14], 3)
+
+    start, end, read_count, consensus_length, consensus_time, target_length, path_count, \
+        search_type, search_time, best_path, best_path_len, best_path_raw_score, \
+        best_path_scaled_score, best_path_length_discrepancy, quality = output
+
+    start_to_end = (start + ' \u2192').rjust(7) + ' ' + end
+    quality_str = float_to_str(quality, 3)
+
+    table_row = [fraction, start_to_end]
+
+    if verbosity > 1:
+        table_row += [read_count, consensus_length]
+
+    if verbosity > 2:
+        table_row += [consensus_time, target_length]
+
+    if verbosity > 1:
+        table_row += [search_type, search_time, path_count]
+
+    table_row += [best_path]
+
+    if verbosity > 2:
+        table_row += [best_path_len, best_path_raw_score, best_path_scaled_score,
+                      best_path_length_discrepancy]
+
+    table_row += [quality_str]
+
     sub_colour = {}
     if quality < min_bridge_qual:
         sub_colour[quality_str] = 'red'
-    print_table([[fraction, start_to_end, output[2], output[3], output[4], output[5],
-                  output[7], output[8], output[6], output[9], quality_str]],
-                col_separation=2, header_format='normal', indent=0,
-                left_align_header=False, alignments=alignments,
-                fixed_col_widths=col_widths, sub_colour=sub_colour)
+    print_table([table_row], col_separation=2, header_format='normal', indent=0,
+                left_align_header=False, alignments=alignments, fixed_col_widths=col_widths,
+                sub_colour=sub_colour)
 
 
 def get_mean_depth(seg_1, seg_2, graph):

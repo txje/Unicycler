@@ -628,12 +628,24 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
 
 
 def colour(text, text_colour):
-    if text_colour.lower() == 'green':
+    if text_colour == 'normal':
+        return text
+    elif text_colour == 'green':
         return green(text)
-    elif text_colour.lower() == 'red':
+    elif text_colour == 'red':
         return red(text)
-    elif text_colour.lower() == 'dim':
+    elif text_colour == 'dim':
         return dim(text)
+    elif text_colour == 'bold_green':
+        return bold_green(text)
+    elif text_colour == 'bold':
+        return bold(text)
+    elif text_colour == 'bold_underline':
+        return bold_underline(text)
+    elif text_colour == 'bold_yellow_underline':
+        return bold_yellow_underline(text)
+    elif text_colour == 'bold_red_underline':
+        return bold_red_underline(text)
     else:
         return text
 
@@ -664,6 +676,10 @@ def bold_underline(text):
 
 def bold_yellow_underline(text):
     return '\033[1m' + '\033[93m' + '\033[4m' + text + '\033[0m'
+
+
+def bold_red_underline(text):
+    return '\033[1m' + '\033[31m' + '\033[4m' + text + '\033[0m'
 
 
 def len_without_format(text):

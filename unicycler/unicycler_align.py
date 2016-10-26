@@ -39,7 +39,7 @@ import multiprocessing
 import threading
 from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
     get_mean_and_st_dev, print_progress_line, print_section_header, weighted_average_list, \
-    get_sequence_file_type, MyHelpFormatter, bold, dim, bold_underline, print_table
+    get_sequence_file_type, MyHelpFormatter, bold, dim, print_table, colour
 from .cpp_function_wrappers import semi_global_alignment, new_kmer_positions, add_kmer_positions, \
     delete_all_kmer_positions, \
     get_random_sequence_alignment_mean_and_std_dev
@@ -232,7 +232,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
                                  low_score_threshold_list, use_graphmap, keep_bad, kmer_size,
                                  min_align_length, sam_filename, full_command, allowed_overlap,
                                  extra_sensitive, contamination_fasta, verbosity=None,
-                                 stdout_header='Aligning reads', display_low_score=True):
+                                 stdout_header='Aligning reads', display_low_score=True,
+                                 single_copy_segment_names=None):
     """
     This function does the primary work of this module: aligning long reads to references in an
     end-gap-free, semi-global manner. It returns a list of Read objects which contain their
@@ -246,6 +247,9 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
     if verbosity:
         global VERBOSITY
         VERBOSITY = verbosity
+
+    if single_copy_segment_names is None:
+        single_copy_segment_names = set()
 
     # If the user supplied a low score threshold, we use that. Otherwise, we'll use the median
     # score minus three times the MAD.
@@ -272,7 +276,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
 
     using_contamination = contamination_fasta is not None
     if using_contamination:
-        references += load_references(contamination_fasta, VERBOSITY, contamination=True)
+        references += load_references(contamination_fasta, 0, contamination=True)
 
     reference_dict = {x.name: x for x in references}
 
@@ -404,13 +408,14 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         for read in reads_to_align:
             output = seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
                                      low_score_threshold, keep_bad, kmer_size, min_align_length,
-                                     sam_filename, allowed_overlap, use_graphmap, extra_sensitive)
+                                     sam_filename, allowed_overlap, use_graphmap, extra_sensitive,
+                                     single_copy_segment_names)
             completed_count += 1
             if VERBOSITY == 1:
                 print_progress_line(completed_count, num_alignments, prefix='Read: ')
             if VERBOSITY > 1:
                 fraction = str(completed_count) + '/' + str(num_alignments) + ': '
-                print('\n' + fraction + output[1:], end='', flush=True)
+                print('\n' + fraction + output, end='', flush=True)
 
     # If multi-threaded, use a thread pool.
     else:
@@ -419,7 +424,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         for read in reads_to_align:
             arg_list.append((read, reference_dict, scoring_scheme, kmer_positions_ptr,
                              low_score_threshold, keep_bad, kmer_size, min_align_length,
-                             sam_filename, allowed_overlap, use_graphmap, extra_sensitive))
+                             sam_filename, allowed_overlap, use_graphmap, extra_sensitive,
+                             single_copy_segment_names))
 
         # If the verbosity is 1, then the order doesn't matter, so use imap_unordered to deliver
         # the results evenly. If the verbosity is higher, deliver the results in order with imap.
@@ -434,7 +440,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
                 print_progress_line(completed_count, num_alignments, prefix='Read: ')
             if VERBOSITY > 1:
                 fraction = str(completed_count) + '/' + str(num_alignments) + ': '
-                print('\n' + fraction + output[1:], end='', flush=True)
+                print('\n' + fraction + output, end='', flush=True)
 
     # We're done with the C++ KmerPositions object, so delete it now.
     delete_all_kmer_positions(kmer_positions_ptr)
@@ -715,27 +721,21 @@ def seqan_alignment_one_arg(all_args):
     """
     read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold, keep_bad, \
         kmer_size, min_align_length, sam_filename, allowed_overlap, used_graphmap, \
-        extra_sensitive = all_args
+        extra_sensitive, single_copy_segment_names = all_args
     return seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
                            low_score_threshold, keep_bad, kmer_size, min_align_length,
-                           sam_filename, allowed_overlap, used_graphmap, extra_sensitive)
+                           sam_filename, allowed_overlap, used_graphmap, extra_sensitive,
+                           single_copy_segment_names)
 
 
 def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold,
                     keep_bad, kmer_size, min_align_length, sam_filename, allowed_overlap,
-                    used_graphmap, extra_sensitive):
+                    used_graphmap, extra_sensitive, single_copy_segment_names):
     """
     Aligns a single read against all reference sequences using Seqan.
     """
     start_time = time.time()
-    output_title = '\n'
-    if VERBOSITY > 2:
-        output_title += '\n'
-        output_title += bold_underline(str(read)) + '\n'
-    elif VERBOSITY > 1:
-        output_title += str(read) + '\n'
     output = ''
-
     if VERBOSITY > 2 and used_graphmap:
         starting_graphmap_alignments = len(read.alignments)
         output += 'Graphmap alignments:\n'
@@ -800,6 +800,15 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
             SAM_WRITE_LOCK.release()
 
         update_expected_slope(read, low_score_threshold)
+
+    if read.mostly_aligns_to_contamination() or not read.alignments:
+        title_colour = 'red'
+    elif read.aligns_to_multiple_single_copy_segments(single_copy_segment_names):
+        title_colour = 'green'
+    else:
+        title_colour = 'normal'
+    output_title = colour(str(read), title_colour) + '\n'
+
     return output_title + ''.join(dim(x) for x in output.splitlines(True))
 
 

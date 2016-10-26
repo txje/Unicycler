@@ -430,3 +430,6 @@ class Read(object):
         good_alignment_length = sum(x.get_aligned_read_length() for x in self.alignments
                                     if not x.ref.name.startswith('CONTAMINATION_'))
         return contamination_alignment_length >= good_alignment_length
+
+    def aligns_to_multiple_single_copy_segments(self, single_copy_segment_names):
+        return sum(x.ref.name in single_copy_segment_names for x in self.alignments) > 1

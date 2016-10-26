@@ -9,7 +9,7 @@ import math
 from collections import deque, defaultdict
 from .misc import int_to_str, float_to_str, weighted_average_list, print_section_header, \
     reverse_complement, score_function, add_line_breaks_to_sequence, print_v, print_table, colour
-from .bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge, get_bridge_str
+from .bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge
 from . import settings
 
 
@@ -1475,14 +1475,15 @@ class AssemblyGraph(object):
                                         abs(bridge_using_this_segment.end_segment) in segs_in_path:
                             can_use_bridge = False
 
-            bridge_application_table_row = [bridge.get_type_name(), str(bridge.start_segment), str(bridge.end_segment),
-                                            ', '.join([str(x) for x in bridge.graph_path]), '%.3f' % bridge.quality]
+            bridge_application_table_row = [bridge.get_type_name(), str(bridge.start_segment),
+                                            str(bridge.end_segment),
+                                            ', '.join([str(x) for x in bridge.graph_path]),
+                                            '%.3f' % bridge.quality]
             if can_use_bridge:
                 # Even if there's no conflict with other bridges, the quality still needs to be
                 # high enough for this bridge to be applicable.
                 if bridge.quality >= min_bridge_qual:
-                    self.apply_bridge(bridge, verbosity, right_bridged, left_bridged,
-                                      seg_nums_used_in_bridges)
+                    self.apply_bridge(bridge, right_bridged, left_bridged, seg_nums_used_in_bridges)
                     seg_nums_used_in_bridges = remove_dupes_preserve_order(seg_nums_used_in_bridges)
                     applied_bridges.append(bridge)
                     bridge_application_table.append(bridge_application_table_row + ['applied'])
@@ -1494,12 +1495,11 @@ class AssemblyGraph(object):
 
         if verbosity > 1:
             print_table(bridge_application_table, alignments='LRRLRR', indent=0,
-                        sub_colour={'applied': 'green', 'rejected': 'red'}, row_colour=table_row_colours,
-                        max_col_width=40)
+                        sub_colour={'applied': 'green', 'rejected': 'red'},
+                        row_colour=table_row_colours, max_col_width=40)
         return set(seg_nums_used_in_bridges)
 
-    def apply_bridge(self, bridge, verbosity, right_bridged, left_bridged,
-                     seg_nums_used_in_bridges):
+    def apply_bridge(self, bridge, right_bridged, left_bridged, seg_nums_used_in_bridges):
         """
         Applies a whole bridge, start to end.
         """
@@ -2504,7 +2504,6 @@ class Segment(object):
     """
     This hold a graph segment with a number, depth, direction and sequence.
     """
-
     def __init__(self, number, depth, sequence, positive, bridge=None, graph_path=None,
                  original_depth=True):
         self.number = number

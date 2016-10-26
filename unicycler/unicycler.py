@@ -127,6 +127,7 @@ def main():
     alignment_dir = os.path.join(args.out, 'read_alignment_temp')
     graph_fasta = os.path.join(alignment_dir, 'all_segments.fasta')
     single_copy_segments_fasta = os.path.join(alignment_dir, 'single_copy_segments.fasta')
+    single_copy_segment_names = set(str(x.number) for x in single_copy_segments)
     alignments_sam = os.path.join(alignment_dir, 'long_read_alignments.sam')
     temp_alignment_dir = os.path.join(alignment_dir, 'temp')
     scoring_scheme = AlignmentScoringScheme(args.scores)
@@ -173,7 +174,8 @@ def main():
                                          not args.no_graphmap, False, args.kmer,
                                          min_alignment_length, alignments_1_in_progress,
                                          full_command, allowed_overlap, False, args.contamination,
-                                         verbosity, stdout_header='Aligning reads (first pass)')
+                                         verbosity, stdout_header='Aligning reads (first pass)',
+                                         single_copy_segment_names=single_copy_segment_names)
             shutil.move(alignments_1_in_progress, alignments_1_sam)
 
             # Reads with a lot of unaligned parts are tried again, this time on extra sensitive
@@ -190,7 +192,8 @@ def main():
                                              alignments_2_in_progress, full_command,
                                              allowed_overlap, True, args.contamination, verbosity,
                                              stdout_header='Aligning reads (second pass)',
-                                             display_low_score=False)
+                                             display_low_score=False,
+                                             single_copy_segment_names=single_copy_segment_names)
                 shutil.move(alignments_2_in_progress, alignments_2_sam)
 
                 # Now we have to put together a final SAM file. If a read is in the second pass,

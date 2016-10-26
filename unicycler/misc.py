@@ -571,8 +571,8 @@ class MyHelpFormatter(argparse.RawDescriptionHelpFormatter):
 
 def print_table(table, alignments='', max_col_width=30, col_separation=3, indent=2,
                 row_colour=None, sub_colour=None, row_extra_text=None, leading_newline=False,
-                subsequent_indent='', return_str=False, header_format='bold_underline',
-                hide_header=False):
+                subsequent_indent='', return_str=False, header_format='underline',
+                hide_header=False, fixed_col_widths=None, left_align_header=True):
     """
     Args:
         table: a list of lists of strings (one row is one list, all rows must be the same length)
@@ -588,6 +588,8 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
         return_str: if True, this function will return a string of the table instead of printing it
         header_format: the formatting (colour, underline, etc) of the header line
         hide_header: if True, the header is not printed
+        fixed_col_widths: a list to specify exact column widths (automatic if not used)
+        left_align_header: if False, the header will follow the column alignments
 
     Returns:
         nothing, just prints the table
@@ -601,23 +603,35 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
     if leading_newline:
         print()
     alignments += 'L' * (len(table[0]) - len(alignments))  # Fill out with L, if incomplete
-    col_widths = [0] * len(table[0])
-    for row in table:
-        col_widths = [min(max(col_widths[i], len_without_format(x)), max_col_width)
-                      for i, x in enumerate(row)]
+    if fixed_col_widths is not None:
+        col_widths = fixed_col_widths
+    else:
+        col_widths = [0] * len(table[0])
+        for row in table:
+            col_widths = [min(max(col_widths[i], len_without_format(x)), max_col_width)
+                          for i, x in enumerate(row)]
     separator = ' ' * col_separation
     indenter = ' ' * indent
-    wrapper = textwrap.TextWrapper(subsequent_indent=subsequent_indent, width=max_col_width)
     full_table_str = ''
     for i, row in enumerate(table):
         if hide_header and i == 0:
             continue
-        wrapped_row = [wrapper.wrap(x) for x in row]
+
+        if fixed_col_widths is not None:
+            wrapped_row = []
+            for col, fixed_width in zip(row, fixed_col_widths):
+                wrapper = textwrap.TextWrapper(subsequent_indent=subsequent_indent,
+                                               width=fixed_width)
+                wrapped_row.append(wrapper.wrap(col))
+        else:
+            wrapper = textwrap.TextWrapper(subsequent_indent=subsequent_indent, width=max_col_width)
+            wrapped_row = [wrapper.wrap(x) for x in row]
+
         for j in range(max(len(x) for x in wrapped_row)):
             row_line = [x[j] if j < len(x) else '' for x in wrapped_row]
             aligned_row = []
             for value, col_width, alignment in zip(row_line, col_widths, alignments):
-                if i == 0 or alignment == 'L':
+                if alignment == 'L' or (i == 0 and left_align_header):
                     aligned_row.append(value.ljust(col_width))
                 else:
                     aligned_row.append(value.rjust(col_width))
@@ -628,9 +642,8 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
                 row_str = colour(row_str, header_format)
             if i in row_colour:
                 row_str = colour(row_str, row_colour[i])
-            else:
-                for text, colour_name in sub_colour.items():
-                    row_str = row_str.replace(text, colour(text, colour_name))
+            for text, colour_name in sub_colour.items():
+                row_str = row_str.replace(text, colour(text, colour_name))
             if return_str:
                 full_table_str += indenter + row_str + '\n'
             else:
@@ -646,6 +659,8 @@ def colour(text, text_colour):
         return green(text)
     elif text_colour == 'red':
         return red(text)
+    elif text_colour == 'clear_red':
+        return clear_red(text)
     elif text_colour == 'dim':
         return dim(text)
     elif text_colour == 'dim_underline':
@@ -656,6 +671,8 @@ def colour(text, text_colour):
         return bold(text)
     elif text_colour == 'bold_underline':
         return bold_underline(text)
+    elif text_colour == 'underline':
+        return underline(text)
     elif text_colour == 'bold_yellow_underline':
         return bold_yellow_underline(text)
     elif text_colour == 'bold_red_underline':
@@ -676,12 +693,20 @@ def red(text):
     return '\033[31m' + text + '\033[0m'
 
 
+def clear_red(text):
+    return '\033[0m' + '\033[31m' + text + '\033[0m'
+
+
 def bold(text):
     return '\033[1m' + text + '\033[0m'
 
 
 def bold_underline(text):
     return '\033[1m' + '\033[4m' + text + '\033[0m'
+
+
+def underline(text):
+    return '\033[4m' + text + '\033[0m'
 
 
 def dim(text):

@@ -255,17 +255,18 @@ def main():
         min_scaled_score = get_percentile(contained_scores, settings.MIN_SCALED_SCORE_PERCENTILE)
 
         if verbosity > 1:
-            print('\nSetting the minimum scaled score to the ' +
+            print('Setting the minimum scaled score to the ' +
                   float_to_str(settings.MIN_SCALED_SCORE_PERCENTILE, 1) +
                   'th percentile of full read alignments:', float_to_str(min_scaled_score, 2))
 
         # Do the long read bridging - this is the good part!
-        print_section_header('Building long read bridges', verbosity, last_newline=(verbosity == 1))
+        print_section_header('Building long read bridges', verbosity)
         expected_linear_seqs = args.expected_linear_seqs > 0
         bridges = create_long_read_bridges(unbridged_graph, read_dict, read_names,
                                            single_copy_segments, verbosity, bridges,
                                            min_scaled_score, args.threads, scoring_scheme,
-                                           min_alignment_length, expected_linear_seqs)
+                                           min_alignment_length, expected_linear_seqs,
+                                           args.min_bridge_qual)
         graph = copy.deepcopy(unbridged_graph)
         print_section_header('Bridging graph with long reads', verbosity,
                              last_newline=(verbosity > 1))
@@ -318,7 +319,7 @@ def main():
         graph.print_component_table()
     file_num += 1
     cleaned_graph = os.path.join(args.out, str(file_num).zfill(3) + '_final_clean.gfa')
-    graph.save_to_gfa(cleaned_graph, verbosity, leading_newline=False)
+    graph.save_to_gfa(cleaned_graph, verbosity)
 
     # Rotate completed replicons in the graph to a standard starting gene.
     completed_replicons = graph.completed_circular_replicons()
@@ -346,7 +347,7 @@ def main():
                                                   args.makeblastdb_path, args.tblastn_path,
                                                   args.threads, verbosity)
             except CannotFindStart:
-                rotation_result_row += ['none', '', '']
+                rotation_result_row += ['none found', '', '']
             else:
                 rotation_result_row += [gene, int_to_str(pos), 'reverse' if flip else 'forward']
                 segment.rotate_sequence(pos, flip, graph.overlap)
@@ -354,7 +355,8 @@ def main():
             rotation_result_table.append(rotation_result_row)
 
         if verbosity > 0:
-            print_table(rotation_result_table, alignments='LRRLRL')
+            print_table(rotation_result_table, alignments='LRRLRL', indent=0,
+                        sub_colour={'none found': 'red'})
         if rotation_count:
             file_num += 1
             rotated_graph = os.path.join(args.out, str(file_num).zfill(3) + '_rotated.gfa')

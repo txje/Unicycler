@@ -1443,7 +1443,8 @@ class AssemblyGraph(object):
         # first.
         sorted_bridges = sorted(bridges, key=lambda x: (x.get_type_score(), x.quality),
                                 reverse=True)
-        bridge_application_table = [['Type', 'Start', 'End', 'Path', 'Quality', 'Result']]
+        bridge_application_table = [['Bridge type', 'Start \u2192 end', 'Path', 'Quality',
+                                     'Result']]
         table_row_colours = {}
         for bridge in sorted_bridges:
 
@@ -1484,8 +1485,9 @@ class AssemblyGraph(object):
                                         abs(bridge_using_this_segment.end_segment) in segs_in_path:
                             can_use_bridge = False
 
-            bridge_application_table_row = [bridge.get_type_name(), str(bridge.start_segment),
-                                            str(bridge.end_segment),
+            start_to_end = (str(bridge.start_segment) + ' \u2192').rjust(7) + ' ' + \
+                str(bridge.end_segment)
+            bridge_application_table_row = [bridge.get_type_name(), start_to_end,
                                             ', '.join([str(x) for x in bridge.graph_path]),
                                             '%.3f' % bridge.quality]
             if can_use_bridge:
@@ -1497,14 +1499,15 @@ class AssemblyGraph(object):
                     applied_bridges.append(bridge)
                     bridge_application_table.append(bridge_application_table_row + ['applied'])
                 elif verbosity > 1:
+                    table_row_colours[len(bridge_application_table)] = 'dim'
                     bridge_application_table.append(bridge_application_table_row + ['rejected'])
             elif verbosity > 1:
                 table_row_colours[len(bridge_application_table)] = 'dim'
                 bridge_application_table.append(bridge_application_table_row + ['unused'])
 
         if verbosity > 1:
-            print_table(bridge_application_table, alignments='LRRLRR', indent=0,
-                        sub_colour={'applied': 'green', 'rejected': 'red'},
+            print_table(bridge_application_table, alignments='LLLRR', indent=0,
+                        sub_colour={'applied': 'green', 'rejected': 'clear_red'},
                         row_colour=table_row_colours, max_col_width=40)
         return set(seg_nums_used_in_bridges)
 
@@ -1981,8 +1984,8 @@ class AssemblyGraph(object):
             link_count = self.get_component_link_count(component)
             component_table.append([str(i+1), int_to_str(segment_count), int_to_str(link_count),
                                     int_to_str(component_len), status])
-        print_table(component_table, alignments='LRRRR', sub_colour={'none': 'red'},
-                    leading_newline=True)
+        print_table(component_table, alignments='LRRRR', indent=0,
+                    sub_colour={' complete': 'green', ' incomplete': 'red'})
 
     def get_total_link_count(self):
         """

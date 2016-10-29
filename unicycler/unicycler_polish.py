@@ -644,9 +644,10 @@ def align_pacbio_reads(fasta, args):
 def align_nanopore_reads(fasta, args):
     bam = 'nanopore_alignments.bam'
 
-    run_command([args.bwa, 'index', fasta], args)
+    run_command([args.bwa, 'index', '-p', 'bwa_index', fasta], args)
 
-    bwa_command = [args.bwa, 'mem', '-x', 'ont2d', '-t', str(args.threads), fasta, args.on_fasta]
+    bwa_command = [args.bwa, 'mem', '-x', 'ont2d', '-t', str(args.threads),
+                   'bwa_index', args.on_fasta]
     samtools_view_command = [args.samtools, 'view', '-hu', '-']
     samtools_sort_command = [args.samtools, 'sort', '-@', str(args.threads), '-o', bam, '-']
     print_command(bwa_command + ['|'] + samtools_view_command + ['|'] + samtools_sort_command,

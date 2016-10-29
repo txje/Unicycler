@@ -263,7 +263,7 @@ def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity, km
     # examining the read lengths.
     read_lengths = get_read_lengths(reads_1_filename) + get_read_lengths(reads_2_filename)
     read_lengths = sorted(read_lengths)
-    median_read_length = read_lengths[len(read_lengths) // 2]
+    median_read_length = read_lengths[len(read_lengths) // 2 - 1]
     max_kmer = round_to_nearest_odd(max_kmer_frac * median_read_length)
     if max_kmer > 127:
         max_kmer = 127

@@ -348,6 +348,7 @@ def pilon_polish_small_changes_loop(current, round_num, args):
     Repeatedly apply small variants using Pilon.
     """
     previously_applied_variants = []
+    overlap_counter = 0
     while True:
         current, round_num, variants = pilon_polish_small_changes(current, round_num, args)
 
@@ -355,12 +356,13 @@ def pilon_polish_small_changes_loop(current, round_num, args):
         if not variants:
             break
 
-        # If every one of the suggested changes overlaps with a previous change, then we stop. This
-        # is to prevent an infinite loop caused by bases that keep changing back and forth.
+        # Prevent an infinite loop potentially caused by bases that keep changing back and forth.
         if all_changes_overlap_previous(variants, previously_applied_variants):
-            break
-        else:
-            previously_applied_variants += variants
+            overlap_counter += 1
+            if overlap_counter > 3:
+                break
+
+        previously_applied_variants += variants
 
     return current, round_num
 
@@ -374,6 +376,7 @@ def arrow_polish_small_changes_loop(current, round_num, args, short):
         make_reads_bam(args)
 
     previously_applied_variants = []
+    overlap_counter = 0
     while True:
         current, round_num, variants = arrow_polish_small_changes(current, round_num, args, short)
 
@@ -381,12 +384,13 @@ def arrow_polish_small_changes_loop(current, round_num, args, short):
         if not variants:
             break
 
-        # If every one of the suggested changes overlaps with a previous change, then we stop. This
-        # is to prevent an infinite loop caused by bases that keep changing back and forth.
+        # Prevent an infinite loop potentially caused by bases that keep changing back and forth.
         if all_changes_overlap_previous(variants, previously_applied_variants):
-            break
-        else:
-            previously_applied_variants += variants
+            overlap_counter += 1
+            if overlap_counter > 3:
+                break
+
+        previously_applied_variants += variants
 
     return current, round_num
 
@@ -400,6 +404,7 @@ def nanopolish_small_changes_loop(current, round_num, args, short):
         make_on_fasta(args)
 
     previously_applied_variants = []
+    overlap_counter = 0
     while True:
         current, round_num, variants = nanopolish_small_changes(current, round_num, args, short)
 
@@ -407,12 +412,13 @@ def nanopolish_small_changes_loop(current, round_num, args, short):
         if not variants:
             break
 
-        # If every one of the suggested changes overlaps with a previous change, then we stop. This
-        # is to prevent an infinite loop caused by bases that keep changing back and forth.
+        # Prevent an infinite loop potentially caused by bases that keep changing back and forth.
         if all_changes_overlap_previous(variants, previously_applied_variants):
-            break
-        else:
-            previously_applied_variants += variants
+            overlap_counter += 1
+            if overlap_counter > 3:
+                break
+
+        previously_applied_variants += variants
 
     return current, round_num
 

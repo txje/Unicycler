@@ -767,27 +767,21 @@ def print_v(text, verbosity, min_verbosity):
 
 
 def get_ascii_art():
-    ascii_art = (bold("       __\n") +
-                 bold("       \ \___\n") +
-                 bold("        \ ___\\\n") +
-                 bold("        ") +
-                 bold_red("//\n") +
-                 bold("   ____") +
-                 bold_red("//      ") +
+    ascii_art = (bold_red("       __\n") +
+                 bold_red("       \ \___\n") +
+                 bold_red("        \ ___\\\n") +
+                 bold_red("        //\n") +
+                 bold_red("   ____//      ") +
                  bold_yellow("_    _         _                     _\n") +
-                 bold(" //_  ") +
-                 bold_red("//") +
-                 bold("\\\\    ") +
+                 bold_red(" //_  //\\\\    ") +
                  bold_yellow("| |  | |       |_|                   | |\n") +
-                 bold("//  \\") +
-                 bold_red("//  ") +
-                 bold("\\\\   ") +
+                 bold_red("//  \\//  \\\\   ") +
                  bold_yellow("| |  | | _ __   _   ___  _   _   ___ | |  ___  _ __\n") +
-                 bold("||  (O)  ||   ") +
+                 bold_red("||  (O)  ||   ") +
                  bold_yellow("| |  | || '_ \ | | / __|| | | | / __|| | / _ \| '__|\n") +
-                 bold("\\\\    \_ //   ") +
+                 bold_red("\\\\    \_ //   ") +
                  bold_yellow("| |__| || | | || || (__ | |_| || (__ | ||  __/| |\n") +
-                 bold(" \\\\_____//     ") +
+                 bold_red(" \\\\_____//     ") +
                  bold_yellow("\____/ |_| |_||_| \___| \__, | \___||_| \___||_|\n") +
                  bold_yellow("                                        __/ |\n") +
                  bold_yellow("                                       |___/\n\n"))

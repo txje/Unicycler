@@ -17,7 +17,7 @@ from .assembly_graph import AssemblyGraph
 from .bridge import create_spades_contig_bridges, create_long_read_bridges, \
     create_loop_unrolling_bridges
 from .misc import int_to_str, float_to_str, quit_with_error, get_percentile, print_v, bold, \
-    print_section_header, check_files_and_programs, MyHelpFormatter, print_table
+    print_section_header, check_files_and_programs, MyHelpFormatter, print_table, get_ascii_art
 from .spades_func import get_best_spades_graph
 from .blast_func import find_start_gene, CannotFindStart
 from .unicycler_align import add_aligning_arguments, fix_up_arguments, AlignmentScoringScheme, \
@@ -396,7 +396,7 @@ def get_arguments():
     """
     Parse the command line arguments.
     """
-    description = 'Unicycler: a hybrid assembly pipeline for bacterial genomes'
+    description = bold('Unicycler: a hybrid assembly pipeline for bacterial genomes')
     this_script_dir = os.path.dirname(os.path.realpath(__file__))
 
     if '--helpall' in sys.argv or '--allhelp' in sys.argv or '--all_help' in sys.argv:
@@ -405,21 +405,8 @@ def get_arguments():
 
     # Show the ASCII art if the terminal is wide enough for it.
     terminal_width = shutil.get_terminal_size().columns
-    ascii_art = ("R|       __\n"
-                 "       \ \___\n"
-                 "        \ ___\\\n"
-                 "        //\n"
-                 "   ____//      _    _         _                     _\n"
-                 " //_  //\\\\    | |  | |       |_|                   | |\n"
-                 "//  \//  \\\\   | |  | | _ __   _   ___  _   _   ___ | |  ___  _ __\n"
-                 "||  (O)  ||   | |  | || '_ \ | | / __|| | | | / __|| | / _ \| '__|\n"
-                 "\\\\    \_ //   | |__| || | | || || (__ | |_| || (__ | ||  __/| |\n"
-                 " \\\\_____//     \____/ |_| |_||_| \___| \__, | \___||_| \___||_|\n"
-                 "                                        __/ |\n"
-                 "                                       |___/\n\n")
-
     if terminal_width >= 70:
-        full_description = ascii_art + description
+        full_description = 'R|' + get_ascii_art() + description
     else:
         full_description = description
     parser = argparse.ArgumentParser(description=full_description, formatter_class=MyHelpFormatter,

@@ -693,6 +693,10 @@ def red(text):
     return '\033[31m' + text + '\033[0m'
 
 
+def bold_red(text):
+    return '\033[1m' + '\033[31m' + text + '\033[0m'
+
+
 def clear_red(text):
     return '\033[0m' + '\033[31m' + text + '\033[0m'
 
@@ -715,6 +719,10 @@ def dim(text):
 
 def dim_underline(text):
     return '\033[2m' + '\033[4m' + text + '\033[0m'
+
+
+def bold_yellow(text):
+    return '\033[1m' + '\033[93m' + text + '\033[0m'
 
 
 def bold_yellow_underline(text):
@@ -756,3 +764,31 @@ def convert_fastq_to_fasta(fastq, fasta):
 def print_v(text, verbosity, min_verbosity):
     if verbosity >= min_verbosity:
         print(text, flush=True)
+
+
+def get_ascii_art():
+    ascii_art = (bold("       __\n") +
+                 bold("       \ \___\n") +
+                 bold("        \ ___\\\n") +
+                 bold("        ") +
+                 bold_red("//\n") +
+                 bold("   ____") +
+                 bold_red("//      ") +
+                 bold_yellow("_    _         _                     _\n") +
+                 bold(" //_  ") +
+                 bold_red("//") +
+                 bold("\\\\    ") +
+                 bold_yellow("| |  | |       |_|                   | |\n") +
+                 bold("//  \\") +
+                 bold_red("//  ") +
+                 bold("\\\\   ") +
+                 bold_yellow("| |  | | _ __   _   ___  _   _   ___ | |  ___  _ __\n") +
+                 bold("||  (O)  ||   ") +
+                 bold_yellow("| |  | || '_ \ | | / __|| | | | / __|| | / _ \| '__|\n") +
+                 bold("\\\\    \_ //   ") +
+                 bold_yellow("| |__| || | | || || (__ | |_| || (__ | ||  __/| |\n") +
+                 bold(" \\\\_____//     ") +
+                 bold_yellow("\____/ |_| |_||_| \___| \__, | \___||_| \___||_|\n") +
+                 bold_yellow("                                        __/ |\n") +
+                 bold_yellow("                                       |___/\n\n"))
+    return ascii_art

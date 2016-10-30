@@ -1,4 +1,4 @@
-![Unicycler](misc/logo.png?raw=true)
+![Unicycler](misc/logo.svg?raw=true)
 
 
 

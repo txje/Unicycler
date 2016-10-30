@@ -1,26 +1,28 @@
 <p align="center"><img src="misc/logo.png" alt="Unicycler" width="600" height="210">	</p>
 
+Unicycler is a hybrid bacterial genome assembly pipeline. By using both Illumina and PacBio/Nanopore reads, it produces assemblies that are both accurate and complete.
+
+
+
 # Table of Contents
 
-* [Introduction](https://github.com/rrwick/Unicycler#introduction)
-* [Quick usage](https://github.com/rrwick/Unicycler#quick-usage)
-* [Requirements](https://github.com/rrwick/Unicycler#requirements)
-* [Installation](https://github.com/rrwick/Unicycler#installation)
-* [Pipeline](https://github.com/rrwick/Unicycler#pipeline)
-* [Conservative, normal and bold](https://github.com/rrwick/Unicycler#conservative--normal-and-bold)
-* [Options and usage](https://github.com/rrwick/Unicycler#options-and-usage)
-* [Tips](https://github.com/rrwick/Unicycler#tips)
-* [Unicycler align](https://github.com/rrwick/Unicycler#unicycler-align)
-* [Unicycler polish](https://github.com/rrwick/Unicycler#unicycler-polish)
-* [Citation](https://github.com/rrwick/Unicycler#citation)
-* [Acknowledgements](https://github.com/rrwick/Unicycler#acknowledgements)
-* [License](https://github.com/rrwick/Unicycler#license)
+* [Introduction](#introduction)
+* [Quick usage](#quick-usage)
+* [Requirements](#requirements)
+* [Installation](#installation)
+* [Pipeline](#pipeline)
+* [Conservative, normal and bold](#conservative-normal-and-bold)
+* [Options and usage](#options-and-usage)
+* [Tips](#tips)
+* [Unicycler align](#unicycler-align)
+* [Unicycler polish](#unicycler-polish)
+* [Citation](#citation)
+* [Acknowledgements](#acknowledgements)
+* [License](#license)
 
 
 
 # Introduction
-
-Unicycler is a hybrid bacterial genome assembly pipeline. By using both Illumina and PacBio/Nanopore reads, it can produce assemblies that are both accurate and complete.
 
 Reasons to use Unicycler:
    * It has very low misassembly rates.

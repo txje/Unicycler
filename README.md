@@ -253,7 +253,15 @@ Unicycler is thorough and accurate, but not particularly fast. Two main factors 
 
 ### Long read length
 
-The length of the long reads is very important - often more so than their accuracy. A 99% accurate read isn't very useful to Unicycler if it is less than 1 kb. On the other hand, a 20 kb read is very useful, even if it is only 75% accurate. So if you do subsample your long reads, you should preferentially keep the longest ones. 
+The length of the long reads is very important - often more so than their accuracy. A 99% accurate read isn't very useful to Unicycler if it is less than 1 kb. On the other hand, a 20 kb read is very useful, even if it is only 75% accurate. So if you do subsample your long reads, you should preferentially keep the longest ones.
+
+### Poretools
+
+[Poretools](http://poretools.readthedocs.io/en/latest/) can turn your Oxford Nanopore FAST5 reads into a FASTQ file appropriate for Unicycler. Here's an example command:
+```
+poretools fastq --type best --min-length 1000 path/to/fast5/dir/ > nanopore_reads.fastq
+```
+If you have 2D reads, the `--type best` option makes Poretools give only one FASTQ read per FAST5 file (if you have 1D reads, you can exclude that option). Adjust the `--min-length 1000` parameter to suit your dataset - a larger value would be appropriate if you have a large number of reads.
 
 ### Oxford Nanopore MinION: 1D vs 2D
 

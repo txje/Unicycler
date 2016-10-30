@@ -75,7 +75,7 @@ def main():
                                                 settings.READ_DEPTH_FILTER, verbosity,
                                                 args.spades_path, args.threads, args.keep_temp,
                                                 args.kmer_count, args.min_kmer_frac,
-                                                args.max_kmer_frac, args.no_spades_correct,
+                                                args.max_kmer_frac, args.no_correct,
                                                 args.expected_linear_seqs)
 
     # Determine copy number and get single-copy segments.
@@ -478,7 +478,7 @@ def get_arguments():
     spades_group.add_argument('--spades_path', type=str, default='spades.py',
                               help='Path to the SPAdes executable'
                                    if show_all_args else argparse.SUPPRESS)
-    spades_group.add_argument('--no_spades_correct', action='store_true',
+    spades_group.add_argument('--no_correct', action='store_true',
                               help='Skip SPAdes error correction step'
                                    if show_all_args else argparse.SUPPRESS)
     spades_group.add_argument('--min_kmer_frac', type=float, default=0.2,

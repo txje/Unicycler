@@ -50,7 +50,7 @@ def main():
     current, round_num = large_changes_loop(current, round_num, args, short, pacbio, nanopore,
                                             all_fastas)
 
-    finish(all_fastas, round_num, args)
+    finish(current, all_fastas, round_num, args, short)
 
 
 def get_arguments():
@@ -916,49 +916,50 @@ def print_result(variants, fasta, verbosity):
             print('No variants applied', flush=True)
 
 
-def finish(all_fastas, round_num, args):
+def finish(current, all_fastas, round_num, args, short):
     round_num += 1
-    print_round_header('Round ' + str(round_num) + ': final assessment', args.verbosity)
+    final_fasta = '%03d' % round_num + '_final_polish.fasta'
 
-    if len(all_fastas) == 1:
-        final_fasta = '%03d' % round_num + '_final_polish.fasta'
-        copy_file(all_fastas[0], final_fasta, args.verbosity)
+    if not short or len(all_fastas) == 1:
+        copy_file(current, final_fasta, args.verbosity)
+
+    # If variants have been applied and we have short reads, then each stage of the polishing is
+    # assessed with ALE to choose the best.
+    else:
+        print_round_header('Round ' + str(round_num) + ': final assessment', args.verbosity)
+
+        ale_outputs = '%03d' % round_num + '_1_ALE_output'
+        final_fasta = '%03d' % round_num + '_2_final_polish.fasta'
+        open(ale_outputs, 'a').close()
+
+        ale_results_table = [['FASTA', 'ALE score', 'ALE score change']]
+        best_assembly = ''
+        best_table_row = 0
+        best_ale_score = 0.0
+        starting_ale_score = 0.0
+        for i, fasta in enumerate(all_fastas):
+            ale_score = run_ale(fasta, args, ale_outputs)
+            first_test = best_assembly == ''
+            if first_test:
+                starting_ale_score = ale_score
+            if first_test or ale_score > best_ale_score:
+                best_ale_score = ale_score
+                best_assembly = fasta
+                best_table_row = i + 1
+            difference_from_start = ale_score - starting_ale_score
+            score_str = '%.6f' % ale_score
+            difference_str = '%.6f' % difference_from_start
+            if difference_from_start < 0.0:
+                score_str = red(score_str)
+                difference_str = red(difference_str)
+            ale_results_table.append([fasta, score_str, difference_str])
+        copy_file(best_assembly, final_fasta, args.verbosity)
+
         if args.verbosity > 0:
-            print()
-            print('No changes were made to final assembly: ' + bold_green(final_fasta), flush=True)
-            print()
-        return
-
-    ale_outputs = '%03d' % round_num + '_1_ALE_output'
-    final_fasta = '%03d' % round_num + '_2_final_polish.fasta'
-    open(ale_outputs, 'a').close()
-
-    ale_results_table = [['FASTA', 'ALE score', 'ALE score change']]
-    best_assembly = ''
-    best_table_row = 0
-    best_ale_score = 0.0
-    starting_ale_score = 0.0
-    for i, fasta in enumerate(all_fastas):
-        ale_score = run_ale(fasta, args, ale_outputs)
-        if not best_assembly:
-            starting_ale_score = ale_score
-        if not best_assembly or ale_score > best_ale_score:
-            best_ale_score = ale_score
-            best_assembly = fasta
-            best_table_row = i + 1
-        difference_from_start = ale_score - starting_ale_score
-        score_str = '%.6f' % ale_score
-        difference_str = '%.6f' % difference_from_start
-        if difference_from_start < 0.0:
-            score_str = red(score_str)
-            difference_str = red(difference_str)
-        ale_results_table.append([fasta, score_str, difference_str])
-    copy_file(best_assembly, final_fasta, args.verbosity)
+            print_table(ale_results_table, alignments='LRR', row_colour={best_table_row: 'green'},
+                        row_extra_text={best_table_row: ' \u2190 best'}, leading_newline=True)
 
     if args.verbosity > 0:
-        print()
-        print_table(ale_results_table, alignments='LRR', row_colour={best_table_row: 'green'},
-                    row_extra_text={best_table_row: ' \u2190 best'})
         print()
         print('All done! Final assembly: ' + bold_green(final_fasta), flush=True)
         print()

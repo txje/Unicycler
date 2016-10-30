@@ -1,8 +1,8 @@
-# <img src="https://raw.githubusercontent.com/rrwick/Unicycler/master/misc/logo.svg" alt="logo" width="120" height="168" align="middle">Unicycler
+![Unicycler](misc/logo.png?raw=true)
 
 
 
-## Table of Contents
+# Table of Contents
 
 * [Introduction](https://github.com/rrwick/Unicycler#introduction)
 * [Quick usage](https://github.com/rrwick/Unicycler#quick-usage)

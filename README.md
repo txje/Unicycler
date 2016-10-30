@@ -299,10 +299,10 @@ Semi-global alignment (a.k.a. glocal, overlap or free end-gap alignment) will no
 ACTAGAACG        GCCGGAA       GGCTGGCCA           AAGATCTTG
 ```
 
-In contrast, local alignment can clip the alignment, aligning only the best matching parts of the sequences:
+In contrast, local alignment will align only the best matching parts, clipping the alignment where the quality becomes poor:
 ```
-        AATTCAGCATACGGT
-            ||||||||
+      CGAACAGCATACTTG
+          ||||||||
 ACGTCAGACTCAGCATACGCATCTAGA
 ```
 

@@ -1,10 +1,10 @@
 <p align="center"><img src="misc/logo.png" alt="Unicycler" width="600" height="210">	</p>
 
-Unicycler is a hybrid bacterial genome assembly pipeline. By using both Illumina and PacBio/Nanopore reads, it produces assemblies that are both accurate and complete.
+Unicycler is a hybrid assembly pipeline for bacterial genomes. By using both Illumina and PacBio/Nanopore reads, it produces assemblies that are complete and accurate.
 
 
 
-# Table of Contents
+# Table of contents
 
 * [Introduction](#introduction)
 * [Quick usage](#quick-usage)
@@ -26,18 +26,18 @@ Unicycler is a hybrid bacterial genome assembly pipeline. By using both Illumina
 
 Reasons to use Unicycler:
    * It has very low misassembly rates.
-   * It often creates complete bacterial genomes with one circular sequence per replicon.
-   * It can handle genomes with very repetitive sequences, such as _Shigella_ isolates.
-   * It works with any quality of long reads - even Nanopore reads classed as 'fail' can be used as input.
-   * It works with any long read depth. Approximately 10x may be required to complete a genome, but it can produce nearly-complete genomes with much fewer long reads.
-   * It can be run without any long reads at all, functioning as a [SPAdes](http://bioinf.spbau.ru/spades) optimiser.
-   * It produces a graph that is viewable in [Bandage](https://github.com/rrwick/Bandage), allowing for in-depth investigation.
-   * It's easy to run! Unicycler is executed with only one command and no fiddling with advanced parameters is required.
+   * It often completes bacterial genomes with one circular sequence per replicon.
+   * It handles organisms with highly repetitive genomes, such as _Shigella_.
+   * It works with long reads of any quality - even Nanopore reads classed as 'fail' can be used as input.
+   * It works with any long read depth. Approximately 10x may be required to complete a genome, but it can make nearly-complete genomes with far fewer long reads.
+   * It can be run without any long reads, functioning as a [SPAdes](http://bioinf.spbau.ru/spades) optimiser.
+   * It produces assembly graphs, allowing for in-depth investigations in [Bandage](https://github.com/rrwick/Bandage).
+   * It's easy to use, runs with just one command and doesn't require tinkering with parameters.
 
-Reasons to _not_ use Unicycler:
+Reasons to __not__ use Unicycler:
    * You only have long reads, not Illumina reads (try [Canu](https://github.com/marbl/canu) instead).
-   * Your Illumina reads are poor quality (Unicycler requires a good short read assembly graph to scaffold and will not work well with low quality Illumina reads).
-   * You're assembling a large eukaryotic genome or a metagenome (Unicycler is designed specifically for bacterial isolates).
+   * Your Illumina reads are poor quality (Unicycler requires a good short read assembly graph).
+   * You're assembling a large eukaryotic genome or a metagenome (Unicycler is designed for bacterial isolates).
 
 
 
@@ -59,11 +59,11 @@ unicycler -1 short_reads_1.fastq.gz -1 short_reads_2.fastq.gz --no_long -o path/
 
 * Linux or macOS
 * [Python](https://www.python.org/) 3.4 or later
-* A C++ compiler for installation
+* C++ compiler
     * Both [GCC](https://gcc.gnu.org/) and [Clang](http://clang.llvm.org/) should work if the version isn't too old (C++11 support is required).
 * [SPAdes](http://bioinf.spbau.ru/spades)
 
-The following tools are needed for certain parts of Unicycler's pipeline. Without them, Unicycler may not be able to perform all pipeline tasks.
+Unicycler needs the following tools for certain parts of its pipeline. They are optional, but without them Unicycler will not be able to perform all pipeline tasks:
 
 * [GraphMap](https://github.com/isovic/graphmap) - can accelerate long read alignment process
 * [Pilon](https://github.com/broadinstitute/pilon/wiki) - required for polishing
@@ -76,6 +76,7 @@ The following tools are needed for certain parts of Unicycler's pipeline. Withou
 # Installation
 
 ### Download the source code
+
 ```
 git clone https://github.com/rrwick/Unicycler.git
 cd Unicycler
@@ -93,7 +94,7 @@ If you don't have sudo access or want the installation to be specifically for yo
 python3 setup.py install --user
 ```
 
-If that doesn't work or if you want to specify the install path:
+If that [doesn't work](http://stackoverflow.com/questions/4495120/combine-user-with-prefix-error-with-setup-py-install) or if you want to specify the install path:
 ```
 python3 setup.py install --prefix=$HOME/.local
 ```

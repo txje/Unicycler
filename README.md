@@ -1,6 +1,6 @@
 <p align="center"><img src="misc/logo.png" alt="Unicycler" width="600" height="210">	</p>
 
-Unicycler is a hybrid assembly pipeline for bacterial genomes. By using both Illumina and PacBio/Nanopore reads, it produces assemblies that are complete and accurate.
+Unicycler is a hybrid assembly pipeline for bacterial genomes. Using both Illumina and PacBio/Nanopore reads, it produces assemblies that are complete and accurate.
 
 
 
@@ -99,8 +99,10 @@ If that [doesn't work](http://stackoverflow.com/questions/4495120/combine-user-w
 python3 setup.py install --prefix=$HOME/.local
 ```
 
-### Build without installation
-Simply running `make` in the Unicycler directory will build the C++ code without installing Unicycler anywhere else.
+### Build and run without installation
+Simply running `make` in the Unicycler directory will build the C++ code without installing Unicycler.
+
+After `make` finishes, you can run Unicycler directly from the source directory using this script: `path/to/Unicycler/unicycler-runner.py`
 
 
 

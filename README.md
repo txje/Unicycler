@@ -319,11 +319,11 @@ reference: GATCCCAACACTAAACTCTGGGGCGAACGGCGTAGTCCCAAGAGT
 
 Local alignment (which can align only part of the read) would be more appropriate:
 ```
-read:             AACACTAAACT               TAGTCCCAA
-                  |||||||||||               |||||||||
+read:            AACACTAAACT               TAGTCCCAA
+                 |||||||||||               |||||||||
 reference: GATCCCAACACTAAACTCTGGGGCGAACGGCGTAGTCCCAAGAGT
 ```
-Try [BWA-MEM](http://bio-bwa.sourceforge.net/), [LAST](http://last.cbrc.jp/) or [BLASR](https://github.com/PacificBiosciences/blasr) for local alignment.
+Try [BWA-MEM](http://bio-bwa.sourceforge.net/), [LAST](http://last.cbrc.jp/) or [BLASR](https://github.com/PacificBiosciences/blasr) if you need a local alignment tool.
 
 
 

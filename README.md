@@ -1,4 +1,4 @@
-<img src="misc/logo.svg" alt="Unicycler" width="672" height="252" align="middle">
+<img src="misc/logo.png" alt="Unicycler" width="672" height="252" align="middle">
 
 # Table of Contents
 

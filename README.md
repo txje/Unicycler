@@ -286,35 +286,44 @@ If you see a plasmid in the assembly with a depth of 14.5x, interpret that as ap
 # Unicycler align
 
 Unicycler's algorithm for senstive semi-global alignment is available as a stand-alone alignment tool with the command `unicycler_align`.
+```
+unicycler_align --reads queries.fastq --ref target.fasta --sam output.sam
+```
 
-### Semi global alignment
+### Semi-global alignment
 
-Semi-global alignment does not penalise end gaps so the alignment will continue until one of the two sequences ends. This can be where the two sequences overlap or where one sequence is contained within the other:
-
+Semi-global alignment (a.k.a. glocal, overlap or free end-gap alignment) will not clip an alignment until one of the two sequences ends. This can be where one sequence is contained within the other or where the two sequences overlap:
 ```
   TAGAA        GTGCCGGAACA         GGCCACAC     AGTAAGAT
   |||||          |||||||           |||||           |||||
 ACTAGAACG        GCCGGAA       GGCTGGCCA           AAGATCTTG
 ```
 
-This type of alignment is appropriate when there are no large-scale differences between the query and target sequences. For example, if you have a short read assembly graph and long reads from the same bacterial isolate (as is the case in the main Unicycler pipeline), the sequences should directly correspond and semi-global alignment is ideal.
+In contrast, local alignment can clip the alignment, aligning only the best matching parts of the sequences:
+```
+        AATTCAGCATACGGT
+            ||||||||
+ACGTCAGACTCAGCATACGCATCTAGA
+```
+
+Semi-global alignment is appropriate when there are no structural differences between the query and reference sequences. For example, when you have a short read assembly graph and long reads from the same bacterial isolate (as is the case in the Unicycler pipeline). In this scenario, there may be small scale differences (due to read errors) but no large scale differences, and semi-global alignment is ideal.
 
 ### Compared to local alignment
 
-Semi-global alignment may not be appropriate when the reads are being mapped to a reference genome. It can result in poor alignments around points of structural variation between the sample and the reference. For example, if the sample had a deletion relative to the reference, a read spanning that deletion would align poorly with semi-global alignment:
+Semi-global alignment is probably not appropriate for mapping reads to a more distant reference genome. It does not cope with points of structural variation between the sample and the reference. For example, if the sample had a deletion relative to the reference, a read spanning that deletion would align poorly with semi-global alignment:
 ```
 read:            AACACTAAACTTAGTCCCAA
                  |||||||||||  |   | |    
 reference: GATCCCAACACTAAACTCTGGGGCGAACGGCGTAGTCCCAAGAGT
 ```
 
-In this case, local alignment (which can clip to align only part of the part) would be more appropriate:
+Local alignment (which can align only part of the read) would be more appropriate:
 ```
 read:             AACACTAAACT               TAGTCCCAA
                   |||||||||||               |||||||||
 reference: GATCCCAACACTAAACTCTGGGGCGAACGGCGTAGTCCCAAGAGT
 ```
-[BWA-MEM](http://bio-bwa.sourceforge.net/), [LAST](http://last.cbrc.jp/) and [BLASR](https://github.com/PacificBiosciences/blasr) are all local alignment tools appropriate for such a case.
+Try [BWA-MEM](http://bio-bwa.sourceforge.net/), [LAST](http://last.cbrc.jp/) or [BLASR](https://github.com/PacificBiosciences/blasr) for local alignment.
 
 
 

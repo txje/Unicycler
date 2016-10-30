@@ -7,9 +7,9 @@ references in a semi-global manner. Semi-global alignment does not penalise end 
 alignment will continue until one of the two sequences ends. This includes cases where the two
 sequences overlap and cases where one sequence is contained within the other:
 
-  AAAAA        AAAAAAAAAAA         AAAAAAAA     AAAAAAAA
+  TAGAA        GTGCCGGAACA         GGCCACAC     AGTAAGAT
   |||||          |||||||           |||||           |||||
-BBBBBBBBB        BBBBBBB       BBBBBBBBB           BBBBBBBBB
+ACTAGAACG        GCCGGAA       GGCTGGCCA           AAGATCTTG
 
 This tool is intended for cases where the reads and reference are expected to match perfectly (or
 at least as perfectly as error-prone long reads can match). An example of an appropriate case would

@@ -1163,7 +1163,7 @@ class Variant(object):
 
     def get_output_row(self, short_read_assessed):
         if self.homo_size_before > 1:
-            variant_type = 'homo ' + str(self.homo_size_before) + ' -> ' + str(
+            variant_type = 'homo ' + str(self.homo_size_before) + ' \u2192 ' + str(
                 self.homo_size_after)
         else:
             variant_type = self.type

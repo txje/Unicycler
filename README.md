@@ -148,6 +148,8 @@ At this point, the assembly graph does not contain the SPAdes repeat resolution.
 
 ### Long read alignment
 
+This is 
+
 ### Long read bridging
 
 ### Rotating completed sequences
@@ -281,22 +283,22 @@ Long read alignment:
 
 # Output files
 
-Depending on the input files and the value used for `--keep_temp`, Unicycler may only only produce some of these:
+Depending on the input files and the value used for `--keep_temp`, Unicycler may only only produce some of these. Also, all outputs except for assembly.gfa and assembly.fasta will be prefixed with a number so they are in chronological order.
 
-File                             | Description
--------------------------------- | ---------------------------------------------------------------------------
-`unbridged_graph.gfa`            | short read assembly graph before any bridges have been applied
-`spades_bridges_applied.gfa`     | SPAdes bridges applied, before any cleaning or merging
-`cleaned.gfa`                    | redundant contigs removed from the graph
-`merged.gfa`                     | contigs merged together where possible
-`long_read_bridges_applied.gfa`  | Long read bridges applied, before any cleaning or merging
-`cleaned.gfa`                    | redundant contigs removed from the graph
-`merged.gfa`                     | contigs merged together where possible
-`final_clean.gfa`                | more redundant contigs removed
-`rotated.gfa`                    | circular replicons rotated and/or flipped to a start position
-`polished.gfa`                   | after a round of Pilon polishing
-`assembly.gfa`                   | __the final assembly in graph format__
-`assembly.fasta`                 | __the final assembly in FASTA format__ (exact same contigs as `assembly.gfa`)
+File                           | Description
+------------------------------ | ---------------------------------------------------------------------------
+unbridged_graph.gfa            | short read assembly graph before any bridges have been applied
+spades_bridges_applied.gfa     | SPAdes bridges applied, before any cleaning or merging
+cleaned.gfa                    | redundant contigs removed from the graph
+merged.gfa                     | contigs merged together where possible
+long_read_bridges_applied.gfa  | Long read bridges applied, before any cleaning or merging
+cleaned.gfa                    | redundant contigs removed from the graph
+merged.gfa                     | contigs merged together where possible
+final_clean.gfa                | more redundant contigs removed
+rotated.gfa                    | circular replicons rotated and/or flipped to a start position
+polished.gfa                   | after a round of Pilon polishing
+assembly.gfa                   | __the final assembly in graph format__
+assembly.fasta                 | __the final assembly in FASTA format__ (exact same contigs as assembly.gfa)
 
 
 
@@ -383,6 +385,34 @@ Try [BWA-MEM](http://bio-bwa.sourceforge.net/), [LAST](http://last.cbrc.jp/) or 
 
 
 # Unicycler polish
+
+Unicycler polish is a script to repeatedly polish a completed assembly using all available reads. It can be given Illumina reads, long reads or (ideally) both. When both Illumina and long reads are available, Unicycler polish can fix assembly errors, even in repetitive parts of the genome which cannot be polished by short reads alone.
+
+### Polishing with only Illumina reads
+
+Example command:
+```
+unicycler_polish -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz -a assembly.fasta
+```
+In this scenario, Unicycler Polish runs Pilon repeatedly, applying all small variants until no more are found. Then if Pilon finds any large variants, they will be assessed using ALE and applied if the ALE score indicates an improvement.
+
+### Polishing with only PacBio reads
+
+Example commands:
+```
+unicycler_polish --pb_bam subreads.bam -a assembly.fasta
+unicycler_polish --pb_bax path/to/*bax.h5 -a assembly.fasta
+```
+In this scenario, Unicycler Polish runs GenomicConsensus repeatedly, applying all small variants (excluding homopolymer length changes) until no more are found. Large variants are not applied.
+
+### Polishing with both Illumina and PacBio reads
+
+Example commands:
+```
+unicycler_polish -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --pb_bam subreads.bam -a assembly.fasta
+unicycler_polish -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --pb_bax path/to/*bax.h5 -a assembly.fasta
+```
+You'll get the best results when running Unicycler polish with both short and long reads. In this scenario, Unicycler Polish runs Pilon and GenomicConsensus repeatedly, applying all small variants until no more are found. Then any large variants suggested by either tool are assessed using ALE and applied if the ALE score indicates an improvement.
 
 
 

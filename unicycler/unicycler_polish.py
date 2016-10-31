@@ -47,8 +47,9 @@ def main():
         current, round_num = nanopolish_small_changes_loop(current, round_num, args, short,
                                                            all_fastas)
 
-    current, round_num = large_changes_loop(current, round_num, args, short, pacbio, nanopore,
-                                            all_fastas)
+    if short:
+        current, round_num = large_changes_loop(current, round_num, args, short, pacbio, nanopore,
+                                                all_fastas)
 
     finish(current, all_fastas, round_num, args, short)
 
@@ -451,7 +452,7 @@ def large_changes_loop(current, round_num, args, short, pacbio, nanopore, all_fa
     round of small variant polishing is done and we repeat!
     """
     while True:
-        current, round_num, variants = large_changes(current, round_num, args, short, pacbio, 
+        current, round_num, variants = large_changes(current, round_num, args, short, pacbio,
                                                      nanopore, all_fastas)
         if not variants:
             break

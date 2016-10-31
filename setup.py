@@ -6,8 +6,7 @@ Run 'python3 setup.py install' to install Unicycler.
 # Make sure this is being run with Python 3.4 or later.
 import sys
 if sys.version_info.major != 3 or sys.version_info.minor < 4:
-    print('Error: you must execute setup.py using Python 3.4 or later')
-    sys.exit(1)
+    sys.exit('Error: you must execute setup.py using Python 3.4 or later')
 
 import os
 import shutil
@@ -25,6 +24,11 @@ if not importlib.util.find_spec("setuptools"):
 
 from setuptools import setup
 from setuptools.command.install import install
+
+# Make sure we're running from the setup.py directory.
+script_dir = os.path.dirname(os.path.realpath(__file__))
+if script_dir != os.getcwd():
+    os.chdir(script_dir)
 
 # Get the program version from another file.
 exec(open('unicycler/version.py').read())
@@ -46,9 +50,20 @@ class UnicycleInstall(install):
         self.makeargs = None
 
     def run(self):
-        install.run(self)  # Run original install code
+        # Make sure we have permission to write the files.
+        if not os.access(self.install_lib, os.W_OK):
+            sys.exit('Error: no write permission for ' + self.install_lib + '  ' +
+                     'Perhaps you need to use sudo?')
+        if not os.access(self.install_scripts, os.W_OK):
+            sys.exit('Error: no write permission for ' + self.install_scripts + '  ' +
+                     'Perhaps you need to use sudo?')
 
-        clean_cmd = ['make', 'clean']
+        # Clean up any previous Unicycler compilation.
+        clean_cmd = ['make', 'distclean']
+        self.execute(lambda: subprocess.call(clean_cmd), [],
+                     'Cleaning previous compilation: ' + ' '.join(clean_cmd))
+
+        # Build Unicycler's C++ code.
         make_cmd = ['make']
         try:
             make_cmd += ['-j', str(min(8, multiprocessing.cpu_count()))]
@@ -56,25 +71,41 @@ class UnicycleInstall(install):
             pass
         if self.makeargs:
             make_cmd += shlex.split(self.makeargs)
+        self.execute(lambda: subprocess.call(make_cmd), [],
+                     'Compiling Unicycler: ' + ' '.join(make_cmd))
+        cpp_code = os.path.join('unicycler', 'cpp_functions.so')
+        if not os.path.isfile(cpp_code):
+            sys.exit("Error: compilation of Unicycler's C++ component failed")
 
-        def clean_cpp():
-            subprocess.call(clean_cmd)
+        install.run(self)
 
-        def compile_cpp():
-            subprocess.call(make_cmd)
+        # Copy non-Python stuff to the installation directory.
+        shutil.copyfile(cpp_code, os.path.join(self.install_lib, 'unicycler', 'cpp_functions.so'))
+        gene_data_source_dir = os.path.join('unicycler', 'gene_data')
+        gene_data_dest_dir = os.path.join(self.install_lib, 'unicycler', 'gene_data')
+        if not os.path.exists(gene_data_dest_dir):
+            os.makedirs(gene_data_dest_dir)
+        shutil.copyfile(os.path.join(gene_data_source_dir, 'start_genes.fasta'),
+                        os.path.join(gene_data_dest_dir, 'start_genes.fasta'))
+        shutil.copyfile(os.path.join(gene_data_source_dir, 'lambda_phage.fasta'),
+                        os.path.join(gene_data_dest_dir, 'lambda_phage.fasta'))
 
-        self.execute(clean_cpp, [], 'Cleaning previous compilation: ' + ' '.join(clean_cmd))
-        self.execute(compile_cpp, [], 'Compiling Unicycler: ' + ' '.join(make_cmd))
-
-        shutil.copyfile(os.path.join('unicycler', 'cpp_functions.so'),
-                        os.path.join(self.install_lib, 'unicycler', 'cpp_functions.so'))
-        gene_data_dir = os.path.join(self.install_lib, 'unicycler', 'gene_data')
-        if not os.path.exists(gene_data_dir):
-            os.makedirs(gene_data_dir)
-        shutil.copyfile(os.path.join('unicycler', 'gene_data', 'start_genes.fasta'),
-                        os.path.join(gene_data_dir, 'start_genes.fasta'))
-        shutil.copyfile(os.path.join('unicycler', 'gene_data', 'lambda_phage.fasta'),
-                        os.path.join(gene_data_dir, 'lambda_phage.fasta'))
+        # Display a success message!
+        try:
+            from unicycler.misc import get_ascii_art
+            print(get_ascii_art())
+        except ImportError:
+            print()
+        print('Unicycler is installed!')
+        print()
+        print('Example commands:')
+        print('  unicycler --help')
+        print('  unicycler --help_all')
+        print('  unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz '
+              '-l long_reads.fastq.gz -o path/to/output_dir')
+        print('  unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --no_long '
+              '-o path/to/output_dir')
+        print()
 
 
 class UnicycleClean(Command):

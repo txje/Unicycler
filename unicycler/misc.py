@@ -784,5 +784,5 @@ def get_ascii_art():
                  bold_red(" \\\\_____//     ") +
                  bold_yellow("\____/ |_| |_||_| \___| \__, | \___||_| \___||_|\n") +
                  bold_yellow("                                        __/ |\n") +
-                 bold_yellow("                                       |___/\n\n"))
+                 bold_yellow("                                       |___/"))
     return ascii_art

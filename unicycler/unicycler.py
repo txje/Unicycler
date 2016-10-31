@@ -406,7 +406,7 @@ def get_arguments():
     # Show the ASCII art if the terminal is wide enough for it.
     terminal_width = shutil.get_terminal_size().columns
     if terminal_width >= 70:
-        full_description = 'R|' + get_ascii_art() + description
+        full_description = 'R|' + get_ascii_art() + '\n\n' + description
     else:
         full_description = description
     parser = argparse.ArgumentParser(description=full_description, formatter_class=MyHelpFormatter,

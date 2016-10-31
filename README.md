@@ -46,12 +46,12 @@ Reasons to __not__ use Unicycler:
 
 ### Hybrid assembly
 ```
-unicycler -1 short_reads_1.fastq.gz -1 short_reads_2.fastq.gz -l long_reads.fastq.gz -o path/to/output_dir
+unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz -l long_reads.fastq.gz -o path/to/output_dir
 ```
 
 ### Short read-only assembly
 ```
-unicycler -1 short_reads_1.fastq.gz -1 short_reads_2.fastq.gz --no_long -o path/to/output_dir
+unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --no_long -o path/to/output_dir
 ```
 
 
@@ -85,12 +85,13 @@ cd Unicycler
 
 ### Install
 
-If you have the necessary permissions and want to install Unicycler for all users:
+To install Unicycler for all users:
 ```
-sudo python3 setup.py install
+python3 setup.py install
 ```
+You may need `sudo`, depending on your permissions.
 
-If you don't have sudo access or want the installation to be specifically for your user:
+To install just for your user:
 ```
 python3 setup.py install --user
 ```
@@ -104,7 +105,7 @@ python3 setup.py install --prefix=$HOME/.local
 
 The `setup.py` script runs a Makefile to build the C++ code used by Unicycler. If you want to pass arguments to `make` (e.g. to specify the compiler) you can do that with the `--makeargs` option:
 ```
-sudo python3 setup.py install --makeargs "CXX=g++-5"
+sudo python3 setup.py install --makeargs "CXX=icpc"
 ```
 
 ### Build and run without installation
@@ -209,7 +210,7 @@ Other:
 
 ### Advanced options
 
-Run `unicycler --helpall` to see a complete list of the program's options. These allow you to turn off parts of the pipeline, specify the location of tools (if they are not available in PATH) and adjust various settings:
+Run `unicycler --help_all` to see a complete list of the program's options. These allow you to turn off parts of the pipeline, specify the location of tools (if they are not available in PATH) and adjust various settings:
 ```
 SPAdes assembly:
   These options control the short read SPAdes assembly at the beginning of the Unicycler pipeline.

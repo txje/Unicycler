@@ -1,6 +1,6 @@
 <p align="center"><img src="misc/logo.png" alt="Unicycler" width="600" height="210">	</p>
 
-Unicycler is a hybrid assembly pipeline for bacterial genomes. Using both Illumina and PacBio/Nanopore reads, it produces assemblies that are complete and accurate.
+Unicycler is a hybrid assembly pipeline for bacterial genomes. It uses both Illumina and PacBio/Nanopore reads to produce complete and accurate assemblies.
 
 
 
@@ -120,8 +120,6 @@ At this point, the assembly graph does not contain the SPAdes repeat resolution.
 
 ### Long read alignment
 
-This is 
-
 ### Long read bridging
 
 ### Rotating completed sequences
@@ -195,7 +193,7 @@ Other:
 
 ### Advanced options
 
-Run `unicycler --help_all` to see a complete list of the program's options. These allow you to turn off parts of the pipeline, specify the location of tools (if they are not available in PATH) and adjust various settings:
+Run `unicycler --help_all` to see a complete list of the program's options. These allow you to turn off parts of the pipeline, specify the location of tools (only necessary if they are not in PATH) and adjust various settings:
 ```
 SPAdes assembly:
   These options control the short read SPAdes assembly at the beginning of the Unicycler pipeline.
@@ -290,25 +288,35 @@ The length of the long reads is very important - often more so than their accura
 ```
 poretools fastq --type best --min-length 1000 path/to/fast5/dir/ > nanopore_reads.fastq
 ```
-If you have 2D reads, the `--type best` option makes Poretools give only one FASTQ read per FAST5 file (if you have 1D reads, you can exclude that option). Adjust the `--min-length 1000` parameter to suit your dataset - a larger value would be appropriate if you have a large number of reads.
+If you have 2D reads, the `--type best` option makes Poretools give only one FASTQ read per FAST5 file (if you have 1D reads, you can exclude that option). Adjust the `--min-length 1000` parameter to suit your dataset - a larger value would be appropriate if you have lots of long reads.
 
-### Oxford Nanopore MinION: 1D vs 2D
+### Oxford Nanopore: 1D vs 2D
 
-Since Unicycler can tolerate low accuracy reads, 1D sequencing is probably preferable to 2D, as it will provide greater depth. However, at the time of writing, Oxford Nanopore only supports barcoding with their 2D library prep. So if you want to sequence multiple samples on a single flowcell, 2D may be the only option.
+Since Unicycler can tolerate low accuracy reads, [Oxford Nanopore 1D sequencing](https://nanoporetech.com/applications/dna-nanopore-sequencing) is probably preferable to 2D, as it can provide twice as many reads. However, at the time of writing, the 2D library prep supports barcoding. So if you want to sequence multiple samples on a single flowcell, 2D is currently the only option.
 
 ### Bad Illumina reads
 
-Unicycler needs decent Illumina reads as input. If your Unicycler assembly looks bad, take a look at the `unbridged_graph.gfa` file in Bandage. If its in many pieces and full of dead ends, then your Illumina reads may be too poor for Unicycler to use.
+Unicycler needs decent Illumina reads as input - ideally with uniform read depth and no unsequenced parts.
+
+You can look at the `unbridged_graph.gfa` file (the first graph Unicycler saves to file) in Bandage to get a quick impression of the Illumina read quality:
+
+(IMAGE OF THREE CONTRASTING GRAPHS)
+
+__A__ is a very good graph - the contigs are long and there are no dead ends.  __B__ is also a good graph - the genome is more complex, resulting in a more tangled structure, but there are still no dead ends. These two sets of Illumina reads are ideally suited for use in Unicycler.  __C__ is a very poor graph - many parts have no read depth, breaking the graph into many pieces. This read set is not well suited to Unicycler.
 
 ### Very short contigs
 
-Confused by very small (e.g. 1 bp) contigs? Unlike a SPAdes assembly graph where neighbouring sequences overlap by their k-mer size, a Unicycler graph has no overlaps and the sequences adjoin directly. This means that contigs in very complex parts of the graph can be quite short. They may be useless as stand-alone contigs, but they are important in the graph structure.
+Are you confused by very small (e.g. 1 bp) contigs in Unicycler assemblies? Unlike a SPAdes graph where neighbouring sequences overlap by their k-mer size, a Unicycler graph has no overlaps and the sequences adjoin directly. This means that contigs in very complex parts of the graph can be quite short. They may be useless as stand-alone contigs but are important in the graph structure.
+
+(IMAGE OF SHORT CONTIGS IN GRAPH)
 
 ### Depth: chromosomes and plasmids
 
 Unicycler normalises the depth of contigs in the graph to the median value. For a bacterial isolate, this typically means that the chromosome has a depth of around 1x and plasmids may have different (typically higher) depths.
 
-If you see a plasmid in the assembly with a depth of 14.5x, interpret that as approximately 14 or 15 copies per cell. A plasmid with 1.3x depth means that perhaps most cells have one copy but some have more. And a plasmid with 0.7x depth might mean that it was absent from some cells in the sample.
+(IMAGE OF VARIOUS PLASMID DEPTHS)
+
+In this example, plasmid __A__ occurs in approximately 14 or 15 copies per cell in the sample. Most cells probably had one copy of plasmid __B__ but some had more. Since sequencing biases (such as GC bias) can affect read depth, these relative depths should be interpreted loosely.
 
 
 
@@ -373,7 +381,6 @@ Unicycler polish uses an exhaustive iterative process that is time-consuming but
     1. Execute step 1 again.
     2. Run Pilon/GenomicConsensus/Nanopolish again (all that apply) and assess each suggested variant with ALE. If any improves the ALE score, apply it and repeat this step.
 
-
 ### Example commands
 Polishing with only Illumina reads:
 ```
@@ -400,7 +407,7 @@ Paper in progress... check back later!
 
 # Acknowledgements
 
-Unicycler would not have been possible without [Kat Holt](https://holtlab.net/), the my fellow members of her lab and the many other researchers I work with at the University of Melbourne's [Centre for Systems Genomics](https://sysgenmelb.org/).
+Unicycler would not have been possible without [Kat Holt](https://holtlab.net/), my fellow researchers in her lab and the many other people I work with at the University of Melbourne's [Centre for Systems Genomics](https://sysgenmelb.org/).
 
 
 

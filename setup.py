@@ -51,10 +51,10 @@ class UnicycleInstall(install):
 
     def run(self):
         # Make sure we have permission to write the files.
-        if not os.access(self.install_lib, os.W_OK):
+        if os.path.isdir(self.install_lib) and not os.access(self.install_lib, os.W_OK):
             sys.exit('Error: no write permission for ' + self.install_lib + '  ' +
                      'Perhaps you need to use sudo?')
-        if not os.access(self.install_scripts, os.W_OK):
+        if os.path.isdir(self.install_scripts) and not os.access(self.install_scripts, os.W_OK):
             sys.exit('Error: no write permission for ' + self.install_scripts + '  ' +
                      'Perhaps you need to use sudo?')
 

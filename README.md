@@ -38,6 +38,7 @@ Reasons to __not__ use Unicycler:
    * You only have long reads, not Illumina reads (try [Canu](https://github.com/marbl/canu) instead).
    * Your Illumina reads are poor quality (Unicycler requires a good short read assembly graph).
    * You're assembling a large eukaryotic genome or a metagenome (Unicycler is designed for bacterial isolates).
+   * You're very impatient (Unicycler is not as fast as alternative assemblers).
 
 
 
@@ -60,7 +61,7 @@ unicycler -1 short_reads_1.fastq.gz -1 short_reads_2.fastq.gz --no_long -o path/
 * Linux or macOS
 * [Python](https://www.python.org/) 3.4 or later
 * C++ compiler
-    * Both [GCC](https://gcc.gnu.org/) and [Clang](http://clang.llvm.org/) should work if the version isn't too old (C++11 support is required).
+    * [GCC](https://gcc.gnu.org/), [Clang](http://clang.llvm.org/) and [ICC](https://software.intel.com/en-us/c-compilers) should all work if the version isn't too old (C++11 support is required).
 * [SPAdes](http://bioinf.spbau.ru/spades)
 
 Unicycler needs the following tools for certain parts of its pipeline. They are optional, but without them Unicycler will not be able to perform all pipeline tasks:
@@ -99,6 +100,13 @@ If that [doesn't work](http://stackoverflow.com/questions/4495120/combine-user-w
 python3 setup.py install --prefix=$HOME/.local
 ```
 
+### Advanced options
+
+The `setup.py` script runs a Makefile to build the C++ code used by Unicycler. If you want to pass arguments to `make` (e.g. to specify the compiler) you can do that with the `--makeargs` option:
+```
+sudo python3 setup.py install --makeargs "CXX=g++-5"
+```
+
 ### Build and run without installation
 Simply running `make` in the Unicycler directory will build the C++ code without installing Unicycler.
 
@@ -110,7 +118,21 @@ After `make` finishes, you can run Unicycler directly from the source directory 
 
 ### Read correction
 
+Unicycler uses SPAdes to perform read error correction before assembling the Illumina reads. This can be disabled with `--no_correct` if your Illumina reads are very high quality or you've already performed read QC.
+
 ### SPAdes assembly
+
+Unicycler uses SPAdes to assembly the Illumina reads into an assembly graph. It tries assemblies at a wide range of k-mer sizes, evaluating the graph at each one. It chooses the assembly graph which best balances contig length and dead end count. If the Illumina reads are high quality, this will result in an assembly graph with long contigs but few to no dead ends.
+
+Unicycler also cleans the SPAdes assembly graphs, filtering out contigs which are very low depth and likely to be due to contamination or errors.
+
+### Determine multiplicity
+
+In future steps, Unicycler will scaffold the graph using SPAdes contigs and long reads. To do this, it must distinguish between single-copy contigs and collapsed repeats. It does this with a greedy algorithm that takes both read depth and graph connectivity. This process finds single-copy contigs not only in the bacterial chromosome but also in plasmids of any read depth.
+
+### SPAdes bridging
+
+At this point, the assembly graph does not contain the SPAdes repeat resolution. To apply this to the graph, Unicycler builds bridges between single-copy contigs using the information in the SPAdes `contigs.paths` file. These are applied to the graph to make the `spades_bridges_applied.gfa` output - the most resolved graph Unicycler can make using only the Illumina reads.
 
 ### Long read alignment
 
@@ -193,7 +215,7 @@ SPAdes assembly:
   These options control the short read SPAdes assembly at the beginning of the Unicycler pipeline.
 
   --spades_path SPADES_PATH             Path to the SPAdes executable
-  --no_spades_correct                   Skip SPAdes error correction step
+  --no_correct                          Skip SPAdes error correction step
   --min_kmer_frac MIN_KMER_FRAC         Lowest k-mer size for SPAdes assembly, expressed as a fraction of the read length
   --max_kmer_frac MAX_KMER_FRAC         Highest k-mer size for SPAdes assembly, expressed as a fraction of the read length
   --kmer_count KMER_COUNT               Number of k-mer steps to use in SPAdes assembly

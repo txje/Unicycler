@@ -13,6 +13,7 @@ Unicycler is a hybrid assembly pipeline for bacterial genomes. Using both Illumi
 * [Pipeline](#pipeline)
 * [Conservative, normal and bold](#conservative-normal-and-bold)
 * [Options and usage](#options-and-usage)
+* [Output files](#output-files)
 * [Tips](#tips)
 * [Unicycler align](#unicycler-align)
 * [Unicycler polish](#unicycler-polish)
@@ -101,9 +102,19 @@ If that [doesn't work](http://stackoverflow.com/questions/4495120/combine-user-w
 python3 setup.py install --prefix=$HOME/.local
 ```
 
+You can also use pip to install Unicycler, either from a local copy:
+```
+pip3 install path/to/Unicycler
+```
+
+or directly from GitHub:
+```
+pip3 install git+https://github.com/rrwick/Unicycler.git
+```
+
 ### Advanced options
 
-The `setup.py` script runs a Makefile to build the C++ code used by Unicycler. If you want to pass arguments to `make` (e.g. to specify the compiler) you can do that with the `--makeargs` option:
+The `setup.py` script runs a Makefile to build the C++ code used by Unicycler. If you want to pass arguments to `make` (e.g. to specify the compiler) you can do that with the `--makeargs` option for `setup.py`:
 ```
 sudo python3 setup.py install --makeargs "CXX=icpc"
 ```
@@ -265,6 +276,27 @@ Long read alignment:
   --allowed_overlap ALLOWED_OVERLAP     Allow this much overlap between alignments in a single read
   --kmer KMER                           K-mer size used for seeding alignments
 ```
+
+
+
+# Output files
+
+Depending on the input files and the value used for `--keep_temp`, Unicycler may only only produce some of these:
+
+File                             | Description
+-------------------------------- | ---------------------------------------------------------------------------
+`unbridged_graph.gfa`            | short read assembly graph before any bridges have been applied
+`spades_bridges_applied.gfa`     | SPAdes bridges applied, before any cleaning or merging
+`cleaned.gfa`                    | redundant contigs removed from the graph
+`merged.gfa`                     | contigs merged together where possible
+`long_read_bridges_applied.gfa`  | Long read bridges applied, before any cleaning or merging
+`cleaned.gfa`                    | redundant contigs removed from the graph
+`merged.gfa`                     | contigs merged together where possible
+`final_clean.gfa`                | more redundant contigs removed
+`rotated.gfa`                    | circular replicons rotated and/or flipped to a start position
+`polished.gfa`                   | after a round of Pilon polishing
+`assembly.gfa`                   | __the final assembly in graph format__
+`assembly.fasta`                 | __the final assembly in FASTA format__ (exact same contigs as `assembly.gfa`)
 
 
 

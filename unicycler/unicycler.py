@@ -104,18 +104,13 @@ def main():
 
         # Clean up unnecessary segments after bridging.
         graph.clean_up_after_bridging_1(single_copy_segments, seg_nums_used_in_bridges, verbosity)
-        if args.keep_temp > 1:
-            file_num += 1
-            graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +
-                                           '_cleaned_first_pass.gfa'), verbosity,
-                              save_seg_type_info=True, save_copy_depth_info=True)
         graph.clean_up_after_bridging_2(seg_nums_used_in_bridges, args.min_component_size,
                                         args.min_dead_end_size, verbosity, unbridged_graph,
                                         single_copy_segments)
         if args.keep_temp > 1:
             file_num += 1
             graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +
-                                           '_cleaned_second_pass.gfa'), verbosity,
+                                           '_cleaned.gfa'), verbosity,
                               save_seg_type_info=True, save_copy_depth_info=True)
         graph.merge_all_possible(single_copy_segments, args.mode)
         if args.keep_temp > 1:
@@ -280,18 +275,13 @@ def main():
 
         # Clean up unnecessary segments after bridging.
         graph.clean_up_after_bridging_1(single_copy_segments, seg_nums_used_in_bridges, verbosity)
-        if args.keep_temp > 1:
-            file_num += 1
-            graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +
-                                           '_cleaned_first_pass.gfa'), verbosity,
-                              save_seg_type_info=True, save_copy_depth_info=True)
         graph.clean_up_after_bridging_2(seg_nums_used_in_bridges, args.min_component_size,
                                         args.min_dead_end_size, verbosity, unbridged_graph,
                                         single_copy_segments)
         if args.keep_temp > 1:
             file_num += 1
             graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +
-                                           '_cleaned_second_pass.gfa'), verbosity,
+                                           '_cleaned.gfa'), verbosity,
                               save_seg_type_info=True, save_copy_depth_info=True)
         graph.merge_all_possible(single_copy_segments, args.mode)
         if args.keep_temp > 1:

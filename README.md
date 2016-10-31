@@ -69,6 +69,7 @@ Unicycler needs the following tools for certain parts of its pipeline. They are 
 
 * [GraphMap](https://github.com/isovic/graphmap) - can accelerate long read alignment process
 * [Pilon](https://github.com/broadinstitute/pilon/wiki) - required for polishing
+* Java - required for polishing
 * [Bowtie2](http://bowtie-bio.sourceforge.net/bowtie2/) - required for polishing
 * [Samtools](http://www.htslib.org/) version 1.0 or later - required for polishing
 * [BLAST+](https://www.ncbi.nlm.nih.gov/books/NBK279690/) - required for rotating finished assemblies

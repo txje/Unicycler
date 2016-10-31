@@ -16,6 +16,7 @@ import subprocess
 import multiprocessing
 import fnmatch
 import importlib.util
+from unicycler.misc import get_ascii_art, get_pilon_jar_path
 
 # Install setuptools if not already present.
 if not importlib.util.find_spec("setuptools"):
@@ -37,6 +38,17 @@ with open('README.md', 'rb') as readme:
     LONG_DESCRIPTION = readme.read().decode()
 
 
+def missing_tool(tool_name):
+    if tool_name == 'pilon.jar':
+        path = get_pilon_jar_path(None)
+    else:
+        path = shutil.which(tool_name)
+    if path is None:
+        return [tool_name]
+    else:
+        return []
+
+
 class UnicycleInstall(install):
     """
     The install process copies the C++ shared library to the install location.
@@ -49,63 +61,72 @@ class UnicycleInstall(install):
         install.initialize_options(self)
         self.makeargs = None
 
-    def run(self):
-        # Make sure we have permission to write the files.
-        if os.path.isdir(self.install_lib) and not os.access(self.install_lib, os.W_OK):
-            sys.exit('Error: no write permission for ' + self.install_lib + '  ' +
-                     'Perhaps you need to use sudo?')
-        if os.path.isdir(self.install_scripts) and not os.access(self.install_scripts, os.W_OK):
-            sys.exit('Error: no write permission for ' + self.install_scripts + '  ' +
-                     'Perhaps you need to use sudo?')
+    if __name__ == '__main__':
+        def run(self):
+            # Make sure we have permission to write the files.
+            if os.path.isdir(self.install_lib) and not os.access(self.install_lib, os.W_OK):
+                sys.exit('Error: no write permission for ' + self.install_lib + '  ' +
+                         'Perhaps you need to use sudo?')
+            if os.path.isdir(self.install_scripts) and not os.access(self.install_scripts, os.W_OK):
+                sys.exit('Error: no write permission for ' + self.install_scripts + '  ' +
+                         'Perhaps you need to use sudo?')
 
-        # Clean up any previous Unicycler compilation.
-        clean_cmd = ['make', 'distclean']
-        self.execute(lambda: subprocess.call(clean_cmd), [],
-                     'Cleaning previous compilation: ' + ' '.join(clean_cmd))
+            # Clean up any previous Unicycler compilation.
+            clean_cmd = ['make', 'distclean']
+            self.execute(lambda: subprocess.call(clean_cmd), [],
+                         'Cleaning previous compilation: ' + ' '.join(clean_cmd))
 
-        # Build Unicycler's C++ code.
-        make_cmd = ['make']
-        try:
-            make_cmd += ['-j', str(min(8, multiprocessing.cpu_count()))]
-        except NotImplementedError:
-            pass
-        if self.makeargs:
-            make_cmd += shlex.split(self.makeargs)
-        self.execute(lambda: subprocess.call(make_cmd), [],
-                     'Compiling Unicycler: ' + ' '.join(make_cmd))
-        cpp_code = os.path.join('unicycler', 'cpp_functions.so')
-        if not os.path.isfile(cpp_code):
-            sys.exit("Error: compilation of Unicycler's C++ component failed")
+            # Build Unicycler's C++ code.
+            make_cmd = ['make']
+            try:
+                make_cmd += ['-j', str(min(8, multiprocessing.cpu_count()))]
+            except NotImplementedError:
+                pass
+            if self.makeargs:
+                make_cmd += shlex.split(self.makeargs)
+            self.execute(lambda: subprocess.call(make_cmd), [],
+                         'Compiling Unicycler: ' + ' '.join(make_cmd))
+            cpp_code = os.path.join('unicycler', 'cpp_functions.so')
+            if not os.path.isfile(cpp_code):
+                sys.exit("Error: compilation of Unicycler's C++ component failed")
 
-        install.run(self)
+            install.run(self)
 
-        # Copy non-Python stuff to the installation directory.
-        shutil.copyfile(cpp_code, os.path.join(self.install_lib, 'unicycler', 'cpp_functions.so'))
-        gene_data_source_dir = os.path.join('unicycler', 'gene_data')
-        gene_data_dest_dir = os.path.join(self.install_lib, 'unicycler', 'gene_data')
-        if not os.path.exists(gene_data_dest_dir):
-            os.makedirs(gene_data_dest_dir)
-        shutil.copyfile(os.path.join(gene_data_source_dir, 'start_genes.fasta'),
-                        os.path.join(gene_data_dest_dir, 'start_genes.fasta'))
-        shutil.copyfile(os.path.join(gene_data_source_dir, 'lambda_phage.fasta'),
-                        os.path.join(gene_data_dest_dir, 'lambda_phage.fasta'))
+            # Copy non-Python stuff to the installation directory.
+            shutil.copyfile(cpp_code, os.path.join(self.install_lib, 'unicycler', 'cpp_functions.so'))
+            gene_data_source_dir = os.path.join('unicycler', 'gene_data')
+            gene_data_dest_dir = os.path.join(self.install_lib, 'unicycler', 'gene_data')
+            if not os.path.exists(gene_data_dest_dir):
+                os.makedirs(gene_data_dest_dir)
+            shutil.copyfile(os.path.join(gene_data_source_dir, 'start_genes.fasta'),
+                            os.path.join(gene_data_dest_dir, 'start_genes.fasta'))
+            shutil.copyfile(os.path.join(gene_data_source_dir, 'lambda_phage.fasta'),
+                            os.path.join(gene_data_dest_dir, 'lambda_phage.fasta'))
 
-        # Display a success message!
-        try:
-            from unicycler.misc import get_ascii_art
+            # Display a success message!
             print(get_ascii_art())
-        except ImportError:
+            print('Unicycler is installed!')
             print()
-        print('Unicycler is installed!')
-        print()
-        print('Example commands:')
-        print('  unicycler --help')
-        print('  unicycler --help_all')
-        print('  unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz '
-              '-l long_reads.fastq.gz -o path/to/output_dir')
-        print('  unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --no_long '
-              '-o path/to/output_dir')
-        print()
+            print('Example commands:')
+            print('  unicycler --help')
+            print('  unicycler --help_all')
+            print('  unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz '
+                  '-l long_reads.fastq.gz -o path/to/output_dir')
+            print('  unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --no_long '
+                  '-o path/to/output_dir')
+            print()
+
+            # Check for required programs.
+            tools = ['spades.py', 'graphmap', 'java', 'pilon.jar', 'samtools', 'bowtie2',
+                     'bowtie2-build', 'makeblastdb', 'tblastn']
+            missing_tools = []
+            for tool in tools:
+                missing_tools += missing_tool(tool)
+            if missing_tools:
+                print('WARNING: some tools required by Unicycler could not be found: ' +
+                      ', '.join(missing_tools))
+                print('You may need to install them to use all Unicycler features.')
+                print()
 
 
 class UnicycleClean(Command):

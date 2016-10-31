@@ -389,31 +389,35 @@ Try [BWA-MEM](http://bio-bwa.sourceforge.net/), [LAST](http://last.cbrc.jp/) or 
 
 Unicycler polish is a script to repeatedly polish a completed assembly using all available reads. It can be given Illumina reads, long reads or (ideally) both. When both Illumina and long reads are available, Unicycler polish can fix assembly errors, even in repetitive parts of the genome which cannot be polished by short reads alone.
 
-### Polishing with only Illumina reads
+Unicycler polish uses an exhaustive iterative process that is time-consuming but can be necessary to resolve the sequence in repeat regions. For example, consider a genome with two very similar regions, A and B, and there are assembly errors in both. Polishing is initially difficult because the errors may cause reads which should map to A to instead map to B and vice versa. However, after some of these errors are fixed, more reads will map to their correct locations, allowing for more errors to be fixes, allowing more reads to map correctly, etc.
 
-Example command:
+### Process
+1. If Illumina reads are available:
+    1. Run [Pilon](https://github.com/broadinstitute/pilon/wiki) in 'bases' mode (substitutions and small indels). If any changes were suggested, apply them and repeat this step.
+    2. Run Pilon in 'local' mode (larger variants), and assess each change with ALE. If any variant improves the ALE score, apply it and go back to step 1-i.
+2. If long reads are available:
+    1. Run [GenomicConsensus](https://github.com/PacificBiosciences/GenomicConsensus)/[Nanopolish](https://github.com/jts/nanopolish) and gather all suggested small changes.
+    2. Use [FreeBayes](https://github.com/ekg/freebayes) to assess each long read-suggested change by looking for ambiguity in the Illumina read mapping. If any were found, apply them and go back to step 2-i.
+3. If Illumina reads are available:
+    1. Execute step 1 again.
+    2. Run Pilon/GenomicConsensus/Nanopolish again (all that apply) and assess each suggested variant with ALE. If any improves the ALE score, apply it and repeat this step.
+
+
+### Example commands
+Polishing with only Illumina reads:
 ```
 unicycler_polish -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz -a assembly.fasta
 ```
-In this scenario, Unicycler Polish runs Pilon repeatedly, applying all small variants until no more are found. Then if Pilon finds any large variants, they will be assessed using ALE and applied if the ALE score indicates an improvement.
-
-### Polishing with only PacBio reads
-
-Example commands:
+Polishing with only PacBio reads:
 ```
 unicycler_polish --pb_bam subreads.bam -a assembly.fasta
 unicycler_polish --pb_bax path/to/*bax.h5 -a assembly.fasta
 ```
-In this scenario, Unicycler Polish runs GenomicConsensus repeatedly, applying all small variants (excluding homopolymer length changes) until no more are found. Large variants are not applied.
-
-### Polishing with both Illumina and PacBio reads
-
-Example commands:
+Polishing with both Illumina and PacBio reads:
 ```
 unicycler_polish -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --pb_bam subreads.bam -a assembly.fasta
 unicycler_polish -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --pb_bax path/to/*bax.h5 -a assembly.fasta
 ```
-You'll get the best results when running Unicycler polish with both short and long reads. In this scenario, Unicycler Polish runs Pilon and GenomicConsensus repeatedly, applying all small variants until no more are found. Then any large variants suggested by either tool are assessed using ALE and applied if the ALE score indicates an improvement.
 
 
 

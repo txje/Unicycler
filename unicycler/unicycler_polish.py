@@ -32,25 +32,25 @@ def main():
     starting_sequence_filename = '%03d' % round_num + '_starting_sequence.fasta'
     copy_file(args.assembly, starting_sequence_filename, args.verbosity)
     current = starting_sequence_filename
-    all_fastas = [starting_sequence_filename]
+
+    all_fastas = collections.OrderedDict()
+    all_fastas[starting_sequence_filename] = None
 
     if short and (args.min_insert is None or args.max_insert is None):
         get_insert_size_range(args, current)
 
     if short:
-        current, round_num = pilon_small_changes_loop(current, round_num, args, all_fastas)
-
-    if pacbio:
-        current, round_num = arrow_small_changes_loop(current, round_num, args, short, all_fastas)
+        current, round_num = full_pilon_loop(current, round_num, args, all_fastas)
 
     if nanopore:
         current, round_num = nanopolish_small_changes_loop(current, round_num, args, short,
                                                            all_fastas)
+    if pacbio:
+        current, round_num = arrow_small_changes_loop(current, round_num, args, short, all_fastas)
 
     if short:
-        current, round_num = large_changes_loop(current, round_num, args, short, pacbio, nanopore,
-                                                all_fastas)
-
+        current, round_num = ale_assessed_changes_loop(current, round_num, args, short, pacbio,
+                                                       nanopore, all_fastas)
     finish(current, all_fastas, round_num, args, short)
 
 
@@ -348,6 +348,18 @@ def make_on_fasta(args):
         sys.exit('Error: nanopolish extract failed to make ' + args.on_fasta)
 
 
+def full_pilon_loop(current, round_num, args, all_fastas):
+    """
+    Repeatedly apply both small and large variants using Pilon.
+    """
+    while True:
+        current, round_num = pilon_small_changes_loop(current, round_num, args, all_fastas)
+        current, round_num, variants = pilon_large_changes(current, round_num, args, all_fastas)
+        if not variants:
+            break
+    return current, round_num
+
+
 def pilon_small_changes_loop(current, round_num, args, all_fastas):
     """
     Repeatedly apply small variants using Pilon.
@@ -371,107 +383,6 @@ def pilon_small_changes_loop(current, round_num, args, all_fastas):
     return current, round_num
 
 
-def arrow_small_changes_loop(current, round_num, args, short, all_fastas):
-    """
-    Repeatedly apply small variants using Arrow.
-    """
-    # Convert bax.h5 files to a PacBio BAM, if necessary.
-    if args.pb_bax and not args.pb_bam:
-        make_reads_bam(args)
-
-    previously_applied_variants = []
-    overlap_counter = 0
-    while True:
-        current, round_num, variants = arrow_small_changes(current, round_num, args, short,
-                                                           all_fastas)
-
-        # If no more changes are suggested, then we're done!
-        if not variants:
-            break
-
-        # Prevent an infinite loop potentially caused by bases that keep changing back and forth.
-        if all_changes_overlap_previous(variants, previously_applied_variants):
-            overlap_counter += 1
-            if overlap_counter > 2:
-                break
-        previously_applied_variants += variants
-
-        if short:
-            current, round_num, variants = pilon_small_changes(current, round_num, args, all_fastas)
-            previously_applied_variants += variants
-
-    return current, round_num
-
-
-def nanopolish_small_changes_loop(current, round_num, args, short, all_fastas):
-    """
-    Repeatedly apply small variants using Nanopolish.
-    """
-    # Convert FAST5 files to a Nanopolish FASTA, if necessary.
-    if args.on_fast5 and not args.on_fasta:
-        make_on_fasta(args)
-
-    previously_applied_variants = []
-    overlap_counter = 0
-    while True:
-        current, round_num, variants = nanopolish_small_changes(current, round_num, args, short,
-                                                                all_fastas)
-
-        # If no more changes are suggested, then we're done!
-        if not variants:
-            break
-
-        # Prevent an infinite loop potentially caused by bases that keep changing back and forth.
-        if all_changes_overlap_previous(variants, previously_applied_variants):
-            overlap_counter += 1
-            if overlap_counter > 2:
-                break
-        previously_applied_variants += variants
-
-        if short:
-            current, round_num, variants = pilon_small_changes(current, round_num, args, all_fastas)
-            previously_applied_variants += variants
-
-    return current, round_num
-
-
-def all_changes_overlap_previous(variants, previous_variants):
-    """
-    Returns True if all of the variants overlap with a previous variant.
-    """
-    for variant in variants:
-        if not any(variant.overlaps(x) for x in previous_variants):
-            return False
-    return True
-
-
-def large_changes_loop(current, round_num, args, short, pacbio, nanopore, all_fastas):
-    """
-    Large changes are gathered from all available sources (Pilon, Arrow and Nanopolish) and each
-    is evaluated using ALE. If the best one beats the ALE score of the input assembly, then another
-    round of small variant polishing is done and we repeat!
-    """
-    while True:
-        current, round_num, variants = large_changes(current, round_num, args, short, pacbio,
-                                                     nanopore, all_fastas)
-        if not variants:
-            break
-
-        # If long reads are available, we use them for the follow-up small variant polishing.
-        if pacbio:
-            current, round_num = arrow_small_changes_loop(current, round_num, args, short,
-                                                          all_fastas)
-        if nanopore:
-            current, round_num = nanopolish_small_changes_loop(current, round_num, args, short,
-                                                               all_fastas)
-
-        # We only use short reads for follow-up small variant polishing if there are no long reads.
-        if not (pacbio or nanopore):
-            current, round_num = pilon_small_changes_loop(current, round_num, args, all_fastas)
-
-    return current, round_num
-
-
 def pilon_small_changes(fasta, round_num, args, all_fastas):
     round_num += 1
     print_round_header('Round ' + str(round_num) + ': Pilon polish, small variants', args.verbosity)
@@ -489,40 +400,45 @@ def pilon_small_changes(fasta, round_num, args, all_fastas):
         variant_rows = [x.get_output_row(False) for x in variants]
         print_small_variant_table(variant_rows, False, args.verbosity)
         print_result(variants, polished_fasta, args.verbosity)
-        all_fastas.append(polished_fasta)
+        all_fastas[polished_fasta] = None
         return polished_fasta, round_num, variants
 
 
-def nanopolish_small_changes(fasta, round_num, args, short, all_fastas):
-    round_num += 1
-    print_round_header('Round ' + str(round_num) + ': Nanopore polish, small variants',
-                       args.verbosity)
+def pilon_large_changes(fasta, round_num, args, all_fastas):
+    current, round_num, applied_variant = ale_assessed_changes(fasta, round_num, args, True, False,
+                                                               False, all_fastas, 'local')
+    return current, round_num, applied_variant
 
-    raw_variants_file = '%03d' % round_num + '_1_raw_variants'
-    filtered_variants_file = '%03d' % round_num + '_2_filtered_variants'
-    polished_fasta = '%03d' % round_num + '_3_polish.fasta'
 
-    align_nanopore_reads(fasta, args)
-    run_nanopolish(fasta, args, raw_variants_file)
-    raw_variants = load_variants_from_nanopolish(raw_variants_file, fasta, args)
-    small_variants = [x for x in raw_variants if not x.large]
+def arrow_small_changes_loop(current, round_num, args, short, all_fastas):
+    """
+    Repeatedly apply small variants using Arrow.
+    """
+    # Convert bax.h5 files to a PacBio BAM, if necessary.
+    if args.pb_bax and not args.pb_bam:
+        make_reads_bam(args)
 
-    if short:
-        align_illumina_reads(fasta, args, local=False)
-        for variant in small_variants:
-            variant.assess_against_illumina_alignments(fasta, args)
-    clean_up(args)
+    previously_applied_variants = []
+    overlap_counter = 0
+    while True:
+        current, round_num, variants = arrow_small_changes(current, round_num, args, short,
+                                                           all_fastas)
+        # If no more changes are suggested, then we're done!
+        if not variants:
+            break
 
-    filtered_variants = filter_small_variants(small_variants, raw_variants_file,
-                                              filtered_variants_file, args, short)
-    if filtered_variants:
-        apply_variants(fasta, filtered_variants, polished_fasta)
-        all_fastas.append(polished_fasta)
-        current = polished_fasta
-    else:
-        current = fasta
-    print_result(filtered_variants, polished_fasta, args.verbosity)
-    return current, round_num, filtered_variants
+        # Prevent an infinite loop potentially caused by bases that keep changing back and forth.
+        if all_changes_overlap_previous(variants, previously_applied_variants):
+            overlap_counter += 1
+            if overlap_counter > 2:
+                break
+        previously_applied_variants += variants
+
+    # If changes were made and short reads are available, then another we do another Pilon round.
+    if previously_applied_variants and short:
+        current, round_num = full_pilon_loop(current, round_num, args, all_fastas)
+
+    return current, round_num
 
 
 def arrow_small_changes(fasta, round_num, args, short, all_fastas):
@@ -549,7 +465,7 @@ def arrow_small_changes(fasta, round_num, args, short, all_fastas):
                                               filtered_variants_file, args, short)
     if filtered_variants:
         apply_variants(fasta, filtered_variants, polished_fasta)
-        all_fastas.append(polished_fasta)
+        all_fastas[polished_fasta] = None
         current = polished_fasta
     else:
         current = fasta
@@ -557,7 +473,95 @@ def arrow_small_changes(fasta, round_num, args, short, all_fastas):
     return current, round_num, filtered_variants
 
 
-def large_changes(fasta, round_num, args, short, pacbio, nanopore, all_fastas):
+def nanopolish_small_changes_loop(current, round_num, args, short, all_fastas):
+    """
+    Repeatedly apply small variants using Nanopolish.
+    """
+    # Convert FAST5 files to a Nanopolish FASTA, if necessary.
+    if args.on_fast5 and not args.on_fasta:
+        make_on_fasta(args)
+
+    previously_applied_variants = []
+    overlap_counter = 0
+    while True:
+        current, round_num, variants = nanopolish_small_changes(current, round_num, args, short,
+                                                                all_fastas)
+        # If no more changes are suggested, then we're done!
+        if not variants:
+            break
+
+        # Prevent an infinite loop potentially caused by bases that keep changing back and forth.
+        if all_changes_overlap_previous(variants, previously_applied_variants):
+            overlap_counter += 1
+            if overlap_counter > 2:
+                break
+        previously_applied_variants += variants
+
+    # If changes were made and short reads are available, then another we do another Pilon round.
+    if previously_applied_variants and short:
+        current, round_num = full_pilon_loop(current, round_num, args, all_fastas)
+
+    return current, round_num
+
+
+def nanopolish_small_changes(fasta, round_num, args, short, all_fastas):
+    round_num += 1
+    print_round_header('Round ' + str(round_num) + ': Nanopore polish, small variants',
+                       args.verbosity)
+
+    raw_variants_file = '%03d' % round_num + '_1_raw_variants'
+    filtered_variants_file = '%03d' % round_num + '_2_filtered_variants'
+    polished_fasta = '%03d' % round_num + '_3_polish.fasta'
+
+    align_nanopore_reads(fasta, args)
+    run_nanopolish(fasta, args, raw_variants_file)
+    raw_variants = load_variants_from_nanopolish(raw_variants_file, fasta, args)
+    small_variants = [x for x in raw_variants if not x.large]
+
+    if short:
+        align_illumina_reads(fasta, args, local=False)
+        for variant in small_variants:
+            variant.assess_against_illumina_alignments(fasta, args)
+    clean_up(args)
+
+    filtered_variants = filter_small_variants(small_variants, raw_variants_file,
+                                              filtered_variants_file, args, short)
+    if filtered_variants:
+        apply_variants(fasta, filtered_variants, polished_fasta)
+        all_fastas[polished_fasta] = None
+        current = polished_fasta
+    else:
+        current = fasta
+    print_result(filtered_variants, polished_fasta, args.verbosity)
+    return current, round_num, filtered_variants
+
+
+def all_changes_overlap_previous(variants, previous_variants):
+    """
+    Returns True if all of the variants overlap with a previous variant.
+    """
+    for variant in variants:
+        if not any(variant.overlaps(x) for x in previous_variants):
+            return False
+    return True
+
+
+def ale_assessed_changes_loop(current, round_num, args, short, pacbio, nanopore, all_fastas):
+    """
+    All changes are gathered from all available sources (Pilon, Arrow and Nanopolish) and each
+    is evaluated using ALE. If the best one beats the ALE score of the input assembly then we
+    apply it and repeat.
+    """
+    while True:
+        current, round_num, variants = ale_assessed_changes(current, round_num, args, short, pacbio,
+                                                            nanopore, all_fastas, 'bases,local')
+        if not variants:
+            break
+    return current, round_num
+
+
+def ale_assessed_changes(fasta, round_num, args, short, pacbio, nanopore, all_fastas,
+                         pilon_fix_type):
     round_num += 1
     print_round_header('Round ' + str(round_num) + ': large variants', args.verbosity)
 
@@ -566,15 +570,15 @@ def large_changes(fasta, round_num, args, short, pacbio, nanopore, all_fastas):
     if short:
         file_num += 1
         pilon_variants_file = '%03d' % round_num + '_' + str(file_num) + '_pilon.changes'
-        variants += get_pilon_variants(fasta, args, 'local', pilon_variants_file)
-    if nanopore:
-        file_num += 1
-        nano_variants_file = '%03d' % round_num + '_' + str(file_num) + '_nanopolish_variants'
-        variants += get_nanopolish_large_variants(fasta, args, nano_variants_file)
+        variants += get_pilon_variants(fasta, args, pilon_fix_type, pilon_variants_file)
     if pacbio:
         file_num += 1
         arrow_variants_file = '%03d' % round_num + '_' + str(file_num) + '_arrow.gff'
-        variants += get_arrow_large_variants(fasta, args, arrow_variants_file)
+        variants += get_arrow_variants(fasta, args, arrow_variants_file)
+    if nanopore:
+        file_num += 1
+        nano_variants_file = '%03d' % round_num + '_' + str(file_num) + '_nanopolish_variants'
+        variants += get_nanopolish_variants(fasta, args, nano_variants_file)
 
     if not variants:
         clean_up(args)
@@ -590,22 +594,22 @@ def large_changes(fasta, round_num, args, short, pacbio, nanopore, all_fastas):
 
     initial_ale_score = run_ale(fasta, args, ale_outputs)
     best_ale_score = initial_ale_score
-
     best_modification = None
     applied_variant = []
+
     for i, variant in enumerate(variants):
-        modified_assembly = 'large_variant_' + str(i+1) + '.fasta'
+        modified_assembly = 'variant_' + str(i+1) + '.fasta'
         apply_variants(fasta, [variant], modified_assembly)
         variant.ale_score = run_ale(modified_assembly, args, ale_outputs)
         if variant.ale_score > best_ale_score:
             best_ale_score = variant.ale_score
             best_modification = modified_assembly
             applied_variant = [variant]
-            save_large_variants(applied_variant, filtered_variants_file)
+            save_variants(applied_variant, filtered_variants_file)
 
     if best_modification:
         rename_file(best_modification, polished_fasta, args.verbosity)
-        all_fastas.append(polished_fasta)
+        all_fastas[polished_fasta] = best_ale_score
         current = polished_fasta
     else:
         current = fasta
@@ -650,48 +654,6 @@ def run_ale(fasta, args, all_ale_outputs):
     return ale_score
 
 
-def align_pacbio_reads(fasta, args):
-    command = [args.pbalign, '--nproc', str(args.threads),
-               '--minLength', str(args.min_align_length),
-               '--algorithmOptions="--minRawSubreadScore 800 --bestn 1"',
-               args.pb_bam, fasta, 'pbalign_alignments.bam']
-    run_command(command, args)
-    files = get_all_files_in_current_dir()
-    if 'pbalign_alignments.bam' not in files:
-        sys.exit('Error: pbalign failed to make pbalign_alignments.bam')
-    if 'pbalign_alignments.bam.pbi' not in files:
-        sys.exit('Error: pbalign failed to make pbalign_alignments.bam.pbi')
-    if 'pbalign_alignments.bam.bai' not in files:
-        sys.exit('Error: pbalign failed to make pbalign_alignments.bam.bai')
-
-
-def align_nanopore_reads(fasta, args):
-    bam = 'nanopore_alignments.bam'
-
-    run_command([args.bwa, 'index', '-p', 'bwa_index', fasta], args)
-
-    bwa_command = [args.bwa, 'mem', '-x', 'ont2d', '-t', str(args.threads),
-                   'bwa_index', args.on_fasta]
-    samtools_view_command = [args.samtools, 'view', '-hu', '-']
-    samtools_sort_command = [args.samtools, 'sort', '-@', str(args.threads), '-o', bam, '-']
-    print_command(bwa_command + ['|'] + samtools_view_command + ['|'] + samtools_sort_command,
-                  args.verbosity)
-
-    bwa = subprocess.Popen(bwa_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    samtools_view = subprocess.Popen(samtools_view_command, stdin=bwa.stdout,
-                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    bwa.stdout.close()
-    samtools_sort = subprocess.Popen(samtools_sort_command, stdin=samtools_view.stdout,
-                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    samtools_view.stdout.close()
-    out, err = samtools_sort.communicate()
-    if args.verbosity > 2:
-        out = bwa.stderr.read() + samtools_view.stderr.read() + out + err
-        print(dim(out.decode()))
-
-    run_command([args.samtools, 'index', bam], args)
-
-
 def align_illumina_reads(fasta, args, make_bam_index=True, local=False, keep_unaligned=False,
                          large_insert_range=False):
     index = 'bowtie_index'
@@ -734,6 +696,48 @@ def align_illumina_reads(fasta, args, make_bam_index=True, local=False, keep_una
         run_command([args.samtools, 'index', bam], args)
 
 
+def align_pacbio_reads(fasta, args):
+    command = [args.pbalign, '--nproc', str(args.threads),
+               '--minLength', str(args.min_align_length),
+               '--algorithmOptions="--minRawSubreadScore 800 --bestn 1"',
+               args.pb_bam, fasta, 'pbalign_alignments.bam']
+    run_command(command, args)
+    files = get_all_files_in_current_dir()
+    if 'pbalign_alignments.bam' not in files:
+        sys.exit('Error: pbalign failed to make pbalign_alignments.bam')
+    if 'pbalign_alignments.bam.pbi' not in files:
+        sys.exit('Error: pbalign failed to make pbalign_alignments.bam.pbi')
+    if 'pbalign_alignments.bam.bai' not in files:
+        sys.exit('Error: pbalign failed to make pbalign_alignments.bam.bai')
+
+
+def align_nanopore_reads(fasta, args):
+    bam = 'nanopore_alignments.bam'
+
+    run_command([args.bwa, 'index', '-p', 'bwa_index', fasta], args)
+
+    bwa_command = [args.bwa, 'mem', '-x', 'ont2d', '-t', str(args.threads),
+                   'bwa_index', args.on_fasta]
+    samtools_view_command = [args.samtools, 'view', '-hu', '-']
+    samtools_sort_command = [args.samtools, 'sort', '-@', str(args.threads), '-o', bam, '-']
+    print_command(bwa_command + ['|'] + samtools_view_command + ['|'] + samtools_sort_command,
+                  args.verbosity)
+
+    bwa = subprocess.Popen(bwa_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    samtools_view = subprocess.Popen(samtools_view_command, stdin=bwa.stdout,
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    bwa.stdout.close()
+    samtools_sort = subprocess.Popen(samtools_sort_command, stdin=samtools_view.stdout,
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    samtools_view.stdout.close()
+    out, err = samtools_sort.communicate()
+    if args.verbosity > 2:
+        out = bwa.stderr.read() + samtools_view.stderr.read() + out + err
+        print(dim(out.decode()))
+
+    run_command([args.samtools, 'index', bam], args)
+
+
 def run_pilon(fasta, args, raw_pilon_changes_filename, fix_type):
     pilon_command = [args.java, '-jar', args.pilon, '--genome', fasta,
                      '--frags', 'illumina_alignments.bam', '--fix', fix_type, '--changes',
@@ -755,18 +759,22 @@ def get_pilon_variants(fasta, args, fix_type, raw_pilon_changes):
     return load_variants_from_pilon_changes(raw_pilon_changes, fasta, args.large)
 
 
-def get_nanopolish_large_variants(fasta, args, raw_nanopolish_variants):
+def get_nanopolish_variants(fasta, args, raw_nanopolish_variants):
+    """
+    Returns Nanopolish's suggested variants (but doesn't apply them to anything).
+    """
     align_nanopore_reads(fasta, args)
     run_nanopolish(fasta, args, raw_nanopolish_variants)
-    raw_variants = load_variants_from_nanopolish(raw_nanopolish_variants, fasta, args)
-    return [x for x in raw_variants if x.large]
+    return load_variants_from_nanopolish(raw_nanopolish_variants, fasta, args)
 
 
-def get_arrow_large_variants(fasta, args, raw_arrow_variants):
+def get_arrow_variants(fasta, args, raw_arrow_variants):
+    """
+    Returns Arrow's suggested variants (but doesn't apply them to anything).
+    """
     align_pacbio_reads(fasta, args)
     run_arrow(fasta, args, raw_arrow_variants)
-    raw_variants = load_variants_from_arrow(raw_arrow_variants, fasta, args)
-    return [x for x in raw_variants if x.large]
+    return load_variants_from_arrow(raw_arrow_variants, fasta, args)
 
 
 def run_arrow(fasta, args, raw_variants_filename):
@@ -857,7 +865,7 @@ def filter_small_variants(raw_variants, raw_variants_gff, filtered_variants_gff,
     return filtered_variants
 
 
-def save_large_variants(variants, filename):
+def save_variants(variants, filename):
     with open(filename, 'wt') as output_file:
         for variant in variants:
             output_file.write(variant.get_original_line() + '\n')
@@ -929,8 +937,7 @@ def finish(current, all_fastas, round_num, args, short):
     else:
         print_round_header('Round ' + str(round_num) + ': final assessment', args.verbosity)
 
-        ale_outputs = '%03d' % round_num + '_1_ALE_output'
-        final_fasta = '%03d' % round_num + '_2_final_polish.fasta'
+        ale_outputs = '%03d' % round_num + '_ALE_output'
         open(ale_outputs, 'a').close()
 
         ale_results_table = [['FASTA', 'ALE score', 'ALE score change']]
@@ -938,15 +945,18 @@ def finish(current, all_fastas, round_num, args, short):
         best_table_row = 0
         best_ale_score = 0.0
         starting_ale_score = 0.0
-        for i, fasta in enumerate(all_fastas):
-            ale_score = run_ale(fasta, args, ale_outputs)
+        table_row = 0
+        for fasta, ale_score in all_fastas.items():
+            table_row += 1
             first_test = best_assembly == ''
+            if ale_score is None:
+                ale_score = run_ale(fasta, args, ale_outputs)
             if first_test:
                 starting_ale_score = ale_score
             if first_test or ale_score > best_ale_score:
                 best_ale_score = ale_score
                 best_assembly = fasta
-                best_table_row = i + 1
+                best_table_row = table_row
             difference_from_start = ale_score - starting_ale_score
             score_str = '%.6f' % ale_score
             difference_str = '%.6f' % difference_from_start
@@ -954,6 +964,8 @@ def finish(current, all_fastas, round_num, args, short):
                 score_str = red(score_str)
                 difference_str = red(difference_str)
             ale_results_table.append([fasta, score_str, difference_str])
+
+        final_fasta = '%03d' % (round_num+1) + '_final_polish.fasta'
         copy_file(best_assembly, final_fasta, args.verbosity)
 
         if args.verbosity > 0:

@@ -363,7 +363,7 @@ def pilon_small_changes_loop(current, round_num, args, all_fastas):
         # Prevent an infinite loop potentially caused by bases that keep changing back and forth.
         if all_changes_overlap_previous(variants, previously_applied_variants):
             overlap_counter += 1
-            if overlap_counter > 3:
+            if overlap_counter > 2:
                 break
         previously_applied_variants += variants
 
@@ -391,7 +391,7 @@ def arrow_small_changes_loop(current, round_num, args, short, all_fastas):
         # Prevent an infinite loop potentially caused by bases that keep changing back and forth.
         if all_changes_overlap_previous(variants, previously_applied_variants):
             overlap_counter += 1
-            if overlap_counter > 3:
+            if overlap_counter > 2:
                 break
         previously_applied_variants += variants
 
@@ -423,7 +423,7 @@ def nanopolish_small_changes_loop(current, round_num, args, short, all_fastas):
         # Prevent an infinite loop potentially caused by bases that keep changing back and forth.
         if all_changes_overlap_previous(variants, previously_applied_variants):
             overlap_counter += 1
-            if overlap_counter > 3:
+            if overlap_counter > 2:
                 break
         previously_applied_variants += variants
 

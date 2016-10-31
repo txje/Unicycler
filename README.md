@@ -37,7 +37,7 @@ Reasons to use Unicycler:
 
 Reasons to __not__ use Unicycler:
    * You only have long reads, not Illumina reads (try [Canu](https://github.com/marbl/canu) instead).
-   * Your Illumina reads are poor quality (Unicycler requires a good short read assembly graph).
+   * Your Illumina reads are poor quality (Unicycler requires a good short read assembly graph - [more info here](#bad-illumina-reads)).
    * You're assembling a large eukaryotic genome or a metagenome (Unicycler is designed for bacterial isolates).
    * You're very impatient (Unicycler is not as fast as alternative assemblers).
 

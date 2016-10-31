@@ -78,54 +78,25 @@ Unicycler needs the following tools for certain parts of its pipeline. They are 
 
 # Installation
 
-### Download the source code
-
+### Typical installation
 ```
 git clone https://github.com/rrwick/Unicycler.git
 cd Unicycler
-```
-
-### Install
-
-To install Unicycler for all users:
-```
 python3 setup.py install
 ```
-You may need `sudo`, depending on your permissions.
+If the last command complains about permissions, you may need to run it with `sudo`.
 
-To install just for your user:
-```
-python3 setup.py install --user
-```
+### Other installation commands
 
-If that [doesn't work](http://stackoverflow.com/questions/4495120/combine-user-with-prefix-error-with-setup-py-install) or if you want to specify the install path:
-```
-python3 setup.py install --prefix=$HOME/.local
-```
-
-You can also use pip to install Unicycler, either from a local copy:
-```
-pip3 install path/to/Unicycler
-```
-
-or directly from GitHub:
-```
-pip3 install git+https://github.com/rrwick/Unicycler.git
-```
-
-### Advanced options
-
-The `setup.py` script runs a Makefile to build the C++ code used by Unicycler. If you want to pass arguments to `make` (e.g. to specify the compiler) you can do that with the `--makeargs` option for `setup.py`:
-```
-sudo python3 setup.py install --makeargs "CXX=icpc"
-```
-
-### Build and run without installation
-Simply running `make` in the Unicycler directory will build the C++ code without installing Unicycler.
-
-After `make` finishes, you can run Unicycler directly from the source directory using this script: `path/to/Unicycler/unicycler-runner.py`
-
-
+* Install just for your user: `python3 setup.py install --user`
+    * If you get a strange 'can't combine user with prefix' error, read [this](http://stackoverflow.com/questions/4495120).
+* Install to a specific location: `python3 setup.py install --prefix=$HOME/.local`
+* Install with pip (local copy): `pip3 install path/to/Unicycler`
+* Install with pip (from GitHub): `pip3 install git+https://github.com/rrwick/Unicycler.git`
+* Install with specific Makefile options: `python3 setup.py install --makeargs "CXX=icpc"`
+* Build and run without installing:
+    * `make`
+    * `./unicycler-runner.py`
 
 # Pipeline
 

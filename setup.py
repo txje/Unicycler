@@ -11,7 +11,7 @@ if sys.version_info.major != 3 or sys.version_info.minor < 4:
 
 import os
 import shutil
-from distutils.command.build import build
+import shlex
 from distutils.core import Command
 import subprocess
 import multiprocessing
@@ -33,19 +33,29 @@ with open('README.md', 'rb') as readme:
     LONG_DESCRIPTION = readme.read().decode()
 
 
-class UnicycleBuild(build):
+class UnicycleInstall(install):
     """
-    The build process runs the Makefile to build the C++ functions into a shared library.
+    The install process copies the C++ shared library to the install location.
     """
+    user_options = install.user_options + [
+        ('makeargs=', None, 'Arguments to be given to make')
+    ]
+
+    def initialize_options(self):
+        install.initialize_options(self)
+        self.makeargs = None
 
     def run(self):
-        build.run(self)  # Run original build code
+        install.run(self)  # Run original install code
 
         clean_cmd = ['make', 'clean']
+        make_cmd = ['make']
         try:
-            make_cmd = ['make', '-j', str(min(8, multiprocessing.cpu_count()))]
+            make_cmd += ['-j', str(min(8, multiprocessing.cpu_count()))]
         except NotImplementedError:
-            make_cmd = ['make']
+            pass
+        if self.makeargs:
+            make_cmd += shlex.split(self.makeargs)
 
         def clean_cpp():
             subprocess.call(clean_cmd)
@@ -56,14 +66,6 @@ class UnicycleBuild(build):
         self.execute(clean_cpp, [], 'Cleaning previous compilation: ' + ' '.join(clean_cmd))
         self.execute(compile_cpp, [], 'Compiling Unicycler: ' + ' '.join(make_cmd))
 
-
-class UnicycleInstall(install):
-    """
-    The install process copies the C++ shared library to the install location.
-    """
-
-    def run(self):
-        install.run(self)  # Run original install code
         shutil.copyfile(os.path.join('unicycler', 'cpp_functions.so'),
                         os.path.join(self.install_lib, 'unicycler', 'cpp_functions.so'))
         gene_data_dir = os.path.join(self.install_lib, 'unicycler', 'gene_data')
@@ -131,7 +133,6 @@ setup(name='unicycler',
                                         'unicycler_check = unicycler.unicycler_check:main',
                                         'unicycler_polish = unicycler.unicycler_polish:main']},
       zip_safe=False,
-      cmdclass={'build': UnicycleBuild,
-                'install': UnicycleInstall,
+      cmdclass={'install': UnicycleInstall,
                 'clean': UnicycleClean}
       )

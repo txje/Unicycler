@@ -40,6 +40,7 @@
 #include <seqan/ucsc_io/ucsc_record.h>
 #include <seqan/ucsc_io/ucsc_io.h>
 #include <seqan/ucsc_io/ucsc_file.h>
+#include <limits>
 
 #endif  // SEQAN_INCLUDE_SEQAN_UCSC_IO_H_
 

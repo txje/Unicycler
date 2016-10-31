@@ -232,7 +232,11 @@ struct GffRecord
     }
 
     GffRecord() :
-        beginPos(-1), endPos(-1), score(INVALID_SCORE()),
+
+        // RRW: change to quiet ICC compiler warnings.
+        beginPos(std::numeric_limits<uint32_t>::max()),
+        endPos(std::numeric_limits<uint32_t>::max()),
+        score(INVALID_SCORE()),
         strand('.'), phase('.')
     {}
 };
@@ -314,8 +318,9 @@ _parseReadGffKeyValue(TValueString & outValue, TKeyString & key, TForwardIter & 
  */
 inline void clear(GffRecord & record)
 {
-    record.beginPos = -1;
-    record.endPos = -1;
+    // RRW: change to quiet ICC compiler warnings.
+    record.beginPos = std::numeric_limits<uint32_t>::max();
+    record.endPos = std::numeric_limits<uint32_t>::max();
     record.score = record.INVALID_SCORE();
     record.strand = '.';
     record.phase = '.';

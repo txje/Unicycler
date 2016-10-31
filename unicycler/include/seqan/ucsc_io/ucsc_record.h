@@ -154,8 +154,9 @@ inline void clear(UcscRecord & record)
     clear(record.exonEnds);
     clear(record.proteinName);
 
-    record.annotationBeginPos = -1;
-    record.annotationEndPos = -1;
+    // RRW: change to quiet ICC compiler warnings.
+    record.annotationBeginPos = std::numeric_limits<uint32_t>::max();
+    record.annotationEndPos = std::numeric_limits<uint32_t>::max();
 }
 
 }  // namespace seqan

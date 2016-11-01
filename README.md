@@ -25,12 +25,12 @@ Unicycler is a hybrid assembly pipeline for bacterial genomes. It uses both Illu
 
 # Introduction
 
-As input, Unicycler takes a good set of Illumina reads from a bacterial isolate (required) and long reads from the same isolate (optional).
+As input, Unicycler takes a good set of Illumina reads from a bacterial isolate (required) and long reads from the same isolate (optional). If the input is sufficient, it will produce a completed assembly of circularised sequences.
 
 Reasons to use Unicycler:
    * It has very low misassembly rates.
    * It can cope with highly repetitive genomes, such as those from _Shigella_ species.
-   * It correctly handles plamsmids of varying read depth.
+   * It correctly handles plamsmids of varying depth.
    * It works with long reads of any quality - even Nanopore reads classed as 'fail' can be used as input.
    * It works with any long read depth. Approximately 10x may be required to complete a genome, but it can make nearly-complete genomes with far fewer long reads.
    * It can be run without any long reads, functioning as a [SPAdes](http://bioinf.spbau.ru/spades) optimiser.
@@ -41,6 +41,7 @@ Reasons to __not__ use Unicycler:
    * You only have long reads, not Illumina reads (try [Canu](https://github.com/marbl/canu) instead).
    * Your Illumina reads are poor quality (Unicycler requires a good short read assembly graph - [more info here](#bad-illumina-reads)).
    * You're assembling a large eukaryotic genome or a metagenome (Unicycler is designed for bacterial isolates).
+   * Your Illumina reads and long reads are from different isolates.
    * You're very impatient (Unicycler is not as fast as alternatives).
 
 
@@ -172,7 +173,7 @@ The specific differences between the three modes are as follows:
 Mode         | Invokation                      | Short read bridges | Bridge quality threshold | Contig merging
 ------------ | ------------------------------- | ------------------ | ------------------------ | -------------------------------------
 conservative | `--mode conservative`           | not used           | high (25)                | contigs are only merged with bridges
-normal       | `--mode normal`<br>(or nothing) | used               | medium (10)              | contigs are also merged when their multiplicity is 1
+normal       | `--mode normal`<br>(or nothing) | used               | medium (10)              | contigs are merged with bridges and when their multiplicity is 1
 bold         | `--mode bold`                   | used               | low (1)                  | contigs are merged wherever possible
 
 <p align="center"><img src="misc/conservative_normal_bold.png" alt="Conservative, normal and bold" width="550"></p>
@@ -427,9 +428,30 @@ Try [BWA-MEM](http://bio-bwa.sourceforge.net/), [LAST](http://last.cbrc.jp/) or 
 
 Unicycler polish is a script to repeatedly polish a completed assembly using all available reads. It can be given Illumina reads, long reads or (ideally) both. When both Illumina and long reads are available, Unicycler polish can fix assembly errors, even in repetitive parts of the genome which cannot be polished by short reads alone.
 
-Unicycler polish uses an exhaustive iterative process that is time-consuming but can be necessary to resolve the sequence in repeat regions. For example, consider a genome with two very similar regions, A and B, and there are assembly errors in both. Polishing is initially difficult because the errors may cause reads which should map to A to instead map to B and vice versa. However, after some of these errors are fixed, more reads will map to their correct locations, allowing for more errors to be fixes, allowing more reads to map correctly, etc.
+### Requirements
+
+* If polishing with Illumina reads:
+    * [Pilon](https://github.com/broadinstitute/pilon/wiki)
+    * Java
+    * [Bowtie2](http://bowtie-bio.sourceforge.net/bowtie2/)
+    * [Samtools](http://www.htslib.org/) version 1.0 or later
+* If polishing with PacBio reads:
+    * [pbalign](https://github.com/PacificBiosciences/pbalign)
+    * Java
+    * [BLASR](https://github.com/PacificBiosciences/blasr)
+    * [GenomicConsensus](https://github.com/PacificBiosciences/GenomicConsensus)
+    * These items are most easily installed using [pitchfork](https://github.com/PacificBiosciences/pitchfork).
+* If polishing with Nanopore reads:
+    * [Nanopolish](https://github.com/jts/nanopolish)
+    * [BWA-MEM](http://bio-bwa.sourceforge.net/)
+* If polishing with both Illumina and long reads:
+    * [FreeBayes](https://github.com/ekg/freebayes)
+
 
 ### Process
+
+Unicycler polish uses an exhaustive iterative process that is time-consuming but can be necessary to resolve the sequence in repeat regions. For example, consider a genome with two very similar regions, A and B, and there are assembly errors in both. Polishing is initially difficult because the errors may cause reads which should map to A to instead map to B and vice versa. However, after some of these errors are fixed, more reads will map to their correct locations, allowing for more errors to be fixes, allowing more reads to map correctly, etc.
+
 1. If Illumina reads are available:
     1. Run [Pilon](https://github.com/broadinstitute/pilon/wiki) in 'bases' mode (substitutions and small indels). If any changes were suggested, apply them and repeat this step.
     2. Run Pilon in 'local' mode (larger variants), and assess each change with ALE. If any variant improves the ALE score, apply it and go back to step 1-i.
@@ -440,16 +462,20 @@ Unicycler polish uses an exhaustive iterative process that is time-consuming but
     1. Execute step 1 again.
     2. Run Pilon/GenomicConsensus/Nanopolish again (all that apply) and assess each suggested variant with ALE. If any improves the ALE score, apply it and repeat this step.
 
+
 ### Example commands
+
 Polishing with only Illumina reads:
 ```
 unicycler_polish -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz -a assembly.fasta
 ```
+
 Polishing with only PacBio reads:
 ```
 unicycler_polish --pb_bam subreads.bam -a assembly.fasta
 unicycler_polish --pb_bax path/to/*bax.h5 -a assembly.fasta
 ```
+
 Polishing with both Illumina and PacBio reads:
 ```
 unicycler_polish -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --pb_bam subreads.bam -a assembly.fasta

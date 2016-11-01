@@ -100,17 +100,19 @@ If the last command complains about permissions, you may need to run it with `su
 
 # Pipeline
 
-### Short version
+### In brief
 
-Unicycler performs an assembly (using SPAdes) of just the Illumina reads. It then uses all available sources of information (SPAdes contigs and long read alignments) to resolve repeats in the assembly graph. It does this by building 'bridges' between non-repeat segments using the best path through the assembly graph. Essentially, Unicycler is a scaffolder which uses long reads to properly orient Illumina contigs. But since it works not just with the assembled contigs but the entire assembly _graph_, it can outperform a more naive long read scaffolder.
+Unicycler performs an assembly (using SPAdes) of just the Illumina reads. It then uses all available sources of information (SPAdes contigs and long read alignments) to resolve repeats in the assembly graph. It does this by building 'bridges' between non-repeat contigs using the best path through the assembly graph. Essentially, Unicycler is a scaffolder which uses long reads to properly orient Illumina contigs. But since it works not just with the assembled contigs but the entire assembly _graph_, it can outperform a more naive long read scaffolder.
 
 
-### Read correction
+### 1. Read correction
 
 Unicycler uses SPAdes to perform read error correction before assembling the Illumina reads. This can be disabled with `--no_correct` if your Illumina reads are very high quality or you've already performed read QC.
 
 
-### SPAdes assembly
+### 1. SPAdes assembly
+
+<img align="right" src="misc/k-mer_graph.png" width="204" height="234">
 
 Unicycler uses SPAdes to assembly the Illumina reads into an assembly graph. It tries assemblies at a wide range of k-mer sizes, evaluating the graph at each one. It chooses the assembly graph which best balances contig length and dead end count. If the Illumina reads are high quality, this will result in an assembly graph with long contigs but few to no dead ends.
 
@@ -308,7 +310,9 @@ Unicycler may only take an hour or so to assemble a small, simple genome with lo
 
 ### Long read length
 
-The length of the long reads is very important - often more so than their accuracy. A 99% accurate read isn't very useful to Unicycler if it is less than 1 kb. On the other hand, a 20 kb read is very useful, even if it is only 75% accurate. So if you do subsample your long reads, you should preferentially keep the longest ones.
+The length of the long reads is very important - typically more so than their accuracy. A 99% accurate read isn't useful to Unicycler if it is less than 1 kb. On the other hand, a 20 kb read is quite useful, even if it is only 75% accurate. This is because longer reads are more likely to align to multiple single-copy contigs, allowing Unicycler to build bridges.
+
+Therefore if you do subsample your long reads, you should preferentially keep the longest ones.
 
 
 ### Poretools

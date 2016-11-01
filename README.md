@@ -114,7 +114,7 @@ Unicycler uses SPAdes to perform read error correction before assembling the Ill
 
 <img align="right" src="misc/k-mer_plot.png" width="156" height="179">
 
-Unicycler uses SPAdes to assembly the Illumina reads into an assembly graph. It tries assemblies at a wide range of k-mer sizes, evaluating the graph at each one. It chooses the assembly graph which best balances contig length and dead end count. If the Illumina reads are high quality, this will result in an assembly graph with long contigs but few to no dead ends.
+Unicycler uses SPAdes to assembly the Illumina reads into an assembly graph. It tries assemblies at a wide range of k-mer sizes, evaluating the graph at each one. It chooses the assembly graph which best minimises both contig count and dead end count. If the Illumina reads are high quality, it produces an assembly graph with long contigs but few to no dead ends ([more info here](#bad-illumina-reads)).
 
 Unicycler also cleans the SPAdes assembly graphs, filtering out contigs which are very low depth and likely to be due to contamination or errors.
 
@@ -157,11 +157,21 @@ Finally, Unicycler does a single pass of short read polishing using [Pilon](http
 
 # Conservative, normal and bold
 
-Unicycler can be run in three modes: conservative, normal (the default) and bold. These affect the program's willingness to join sequences to make more complete assemblies.
-
-The main difference in the modes is the quality threshold for applying bridges to the graph. In conservative mode, the threshold is set high so only the best bridges are used. This means that the assembly is less likely to be complete, but the risk of misassembly is extremely low. In bold mode, the threshold is set low so most bridges are used. This results in more complete assemblies but at an increased misassembly risk. Normal mode uses an intermediate threshold.
+Unicycler can be run in three modes: conservative, normal (the default) and bold. Conservative mode is least likely to produce a complete assembly, but it has a very low risk of misassembly. Bold mode is most likely to produce a complete assembly, but it carries greater risk of misassembly. Normal mode is intermediate between the two.
 
 If the structural accuracy of the assembly is paramount to your research, conservative mode is recommended. If, however, you want a completed genome even if it contains a mistake or two, then bold mode is recommended.
+
+The particular differences between the three modes are as follows:
+
+Mode         | Short read bridges | Bridge quality threshold | Contig merging
+------------ | ------------------ | ------------------------ | ----------------------------------------------------------------
+conservative | not used           | high                     | contigs are only merged with bridges
+normal       | used               | medium                   | contigs are also merged when their multiplicity is 1
+bold         | used               | low                      | contigs are merged wherever possible
+
+<p align="center"><img src="misc/conservative_normal_bold.png" alt="Conservative, normal and bold" width="550"></p>
+
+The above example shows Unicycler assemblies of simulated reads from a _Streptococcus suis_ chromosome at 2x long read depth. In conservative mode, the assembly is incomplete because some bridges fell below the quality threshold and were not applied. Normal mode nearly gives a complete assembly, but a couple of unmerged contigs remain. Bold mode completed the assembly, but since even lower confidence regions were bridged and merged, there is a larger risk of error.
 
 
 

@@ -118,7 +118,7 @@ Unicycler also cleans the SPAdes assembly graphs, filtering out contigs which ar
 
 In future steps, Unicycler will scaffold the graph using SPAdes contigs and long reads. To do this, it must distinguish between single-copy contigs and collapsed repeats. It does this with a greedy algorithm that takes both read depth and graph connectivity. This process finds single-copy contigs not only in the bacterial chromosome but also in plasmids of any read depth.
 
-<p align="center"><img src="misc/multiplicity.png" alt="Multiplicity assignment"></p>
+<p align="center"><img src="misc/multiplicity.png" alt="Multiplicity assignment" width="700"></p>
 
 ### SPAdes bridging
 

@@ -347,7 +347,7 @@ Unicycler needs decent Illumina reads as input - ideally with uniform read depth
 
 You can look at the `unbridged_graph.gfa` file (the first graph Unicycler saves to file) in Bandage to get a quick impression of the Illumina read quality:
 
-<p align="center"><img src="misc/illumina_graph_comparison.png" alt="Graphs of varying quality"  width="700"></p>
+<p align="center"><img src="misc/illumina_graph_comparison.png" alt="Graphs of varying quality" width="700"></p>
 
 __A__ is an very good Illumina read graph - the contigs are long and there are no dead ends. This read set is ideally suited for use in Unicycler.
 
@@ -360,7 +360,7 @@ __C__ is a disaster! It is broken into many pieces, probably because parts of th
 
 Are you confused by very small (e.g. 2 bp) contigs in Unicycler assemblies? Unlike a SPAdes graph where neighbouring sequences overlap by their k-mer size, a Unicycler graph has no overlaps and the sequences adjoin directly. This means that contigs in very complex parts of the graph can be quite short. They may be useless as stand-alone contigs but are still very important in the graph structure.
 
-<p align="center"><img src="misc/short_contigs.png" alt="Short contigs in assembly graph"></p>
+<p align="center"><img src="misc/short_contigs.png" alt="Short contigs in assembly graph" width="700"></p>
 
 If you're curious, this example is the rDNA region of a bacterial genome. There are seven rDNA copies with regions that are the same (assembly collapsed these into single contigs) but in some places differ (leading to divergences in the graph like this one).
 
@@ -369,7 +369,7 @@ If you're curious, this example is the rDNA region of a bacterial genome. There 
 
 Unicycler normalises the depth of contigs in the graph to the median value. For a bacterial isolate, this typically means that the chromosome has a depth of around 1x and plasmids may have different (typically higher) depths.
 
-<p align="center"><img src="misc/depth.png" alt="Plasmid depths"></p>
+<p align="center"><img src="misc/depth.png" alt="Plasmid depths" width="700"></p>
 
 In the above assembly graph, the chromosome is at the top and there are two plasmids.  The plasmid on the left occurs in approximately 4 or 5 copies per cell. For the larger plasmid on the right, Most cells probably had one copy of plasmid __B__ but some had more. Since sequencing biases (such as GC bias) can affect read depth, these per cell counts should be interpreted loosely.
 

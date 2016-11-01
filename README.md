@@ -104,9 +104,11 @@ If the last command complains about permissions, you may need to run it with `su
 
 Unicycler performs an assembly (using SPAdes) of just the Illumina reads. It then uses all available sources of information (SPAdes contigs and long read alignments) to resolve repeats in the assembly graph. It does this by building 'bridges' between non-repeat segments using the best path through the assembly graph. Essentially, Unicycler is a scaffolder which uses long reads to properly orient Illumina contigs. But since it works not just with the assembled contigs but the entire assembly _graph_, it can outperform a more naive long read scaffolder.
 
+
 ### Read correction
 
 Unicycler uses SPAdes to perform read error correction before assembling the Illumina reads. This can be disabled with `--no_correct` if your Illumina reads are very high quality or you've already performed read QC.
+
 
 ### SPAdes assembly
 
@@ -114,11 +116,13 @@ Unicycler uses SPAdes to assembly the Illumina reads into an assembly graph. It 
 
 Unicycler also cleans the SPAdes assembly graphs, filtering out contigs which are very low depth and likely to be due to contamination or errors.
 
+
 ### Multiplicity
 
 In future steps, Unicycler will scaffold the graph using SPAdes contigs and long reads. To do this, it must distinguish between single-copy contigs and collapsed repeats. It does this with a greedy algorithm that takes both read depth and graph connectivity. This process finds single-copy contigs not only in the bacterial chromosome but also in plasmids of any read depth.
 
 <p align="center"><img src="misc/multiplicity.png" alt="Multiplicity assignment" width="700"></p>
+
 
 ### Short read bridging
 
@@ -126,22 +130,26 @@ At this point, the assembly graph does not contain the SPAdes repeat resolution.
 
 <p align="center"><img src="misc/short_read_bridging.png" alt="Short read bridging" width="700"></p>
 
-### Long read alignment
-
-For more information on semi-global alignment, see [the section below on Unicycler align](#unicycler-align).
 
 ### Long read bridging
+
+Long reads are the most useful source of information for resolving the assembly graph, so Unicycler aligns them to the graph semi-globally (see [Unicycler align](#unicycler-align) for more information). For each pair of single-copy contigs which are linked by read alignments, Unicycler uses the read consensus sequence to find a connecting path and creates a bridge.
 
 <p align="center"><img src="misc/long_read_bridging.png" alt="Long read bridging"></p>
 
 
 ### Bridge application
 
+The above bridge-creation steps can produce many bridges, some of which may conflict. Unicycler therefore assigns a quality score to each bridge based on all available evidence (e.g. read alignment quality, graph path match, read depth consistency, etc). Bridges are then applied in order from highest to lowest quality so whenever two bridges conflict, the most supported option is used. A minimum quality threshold prevents the application of low evidence bridges (see [Conservative, normal and bold](#conservative-normal-and-bold) for more information).
+
 <p align="center"><img src="misc/bridge_application.png" alt="Application of bridges"></p>
 
-### Rotating completed sequences
 
-### Short read polishing
+### Finalisation
+
+If the above steps have resulted in any simple, circular sequences, then Unicycler will attempt to rotate/flip them to begin at a consistent starting gene. By default this is [dnaA](http://www.uniprot.org/uniprot/?query=gene_exact%3AdnaA&sort=score) or [repA](http://www.uniprot.org/uniprot/?query=gene_exact%3ArepA&sort=score), but users can specify their own with the `--start_genes` option.
+
+Finally, Unicycler does a single pass of short read polishing using [Pilon](https://github.com/broadinstitute/pilon/wiki). For a more extensive polishing process, see the section on [Unicycler polish](#unicycler-polish)
 
 
 
@@ -293,7 +301,9 @@ assembly.fasta                 | __the final assembly in FASTA format__ (exact s
 
 ### Running time
 
-Unicycler is thorough and accurate, but not particularly fast. Two main factors influence the running time: the genome size/complexity and the number of long reads. Unicycler may only take an hour or so to assemble a small, simple genome with low depth long reads. On the other hand, a complex genome with many long reads may take 12 hours to finish or more. If you have a very high depth of long reads, subsampling them will make Unicycler run faster and probably not affect your assembly.
+Unicycler is thorough and accurate, but not particularly fast. In particular, the [Long read bridging](#long-read-bridging) step of the pipeline can take a while to complete. Two main factors influence the running time: the number of long reads (more reads take longer to align) and the genome size/complexity (finding ideal bridge paths is more difficult in complex graphs).
+
+Unicycler may only take an hour or so to assemble a small, simple genome with low depth long reads. On the other hand, a complex genome with many long reads may take 12 hours to finish or more. If you have a very high depth of long reads, subsampling for only the best reads will make Unicycler run faster and probably not adversely affect your assembly.
 
 
 ### Long read length

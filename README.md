@@ -100,6 +100,10 @@ If the last command complains about permissions, you may need to run it with `su
 
 # Pipeline
 
+### Short version
+
+Unicycler performs an assembly (using SPAdes) of just the Illumina reads. It then uses all available sources of information (SPAdes contigs and long read alignments) to resolve repeats in the assembly graph. It does this by building 'bridges' between non-repeat segments using the best path through the assembly graph. Essentially, Unicycler is a scaffolder which uses long reads to properly orient Illumina contigs. But since it works not just with the assembled contigs but the entire assembly _graph_, it can outperform a more naive long read scaffolder.
+
 ### Read correction
 
 Unicycler uses SPAdes to perform read error correction before assembling the Illumina reads. This can be disabled with `--no_correct` if your Illumina reads are very high quality or you've already performed read QC.
@@ -110,9 +114,11 @@ Unicycler uses SPAdes to assembly the Illumina reads into an assembly graph. It 
 
 Unicycler also cleans the SPAdes assembly graphs, filtering out contigs which are very low depth and likely to be due to contamination or errors.
 
-### Determine multiplicity
+### Multiplicity
 
 In future steps, Unicycler will scaffold the graph using SPAdes contigs and long reads. To do this, it must distinguish between single-copy contigs and collapsed repeats. It does this with a greedy algorithm that takes both read depth and graph connectivity. This process finds single-copy contigs not only in the bacterial chromosome but also in plasmids of any read depth.
+
+<p align="center"><img src="misc/multiplicity.png" alt="Multiplicity assignment"></p>
 
 ### SPAdes bridging
 
@@ -120,7 +126,14 @@ At this point, the assembly graph does not contain the SPAdes repeat resolution.
 
 ### Long read alignment
 
+For more information on semi-global alignment, see [the section below on Unicycler align](#unicycler-align).
+
 ### Long read bridging
+
+
+### Bridge application
+
+<p align="center"><img src="misc/bridge_application.png" alt="Application of bridges"></p>
 
 ### Rotating completed sequences
 
@@ -326,9 +339,9 @@ If you're curious, this example is the rDNA region of a bacterial genome assembl
 
 Unicycler normalises the depth of contigs in the graph to the median value. For a bacterial isolate, this typically means that the chromosome has a depth of around 1x and plasmids may have different (typically higher) depths.
 
-(IMAGE OF VARIOUS PLASMID DEPTHS)
+<p align="center"><img src="misc/depth.png" alt="Plasmid depths"></p>
 
-In this example, plasmid __A__ occurs in approximately 14 or 15 copies per cell in the sample. Most cells probably had one copy of plasmid __B__ but some had more. Since sequencing biases (such as GC bias) can affect read depth, these relative depths should be interpreted loosely.
+In the above assembly graph, the chromosome is at the top and there are two plasmids.  The plasmid on the left occurs in approximately 4 or 5 copies per cell. For the larger plasmid on the right, Most cells probably had one copy of plasmid __B__ but some had more. Since sequencing biases (such as GC bias) can affect read depth, these per cell counts should be interpreted loosely.
 
 
 

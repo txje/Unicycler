@@ -170,7 +170,7 @@ If the structural accuracy of your assembly is paramount to your research, conse
 The specific differences between the three modes are as follows:
 
 Mode         | Invokation                      | Short read bridges | Bridge quality threshold | Contig merging
------------- | ------------------------------- | ------------------------ | ----------------------------------------------------------------
+------------ | ------------------------------- | ------------------ | ------------------------ | -------------------------------------
 conservative | `--mode conservative`           | not used           | high (25)                | contigs are only merged with bridges
 normal       | `--mode normal`<br>(or nothing) | used               | medium (10)              | contigs are also merged when their multiplicity is 1
 bold         | `--mode bold`                   | used               | low (1)                  | contigs are merged wherever possible

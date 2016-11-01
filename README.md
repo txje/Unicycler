@@ -112,7 +112,7 @@ Unicycler uses SPAdes to perform read error correction before assembling the Ill
 
 ### 1. SPAdes assembly
 
-<img align="right" src="misc/k-mer_graph.png" width="204" height="234">
+<img align="right" src="misc/k-mer_graph.png" width="136" height="156">
 
 Unicycler uses SPAdes to assembly the Illumina reads into an assembly graph. It tries assemblies at a wide range of k-mer sizes, evaluating the graph at each one. It chooses the assembly graph which best balances contig length and dead end count. If the Illumina reads are high quality, this will result in an assembly graph with long contigs but few to no dead ends.
 

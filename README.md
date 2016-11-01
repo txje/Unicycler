@@ -120,15 +120,19 @@ In future steps, Unicycler will scaffold the graph using SPAdes contigs and long
 
 <p align="center"><img src="misc/multiplicity.png" alt="Multiplicity assignment" width="700"></p>
 
-### SPAdes bridging
+### Short read bridging
 
 At this point, the assembly graph does not contain the SPAdes repeat resolution. To apply this to the graph, Unicycler builds bridges between single-copy contigs using the information in the SPAdes `contigs.paths` file. These are applied to the graph to make the `spades_bridges_applied.gfa` output - the most resolved graph Unicycler can make using only the Illumina reads.
+
+<p align="center"><img src="misc/short_read_bridging.png" alt="Short read bridging" width="700"></p>
 
 ### Long read alignment
 
 For more information on semi-global alignment, see [the section below on Unicycler align](#unicycler-align).
 
 ### Long read bridging
+
+<p align="center"><img src="misc/long_read_bridging.png" alt="Long read bridging"></p>
 
 
 ### Bridge application

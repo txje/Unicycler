@@ -1,4 +1,4 @@
-<p align="center"><img src="misc/logo.png" alt="Unicycler" width="600" height="210">	</p>
+<p align="center"><img src="misc/logo.png" alt="Unicycler" width="600" height="210"></p>
 
 Unicycler is a hybrid assembly pipeline for bacterial genomes. It uses both Illumina and PacBio/Nanopore reads to produce complete and accurate assemblies.
 
@@ -278,9 +278,11 @@ assembly.fasta                 | __the final assembly in FASTA format__ (exact s
 
 Unicycler is thorough and accurate, but not particularly fast. Two main factors influence the running time: the genome size/complexity and the number of long reads. Unicycler may only take an hour or so to assemble a small, simple genome with low depth long reads. On the other hand, a complex genome with many long reads may take 12 hours to finish or more. If you have a very high depth of long reads, subsampling them will make Unicycler run faster and probably not affect your assembly.
 
+
 ### Long read length
 
 The length of the long reads is very important - often more so than their accuracy. A 99% accurate read isn't very useful to Unicycler if it is less than 1 kb. On the other hand, a 20 kb read is very useful, even if it is only 75% accurate. So if you do subsample your long reads, you should preferentially keep the longest ones.
+
 
 ### Poretools
 
@@ -290,9 +292,11 @@ poretools fastq --type best --min-length 1000 path/to/fast5/dir/ > nanopore_read
 ```
 If you have 2D reads, the `--type best` option makes Poretools give only one FASTQ read per FAST5 file (if you have 1D reads, you can exclude that option). Adjust the `--min-length 1000` parameter to suit your dataset - a larger value would be appropriate if you have lots of long reads.
 
+
 ### Oxford Nanopore: 1D vs 2D
 
 Since Unicycler can tolerate low accuracy reads, [Oxford Nanopore 1D sequencing](https://nanoporetech.com/applications/dna-nanopore-sequencing) is probably preferable to 2D, as it can provide twice as many reads. However, at the time of writing, the 2D library prep supports barcoding. So if you want to sequence multiple samples on a single flowcell, 2D is currently the only option.
+
 
 ### Bad Illumina reads
 
@@ -300,15 +304,23 @@ Unicycler needs decent Illumina reads as input - ideally with uniform read depth
 
 You can look at the `unbridged_graph.gfa` file (the first graph Unicycler saves to file) in Bandage to get a quick impression of the Illumina read quality:
 
-(IMAGE OF THREE CONTRASTING GRAPHS)
+<p align="center"><img src="misc/illumina_graph_comparison.png" alt="Unicycler" width="600" height="210"></p>
 
-__A__ is a very good graph - the contigs are long and there are no dead ends.  __B__ is also a good graph - the genome is more complex, resulting in a more tangled structure, but there are still no dead ends. These two sets of Illumina reads are ideally suited for use in Unicycler.  __C__ is a very poor graph - many parts have no read depth, breaking the graph into many pieces. This read set is not well suited to Unicycler.
+__A__ is an very good Illumina read graph - the contigs are long and there are no dead ends. This read set is ideally suited for use in Unicycler.
+
+__B__ is also a good graph. The genome is more complex, resulting in a more tangled structure, but there are still very few dead ends (you can see one in the lower left). This read set would also work well in Unicycler.
+
+__C__ is a disaster! It is broken into many pieces, probably because parts of the genome got no read depth at all. While you can still use Unicycler to resolve this assembly with long reads, the risk of small errors and misassemblies is considerably higher.
+
 
 ### Very short contigs
 
-Are you confused by very small (e.g. 1 bp) contigs in Unicycler assemblies? Unlike a SPAdes graph where neighbouring sequences overlap by their k-mer size, a Unicycler graph has no overlaps and the sequences adjoin directly. This means that contigs in very complex parts of the graph can be quite short. They may be useless as stand-alone contigs but are important in the graph structure.
+Are you confused by very small (e.g. 2 bp) contigs in Unicycler assemblies? Unlike a SPAdes graph where neighbouring sequences overlap by their k-mer size, a Unicycler graph has no overlaps and the sequences adjoin directly. This means that contigs in very complex parts of the graph can be quite short. They may be useless as stand-alone contigs but are still very important in the graph structure.
 
-(IMAGE OF SHORT CONTIGS IN GRAPH)
+<p align="center"><img src="misc/short_contigs.png" alt="Unicycler" width="600" height="210"></p>
+
+If you're curious, this example is the rDNA region of a bacterial genome assembly graph. There are seven rDNA copies with regions that are the same (assembly collapsed these into single contigs) but in some places differ (leading to divergences in the graph like this one).
+
 
 ### Depth: chromosomes and plasmids
 

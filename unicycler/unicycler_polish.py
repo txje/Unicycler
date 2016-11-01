@@ -563,7 +563,7 @@ def ale_assessed_changes_loop(current, round_num, args, short, pacbio, nanopore,
 def ale_assessed_changes(fasta, round_num, args, short, pacbio, nanopore, all_fastas,
                          pilon_fix_type):
     round_num += 1
-    print_round_header('Round ' + str(round_num) + ': large variants', args.verbosity)
+    print_round_header('Round ' + str(round_num) + ': ALE assessed variants', args.verbosity)
 
     variants = []
     file_num = 0

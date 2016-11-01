@@ -347,7 +347,7 @@ Unicycler needs decent Illumina reads as input - ideally with uniform read depth
 
 You can look at the `unbridged_graph.gfa` file (the first graph Unicycler saves to file) in Bandage to get a quick impression of the Illumina read quality:
 
-<p align="center"><img src="misc/illumina_graph_comparison.png" alt="Graphs of varying quality"></p>
+<p align="center"><img src="misc/illumina_graph_comparison.png" alt="Graphs of varying quality"  width="700"></p>
 
 __A__ is an very good Illumina read graph - the contigs are long and there are no dead ends. This read set is ideally suited for use in Unicycler.
 
@@ -362,7 +362,7 @@ Are you confused by very small (e.g. 2 bp) contigs in Unicycler assemblies? Unli
 
 <p align="center"><img src="misc/short_contigs.png" alt="Short contigs in assembly graph"></p>
 
-If you're curious, this example is the rDNA region of a bacterial genome assembly graph. There are seven rDNA copies with regions that are the same (assembly collapsed these into single contigs) but in some places differ (leading to divergences in the graph like this one).
+If you're curious, this example is the rDNA region of a bacterial genome. There are seven rDNA copies with regions that are the same (assembly collapsed these into single contigs) but in some places differ (leading to divergences in the graph like this one).
 
 
 ### Depth: chromosomes and plasmids

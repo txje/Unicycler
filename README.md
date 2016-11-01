@@ -102,7 +102,9 @@ If the last command complains about permissions, you may need to run it with `su
 
 ### In brief
 
-Unicycler performs an assembly (using SPAdes) of just the Illumina reads. It then uses all available sources of information (SPAdes contigs and long read alignments) to resolve repeats in the assembly graph. It does this by building 'bridges' between non-repeat contigs using the best path through the assembly graph. Essentially, Unicycler is a scaffolder which uses long reads to properly orient Illumina contigs. But since it works not just with the assembled contigs but the entire assembly _graph_, it can outperform a more naive long read scaffolder.
+Unicycler performs an assembly (using SPAdes) of just the Illumina reads. It then uses all available sources of information (SPAdes contigs and long read alignments) to resolve repeats in the assembly graph. It does this by building 'bridges' between non-repeat contigs using the best path through the assembly graph.
+
+Essentially, Unicycler is a scaffolder which uses long reads to properly orient Illumina contigs. But since it works not on assembled contigs but an assembly _graph_, it can outperform a more naive long read scaffolder.
 
 
 ### 1. Read correction
@@ -110,7 +112,7 @@ Unicycler performs an assembly (using SPAdes) of just the Illumina reads. It the
 Unicycler uses SPAdes to perform read error correction before assembling the Illumina reads. This can be disabled with `--no_correct` if your Illumina reads are very high quality or you've already performed read QC.
 
 
-### 1. SPAdes assembly
+### 2. SPAdes assembly
 
 <img align="right" src="misc/k-mer_plot.png" width="156" height="179">
 
@@ -119,35 +121,35 @@ Unicycler uses SPAdes to assembly the Illumina reads into an assembly graph. It 
 Unicycler also cleans the SPAdes assembly graphs, filtering out contigs which are very low depth and likely to be due to contamination or errors.
 
 
-### Multiplicity
+### 3. Multiplicity
 
 In future steps, Unicycler will scaffold the graph using SPAdes contigs and long reads. To do this, it must distinguish between single-copy contigs and collapsed repeats. It does this with a greedy algorithm that takes both read depth and graph connectivity. This process finds single-copy contigs not only in the bacterial chromosome but also in plasmids of any read depth.
 
 <p align="center"><img src="misc/multiplicity.png" alt="Multiplicity assignment" width="700"></p>
 
 
-### Short read bridging
+### 4. Short read bridging
 
 At this point, the assembly graph does not contain the SPAdes repeat resolution. To apply this to the graph, Unicycler builds bridges between single-copy contigs using the information in the SPAdes `contigs.paths` file. These are applied to the graph to make the `spades_bridges_applied.gfa` output - the most resolved graph Unicycler can make using only the Illumina reads.
 
 <p align="center"><img src="misc/short_read_bridging.png" alt="Short read bridging" width="700"></p>
 
 
-### Long read bridging
+### 5. Long read bridging
 
 Long reads are the most useful source of information for resolving the assembly graph, so Unicycler aligns them to the graph semi-globally (see [Unicycler align](#unicycler-align) for more information). For each pair of single-copy contigs which are linked by read alignments, Unicycler uses the read consensus sequence to find a connecting path and creates a bridge.
 
 <p align="center"><img src="misc/long_read_bridging.png" alt="Long read bridging"></p>
 
 
-### Bridge application
+### 6. Bridge application
 
-The above bridge-creation steps can produce many bridges, some of which may conflict. Unicycler therefore assigns a quality score to each bridge based on all available evidence (e.g. read alignment quality, graph path match, read depth consistency, etc). Bridges are then applied in order from highest to lowest quality so whenever two bridges conflict, the most supported option is used. A minimum quality threshold prevents the application of low evidence bridges (see [Conservative, normal and bold](#conservative-normal-and-bold) for more information).
+At this point of the pipeline there can be many bridges, some of which may conflict. Unicycler therefore assigns a quality score to each based on all available evidence (e.g. read alignment quality, graph path match, read depth consistency, etc). Bridges are then applied in order of decreasing quality so whenever bridges conflict, only the most supported option is used. A minimum quality threshold prevents the application of low evidence bridges (see [Conservative, normal and bold](#conservative-normal-and-bold) for more information).
 
 <p align="center"><img src="misc/bridge_application.png" alt="Application of bridges"></p>
 
 
-### Finalisation
+### 7. Finalisation
 
 If the above steps have resulted in any simple, circular sequences, then Unicycler will attempt to rotate/flip them to begin at a consistent starting gene. By default this is [dnaA](http://www.uniprot.org/uniprot/?query=gene_exact%3AdnaA&sort=score) or [repA](http://www.uniprot.org/uniprot/?query=gene_exact%3ArepA&sort=score), but users can specify their own with the `--start_genes` option.
 
@@ -157,17 +159,17 @@ Finally, Unicycler does a single pass of short read polishing using [Pilon](http
 
 # Conservative, normal and bold
 
-Unicycler can be run in three modes: conservative, normal (the default) and bold. Conservative mode is least likely to produce a complete assembly, but it has a very low risk of misassembly. Bold mode is most likely to produce a complete assembly, but it carries greater risk of misassembly. Normal mode is intermediate between the two.
+Unicycler can be run in three modes: conservative, normal (the default) and bold, set with the `--mode` option. Conservative mode is least likely to produce a complete assembly but has a very low risk of misassembly. Bold mode is most likely to produce a complete assembly but carries greater risk of misassembly. Normal mode is intermediate regarding both completeness and misassembly risk.
 
-If the structural accuracy of the assembly is paramount to your research, conservative mode is recommended. If, however, you want a completed genome even if it contains a mistake or two, then bold mode is recommended.
+If the structural accuracy of your assembly is paramount to your research, conservative mode is recommended. If you want a completed genome, even if it contains a mistake or two, then use bold mode.
 
-The particular differences between the three modes are as follows:
+The specific differences between the three modes are as follows:
 
 Mode         | Short read bridges | Bridge quality threshold | Contig merging
 ------------ | ------------------ | ------------------------ | ----------------------------------------------------------------
-conservative | not used           | high                     | contigs are only merged with bridges
-normal       | used               | medium                   | contigs are also merged when their multiplicity is 1
-bold         | used               | low                      | contigs are merged wherever possible
+conservative | not used           | high (25)                | contigs are only merged with bridges
+normal       | used               | medium (10)              | contigs are also merged when their multiplicity is 1
+bold         | used               | low (1)                  | contigs are merged wherever possible
 
 <p align="center"><img src="misc/conservative_normal_bold.png" alt="Conservative, normal and bold" width="550"></p>
 

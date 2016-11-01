@@ -7,9 +7,9 @@ Unicycler is a hybrid assembly pipeline for bacterial genomes. It uses both Illu
 # Table of contents
 
 * [Introduction](#introduction)
-* [Quick usage](#quick-usage)
 * [Requirements](#requirements)
 * [Installation](#installation)
+* [Quick usage](#quick-usage)
 * [Pipeline](#pipeline)
 * [Conservative, normal and bold](#conservative-normal-and-bold)
 * [Options and usage](#options-and-usage)
@@ -25,35 +25,23 @@ Unicycler is a hybrid assembly pipeline for bacterial genomes. It uses both Illu
 
 # Introduction
 
+As input, Unicycler takes a good set of Illumina reads from a bacterial isolate (required) and long reads from the same isolate (optional).
+
 Reasons to use Unicycler:
    * It has very low misassembly rates.
-   * It often completes bacterial genomes with one circular sequence per replicon.
-   * It handles organisms with highly repetitive genomes, such as _Shigella_.
+   * It can cope with highly repetitive genomes, such as those from _Shigella_ species.
+   * It correctly handles plamsmids of varying read depth.
    * It works with long reads of any quality - even Nanopore reads classed as 'fail' can be used as input.
    * It works with any long read depth. Approximately 10x may be required to complete a genome, but it can make nearly-complete genomes with far fewer long reads.
    * It can be run without any long reads, functioning as a [SPAdes](http://bioinf.spbau.ru/spades) optimiser.
-   * It produces assembly graphs, allowing for in-depth investigations in [Bandage](https://github.com/rrwick/Bandage).
+   * It produces an assembly _graph_ in addition to a contigs fasta file, viewable in [Bandage](https://github.com/rrwick/Bandage).
    * It's easy to use, runs with just one command and doesn't require tinkering with parameters.
 
 Reasons to __not__ use Unicycler:
    * You only have long reads, not Illumina reads (try [Canu](https://github.com/marbl/canu) instead).
    * Your Illumina reads are poor quality (Unicycler requires a good short read assembly graph - [more info here](#bad-illumina-reads)).
    * You're assembling a large eukaryotic genome or a metagenome (Unicycler is designed for bacterial isolates).
-   * You're very impatient (Unicycler is not as fast as alternative assemblers).
-
-
-
-# Quick usage
-
-### Hybrid assembly
-```
-unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz -l long_reads.fastq.gz -o path/to/output_dir
-```
-
-### Short read-only assembly
-```
-unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --no_long -o path/to/output_dir
-```
+   * You're very impatient (Unicycler is not as fast as alternatives).
 
 
 
@@ -96,7 +84,23 @@ If the last command complains about permissions, you may need to run it with `su
 * Install with specific Makefile options: `python3 setup.py install --makeargs "CXX=icpc"`
 * Build and run without installing:
     * `make`
-    * `./unicycler-runner.py`
+    * Execute `./unicycler-runner.py` instead of `unicycler`
+
+
+
+# Quick usage
+
+### Short read-only assembly
+```
+unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --no_long -o path/to/output_dir
+```
+
+### Hybrid assembly
+```
+unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz -l long_reads.fastq.gz -o path/to/output_dir
+```
+
+
 
 # Pipeline
 
@@ -165,15 +169,15 @@ If the structural accuracy of your assembly is paramount to your research, conse
 
 The specific differences between the three modes are as follows:
 
-Mode         | Short read bridges | Bridge quality threshold | Contig merging
------------- | ------------------ | ------------------------ | ----------------------------------------------------------------
-conservative | not used           | high (25)                | contigs are only merged with bridges
-normal       | used               | medium (10)              | contigs are also merged when their multiplicity is 1
-bold         | used               | low (1)                  | contigs are merged wherever possible
+Mode         | Invokation                      | Short read bridges | Bridge quality threshold | Contig merging
+------------ | ------------------------------- | ------------------------ | ----------------------------------------------------------------
+conservative | `--mode conservative`           | not used           | high (25)                | contigs are only merged with bridges
+normal       | `--mode normal`<br>(or nothing) | used               | medium (10)              | contigs are also merged when their multiplicity is 1
+bold         | `--mode bold`                   | used               | low (1)                  | contigs are merged wherever possible
 
 <p align="center"><img src="misc/conservative_normal_bold.png" alt="Conservative, normal and bold" width="550"></p>
 
-The above example shows Unicycler assemblies of simulated reads from a _Streptococcus suis_ chromosome at 2x long read depth. In conservative mode, the assembly is incomplete because some bridges fell below the quality threshold and were not applied. Normal mode nearly gives a complete assembly, but a couple of unmerged contigs remain. Bold mode completed the assembly, but since even lower confidence regions were bridged and merged, there is a larger risk of error.
+In the above example, the conservative mode assembly is incomplete because some bridges fell below the quality threshold and were not applied. Its contigs, however, are extremely reliable. Normal mode nearly gives a complete assembly, but a couple of unmerged contigs remain. Bold mode completed the assembly, but since lower confidence regions were bridged and merged, there is a larger risk of error.
 
 
 

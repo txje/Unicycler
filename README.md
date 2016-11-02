@@ -12,10 +12,7 @@ Unicycler is a hybrid assembly pipeline for bacterial genomes. It uses both Illu
      * [Typical installation](#typical-installation)
      * [Other installation commands](#other-installation-commands)
 * [Quick usage](#quick-usage)
-     * [Short read-only assembly](#short-read-only-assembly)
-     * [Hybrid assembly](#hybrid-assembly)
 * [Pipeline](#pipeline)
-     * [In brief](#in-brief)
      * [1. Read correction](#1-read-correction)
      * [2. SPAdes assembly](#2-spades-assembly)
      * [3. Multiplicity](#3-multiplicity)
@@ -56,7 +53,7 @@ As input, Unicycler takes a good set of Illumina reads from a bacterial isolate 
 Reasons to use Unicycler:
    * It has very low misassembly rates.
    * It can cope with very repetitive genomes, such as _Shigella_ species.
-   * It correctly handles plamsmids of varying depth.
+   * It correctly handles plasmids of varying depth.
    * It works with long reads of any quality - even Nanopore reads classed as 'fail' can be used as input.
    * It works with any long read depth. Approximately 10x may be required to complete a genome, but it can make nearly-complete genomes with far fewer long reads.
    * Even if you have no long reads, it functions as a [SPAdes](http://bioinf.spbau.ru/spades) optimiser and produces very good Illumina assemblies.
@@ -117,26 +114,21 @@ If the last command complains about permissions, you may need to run it with `su
 
 # Quick usage
 
-### Short read-only assembly
-```
-unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --no_long -o path/to/output_dir
-```
+__Short read-only assembly:__<br>
+`unicycler -1 short_1.fastq.gz -2 short_2.fastq.gz --no_long -o output_dir`
 
-### Hybrid assembly
-```
-unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz -l long_reads.fastq.gz -o path/to/output_dir
-```
+__Hybrid assembly:__<br>
+`unicycler -1 short_1.fastq.gz -2 short_2.fastq.gz -l long.fastq.gz -o output_dir`
 
 
 
 # Pipeline
 
-### In brief
-
 Unicycler performs an assembly (using SPAdes) of just the Illumina reads. It then uses all available sources of information (SPAdes contigs and long read alignments) to resolve repeats in the assembly graph. It does this by building 'bridges' between non-repeat contigs using the best path through the assembly graph.
 
-Essentially, Unicycler is a scaffolder which uses long reads to properly arrange Illumina contigs. But unlike a naive scaffolding tool which operates on assembled _contigs, Unicycler works on an assembly _graph_. This gives it much more information to complete assemblies with a very low risk of mistakes.
+Essentially, Unicycler is a scaffolder which uses long reads to properly arrange Illumina contigs. But unlike a naive scaffolding tool which operates on assembled _contigs_, Unicycler works on an assembly _graph_. This gives it much more information to complete assemblies with a very low risk of mistakes.
 
+Here are the steps it follows, in a bit more detail:
 
 ### 1. Read correction
 
@@ -175,7 +167,7 @@ Long reads are the most useful source of information for resolving the assembly 
 
 ### 6. Bridge application
 
-At this point of the pipeline there can be many bridges, some of which may conflict. Unicycler therefore assigns a quality score to each based on all available evidence (e.g. read alignment quality, graph path match, read depth consistency, etc). Bridges are then applied in order of decreasing quality so whenever there is a conflict, only the most supported bridge is used. A minimum quality threshold prevents the application of low evidence bridges (see [Conservative, normal and bold](#conservative-normal-and-bold) for more information).
+At this point of the pipeline there can be many bridges, some of which may conflict. Unicycler therefore assigns a quality score to each based on all available evidence (e.g. read alignment quality, graph path match, read depth consistency). Bridges are then applied in order of decreasing quality so whenever there is a conflict, only the most supported bridge is used. A minimum quality threshold prevents the application of low evidence bridges (see [Conservative, normal and bold](#conservative-normal-and-bold) for more information).
 
 <p align="center"><img src="misc/bridge_application.png" alt="Application of bridges"></p>
 
@@ -196,11 +188,11 @@ If the structural accuracy of your assembly is paramount to your research, conse
 
 The specific differences between the three modes are as follows:
 
-Mode         | Invokation                      | Short read bridges | Bridge quality threshold | Contig merging
+Mode         | Invocation                      | Short read bridges | Bridge quality threshold | Contig merging
 ------------ | ------------------------------- | ------------------ | ------------------------ | -------------------------------------
-conservative | `--mode conservative`           | not used           | high (25)                | contigs are only merged with bridges
-normal       | `--mode normal`<br>(or nothing) | used               | medium (10)              | contigs are merged with bridges and when their multiplicity is 1
-bold         | `--mode bold`                   | used               | low (1)                  | contigs are merged wherever possible
+conservative | `‑‑mode conservative`           | not used           | high (25)                | contigs are only merged with bridges
+normal       | `‑‑mode normal`<br>(or nothing) | used               | medium (10)              | contigs are merged with bridges and when their multiplicity is 1
+bold         | `‑‑mode bold`                   | used               | low (1)                  | contigs are merged wherever possible
 
 <p align="center"><img src="misc/conservative_normal_bold.png" alt="Conservative, normal and bold" width="550"></p>
 
@@ -258,7 +250,7 @@ Other:
                                           normal = moderate contig size and misassembly rate
                                           bold = longest contigs, higher misassembly rate
   --expected_linear_seqs EXPECTED_LINEAR_SEQS
-                                        The expected number of linear (i.e non-circular) sequences in the underlying sequence
+                                        The expected number of linear (i.e. non-circular) sequences in the underlying sequence
 ```
 
 ### Advanced options
@@ -362,7 +354,7 @@ Consider the following example of a sequence with a 2 kb repeat and three differ
 
 In order to resolve the repeat, a read must span it by aligning to sequence on either side. In this example the 1 kb reads are shorter than the repeat and are all useless. The 2.5 kb reads _can_ resolve the repeat, but they have to be in _just the right place_ to do so. Only one out of the six in this example is useful. The 5 kb reads, however, have a much easier time spanning the repeat and all three are useful.
 
-So how long must your reads be for Unicyler to complete an assembly? _Longer than the longest repeat in the genome._ Depending on the genome, that might be a 1 kb insertion sequence, a 6 kb ribosomal complex or a 30 kb phage. If your reads are just a little bit longer than the longest repeat, then you'll probably need a lot of them to ensure that at least one spans the repeat. If they are much longer, then fewer reads will probably suffice. But in any scenario, _longer is better!_
+So how long must your reads be for Unicycler to complete an assembly? _Longer than the longest repeat in the genome._ Depending on the genome, that might be a 1 kb insertion sequence, a 6 kb ribosomal complex or a 30 kb phage. If your reads are just a little bit longer than the longest repeat, then you'll probably need a lot of them to ensure that at least one spans the repeat. If they are much longer, then fewer reads should suffice. But in any scenario, _longer is better!_
 
 
 ### Poretools
@@ -376,12 +368,12 @@ If you have 2D reads, `--type best` makes Poretools give only one FASTQ read per
 
 ### Oxford Nanopore: 1D vs 2D
 
-Since Unicycler can tolerate low accuracy reads, [Oxford Nanopore 1D sequencing](https://nanoporetech.com/applications/dna-nanopore-sequencing) is probably preferable to 2D, as it can provide twice as many reads. However, at the time of writing, the 2D library prep supports barcoding. So if you want to sequence multiple samples on a single flowcell, 2D is currently the only option.
+Since Unicycler can tolerate low accuracy reads, [Oxford Nanopore 1D sequencing](https://nanoporetech.com/applications/dna-nanopore-sequencing) is probably preferable to 2D, as it can provide twice as many reads. However, at the time of writing, the 2D library prep supports barcoding. So if you want to sequence multiple samples on a single flow cell, 2D is currently the only option.
 
 
 ### Bad Illumina reads
 
-Unicycler needs decent Illumina reads as input - ideally with uniform read depth and no unsequenced parts.
+Unicycler needs decent Illumina reads as input - ideally with uniform read depth and 100% genome coverage.
 
 You can look at the `unbridged_graph.gfa` file (the first graph Unicycler saves to file) in Bandage to get a quick impression of the Illumina read quality:
 
@@ -400,22 +392,20 @@ Are you confused by very small (e.g. 2 bp) contigs in Unicycler assemblies? Unli
 
 <p align="center"><img src="misc/short_contigs.png" alt="Short contigs in assembly graph"></p>
 
-If you're curious, this example is the rDNA region of a bacterial genome. There are seven rDNA copies with regions that are the same (assembly collapsed these into single contigs) but in some places differ (leading to divergences in the graph like this one).
-
 
 ### Depth: chromosomes and plasmids
 
-Unicycler normalises the depth of contigs in the graph to the median value. For a bacterial isolate, this typically means that the chromosome has a depth of around 1x and plasmids may have different (typically higher) depths.
+Unicycler normalises the depth of contigs in the graph to the median value. This typically means that the chromosome has a depth near 1x and plasmids may have different (typically higher) depths.
 
 <p align="center"><img src="misc/depth.png" alt="Plasmid depths"></p>
 
-In the above assembly graph, the chromosome is at the top and there are two plasmids.  The plasmid on the left occurs in approximately 4 or 5 copies per cell. For the larger plasmid on the right, most cells probably had one copy but some had more. Since sequencing biases (such as GC bias) can affect read depth, these per cell counts should be interpreted loosely.
+In the above graph, the chromosome is at the top and there are two plasmids.  The plasmid on the left occurs in approximately 4 or 5 copies per cell. For the larger plasmid on the right, most cells probably had one copy but some had more. Since sequencing biases can affect read depth, these per cell counts should be interpreted loosely.
 
 
 
 # Unicycler align
 
-Unicycler's algorithm for senstive semi-global alignment is available as a stand-alone alignment tool with the command `unicycler_align`.
+Unicycler's algorithm for sensitive semi-global alignment is available as a stand-alone alignment tool with the command `unicycler_align`.
 ```
 unicycler_align --reads queries.fastq --ref target.fasta --sam output.sam
 ```

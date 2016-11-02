@@ -458,7 +458,7 @@ def get_arguments():
                                   str(settings.BOLD_MIN_BRIDGE_QUAL)
                                   if show_all_args else argparse.SUPPRESS)
     other_group.add_argument('--expected_linear_seqs', type=int, required=False, default=0,
-                             help='The expected number of linear (i.e non-circular) sequences in '
+                             help='The expected number of linear (i.e. non-circular) sequences in '
                                   'the underlying sequence')
 
     # SPAdes assembly options

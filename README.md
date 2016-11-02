@@ -34,7 +34,7 @@ Reasons to use Unicycler:
    * It works with long reads of any quality - even Nanopore reads classed as 'fail' can be used as input.
    * It works with any long read depth. Approximately 10x may be required to complete a genome, but it can make nearly-complete genomes with far fewer long reads.
    * It can be run without any long reads, functioning as a [SPAdes](http://bioinf.spbau.ru/spades) optimiser.
-   * It produces an assembly _graph_ in addition to a contigs fasta file, viewable in [Bandage](https://github.com/rrwick/Bandage).
+   * It produces an assembly _graph_ in addition to a contigs FASTA file, viewable in [Bandage](https://github.com/rrwick/Bandage).
    * It's easy to use, runs with just one command and doesn't require tinkering with parameters.
 
 Reasons to __not__ use Unicycler:
@@ -297,7 +297,7 @@ Long read alignment:
 
 # Output files
 
-Depending on the input files and the value used for `--keep_temp`, Unicycler may only only produce some of these. Also, all outputs except for assembly.gfa and assembly.fasta will be prefixed with a number so they are in chronological order.
+Depending on the input files and the value used for `--keep_temp`, Unicycler may only only produce some of these. Also, all outputs except for `assembly.gfa` and `assembly.fasta` will be prefixed with a number so they are in chronological order.
 
 File                           | Description
 ------------------------------ | ---------------------------------------------------------------------------
@@ -320,16 +320,14 @@ assembly.fasta                 | __the final assembly in FASTA format__ (exact s
 
 ### Running time
 
-Unicycler is thorough and accurate, but not particularly fast. In particular, the [Long read bridging](#long-read-bridging) step of the pipeline can take a while to complete. Two main factors influence the running time: the number of long reads (more reads take longer to align) and the genome size/complexity (finding ideal bridge paths is more difficult in complex graphs).
+Unicycler is thorough and accurate, but not particularly fast. In particular, the [long read bridging](#long-read-bridging) step of the pipeline can take a while to complete. Two main factors influence the running time: the number of long reads (more reads take longer to align) and the genome size/complexity (finding bridge paths is more difficult in complex graphs).
 
-Unicycler may only take an hour or so to assemble a small, simple genome with low depth long reads. On the other hand, a complex genome with many long reads may take 12 hours to finish or more. If you have a very high depth of long reads, subsampling for only the best reads will make Unicycler run faster and probably not adversely affect your assembly.
+Unicycler may only take an hour or so to assemble a small, simple genome with low depth long reads. On the other hand, a complex genome with many long reads may take 12 hours to finish or more. If you have a very high depth of long reads, you can make Unicycler run faster by subsampling for only the longest reads.
 
 
 ### Long read length
 
-The length of the long reads is very important - typically more so than their accuracy. A 99% accurate read isn't useful to Unicycler if it is less than 1 kb. On the other hand, a 20 kb read is quite useful, even if it is only 75% accurate. This is because longer reads are more likely to align to multiple single-copy contigs, allowing Unicycler to build bridges.
-
-Therefore if you do subsample your long reads, you should preferentially keep the longest ones.
+The length of a long read is very important - typically more than its accuracy. A 99% accurate read isn't useful to Unicycler if it is less than 1 kb. On the other hand, a 20 kb read is quite useful, even if it is only 75% accurate. This is because longer reads are more likely to align to multiple single-copy contigs, allowing Unicycler to build bridges.
 
 
 ### Poretools
@@ -338,7 +336,7 @@ Therefore if you do subsample your long reads, you should preferentially keep th
 ```
 poretools fastq --type best --min-length 1000 path/to/fast5/dir/ > nanopore_reads.fastq
 ```
-If you have 2D reads, the `--type best` option makes Poretools give only one FASTQ read per FAST5 file (if you have 1D reads, you can exclude that option). Adjust the `--min-length 1000` parameter to suit your dataset - a larger value would be appropriate if you have lots of long reads.
+If you have 2D reads, `--type best` makes Poretools give only one FASTQ read per FAST5 file (if you have 1D reads, you can exclude that option). Adjust the `--min-length 1000` parameter to suit your dataset - a larger value would be appropriate if you have lots of long reads.
 
 
 ### Oxford Nanopore: 1D vs 2D
@@ -352,7 +350,7 @@ Unicycler needs decent Illumina reads as input - ideally with uniform read depth
 
 You can look at the `unbridged_graph.gfa` file (the first graph Unicycler saves to file) in Bandage to get a quick impression of the Illumina read quality:
 
-<p align="center"><img src="misc/illumina_graph_comparison.png" alt="Graphs of varying quality" width="700"></p>
+<p align="center"><img src="misc/illumina_graph_comparison.png" alt="Graphs of varying quality" width="750"></p>
 
 __A__ is an very good Illumina read graph - the contigs are long and there are no dead ends. This read set is ideally suited for use in Unicycler.
 
@@ -376,7 +374,7 @@ Unicycler normalises the depth of contigs in the graph to the median value. For 
 
 <p align="center"><img src="misc/depth.png" alt="Plasmid depths"></p>
 
-In the above assembly graph, the chromosome is at the top and there are two plasmids.  The plasmid on the left occurs in approximately 4 or 5 copies per cell. For the larger plasmid on the right, Most cells probably had one copy of plasmid __B__ but some had more. Since sequencing biases (such as GC bias) can affect read depth, these per cell counts should be interpreted loosely.
+In the above assembly graph, the chromosome is at the top and there are two plasmids.  The plasmid on the left occurs in approximately 4 or 5 copies per cell. For the larger plasmid on the right, most cells probably had one copy but some had more. Since sequencing biases (such as GC bias) can affect read depth, these per cell counts should be interpreted loosely.
 
 
 

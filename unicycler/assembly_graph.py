@@ -1505,7 +1505,7 @@ class AssemblyGraph(object):
                 table_row_colours[len(bridge_application_table)] = 'dim'
                 bridge_application_table.append(bridge_application_table_row + ['unused'])
 
-        if verbosity > 1:
+        if verbosity > 0:
             print_table(bridge_application_table, alignments='LLLRR', indent=0,
                         sub_colour={'applied': 'green', 'rejected': 'clear_red'},
                         row_colour=table_row_colours, max_col_width=40)

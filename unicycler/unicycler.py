@@ -377,9 +377,9 @@ def main():
 
     # Save the final state as both a GFA and FASTA file.
     if verbosity > 0:
-        print_section_header('Complete', verbosity, last_newline=False)
-    graph.save_to_gfa(os.path.join(args.out, 'assembly.gfa'), verbosity)
-    graph.save_to_fasta(os.path.join(args.out, 'assembly.fasta'), verbosity)
+        print_section_header('Complete', verbosity)
+    graph.save_to_gfa(os.path.join(args.out, 'assembly.gfa'), verbosity, leading_newline=False)
+    graph.save_to_fasta(os.path.join(args.out, 'assembly.fasta'), verbosity, leading_newline=False)
 
 
 def get_arguments():

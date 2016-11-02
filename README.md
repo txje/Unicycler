@@ -1,4 +1,4 @@
-<p align="center"><img src="misc/logo.png" alt="Unicycler" width="600" height="210"></p>
+<p align="center"><img src="misc/logo.png" alt="Unicycler" width="600"></p>
 
 Unicycler is a hybrid assembly pipeline for bacterial genomes. It uses both [Illumina](http://www.illumina.com/) and [PacBio](http://www.pacb.com/)/[Nanopore](https://nanoporetech.com/) reads to produce complete and accurate assemblies.
 

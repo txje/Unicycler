@@ -509,13 +509,13 @@ unicycler_polish -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --pb_bax pa
 
 # Citation
 
-Paper in progress... check back later!
+Paper in progress... check back soon!
 
 
 
 # Acknowledgements
 
-Unicycler would not have been possible without [Kat Holt](https://holtlab.net/), my fellow researchers in her lab and the many other people I work with at the University of Melbourne's [Centre for Systems Genomics](https://sysgenmelb.org/).
+Unicycler would not have been possible without [Kat Holt](https://holtlab.net/), my fellow researchers in her lab and the many other people I work with at the University of Melbourne's [Centre for Systems Genomics](https://sysgenmelb.org/). In particular, Margaret Lam, Kelly Wyres and David Edwards worked with me on many challenging genomes during Unicycler's development.
 
 
 

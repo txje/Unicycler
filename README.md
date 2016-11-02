@@ -52,9 +52,9 @@ As input, Unicycler takes a good set of Illumina reads from a bacterial isolate 
 
 Reasons to use Unicycler:
    * It has very low misassembly rates.
-   * It can cope with very repetitive genomes, such as [_Shigella_ species](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC153260/).
+   * It can cope with very repetitive genomes, such as [_Shigella_](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC153260/).
    * It correctly handles plasmids of varying depth.
-   * It works with long reads of any quality - even Nanopore reads classed as 'fail' can be used as input.
+   * It works with long reads of any quality – even Nanopore reads classed as 'fail' can be used as input.
    * It works with any long read depth. Approximately 10x may be required to complete a genome, but it can make nearly-complete genomes with far fewer long reads.
    * Even if you have no long reads, it functions as a [SPAdes](http://bioinf.spbau.ru/spades) optimiser and produces very good Illumina assemblies.
    * It produces an assembly _graph_ in addition to a contigs FASTA file, viewable in [Bandage](https://github.com/rrwick/Bandage).
@@ -62,7 +62,7 @@ Reasons to use Unicycler:
 
 Reasons to __not__ use Unicycler:
    * You only have long reads, not Illumina reads (try [Canu](https://github.com/marbl/canu) instead).
-   * Your Illumina reads are poor quality (Unicycler requires a good short read assembly graph - [more info here](#bad-illumina-reads)).
+   * Your Illumina reads are poor quality (Unicycler requires a good short read assembly graph – [more info here](#bad-illumina-reads)).
    * You're assembling a large eukaryotic genome or a metagenome (Unicycler is designed for bacterial isolates).
    * Your Illumina reads and long reads are from different isolates.
    * You're very impatient (Unicycler is not as fast as alternatives).
@@ -79,12 +79,12 @@ Reasons to __not__ use Unicycler:
 
 Unicycler needs the following tools for certain parts of its pipeline. They are optional, but without them Unicycler will not be able to perform all pipeline tasks:
 
-* [GraphMap](https://github.com/isovic/graphmap) - can accelerate long read alignment process
-* [Pilon](https://github.com/broadinstitute/pilon/wiki) - required for polishing
-* Java - required for polishing
-* [Bowtie2](http://bowtie-bio.sourceforge.net/bowtie2/) - required for polishing
-* [Samtools](http://www.htslib.org/) version 1.0 or later - required for polishing
-* [BLAST+](https://www.ncbi.nlm.nih.gov/books/NBK279690/) - required for rotating finished assemblies
+* [GraphMap](https://github.com/isovic/graphmap) – can accelerate long read alignment process
+* [Pilon](https://github.com/broadinstitute/pilon/wiki) – required for polishing
+* Java – required for polishing
+* [Bowtie2](http://bowtie-bio.sourceforge.net/bowtie2/) – required for polishing
+* [Samtools](http://www.htslib.org/) version 1.0 or later – required for polishing
+* [BLAST+](https://www.ncbi.nlm.nih.gov/books/NBK279690/) – required for rotating finished assemblies
 
 
 
@@ -153,7 +153,7 @@ In order to scaffold the graph, Unicycler must distinguish between single-copy c
 
 ### 4. Short read bridging
 
-At this point, the assembly graph does not contain the SPAdes repeat resolution. To apply this to the graph, Unicycler builds bridges between single-copy contigs using the information in the SPAdes `contigs.paths` file. These are applied to the graph to make the `spades_bridges_applied.gfa` output - the most resolved graph Unicycler can make using only the Illumina reads.
+At this point, the assembly graph does not contain the SPAdes repeat resolution. To apply this to the graph, Unicycler builds bridges between single-copy contigs using the information in the SPAdes `contigs.paths` file. These are applied to the graph to make the `spades_bridges_applied.gfa` output – the most resolved graph Unicycler can make using only the Illumina reads.
 
 <p align="center"><img src="misc/short_read_bridging.png" alt="Short read bridging" width="600"></p>
 
@@ -347,7 +347,7 @@ Using a lot of threads (with the `--threads` option) can make Unicycler run fast
 
 ### Necessary read length
 
-The length of a long read is very important - typically more than its accuracy. This is because longer reads are more likely to align to multiple single-copy contigs, allowing Unicycler to build bridges.
+The length of a long read is very important – typically more than its accuracy. This is because longer reads are more likely to align to multiple single-copy contigs, allowing Unicycler to build bridges.
 
 Consider the following example of a sequence with a 2 kb repeat and three different read sets:
 <p align="center"><img src="misc/read_length.png" alt="Long read length"></p>
@@ -363,7 +363,7 @@ So how long must your reads be for Unicycler to complete an assembly? _Longer th
 ```
 poretools fastq --type best --min-length 1000 path/to/fast5/dir/ > nanopore_reads.fastq
 ```
-If you have 2D reads, `--type best` makes Poretools give only one FASTQ read per FAST5 file (if you have 1D reads, you can exclude that option). Adjust the `--min-length 1000` parameter to suit your dataset - a larger value would be appropriate if you have lots of long reads.
+If you have 2D reads, `--type best` makes Poretools give only one FASTQ read per FAST5 file (if you have 1D reads, you can exclude that option). Adjust the `--min-length 1000` parameter to suit your dataset – a larger value would be appropriate if you have lots of long reads.
 
 
 ### Nanopore: 1D vs 2D
@@ -373,13 +373,13 @@ Since Unicycler can tolerate low accuracy reads, [Oxford Nanopore 1D sequencing]
 
 ### Bad Illumina reads
 
-Unicycler needs decent Illumina reads as input - ideally with uniform read depth and 100% genome coverage.
+Unicycler needs decent Illumina reads as input – ideally with uniform read depth and 100% genome coverage.
 
 You can look at the `unbridged_graph.gfa` file (the first graph Unicycler saves to file) in Bandage to get a quick impression of the Illumina read quality:
 
 <p align="center"><img src="misc/illumina_graph_comparison.png" alt="Graphs of varying quality" width="750"></p>
 
-__A__ is an very good Illumina read graph - the contigs are long and there are no dead ends. This read set is ideally suited for use in Unicycler.
+__A__ is an very good Illumina read graph – the contigs are long and there are no dead ends. This read set is ideally suited for use in Unicycler.
 
 __B__ is also a good graph. The genome is more complex, resulting in a more tangled structure, but there are still very few dead ends (you can see one in the lower left). This read set would also work well in Unicycler.
 

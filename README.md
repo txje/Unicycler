@@ -1,6 +1,6 @@
 <p align="center"><img src="misc/logo.png" alt="Unicycler" width="600" height="210"></p>
 
-Unicycler is a hybrid assembly pipeline for bacterial genomes. It uses both Illumina and PacBio/Nanopore reads to produce complete and accurate assemblies.
+Unicycler is a hybrid assembly pipeline for bacterial genomes. It uses both [Illumina](http://www.illumina.com/) and [PacBio](http://www.pacb.com/)/[Nanopore](https://nanoporetech.com/) reads to produce complete and accurate assemblies.
 
 
 
@@ -29,7 +29,7 @@ Unicycler is a hybrid assembly pipeline for bacterial genomes. It uses both Illu
      * [Running time](#running-time)
      * [Necessary read length](#necessary-read-length)
      * [Poretools](#poretools)
-     * [Oxford Nanopore: 1D vs 2D](#oxford-nanopore-1d-vs-2d)
+     * [Nanopore: 1D vs 2D](#nanopore-1d-vs-2d)
      * [Bad Illumina reads](#bad-illumina-reads)
      * [Very short contigs](#very-short-contigs)
      * [Depth: chromosomes and plasmids](#depth-chromosomes-and-plasmids)
@@ -52,7 +52,7 @@ As input, Unicycler takes a good set of Illumina reads from a bacterial isolate 
 
 Reasons to use Unicycler:
    * It has very low misassembly rates.
-   * It can cope with very repetitive genomes, such as _Shigella_ species.
+   * It can cope with very repetitive genomes, such as [_Shigella_ species](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC153260/).
    * It correctly handles plasmids of varying depth.
    * It works with long reads of any quality - even Nanopore reads classed as 'fail' can be used as input.
    * It works with any long read depth. Approximately 10x may be required to complete a genome, but it can make nearly-complete genomes with far fewer long reads.
@@ -359,14 +359,14 @@ So how long must your reads be for Unicycler to complete an assembly? _Longer th
 
 ### Poretools
 
-[Poretools](http://poretools.readthedocs.io/en/latest/) can turn your Oxford Nanopore FAST5 reads into a FASTQ file appropriate for Unicycler. Here's an example command:
+[Poretools](http://poretools.readthedocs.io/en/latest/) can turn your Nanopore FAST5 reads into a FASTQ file appropriate for Unicycler. Here's an example command:
 ```
 poretools fastq --type best --min-length 1000 path/to/fast5/dir/ > nanopore_reads.fastq
 ```
 If you have 2D reads, `--type best` makes Poretools give only one FASTQ read per FAST5 file (if you have 1D reads, you can exclude that option). Adjust the `--min-length 1000` parameter to suit your dataset - a larger value would be appropriate if you have lots of long reads.
 
 
-### Oxford Nanopore: 1D vs 2D
+### Nanopore: 1D vs 2D
 
 Since Unicycler can tolerate low accuracy reads, [Oxford Nanopore 1D sequencing](https://nanoporetech.com/applications/dna-nanopore-sequencing) is probably preferable to 2D, as it can provide twice as many reads. However, at the time of writing, the 2D library prep supports barcoding. So if you want to sequence multiple samples on a single flow cell, 2D is currently the only option.
 
@@ -453,22 +453,11 @@ Unicycler polish is a script to repeatedly polish a completed assembly using all
 
 ### Requirements
 
-* If polishing with Illumina reads:
-    * [Pilon](https://github.com/broadinstitute/pilon/wiki)
-    * Java
-    * [Bowtie2](http://bowtie-bio.sourceforge.net/bowtie2/)
-    * [Samtools](http://www.htslib.org/) version 1.0 or later
-* If polishing with PacBio reads:
-    * [pbalign](https://github.com/PacificBiosciences/pbalign)
-    * Java
-    * [BLASR](https://github.com/PacificBiosciences/blasr)
-    * [GenomicConsensus](https://github.com/PacificBiosciences/GenomicConsensus)
-    * These items are most easily installed using [pitchfork](https://github.com/PacificBiosciences/pitchfork).
-* If polishing with Nanopore reads:
-    * [Nanopolish](https://github.com/jts/nanopolish)
-    * [BWA-MEM](http://bio-bwa.sourceforge.net/)
-* If polishing with both Illumina and long reads:
-    * [FreeBayes](https://github.com/ekg/freebayes)
+* If polishing with Illumina reads: [Pilon](https://github.com/broadinstitute/pilon/wiki), Java, [Bowtie2](http://bowtie-bio.sourceforge.net/bowtie2/), [Samtools](http://www.htslib.org/) (version 1.0 or later)
+* If polishing with PacBio reads: [pbalign](https://github.com/PacificBiosciences/pbalign), [BLASR](https://github.com/PacificBiosciences/blasr), [GenomicConsensus](https://github.com/PacificBiosciences/GenomicConsensus)
+    * PacBio software is most easily installed using [pitchfork](https://github.com/PacificBiosciences/pitchfork).
+* If polishing with Nanopore reads: [Nanopolish](https://github.com/jts/nanopolish), [BWA-MEM](http://bio-bwa.sourceforge.net/)
+* If polishing with both Illumina and long reads: [FreeBayes](https://github.com/ekg/freebayes)
 
 
 ### Process
@@ -515,7 +504,7 @@ Paper in progress... check back soon!
 
 # Acknowledgements
 
-Unicycler would not have been possible without [Kat Holt](https://holtlab.net/), my fellow researchers in her lab and the many other people I work with at the University of Melbourne's [Centre for Systems Genomics](https://sysgenmelb.org/). In particular, Margaret Lam, Kelly Wyres and David Edwards worked with me on many challenging genomes during Unicycler's development.
+Unicycler would not have been possible without [Kat Holt](https://holtlab.net/), my fellow researchers in her lab and the many other people I work with at the University of Melbourne's [Centre for Systems Genomics](https://sysgenmelb.org/). In particular, [Margaret Lam](https://scholar.google.com.au/citations?user=cWmhzUIAAAAJ&hl=en), [Kelly Wyres](https://holtlab.net/kelly-wyres/) and [David Edwards](https://scholar.google.com.au/citations?hl=en&user=rZ1RJK0AAAAJ) worked with me on many challenging genomes during Unicycler's development.
 
 
 

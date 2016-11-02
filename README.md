@@ -149,7 +149,7 @@ Long reads are the most useful source of information for resolving the assembly 
 
 ### 6. Bridge application
 
-At this point of the pipeline there can be many bridges, some of which may conflict. Unicycler therefore assigns a quality score to each based on all available evidence (e.g. read alignment quality, graph path match, read depth consistency, etc). Bridges are then applied in order of decreasing quality so whenever bridges conflict, only the most supported option is used. A minimum quality threshold prevents the application of low evidence bridges (see [Conservative, normal and bold](#conservative-normal-and-bold) for more information).
+At this point of the pipeline there can be many bridges, some of which may conflict. Unicycler therefore assigns a quality score to each based on all available evidence (e.g. read alignment quality, graph path match, read depth consistency, etc). Bridges are then applied in order of decreasing quality so whenever there is a conflict, only the most supported bridge is used. A minimum quality threshold prevents the application of low evidence bridges (see [Conservative, normal and bold](#conservative-normal-and-bold) for more information).
 
 <p align="center"><img src="misc/bridge_application.png" alt="Application of bridges"></p>
 

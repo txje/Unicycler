@@ -325,9 +325,16 @@ Unicycler is thorough and accurate, but not particularly fast. In particular, th
 Unicycler may only take an hour or so to assemble a small, simple genome with low depth long reads. On the other hand, a complex genome with many long reads may take 12 hours to finish or more. If you have a very high depth of long reads, you can make Unicycler run faster by subsampling for only the longest reads.
 
 
-### Long read length
+### Necessary read length
 
-The length of a long read is very important - typically more than its accuracy. A 99% accurate read isn't useful to Unicycler if it is less than 1 kb. On the other hand, a 20 kb read is quite useful, even if it is only 75% accurate. This is because longer reads are more likely to align to multiple single-copy contigs, allowing Unicycler to build bridges.
+The length of a long read is very important - typically more than its accuracy. This is because longer reads are more likely to align to multiple single-copy contigs, allowing Unicycler to build bridges.
+
+Consider the following example of a sequence with a 2 kb repeat and three different read sets:
+<p align="center"><img src="misc/read_length.png" alt="Long read length"></p>
+
+In order to resolve the repeat, a read must span it by aligning to sequence on either side. In this example the 1 kb reads are shorter than the repeat and are all useless. The 2.5 kb reads _can_ resolve the repeat, but they have to be in _just the right place_ to do so. Only one out of the six in this example is useful. The 5 kb reads, however, have a much easier time spanning the repeat and all three are useful.
+
+So how long must your reads be for Unicyler to complete an assembly? _Longer than the longest repeat in the genome._ Depending on the genome, that might be a 1 kb insertion sequence, a 6 kb ribosomal complex or a 30 kb phage. If your reads are just a little bit longer than the longest repeat, then you'll probably need a lot of them to ensure that at least one spans the repeat. If they are much longer, then fewer reads will probably suffice.
 
 
 ### Poretools

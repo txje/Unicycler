@@ -9,37 +9,39 @@ Unicycler is a hybrid assembly pipeline for bacterial genomes. It uses both [Ill
 * [Introduction](#introduction)
 * [Requirements](#requirements)
 * [Installation](#installation)
-     * [Typical installation](#typical-installation)
-     * [Other installation commands](#other-installation-commands)
+    * [Typical installation](#typical-installation)
+    * [Other installation commands](#other-installation-commands)
 * [Quick usage](#quick-usage)
 * [Pipeline](#pipeline)
-     * [1. Read correction](#1-read-correction)
-     * [2. SPAdes assembly](#2-spades-assembly)
-     * [3. Multiplicity](#3-multiplicity)
-     * [4. Short read bridging](#4-short-read-bridging)
-     * [5. Long read bridging](#5-long-read-bridging)
-     * [6. Bridge application](#6-bridge-application)
-     * [7. Finalisation](#7-finalisation)
+    * [1. Read correction](#1-read-correction)
+    * [2. SPAdes assembly](#2-spades-assembly)
+    * [3. Multiplicity](#3-multiplicity)
+    * [4. Short read bridging](#4-short-read-bridging)
+    * [5. Long read bridging](#5-long-read-bridging)
+    * [6. Bridge application](#6-bridge-application)
+    * [7. Finalisation](#7-finalisation)
 * [Conservative, normal and bold](#conservative-normal-and-bold)
 * [Options and usage](#options-and-usage)
-     * [Standard options](#standard-options)
-     * [Advanced options](#advanced-options)
+    * [Standard options](#standard-options)
+    * [Advanced options](#advanced-options)
 * [Output files](#output-files)
 * [Tips](#tips)
-     * [Running time](#running-time)
-     * [Necessary read length](#necessary-read-length)
-     * [Poretools](#poretools)
-     * [Nanopore: 1D vs 2D](#nanopore-1d-vs-2d)
-     * [Bad Illumina reads](#bad-illumina-reads)
-     * [Very short contigs](#very-short-contigs)
-     * [Depth: chromosomes and plasmids](#depth-chromosomes-and-plasmids)
+    * [Running time](#running-time)
+    * [Necessary read length](#necessary-read-length)
+    * [Poretools](#poretools)
+    * [Nanopore: 1D vs 2D](#nanopore-1d-vs-2d)
+    * [Bad Illumina reads](#bad-illumina-reads)
+    * [Very short contigs](#very-short-contigs)
+    * [Chromosome and plasmid depth](#chromosomes-and-plasmid-depth)
+    * [Known contamination](#known-contamination)
 * [Unicycler align](#unicycler-align)
-     * [Semi-global alignment](#semi-global-alignment)
-     * [Compared to local alignment](#compared-to-local-alignment)
+    * [Semi-global alignment](#semi-global-alignment)
+    * [Versus local alignment](#versus-local-alignment)
+    * [Example commands](#example-commands)
 * [Unicycler polish](#unicycler-polish)
-     * [Requirements](#requirements-1)
-     * [Process](#process)
-     * [Example commands](#example-commands)
+    * [Requirements](#requirements-1)
+    * [Process](#process)
+    * [Example commands](#example-commands-1)
 * [Citation](#citation)
 * [Acknowledgements](#acknowledgements)
 * [License](#license)
@@ -196,7 +198,7 @@ bold         | `‑‑mode bold`                   | used               | low (
 
 <p align="center"><img src="misc/conservative_normal_bold.png" alt="Conservative, normal and bold" width="550"></p>
 
-In the above example, the conservative mode assembly is incomplete because some bridges fell below the quality threshold and were not applied. Its contigs, however, are extremely reliable. Normal mode nearly gave a complete assembly, but a couple of unmerged contigs remain. Bold mode completed the assembly, but since lower confidence regions were bridged and merged, there is a larger risk of error.
+In the above example, the conservative assembly is incomplete because some bridges fell below the quality threshold and were not applied. Its contigs, however, are extremely reliable. Normal mode nearly gave a complete assembly, but a couple of unmerged contigs remain. Bold mode completed the assembly, but since lower confidence regions were bridged and merged, there is a larger risk of error.
 
 
 
@@ -329,8 +331,8 @@ merged.gfa                     | contigs merged together where possible
 final_clean.gfa                | more redundant contigs removed
 rotated.gfa                    | circular replicons rotated and/or flipped to a start position
 polished.gfa                   | after a round of Pilon polishing
-assembly.gfa                   | __the final assembly in graph format__
-assembly.fasta                 | __the final assembly in FASTA format__ (exact same contigs as assembly.gfa)
+__assembly.gfa__               | __the final assembly in graph format__
+__assembly.fasta__             | __the final assembly in FASTA format__ (exact same contigs as assembly.gfa)
 
 
 
@@ -393,7 +395,7 @@ Are you confused by very small (e.g. 2 bp) contigs in Unicycler assemblies? Unli
 <p align="center"><img src="misc/short_contigs.png" alt="Short contigs in assembly graph"></p>
 
 
-### Depth: chromosomes and plasmids
+### Chromosomes and plasmid depth
 
 Unicycler normalises the depth of contigs in the graph to the median value. This typically means that the chromosome has a depth near 1x and plasmids may have different (typically higher) depths.
 
@@ -402,13 +404,19 @@ Unicycler normalises the depth of contigs in the graph to the median value. This
 In the above graph, the chromosome is at the top and there are two plasmids.  The plasmid on the left occurs in approximately 4 or 5 copies per cell. For the larger plasmid on the right, most cells probably had one copy but some had more. Since sequencing biases can affect read depth, these per cell counts should be interpreted loosely.
 
 
+### Known contamination
+
+If your long reads have known contamination, you can use the `--contamination` option to supply give Unicycler a FASTA file of the contaminant sequences. Unicycler will then discard any reads for which the best alignment is to the contaminant.
+
+For example, if you've sequenced two isolates in succession on the same Nanopore flow cell, there may be residual reads from the first sample in the second run. In this case, you can supply a reference/assembly of the first sample to Unicycler when assembling the second sample.
+
+Some Oxford Nanopore kits include a lambda phage spike-in as a control. Since this is a common contaminant, you can simply use `--contamination lambda` to filter these out (no need to actually supply a FASTA file).
+
 
 # Unicycler align
 
 Unicycler's algorithm for sensitive semi-global alignment is available as a stand-alone alignment tool with the command `unicycler_align`.
-```
-unicycler_align --reads queries.fastq --ref target.fasta --sam output.sam
-```
+
 
 ### Semi-global alignment
 
@@ -428,7 +436,8 @@ ACGTCAGACTCAGCATACGCATCTAGA
 
 Semi-global alignment is appropriate when there are no structural differences between the query and reference sequences. For example, when you have a short read assembly graph and long reads from the same bacterial isolate (as is the case in the Unicycler pipeline). In this scenario, there may be small scale differences (due to read errors) but no large scale differences, and semi-global alignment is ideal.
 
-### Compared to local alignment
+
+### Versus local alignment
 
 Semi-global alignment is probably not appropriate for mapping reads to a more distant reference genome. It does not cope with points of structural variation between the sample and the reference. For example, if the sample had a deletion relative to the reference, a read spanning that deletion would align poorly with semi-global alignment:
 ```
@@ -444,6 +453,21 @@ read:            AACACTAAACT               TAGTCCCAA
 reference: GATCCCAACACTAAACTCTGGGGCGAACGGCGTAGTCCCAAGAGT
 ```
 Try [BWA-MEM](http://bio-bwa.sourceforge.net/), [LAST](http://last.cbrc.jp/) or [BLASR](https://github.com/PacificBiosciences/blasr) if you need a local alignment tool.
+
+
+### Example commands
+
+__Regular alignment:__<br>
+`unicycler_align --reads queries.fastq --ref target.fasta --sam output.sam`
+
+__Only use Unicycler to align (no first pass with GraphMap):__<br>
+`unicycler_align --reads queries.fastq --ref target.fasta --sam output.sam --no_graphmap`
+
+__Very sensitive (and slow) alignment:__<br>
+`unicycler_align --reads queries.fastq --ref target.fasta --sam output.sam --extra_sensitive`
+
+__Setting some additional thresholds:__<br>
+`unicycler_align --reads queries.fastq --ref target.fasta --sam output.sam --min_len 1000 --low_score 80.0`
 
 
 
@@ -477,23 +501,14 @@ Unicycler polish uses an exhaustive iterative process that is time-consuming but
 
 ### Example commands
 
-Polishing with only Illumina reads:
-```
-unicycler_polish -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz -a assembly.fasta
-```
+__Polishing with only Illumina reads:__<br>
+`unicycler_polish -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz -a assembly.fasta`
 
-Polishing with only PacBio reads:
-```
-unicycler_polish --pb_bam subreads.bam -a assembly.fasta
-unicycler_polish --pb_bax path/to/*bax.h5 -a assembly.fasta
-```
+__Polishing with only PacBio reads:__<br>
+`unicycler_polish --pb_bax path/to/*bax.h5 -a assembly.fasta`
 
-Polishing with both Illumina and PacBio reads:
-```
-unicycler_polish -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --pb_bam subreads.bam -a assembly.fasta
-unicycler_polish -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --pb_bax path/to/*bax.h5 -a assembly.fasta
-```
-
+__Hybrid read set polishing:__<br>
+`unicycler_polish -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --pb_bax path/to/*bax.h5 -a assembly.fasta`
 
 
 # Citation

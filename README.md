@@ -390,7 +390,7 @@ __C__ is a disaster! It is broken into many pieces, probably because parts of th
 
 ### Very short contigs
 
-Are you confused by very small (e.g. 2 bp) contigs in Unicycler assemblies? Unlike a SPAdes graph where neighbouring sequences overlap by their k-mer size, a Unicycler graph has no overlaps and the sequences adjoin directly. This means that contigs in very complex parts of the graph can be quite short. They may be useless as stand-alone contigs but are still very important in the graph structure.
+Confused by very small (e.g. 2 bp) contigs in Unicycler assemblies? Unlike a SPAdes graph where neighbouring sequences overlap by their k-mer size, Unicycler's final graph has no overlaps and the sequences adjoin directly. This means that contigs in complex regions can be quite short. They may be useless as stand-alone contigs but are still very important in the graph structure.
 
 <p align="center"><img src="misc/short_contigs.png" alt="Short contigs in assembly graph"></p>
 

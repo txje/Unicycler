@@ -441,7 +441,8 @@ def get_arguments():
 
     other_group = parser.add_argument_group('Other')
     other_group.add_argument('-t', '--threads', type=int, required=False, default=argparse.SUPPRESS,
-                             help='Number of threads used to align (default: number of CPUs)')
+                             help='Number of threads used (default: number of CPUs, up to ' +
+                                  str(settings.MAX_AUTO_THREAD_COUNT) + ')')
     other_group.add_argument('--mode', choices=['conservative', 'normal', 'bold'], default='normal',
                              help='B|Bridging mode (default: normal)\n'
                                   '  conservative = smaller contigs, lowest misassembly rate\n'
@@ -575,7 +576,7 @@ def get_arguments():
     try:
         args.threads
     except AttributeError:
-        args.threads = multiprocessing.cpu_count()
+        args.threads = min(multiprocessing.cpu_count(), settings.MAX_AUTO_THREAD_COUNT)
         if args.verbosity > 2:
             print('\nThread count set to', args.threads)
     try:

@@ -19,6 +19,7 @@ import multiprocessing
 from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter, print_table, \
     get_percentile_sorted, get_pilon_jar_path, colour, bold, bold_green, bold_yellow_underline, \
     dim, get_all_files_in_current_dir, check_file_exists, remove_formatting, red
+from . import settings
 
 
 def main():
@@ -207,7 +208,7 @@ def get_arguments():
                 parser.error('there are no *.fast5 files in ' + args.on_fast5)
 
     if args.threads is None:
-        args.threads = multiprocessing.cpu_count()
+        args.threads = min(multiprocessing.cpu_count(), settings.MAX_AUTO_THREAD_COUNT)
         if args.verbosity > 2:
             print('\nThread count set to', args.threads)
 

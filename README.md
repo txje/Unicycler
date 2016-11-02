@@ -29,13 +29,13 @@ As input, Unicycler takes a good set of Illumina reads from a bacterial isolate 
 
 Reasons to use Unicycler:
    * It has very low misassembly rates.
-   * It can cope with highly repetitive genomes, such as those from _Shigella_ species.
+   * It can cope with very repetitive genomes, such as _Shigella_ species.
    * It correctly handles plamsmids of varying depth.
    * It works with long reads of any quality - even Nanopore reads classed as 'fail' can be used as input.
    * It works with any long read depth. Approximately 10x may be required to complete a genome, but it can make nearly-complete genomes with far fewer long reads.
-   * It can be run without any long reads, functioning as a [SPAdes](http://bioinf.spbau.ru/spades) optimiser.
+   * Even if you have no long reads, it functions as a [SPAdes](http://bioinf.spbau.ru/spades) optimiser and produces very good Illumina assemblies.
    * It produces an assembly _graph_ in addition to a contigs FASTA file, viewable in [Bandage](https://github.com/rrwick/Bandage).
-   * It's easy to use, runs with just one command and doesn't require tinkering with parameters.
+   * It's easy to use, runs with just one command and doesn't require tinkering with parameters!
 
 Reasons to __not__ use Unicycler:
    * You only have long reads, not Illumina reads (try [Canu](https://github.com/marbl/canu) instead).
@@ -109,26 +109,26 @@ unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz -l long_reads.fast
 
 Unicycler performs an assembly (using SPAdes) of just the Illumina reads. It then uses all available sources of information (SPAdes contigs and long read alignments) to resolve repeats in the assembly graph. It does this by building 'bridges' between non-repeat contigs using the best path through the assembly graph.
 
-Essentially, Unicycler is a scaffolder which uses long reads to properly orient Illumina contigs. But since it works not on assembled contigs but an assembly _graph_, it can outperform a more naive long read scaffolder.
+Essentially, Unicycler is a scaffolder which uses long reads to properly arrange Illumina contigs. But unlike a naive scaffolding tool which operates on assembled _contigs, Unicycler works on an assembly _graph_. This gives it much more information to complete assemblies with a very low risk of mistakes.
 
 
 ### 1. Read correction
 
-Unicycler uses SPAdes to perform read error correction before assembling the Illumina reads. This can be disabled with `--no_correct` if your Illumina reads are very high quality or you've already performed read QC.
+Unicycler uses SPAdes' built-in read correction step before assembling the Illumina reads. This can be disabled with `--no_correct` if your Illumina reads are very high quality or you've already performed read QC.
 
 
 ### 2. SPAdes assembly
 
 <img align="right" src="misc/k-mer_plot.png" width="156" height="179">
 
-Unicycler uses SPAdes to assembly the Illumina reads into an assembly graph. It tries assemblies at a wide range of k-mer sizes, evaluating the graph at each one. It chooses the assembly graph which best minimises both contig count and dead end count. If the Illumina reads are high quality, it produces an assembly graph with long contigs but few to no dead ends ([more info here](#bad-illumina-reads)).
+Unicycler uses SPAdes to assemble the Illumina reads into an assembly graph. It tries assemblies at a wide range of k-mer sizes, evaluating the graph at each one. It chooses the graph which best minimises both contig count and dead end count. If the Illumina reads are good, it produces an assembly graph with long contigs but few to no dead ends ([more info here](#bad-illumina-reads)).
 
-Unicycler also cleans the SPAdes assembly graphs, filtering out contigs which are very low depth and likely to be due to contamination or errors.
+Unicycler also performs some graph pruning, filtering out contigs which are very low depth. Low-level contamination in the Illumina reads should not be a problem for Unicycler.
 
 
 ### 3. Multiplicity
 
-In future steps, Unicycler will scaffold the graph using SPAdes contigs and long reads. To do this, it must distinguish between single-copy contigs and collapsed repeats. It does this with a greedy algorithm that takes both read depth and graph connectivity. This process finds single-copy contigs not only in the bacterial chromosome but also in plasmids of any read depth.
+In order to scaffold the graph, Unicycler must distinguish between single-copy contigs and collapsed repeats. It does this with a greedy algorithm that takes both read depth and graph connectivity. This process finds single-copy contigs not only in the bacterial chromosome but also in plasmids of any read depth.
 
 <p align="center"><img src="misc/multiplicity.png" alt="Multiplicity assignment" width="700"></p>
 
@@ -178,7 +178,7 @@ bold         | `--mode bold`                   | used               | low (1)   
 
 <p align="center"><img src="misc/conservative_normal_bold.png" alt="Conservative, normal and bold" width="550"></p>
 
-In the above example, the conservative mode assembly is incomplete because some bridges fell below the quality threshold and were not applied. Its contigs, however, are extremely reliable. Normal mode nearly gives a complete assembly, but a couple of unmerged contigs remain. Bold mode completed the assembly, but since lower confidence regions were bridged and merged, there is a larger risk of error.
+In the above example, the conservative mode assembly is incomplete because some bridges fell below the quality threshold and were not applied. Its contigs, however, are extremely reliable. Normal mode nearly gave a complete assembly, but a couple of unmerged contigs remain. Bold mode completed the assembly, but since lower confidence regions were bridged and merged, there is a larger risk of error.
 
 
 
@@ -226,7 +226,7 @@ Output:
                                           0 = only keep files at main checkpoints, 1 = keep some temp files including SAM, 2 = keep all temp files
 
 Other:
-  -t THREADS, --threads THREADS         Number of threads used to align (default: number of CPUs)
+  -t THREADS, --threads THREADS         Number of threads used (default: number of CPUs, up to 8)
   --mode {conservative,normal,bold}     Bridging mode (default: normal)
                                           conservative = smaller contigs, lowest misassembly rate
                                           normal = moderate contig size and misassembly rate
@@ -324,6 +324,8 @@ Unicycler is thorough and accurate, but not particularly fast. In particular, th
 
 Unicycler may only take an hour or so to assemble a small, simple genome with low depth long reads. On the other hand, a complex genome with many long reads may take 12 hours to finish or more. If you have a very high depth of long reads, you can make Unicycler run faster by subsampling for only the longest reads.
 
+Using a lot of threads (with the `--threads` option) can make Unicycler run faster too. It will only use up to 8 threads by default, but if you're running it on a big machine with lots of CPU and RAM, then feel free to use more!
+
 
 ### Necessary read length
 
@@ -334,7 +336,7 @@ Consider the following example of a sequence with a 2 kb repeat and three differ
 
 In order to resolve the repeat, a read must span it by aligning to sequence on either side. In this example the 1 kb reads are shorter than the repeat and are all useless. The 2.5 kb reads _can_ resolve the repeat, but they have to be in _just the right place_ to do so. Only one out of the six in this example is useful. The 5 kb reads, however, have a much easier time spanning the repeat and all three are useful.
 
-So how long must your reads be for Unicyler to complete an assembly? _Longer than the longest repeat in the genome._ Depending on the genome, that might be a 1 kb insertion sequence, a 6 kb ribosomal complex or a 30 kb phage. If your reads are just a little bit longer than the longest repeat, then you'll probably need a lot of them to ensure that at least one spans the repeat. If they are much longer, then fewer reads will probably suffice.
+So how long must your reads be for Unicyler to complete an assembly? _Longer than the longest repeat in the genome._ Depending on the genome, that might be a 1 kb insertion sequence, a 6 kb ribosomal complex or a 30 kb phage. If your reads are just a little bit longer than the longest repeat, then you'll probably need a lot of them to ensure that at least one spans the repeat. If they are much longer, then fewer reads will probably suffice. But in any scenario, _longer is better!_
 
 
 ### Poretools

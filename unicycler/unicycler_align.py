@@ -118,8 +118,8 @@ def get_arguments():
     parser.add_argument('--extra_sensitive', action='store_true',
                         help='Perform slow but very sensitive alignment')
     parser.add_argument('--threads', type=int, required=False, default=argparse.SUPPRESS,
-                        help='Number of CPU threads used to align (default: the number of '
-                             'available CPUs)')
+                        help='Number of threads used (default: number of CPUs, up to ' +
+                             str(settings.MAX_AUTO_THREAD_COUNT) + ')')
     parser.add_argument('--verbosity', type=int, required=False, default=1,
                         help='Level of stdout information (0 to 4)')
 
@@ -196,7 +196,7 @@ def fix_up_arguments(args):
     try:
         args.threads
     except AttributeError:
-        args.threads = multiprocessing.cpu_count()
+        args.threads = min(multiprocessing.cpu_count(), settings.MAX_AUTO_THREAD_COUNT)
         if VERBOSITY > 2:
             print('\nThread count set to', args.threads)
 

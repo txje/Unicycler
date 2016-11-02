@@ -130,3 +130,10 @@ PATHLESS_BRIDGE_QUAL_NO_DEAD_ENDS = 0.2
 PATHLESS_BRIDGE_QUAL_TWO_DEAD_ENDS_WITH_LINEAR_SEQS = 0.6
 PATHLESS_BRIDGE_QUAL_ONE_DEAD_END_WITH_LINEAR_SEQS = 0.4
 PATHLESS_BRIDGE_QUAL_NO_DEAD_ENDS_WITH_LINEAR_SEQS = 0.2
+
+
+# If the user doesn't set the thread manually, it will use either the CPU count or this value,
+# whichever is smaller. This is to prevent Unicycler from grabbing too many cores by default.
+# E.g. if it was run on a large machine with 80 cores, it shouldn't use all 80 unless the user
+# explicitly asks for it!
+MAX_AUTO_THREAD_COUNT = 8

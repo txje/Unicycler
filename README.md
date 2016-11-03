@@ -12,7 +12,9 @@ Unicycler is a hybrid assembly pipeline for bacterial genomes. It uses both [Ill
     * [Typical installation](#typical-installation)
     * [Other installation commands](#other-installation-commands)
 * [Quick usage](#quick-usage)
-* [Pipeline](#pipeline)
+* [How it works](#how-it-works)
+    * [Assembly graphs](#assembly-graphs)
+    * [Unicycler pipeline in brief](#unicycler-pipeline-in-brief)
     * [1. Read correction](#1-read-correction)
     * [2. SPAdes assembly](#2-spades-assembly)
     * [3. Multiplicity](#3-multiplicity)
@@ -124,9 +126,35 @@ __Hybrid assembly:__<br>
 
 
 
-# Pipeline
+# How it works
 
-Unicycler performs an assembly (using SPAdes) of just the Illumina reads. It then uses all available sources of information (SPAdes contigs and long read alignments) to resolve repeats in the assembly graph. It does this by building 'bridges' between non-repeat contigs using the best path through the assembly graph.
+### Assembly graphs
+
+To understand what Unicycler is doing, you need to know about assembly graphs. They come in many different varieties, but essentially an assembly graph is a structure where the contigs don't have to simply end - rather they can lead into other contigs:
+```
+                        CCTTGTTTAT
+                       /          \
+...TCGAAACTTGACGCGAGTCG            GCTACTGCTTGATGATGCGG...
+                       \          /
+                        CTGTCAATTT
+```
+Most assemblers use graphs as an internal data structure to produce their assemblies. [De Bruijn graphs](http://www.homolog.us/Tutorials/index.php?p=1.1&s=1) are commonly used for short read assemblers and overlap graphs are common for long read assemblers.
+
+If the assembly process was perfect and complete, we'd always get one contig per physical piece of DNA have no need for a graph. But most assemblies are not complete (especially short read assemblies) and in these cases an assembly graph can help us understand the incomplete assembly much better than contigs alone.
+
+The primary reason short read assemblies do not complete is that DNA usually contains _repeats_. When the repeats are longer than the reads (or for paired-end sequencing, longer than the insert size), they are collapsed into a single contig in the assembly graph with multiple connections leading in and multiple connections leading out.
+
+Here is what happens to a simple bacterial assembly graph as you add repeats to the genome:
+<p align="center"><img src="misc/bridge_application.png" alt="Repeats in graph"></p>
+
+We started out with a simple loop corresponding to the circular chromosome, but as repeats were added the graph became increasingly tangled. Real world bacterial assembly graphs get much more complicated.
+
+To complete a bacterial genome assembly (i.e. find one correct sequence for each chromosome/plasmid), we need to resolve the repeats. This means finding which way into a repeat matches up with which way out. Unfortunately, short reads don't have enough information to do this, but _long reads_ do.
+
+
+### Unicycler pipeline in brief
+
+Unicycler performs an assembly (using SPAdes) of just the Illumina reads. It then uses long read alignments to resolve repeats in the assembly graph. It does this by building 'bridges' between non-repeat contigs using the best path through the assembly graph.
 
 Essentially, Unicycler is a scaffolder which uses long reads to properly arrange Illumina contigs. But unlike a naive scaffolding tool which operates on assembled _contigs_, Unicycler works on an assembly _graph_. This gives it much more information to complete assemblies with a very low risk of mistakes.
 

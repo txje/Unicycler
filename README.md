@@ -138,25 +138,24 @@ To understand what Unicycler is doing, you need to know about assembly graphs. T
                        \          /
                         CTGTCAATTT
 ```
-Most assemblers use graphs as an internal data structure to produce their assemblies. [De Bruijn graphs](http://www.homolog.us/Tutorials/index.php?p=1.1&s=1) are commonly used for short read assemblers and overlap graphs are common for long read assemblers.
 
-If the assembly process was perfect and complete, we'd always get one contig per physical piece of DNA have no need for a graph. But most assemblies are not complete (especially short read assemblies) and in these cases an assembly graph can help us understand the incomplete assembly much better than contigs alone.
+If the assembly process was complete, we'd always get one contig per physical piece of DNA have no need for a graph. But most assemblies are not complete (especially short read assemblies), and a graph can describe an incomplete assembly much better than contigs alone.
 
-The primary reason short read assemblies do not complete is that DNA usually contains _repeats_. When the repeats are longer than the reads (or for paired-end sequencing, longer than the insert size), they are collapsed into a single contig in the assembly graph with multiple connections leading in and multiple connections leading out.
+The main reason we can't get a complete assembly from short reads is that DNA usually contains _repeats_ - the same sequence occuring two or more times in the genome. When a repeat is longer than the reads (or for paired-end sequencing, longer than the insert size), it forms a single contig in the assembly graph with multiple connections in and multiple connections out.
 
 Here is what happens to a simple bacterial assembly graph as you add repeats to the genome:
 <p align="center"><img src="misc/repeats_in_graph.png" alt="Repeats in graph"></p>
 
-We started out with a simple loop corresponding to the circular chromosome, but as repeats were added the graph became increasingly tangled. Real world bacterial assembly graphs get much more complicated.
+As repeats were added, the graph became increasingly tangled (and real assembly graphs get a lot more tangled than that).
 
-To complete a bacterial genome assembly (i.e. find one correct sequence for each chromosome/plasmid), we need to resolve the repeats. This means finding which way into a repeat matches up with which way out. Unfortunately, short reads don't have enough information to do this, but _long reads_ do.
+To complete a bacterial genome assembly (i.e. find the one correct sequence for each chromosome/plasmid), we need to resolve the repeats. This means finding which way into a repeat matches up with which way out. Short reads don't have enough information to do this, but _long reads_ do.
 
 
 ### Unicycler pipeline in brief
 
-Unicycler performs an assembly (using SPAdes) of just the Illumina reads. It then uses long read alignments to resolve repeats in the assembly graph. It does this by building 'bridges' between non-repeat contigs using the best path through the assembly graph.
+Unicycler uses SPAdes to get an assembly graph made from Illumina reads. Since Illumina reads are accurate, this graph has very few mistakes. But since Illumina reads are short, it will also contain unresolved repeats. Unicycler then uses long read alignments to build 'bridges' between non-repeat contigs - resolving the repeats and simplifying the graph.
 
-Essentially, Unicycler is a scaffolder which uses long reads to properly arrange Illumina contigs. But unlike a naive scaffolding tool which operates on assembled _contigs_, Unicycler works on an assembly _graph_. This gives it much more information to complete assemblies with a very low risk of mistakes.
+Essentially, Unicycler is a scaffolder which uses long reads to properly arrange Illumina contigs. But unlike a naive scaffolding tool which operates on assembled _contigs_, Unicycler works on an assembly _graph_. This gives it much more information to complete assemblies and a lower risk of mistakes.
 
 Here are the steps it follows, in a bit more detail:
 
@@ -176,9 +175,11 @@ Unicycler also performs some graph pruning, filtering out contigs which are very
 
 ### 3. Multiplicity
 
-In order to scaffold the graph, Unicycler must distinguish between single-copy contigs and collapsed repeats. It does this with a greedy algorithm that takes both read depth and graph connectivity. This process finds single-copy contigs not only in the bacterial chromosome but also in plasmids of any read depth.
+In order to scaffold the graph, Unicycler must distinguish between single-copy contigs and repeats. It does this with a greedy algorithm that uses both read depth and graph connectivity:
 
 <p align="center"><img src="misc/multiplicity.png" alt="Multiplicity assignment" width="700"></p>
+
+This process does _not_ assume that all single-copy contigs have the same read depth, which allows it to identify single-copy contigs from plasmids as well as the chromosome.
 
 
 ### 4. Short read bridging
@@ -190,7 +191,7 @@ At this point, the assembly graph does not contain the SPAdes repeat resolution.
 
 ### 5. Long read bridging
 
-Long reads are the most useful source of information for resolving the assembly graph, so Unicycler aligns them to the graph semi-globally (see [Unicycler align](#unicycler-align) for more information). For each pair of single-copy contigs which are linked by read alignments, Unicycler uses the read consensus sequence to find a connecting path and creates a bridge.
+Long reads are the most useful source of information for resolving the assembly graph, so Unicycler semi-globally aligns them to the contigs (see [Unicycler align](#unicycler-align) for more information). For each pair of single-copy contigs which are linked by read alignments, Unicycler uses the read consensus sequence to find a connecting path and creates a bridge.
 
 <p align="center"><img src="misc/long_read_bridging.png" alt="Long read bridging"></p>
 

@@ -130,7 +130,7 @@ __Hybrid assembly:__<br>
 
 ### Assembly graphs
 
-To understand what Unicycler is doing, you need to know about assembly graphs. They come in many different varieties, but essentially an assembly graph is a structure where the contigs don't have to simply end - rather they can lead into other contigs:
+To understand what Unicycler is doing, you need to know about assembly graphs. They come in many different varieties, but essentially an assembly graph is a structure where the contigs don't have to simply end – rather they can lead into other contigs:
 ```
                         CCTTGTTTAT
                        /          \
@@ -139,9 +139,9 @@ To understand what Unicycler is doing, you need to know about assembly graphs. T
                         CTGTCAATTT
 ```
 
-If the assembly process was complete, we'd always get one contig per physical piece of DNA have no need for a graph. But most assemblies are not complete (especially short read assemblies), and a graph can describe an incomplete assembly much better than contigs alone.
+If the assembly process was complete, we'd always get one contig per chromosome/plasmid and may not care about assembly graphs. But most assemblies are not complete (especially short read assemblies), and a graph can describe an incomplete assembly much better than contigs alone.
 
-The main reason we can't get a complete assembly from short reads is that DNA usually contains _repeats_ - the same sequence occuring two or more times in the genome. When a repeat is longer than the reads (or for paired-end sequencing, longer than the insert size), it forms a single contig in the assembly graph with multiple connections in and multiple connections out.
+The main reason we can't get a complete assembly from short reads is that DNA usually contains _repeats_ – the same sequence occuring two or more times in the genome. When a repeat is longer than the reads (or for paired-end sequencing, longer than the insert size), it forms a single contig in the assembly graph with multiple connections in and multiple connections out.
 
 Here is what happens to a simple bacterial assembly graph as you add repeats to the genome:
 <p align="center"><img src="misc/repeats_in_graph.png" alt="Repeats in graph"></p>
@@ -153,7 +153,7 @@ To complete a bacterial genome assembly (i.e. find the one correct sequence for 
 
 ### Unicycler pipeline in brief
 
-Unicycler uses SPAdes to get an assembly graph made from Illumina reads. Since Illumina reads are accurate, this graph has very few mistakes. But since Illumina reads are short, it will also contain unresolved repeats. Unicycler then uses long read alignments to build 'bridges' between non-repeat contigs - resolving the repeats and simplifying the graph.
+Unicycler uses SPAdes to get an assembly graph made from Illumina reads. Since Illumina reads are accurate, this graph has very few mistakes. But since Illumina reads are short, it will also contain unresolved repeats. Unicycler then uses long read alignments to build 'bridges' between non-repeat contigs, resolving the repeats and simplifying the graph.
 
 Essentially, Unicycler is a scaffolder which uses long reads to properly arrange Illumina contigs. But unlike a naive scaffolding tool which operates on assembled _contigs_, Unicycler works on an assembly _graph_. This gives it much more information to complete assemblies and a lower risk of mistakes.
 

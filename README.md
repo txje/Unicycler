@@ -146,9 +146,9 @@ The main reason we can't get a complete assembly from short reads is that DNA us
 Here is what happens to a simple bacterial assembly graph as you add repeats to the genome:
 <p align="center"><img src="misc/repeats_in_graph.png" alt="Repeats in graph"></p>
 
-As repeats were added, the graph became increasingly tangled (and real assembly graphs get a lot more tangled than that).
+As repeats are added, the graph becomes increasingly tangled (and real assembly graphs get a lot more tangled than that).
 
-To complete a bacterial genome assembly (i.e. find the one correct sequence for each chromosome/plasmid), we need to resolve the repeats. This means finding which way into a repeat matches up with which way out. Short reads don't have enough information to do this, but _long reads_ do.
+To complete a bacterial genome assembly (i.e. find the one correct sequence for each chromosome/plasmid), we need to resolve the repeats. This means finding which way into a repeat matches up with which way out. Short reads don't have enough information for this but _long reads_ do.
 
 
 ### Unicycler pipeline in brief
@@ -157,7 +157,8 @@ Unicycler uses SPAdes to get an assembly graph made from Illumina reads. Since I
 
 Essentially, Unicycler is a scaffolder which uses long reads to properly arrange Illumina contigs. But unlike a naive scaffolding tool which operates on assembled _contigs_, Unicycler works on an assembly _graph_. This gives it much more information to complete assemblies and a lower risk of mistakes.
 
-Here are the steps it follows, in a bit more detail:
+Here is the process in a bit more detail:
+
 
 ### 1. Read correction
 
@@ -168,9 +169,9 @@ Unicycler uses SPAdes' built-in read correction step before assembling the Illum
 
 <img align="right" src="misc/k-mer_plot.png" width="156" height="179">
 
-Unicycler uses SPAdes to assemble the Illumina reads into an assembly graph. It tries assemblies at a wide range of k-mer sizes, evaluating the graph at each one. It chooses the graph which best minimises both contig count and dead end count. If the Illumina reads are good, it produces an assembly graph with long contigs but few to no dead ends ([more info here](#bad-illumina-reads)).
+Unicycler uses SPAdes to assemble the Illumina reads into an assembly graph. It tries assemblies at a wide range of k-mer sizes, evaluating the graph at each one. It chooses the graph which best minimises both contig count and dead end count. If the Illumina reads are good, it produces an assembly graph with long contigs but few to no dead ends ([more info here](#bad-illumina-reads)). Since a typical bacterial genome has no dead ends (the sequences are circular) an ideal assembly graph won't either.
 
-Unicycler also performs some graph pruning, filtering out contigs which are very low depth. Low-level contamination in the Illumina reads should not be a problem for Unicycler.
+Unicycler also performs some graph pruning, filtering out contigs which are very low depth. Low-level contamination in the Illumina reads should not be a problem.
 
 
 ### 3. Multiplicity
@@ -378,14 +379,14 @@ Using a lot of threads (with the `--threads` option) can make Unicycler run fast
 
 ### Necessary read length
 
-The length of a long read is very important – typically more than its accuracy. This is because longer reads are more likely to align to multiple single-copy contigs, allowing Unicycler to build bridges.
+The length of a long read is very important, typically more than its accuracy, because longer reads are more likely to align to multiple single-copy contigs, allowing Unicycler to build bridges.
 
-Consider the following example of a sequence with a 2 kb repeat and three different read sets:
+Consider this example of a sequence with a 2 kb repeat:
 <p align="center"><img src="misc/read_length.png" alt="Long read length"></p>
 
-In order to resolve the repeat, a read must span it by aligning to sequence on either side. In this example the 1 kb reads are shorter than the repeat and are all useless. The 2.5 kb reads _can_ resolve the repeat, but they have to be in _just the right place_ to do so. Only one out of the six in this example is useful. The 5 kb reads, however, have a much easier time spanning the repeat and all three are useful.
+In order to resolve the repeat, a read must span it by aligning to some sequence on either side. In this example, the 1 kb reads are shorter than the repeat and are useless. The 2.5 kb reads _can_ resolve the repeat, but they have to be in _just the right place_ to do so. Only one out of the six in this example is useful. The 5 kb reads, however, have a much easier time spanning the repeat and all three are useful.
 
-So how long must your reads be for Unicycler to complete an assembly? _Longer than the longest repeat in the genome._ Depending on the genome, that might be a 1 kb insertion sequence, a 6 kb ribosomal complex or a 30 kb phage. If your reads are just a little bit longer than the longest repeat, then you'll probably need a lot of them to ensure that at least one spans the repeat. If they are much longer, then fewer reads should suffice. But in any scenario, _longer is better!_
+So how long must your reads be for Unicycler to complete an assembly? _Longer than the longest repeat in the genome._ Depending on the genome, that might be a 1 kb insertion sequence, a 6 kb ribosomal complex or a 50 kb prophage. If your reads are just a bit longer than the longest repeat, you'll probably need a lot of them. If they are much longer, then fewer reads should suffice. But in any scenario, _longer is better!_
 
 
 ### Poretools

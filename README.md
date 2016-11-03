@@ -550,6 +550,8 @@ Paper in progress... check back soon!
 
 Unicycler would not have been possible without [Kat Holt](https://holtlab.net/), my fellow researchers in her lab and the many other people I work with at the University of Melbourne's [Centre for Systems Genomics](https://sysgenmelb.org/). In particular, [Margaret Lam](https://scholar.google.com.au/citations?user=cWmhzUIAAAAJ&hl=en), [Kelly Wyres](https://holtlab.net/kelly-wyres/) and [David Edwards](https://scholar.google.com.au/citations?hl=en&user=rZ1RJK0AAAAJ) worked with me on many challenging genomes during Unicycler's development.
 
+Unicycler uses [Seqan](https://www.seqan.de/) to perform alignments and other sequence manipulations. The authors of this library have been very helpful during Unicycler's development and I owe them a great deal of thanks!
+
 
 
 # License

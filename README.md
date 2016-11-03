@@ -145,7 +145,7 @@ If the assembly process was perfect and complete, we'd always get one contig per
 The primary reason short read assemblies do not complete is that DNA usually contains _repeats_. When the repeats are longer than the reads (or for paired-end sequencing, longer than the insert size), they are collapsed into a single contig in the assembly graph with multiple connections leading in and multiple connections leading out.
 
 Here is what happens to a simple bacterial assembly graph as you add repeats to the genome:
-<p align="center"><img src="misc/bridge_application.png" alt="Repeats in graph"></p>
+<p align="center"><img src="misc/repeats_in_graph.png" alt="Repeats in graph"></p>
 
 We started out with a simple loop corresponding to the circular chromosome, but as repeats were added the graph became increasingly tangled. Real world bacterial assembly graphs get much more complicated.
 

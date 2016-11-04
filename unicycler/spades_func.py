@@ -10,7 +10,7 @@ import subprocess
 import gzip
 import shutil
 from .misc import print_section_header, round_to_nearest_odd, get_compression_type, int_to_str, \
-    quit_with_error, strip_read_extensions, bold, dim, print_table
+    quit_with_error, strip_read_extensions, bold, dim, print_table, print_v
 from .assembly_graph import AssemblyGraph
 
 
@@ -35,39 +35,35 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
     assem_dir = os.path.join(spades_dir, 'assembly')
     print_section_header('Conducting SPAdes assemblies', verbosity)
 
-    # Check to see if the SPAdes assemblies already exist. If so, we'll use them instead of doing
-    # the assembly again.
-    files_exist = True
-    file_list = []
-    for kmer in kmer_range:
-        graph_file = os.path.join(spades_dir, 'k' + str(kmer) + '_assembly_graph.gfa')
-        file_list.append(graph_file)
-        if not os.path.isfile(graph_file):
-            files_exist = False
-    if files_exist and verbosity > 0:
-        print('Assemblies already exist. Will use these graphs instead of running SPAdes '
-              'assemblies:')
-        print(''.join(['  ' + x + '\n' for x in file_list]))
-
-    # Conduct a SPAdes assembly for each k-mer (or load existing ones) and score them to choose
+    # Conduct a SPAdes assembly for each k-mer and score them to choose
     # the best.
-    spades_results_table = [['k-mer', 'segments', 'dead ends', 'score']]
+    if verbosity > 1:
+        spades_results_table = [['K-mer', 'Segments', 'Links', 'Total length', 'N50',
+                                 'Longest segment', 'Dead ends', 'Score']]
+    else:
+        spades_results_table = [['K-mer', 'Segments', 'Dead ends', 'Score']]
     best_score = 0.0
     best_kmer = kmer_range[0]
-    best_assembly_graph = None
-    for i, kmer in enumerate(kmer_range):
+    best_graph_filename = ''
+
+    graph_files, insert_size_mean, insert_size_deviation = \
+        spades_assembly(reads, assem_dir, kmer_range, verbosity, threads, spades_path)
+
+    for graph_file, kmer in zip(graph_files, kmer_range):
+        table_line = [int_to_str(kmer)]
+
+        if graph_file is None:
+            table_line += [''] * (7 if verbosity > 1 else 2)
+            table_line.append('failed')
+            spades_results_table.append(table_line)
+            continue
+
+        assembly_graph = AssemblyGraph(graph_file, kmer, paths_file=None,
+                                       insert_size_mean=insert_size_mean,
+                                       insert_size_deviation=insert_size_deviation)
+        assembly_graph.clean(read_depth_filter)
         clean_graph_filename = os.path.join(spades_dir, 'k' + str(kmer) + '_assembly_graph.gfa')
-        if files_exist:
-            assembly_graph = AssemblyGraph(clean_graph_filename, kmer)
-        else:
-            graph_file, paths_file, insert_size_mean, insert_size_deviation = \
-                    spades_assembly(reads, assem_dir, kmer_range[:i + 1], verbosity, threads,
-                                    spades_path)
-            assembly_graph = AssemblyGraph(graph_file, kmer, paths_file=paths_file,
-                                           insert_size_mean=insert_size_mean,
-                                           insert_size_deviation=insert_size_deviation)
-            assembly_graph.clean(read_depth_filter)
-            assembly_graph.save_to_gfa(os.path.join(spades_dir, clean_graph_filename), 0)
+        assembly_graph.save_to_gfa(os.path.join(spades_dir, clean_graph_filename), 0)
 
         segment_count = len(assembly_graph.segments)
         dead_ends = assembly_graph.total_dead_end_count()
@@ -75,23 +71,50 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
         # If the user is expecting some linear sequences, then the dead end count can be adjusted
         # down so expected dead ends don't penalise this k-mer.
         adjusted_dead_ends = max(0, dead_ends - (2 * expected_linear_seqs))
-
         if segment_count == 0:
             score = 0.0
         else:
             score = 1.0 / (segment_count * ((adjusted_dead_ends + 1) ** 2))
-        spades_results_table.append([int_to_str(kmer), int_to_str(segment_count),
-                                     int_to_str(dead_ends), '{:.2e}'.format(score)])
+
+        # Prepare the table line for this k-mer graph.
+        table_line += [int_to_str(segment_count)]
         if verbosity > 1:
-            print_section_header('SPAdes k=' + int_to_str(kmer) + ' assembly graph summary',
-                                 verbosity)
-            print(assembly_graph.get_summary(verbosity, file=clean_graph_filename, score=score,
-                                             adjusted_dead_ends=adjusted_dead_ends))
-            print()
+            n50, shortest, lower_quartile, median, upper_quartile, longest = \
+                assembly_graph.get_contig_stats()
+            table_line += [int_to_str(assembly_graph.get_total_link_count()),
+                           int_to_str(assembly_graph.get_total_length()),
+                           int_to_str(n50), int_to_str(longest)]
+        table_line += [int_to_str(dead_ends), '{:.2e}'.format(score)]
+        spades_results_table.append(table_line)
+
         if score >= best_score:
             best_kmer = kmer
             best_score = score
-            best_assembly_graph = assembly_graph
+            best_graph_filename = graph_file
+
+    # If the best k-mer is the top k-mer, then SPAdes has already done the repeat resolution and
+    # we can just grab it now. Easy! If the best k-mer was a different k-mer size, then we need
+    # to run SPAdes again to get that repeat resolution.
+    if best_kmer != kmer_range[-1]:
+        new_kmer_range = [x for x in kmer_range if x <= best_kmer]
+        graph_file, insert_size_mean, insert_size_deviation = \
+            spades_assembly(reads, assem_dir, new_kmer_range, verbosity, threads, spades_path,
+                            just_last=True)
+        best_graph_filename = graph_file
+    paths_file = os.path.join(assem_dir, 'contigs.paths')
+    if os.path.isfile(paths_file):
+        copied_paths_file = os.path.join(spades_dir,
+                                         'k' + ('%03d' % best_kmer) + '_contigs.paths')
+        shutil.copyfile(paths_file, copied_paths_file)
+
+    # Now we can load and clean the graph again, this time giving it the SPAdes contig paths.
+    assembly_graph = AssemblyGraph(best_graph_filename, best_kmer, paths_file=paths_file,
+                                   insert_size_mean=insert_size_mean,
+                                   insert_size_deviation=insert_size_deviation)
+    assembly_graph.clean(read_depth_filter)
+    clean_graph_filename = os.path.join(spades_dir,
+                                        'k' + str(best_kmer) + '_assembly_graph.gfa')
+    assembly_graph.save_to_gfa(os.path.join(spades_dir, clean_graph_filename), 0)
 
     # Clean up SPAdes files.
     if keep_temp < 2 and os.path.isdir(assem_dir):
@@ -103,13 +126,15 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
         quit_with_error('none of the SPAdes assemblies produced assembled sequence')
 
     # Print the SPAdes result table, highlighting the best k-mer in green.
+    if verbosity > 1:
+        print_section_header('SPAdes assembly graph summary', verbosity)
     if verbosity > 0:
         best_kmer_row = [x[0] for x in spades_results_table].index(int_to_str(best_kmer))
-        print_table(spades_results_table, alignments='RRRR', indent=0,
+        print_table(spades_results_table, alignments='RRRRRRRR', indent=0,
                     row_colour={best_kmer_row: 'green'},
                     row_extra_text={best_kmer_row: ' \u2190 best'})
 
-    return best_assembly_graph
+    return assembly_graph
 
 
 def spades_read_correction(short1, short2, spades_dir, verbosity, threads, spades_path):
@@ -183,7 +208,7 @@ def spades_read_correction(short1, short2, spades_dir, verbosity, threads, spade
     return corrected_1, corrected_2, corrected_u
 
 
-def spades_assembly(read_files, out_dir, kmers, verbosity, threads, spades_path):
+def spades_assembly(read_files, out_dir, kmers, verbosity, threads, spades_path, just_last=False):
     """
     This runs a SPAdes assembly, possibly continuing from a previous assembly.
     """
@@ -191,15 +216,14 @@ def spades_assembly(read_files, out_dir, kmers, verbosity, threads, spades_path)
     short2 = read_files[1]
     unpaired = read_files[2]
     kmer_string = ','.join([str(x) for x in kmers])
-    this_kmer = 'k' + str(kmers[-1])
     command = [spades_path, '-o', out_dir, '-k', kmer_string, '--threads', str(threads)]
-    if len(kmers) > 1:
-        last_kmer = 'k' + str(kmers[-2])
-        command += ['--restart-from', last_kmer]
+    if just_last:
+        command += ['--restart-from', 'k' + str(kmers[-1])]
     else:
         command += ['--only-assembler', '-1', short1, '-2', short2]
         if unpaired:
             command += ['-s', unpaired]
+    print_v('', verbosity, 2)
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     insert_size_mean = None
@@ -223,16 +247,22 @@ def spades_assembly(read_files, out_dir, kmers, verbosity, threads, spades_path)
     if spades_error:
         quit_with_error('SPAdes encountered an error: ' + spades_error)
 
-    graph_file = os.path.join(out_dir, 'assembly_graph.fastg')
-    paths_file = os.path.join(out_dir, 'contigs.paths')
-
-    parent_dir = os.path.dirname(out_dir)
-    moved_graph_file = os.path.join(parent_dir, this_kmer + '_assembly_graph.fastg')
-    shutil.move(graph_file, moved_graph_file)
-    moved_paths_file = os.path.join(parent_dir, this_kmer + '_contigs.paths')
-    shutil.move(paths_file, moved_paths_file)
-
-    return moved_graph_file, moved_paths_file, insert_size_mean, insert_size_deviation
+    if just_last:
+        graph_file = os.path.join(out_dir, 'K' + str(kmers[-1]), 'assembly_graph.fastg')
+        return graph_file, insert_size_mean, insert_size_deviation
+    else:
+        graph_files = []
+        for kmer in kmers:
+            graph_file = os.path.join(out_dir, 'K' + str(kmer), 'assembly_graph.fastg')
+            if os.path.isfile(graph_file):
+                parent_dir = os.path.dirname(out_dir)
+                copied_graph_file = os.path.join(parent_dir,
+                                                 'k' + ('%03d' % kmer) + '_assembly_graph.fastg')
+                shutil.copyfile(graph_file, copied_graph_file)
+                graph_files.append(copied_graph_file)
+            else:
+                graph_files.append(None)
+        return graph_files, insert_size_mean, insert_size_deviation
 
 
 def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity, kmer_count,

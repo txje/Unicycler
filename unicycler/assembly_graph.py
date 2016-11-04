@@ -1405,12 +1405,12 @@ class AssemblyGraph(object):
                 path_sequence = seg_sequence
             else:
                 assert seg_num in self.forward_links[prev_segment_number], \
-                    'link missing for ' + str(seg_num) + ' in path' + \
-                    ','.join(path_segments)
+                    'link missing for ' + str(seg_num) + ' in path ' + \
+                    ','.join([str(x) for x in path_segments])
                 if self.overlap > 0:
                     assert path_sequence[-self.overlap:] == seg_sequence[:self.overlap], \
-                        'overlaps do not match when merging ' + str(seg_num) + ' in path' + \
-                        ','.join(path_segments)
+                        'overlaps do not match when merging ' + str(seg_num) + ' in path ' + \
+                        ','.join([str(x) for x in path_segments])
                 path_sequence += seg_sequence[self.overlap:]
             prev_segment_number = seg_num
         return path_sequence
@@ -1944,47 +1944,35 @@ class AssemblyGraph(object):
             new_paths[name] = [changes[x] for x in path_nums]
         self.paths = new_paths
 
-    def get_summary(self, verbosity, file=None, score=None, adjusted_dead_ends=None):
-        """
-        Returns a nice table describing the graph.
-        """
-        total_length = self.get_total_length()
-        max_v = max(total_length, 1000000)
-        n50, shortest, lower_quartile, median, upper_quartile, longest = self.get_contig_stats()
-        dead_ends = self.total_dead_end_count()
-
-        summary = ''
-        if file:
-            summary += file + '\n'
-        summary += 'segments:              ' + int_to_str(len(self.segments), max_v) + '\n'
-        summary += 'links:                 ' + int_to_str(self.get_total_link_count(), max_v) + '\n'
-        summary += 'total length (bp):     ' + int_to_str(total_length, max_v) + '\n'
-        summary += 'N50:                   ' + int_to_str(n50, max_v) + '\n'
-        if verbosity > 2:
-            summary += 'shortest segment (bp): ' + int_to_str(shortest, max_v) + '\n'
-            summary += 'lower quartile (bp):   ' + int_to_str(lower_quartile, max_v) + '\n'
-            summary += 'median segment (bp):   ' + int_to_str(median, max_v) + '\n'
-            summary += 'upper quartile (bp):   ' + int_to_str(upper_quartile, max_v) + '\n'
-        summary += 'longest segment (bp):  ' + int_to_str(longest, max_v) + '\n'
-        summary += 'dead ends:             ' + int_to_str(dead_ends, max_v) + '\n'
-        if adjusted_dead_ends and adjusted_dead_ends != dead_ends:
-            summary += 'adjusted dead ends:    ' + int_to_str(adjusted_dead_ends, max_v) + '\n'
-        if score:
-            pad_size = len(int_to_str(max_v))
-            summary += 'score:                 ' + '{:.2e}'.format(score).rjust(pad_size) + '\n'
-        return summary
-
-    def print_component_table(self):
-        component_table = [['Component', 'Segments', 'Links', 'Length', 'Status']]
+    def print_component_table(self, verbosity):
+        component_table = [['Component', 'Segments', 'Links', 'Length', 'N50',
+                            'Longest segment', 'Status']]
         components = self.get_connected_components()
+        if len(components) > 1:
+            n50, _, _, _, _, longest = self.get_contig_stats()
+            total_row = ['total',
+                         int_to_str(len(self.segments)),
+                         int_to_str(self.get_total_link_count()),
+                         int_to_str(self.get_total_length()),
+                         int_to_str(n50),
+                         int_to_str(longest),
+                         '']
+            component_table.append(total_row)
         for i, component in enumerate(components):
             status = 'complete' if self.is_component_complete(component) else 'incomplete'
             component_len = sum(self.segments[x].get_length() for x in component)
             segment_count = len(component)
             link_count = self.get_component_link_count(component)
-            component_table.append([str(i+1), int_to_str(segment_count), int_to_str(link_count),
-                                    int_to_str(component_len), status])
-        print_table(component_table, alignments='LRRRR', indent=0,
+            n50, _, _, _, _, longest = self.get_contig_stats(seg_nums=component)
+            component_row = [str(i+1),
+                             int_to_str(segment_count),
+                             int_to_str(link_count),
+                             int_to_str(component_len),
+                             int_to_str(n50),
+                             int_to_str(longest),
+                             status]
+            component_table.append(component_row)
+        print_table(component_table, alignments='RRRRRRR', indent=0,
                     sub_colour={' complete': 'green', ' incomplete': 'red'})
 
     def get_total_link_count(self):
@@ -2013,11 +2001,15 @@ class AssemblyGraph(object):
                     links.add((start, end))
         return len(links)
 
-    def get_contig_stats(self):
+    def get_contig_stats(self, seg_nums=None):
         """
         Returns various contig length metrics.
         """
-        segment_lengths = sorted([x.get_length() for x in self.segments.values()])
+        if seg_nums is None:
+            segs = self.segments.values()
+        else:
+            segs = [self.segments[x] for x in seg_nums]
+        segment_lengths = sorted([x.get_length() for x in segs])
         if not segment_lengths:
             return 0, 0, 0, 0, 0, 0
 

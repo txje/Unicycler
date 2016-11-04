@@ -89,34 +89,36 @@ def main():
         bridges = []
         graph = copy.deepcopy(unbridged_graph)
     else:
-        print_section_header('Bridging graph with SPAdes contigs', verbosity,
-                             last_newline=(verbosity > 1))
+        print_section_header('Bridging graph with SPAdes contigs', verbosity)
         bridges = create_spades_contig_bridges(unbridged_graph, single_copy_segments)
         bridges += create_loop_unrolling_bridges(unbridged_graph)
         graph = copy.deepcopy(unbridged_graph)
-        seg_nums_used_in_bridges = graph.apply_bridges(bridges, verbosity, args.min_bridge_qual,
-                                                       unbridged_graph)
-        file_num += 1
-        spades_bridged_graph_unmerged = os.path.join(args.out, str(file_num).zfill(3) +
-                                                     '_spades_bridges_applied.gfa')
-        graph.save_to_gfa(spades_bridged_graph_unmerged, verbosity, save_seg_type_info=True,
-                          save_copy_depth_info=True)
+        if not bridges:
+            print_v('none found', verbosity, 1)
+        else:
+            seg_nums_used_in_bridges = graph.apply_bridges(bridges, verbosity, args.min_bridge_qual,
+                                                           unbridged_graph)
+            file_num += 1
+            spades_bridged_graph_unmerged = os.path.join(args.out, str(file_num).zfill(3) +
+                                                         '_spades_bridges_applied.gfa')
+            graph.save_to_gfa(spades_bridged_graph_unmerged, verbosity, save_seg_type_info=True,
+                              save_copy_depth_info=True)
 
-        # Clean up unnecessary segments after bridging.
-        graph.clean_up_after_bridging_1(single_copy_segments, seg_nums_used_in_bridges, verbosity)
-        graph.clean_up_after_bridging_2(seg_nums_used_in_bridges, args.min_component_size,
-                                        args.min_dead_end_size, verbosity, unbridged_graph,
-                                        single_copy_segments)
-        if args.keep_temp > 1:
-            file_num += 1
-            graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +
-                                           '_cleaned.gfa'), verbosity,
-                              save_seg_type_info=True, save_copy_depth_info=True)
-        graph.merge_all_possible(single_copy_segments, args.mode)
-        if args.keep_temp > 1:
-            file_num += 1
-            graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa'),
-                              verbosity)
+            # Clean up unnecessary segments after bridging.
+            graph.clean_up_after_bridging_1(single_copy_segments, seg_nums_used_in_bridges, verbosity)
+            graph.clean_up_after_bridging_2(seg_nums_used_in_bridges, args.min_component_size,
+                                            args.min_dead_end_size, verbosity, unbridged_graph,
+                                            single_copy_segments)
+            if args.keep_temp > 1:
+                file_num += 1
+                graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) +
+                                               '_cleaned.gfa'), verbosity,
+                                  save_seg_type_info=True, save_copy_depth_info=True)
+            graph.merge_all_possible(single_copy_segments, args.mode)
+            if args.keep_temp > 1:
+                file_num += 1
+                graph.save_to_gfa(os.path.join(args.out, str(file_num).zfill(3) + '_merged.gfa'),
+                                  verbosity)
 
     # Prepare for long read alignment.
     alignment_dir = os.path.join(args.out, 'read_alignment_temp')
@@ -305,8 +307,7 @@ def main():
     graph.final_clean(verbosity)
     print_section_header('Bridged assembly graph', verbosity)
     if verbosity > 0:
-        print(graph.get_summary(verbosity))
-        graph.print_component_table()
+        graph.print_component_table(verbosity)
     file_num += 1
     cleaned_graph = os.path.join(args.out, str(file_num).zfill(3) + '_final_clean.gfa')
     graph.save_to_gfa(cleaned_graph, verbosity)
@@ -436,8 +437,8 @@ def get_arguments():
                               help='R|Level of stdout information (0 to 3, default: 1)\n  '
                                    '0 = no stdout, 1 = basic progress indicators, '
                                    '2 = extra info, 3 = debugging info')
-    output_group.add_argument('--keep_temp', type=int, default=1,
-                              help='R|Level of file retention (0 to 2, default: 1)\n  '
+    output_group.add_argument('--keep_temp', type=int, default=0,
+                              help='R|Level of file retention (0 to 2, default: 0)\n  '
                                    '0 = only keep files at main checkpoints, '
                                    '1 = keep some temp files including SAM, '
                                    '2 = keep all temp files')

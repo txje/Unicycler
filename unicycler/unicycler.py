@@ -105,7 +105,8 @@ def main():
                               save_copy_depth_info=True)
 
             # Clean up unnecessary segments after bridging.
-            graph.clean_up_after_bridging_1(single_copy_segments, seg_nums_used_in_bridges, verbosity)
+            graph.clean_up_after_bridging_1(single_copy_segments, seg_nums_used_in_bridges,
+                                            verbosity)
             graph.clean_up_after_bridging_2(seg_nums_used_in_bridges, args.min_component_size,
                                             args.min_dead_end_size, verbosity, unbridged_graph,
                                             single_copy_segments)
@@ -307,7 +308,7 @@ def main():
     graph.final_clean(verbosity)
     print_section_header('Bridged assembly graph', verbosity)
     if verbosity > 0:
-        graph.print_component_table(verbosity)
+        graph.print_component_table()
     file_num += 1
     cleaned_graph = os.path.join(args.out, str(file_num).zfill(3) + '_final_clean.gfa')
     graph.save_to_gfa(cleaned_graph, verbosity)

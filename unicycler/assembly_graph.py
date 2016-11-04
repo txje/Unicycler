@@ -7,6 +7,7 @@ email: rrwick@gmail.com
 
 import math
 from collections import deque, defaultdict
+import textwrap
 from .misc import int_to_str, float_to_str, weighted_average_list, print_section_header, \
     reverse_complement, score_function, add_line_breaks_to_sequence, print_v, print_table, colour
 from .bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge
@@ -323,7 +324,7 @@ class AssemblyGraph(object):
                 label = segment.get_seg_type_label()
             if segment_colour or label:
                 segment_line = segment_line[:-1]  # Remove newline
-                segment_line += '\tLB:z:' + label
+                segment_line += '\tLB:z:' + label.replace('\n', '\\n')
                 segment_line += '\tCL:z:' + segment_colour
                 segment_line += '\n'
 
@@ -994,7 +995,7 @@ class AssemblyGraph(object):
         """
         if segment.number not in self.copy_depths:
             return ''
-        return ', '.join(['%.3f' % x for x in self.copy_depths[segment.number]])
+        return '\n'.join(['%.3f' % x for x in self.copy_depths[segment.number]])
 
     def get_copy_number_colour(self, segment):
         """
@@ -1944,7 +1945,7 @@ class AssemblyGraph(object):
             new_paths[name] = [changes[x] for x in path_nums]
         self.paths = new_paths
 
-    def print_component_table(self, verbosity):
+    def print_component_table(self):
         component_table = [['Component', 'Segments', 'Links', 'Length', 'N50',
                             'Longest segment', 'Status']]
         components = self.get_connected_components()
@@ -2607,7 +2608,8 @@ class Segment(object):
             label = 'Long read bridge'
         if self.graph_path:
             graph_path_str = ', '.join([str(x) for x in self.graph_path])
-            label += ': ' + graph_path_str
+            graph_path_str = '\\n'.join(textwrap.wrap(graph_path_str, 40))
+            label += ':\\n' + graph_path_str
         return label
 
     def trim_from_end(self, amount):

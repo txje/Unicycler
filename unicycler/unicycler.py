@@ -315,8 +315,9 @@ def main():
     completed_replicons = graph.completed_circular_replicons()
     if not args.no_rotate and len(completed_replicons) > 0:
         print_section_header('Rotating completed replicons', verbosity)
+
         rotation_result_table = [['Replicon', 'Length', 'Depth', 'Starting gene', 'Position',
-                                  'Strand']]
+                                  'Strand', 'Identity', 'Coverage']]
         blast_dir = os.path.join(args.out, 'blast_temp')
         if not os.path.exists(blast_dir):
             os.makedirs(blast_dir)
@@ -332,20 +333,22 @@ def main():
             rotation_result_row = [str(i+1), int_to_str(len(sequence)),
                                    float_to_str(depth, 2) + 'x']
             try:
-                gene, pos, flip = find_start_gene(sequence, args.start_genes, args.start_gene_id,
-                                                  args.start_gene_cov,  blast_dir,
-                                                  args.makeblastdb_path, args.tblastn_path,
-                                                  args.threads, verbosity)
+                blast_hit = find_start_gene(sequence, args.start_genes, args.start_gene_id,
+                                            args.start_gene_cov, blast_dir, args.makeblastdb_path,
+                                            args.tblastn_path, args.threads, verbosity)
             except CannotFindStart:
                 rotation_result_row += ['none found', '', '']
             else:
-                rotation_result_row += [gene, int_to_str(pos), 'reverse' if flip else 'forward']
-                segment.rotate_sequence(pos, flip, graph.overlap)
+                rotation_result_row += [blast_hit.qseqid, int_to_str(blast_hit.start_pos),
+                                        'reverse' if blast_hit.flip else 'forward',
+                                        '%.1f' % blast_hit.pident + '%',
+                                        '%.1f' % blast_hit.query_cov + '%']
+                segment.rotate_sequence(blast_hit.start_pos, blast_hit.flip, graph.overlap)
                 rotation_count += 1
             rotation_result_table.append(rotation_result_row)
 
         if verbosity > 0:
-            print_table(rotation_result_table, alignments='LRRLRL', indent=0,
+            print_table(rotation_result_table, alignments='LRRLRLRR', indent=0,
                         sub_colour={'none found': 'red'})
         if rotation_count:
             file_num += 1

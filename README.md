@@ -381,7 +381,7 @@ Using a lot of threads (with the `--threads` option) can make Unicycler run fast
 
 The length of a long read is very important, typically more than its accuracy, because longer reads are more likely to align to multiple single-copy contigs, allowing Unicycler to build bridges.
 
-Consider this example of a sequence with a 2 kb repeat:
+Consider a sequence with a 2 kb repeat:
 <p align="center"><img src="misc/read_length.png" alt="Long read length"></p>
 
 In order to resolve the repeat, a read must span it by aligning to some sequence on either side. In this example, the 1 kb reads are shorter than the repeat and are useless. The 2.5 kb reads _can_ resolve the repeat, but they have to be in _just the right place_ to do so. Only one out of the six in this example is useful. The 5 kb reads, however, have a much easier time spanning the repeat and all three are useful.

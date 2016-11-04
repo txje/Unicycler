@@ -7,7 +7,7 @@ email: rrwick@gmail.com
 
 import os
 import subprocess
-from .misc import float_to_str, load_fasta
+from .misc import load_fasta
 
 
 class CannotFindStart(Exception):
@@ -52,43 +52,54 @@ def find_start_gene(sequence, start_genes_fasta, identity_threshold, coverage_th
 
     # Run the tblastn search.
     command = [tblastn_path, '-db', replicon_fasta_filename, '-query', start_genes_fasta, '-outfmt',
-               '6 qseqid sstart send pident qlen qseq qstart qend', '-num_threads', str(threads)]
+               '6 qseqid sstart send pident qlen qseq qstart bitscore', '-num_threads',
+               str(threads)]
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    while process.poll() is None:
-        line = process.stdout.readline().strip().decode()
-        if line != '':
-            parts = line.split('\t')
-            if len(parts) > 6:
-                qseqid = parts[0]
-                sstart = int(parts[1]) - 1
-                send = int(parts[2])
-                pident = float(parts[3])
-                qlen = float(parts[4])
-                qseq = parts[5]
-                qstart = int(parts[6]) - 1
-                qend = int(parts[7])
-                query_cov = 100.0 * len(qseq) / qlen
+    blast_out, blast_err = process.communicate()
+    process.wait()
+    if blast_err and verbosity > 1:
+        print('\nBLAST encountered an error:\n' + blast_err.decode())
 
-                if pident >= identity_threshold and query_cov >= coverage_threshold and qstart == 0:
-                    process.terminate()
-                    if sstart <= send:
-                        start_pos = sstart
-                        flip = False
-                    else:
-                        start_pos = sstart + 1
-                        flip = True
-                    if start_pos >= seq_len:
-                        start_pos -= seq_len
-                    if verbosity > 2:
-                        hit_str = qseqid + ', ' + float_to_str(query_cov, 2) + '% cov, ' + \
-                            float_to_str(pident, 2) + '% identity, gene start pos = ' + \
-                            str(qstart) + ', gene end pos = ' + str(qend) + \
-                            ', replicon start pos = ' + str(sstart) + ', replicon end pos = ' + \
-                            str(send)
-                        print('  Successful BLAST hit:', hit_str, flush=True)
-                    return qseqid, start_pos, flip
+    # Find the best hit in the results.
+    best_hit, best_bitscore = None, 0
+    for line in blast_out.decode().splitlines():
+        hit = BlastHit(line, seq_len)
+        if hit.pident >= identity_threshold and hit.query_cov >= coverage_threshold and \
+                hit.qstart == 0 and hit.bitscore > best_bitscore:
+            best_hit = hit
+            best_bitscore = hit.bitscore
 
-    blast_error = process.stderr.readline().strip().decode()
-    if blast_error and verbosity > 1:
-        print('\nBLAST encountered an error:\n' + blast_error)
-    raise CannotFindStart
+    if best_bitscore:
+        return best_hit
+    else:
+        raise CannotFindStart
+
+
+class BlastHit(object):
+    def __init__(self, blast_line, seq_len):
+
+        self.qseqid = ''
+        self.pident, self.qstart, self.bitscore, self.query_cov, self.start_pos = 0, 0, 0, 0, 0
+        self.flip = False
+
+        parts = blast_line.strip().split('\t')
+        if len(parts) > 7:
+            self.qseqid = parts[0]
+            self.pident = float(parts[3])
+            self.qstart = int(parts[6]) - 1
+            self.bitscore = float(parts[7])
+
+            sstart = int(parts[1]) - 1
+            send = int(parts[2])
+            qlen = float(parts[4])
+            qseq = parts[5]
+            self.query_cov = 100.0 * len(qseq) / qlen
+
+            if sstart <= send:
+                self.start_pos = sstart
+                self.flip = False
+            else:
+                self.start_pos = sstart + 1
+                self.flip = True
+            if self.start_pos >= seq_len:
+                self.start_pos -= seq_len

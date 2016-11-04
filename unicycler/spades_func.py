@@ -300,13 +300,13 @@ def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity, km
     starting_kmer = round_to_nearest_odd(min_kmer_frac * max_kmer / max_kmer_frac)
     if starting_kmer < 11:
         starting_kmer = 11
-    interval = 2
+
+    # Create the k-mer range from a non-linear function that spaces out the early k-mers more and
+    # makes the later k-mers (which are most likely to be the good, used ones) closer together.
     kmer_range = []
-    while True:
-        kmer_range = list(range(starting_kmer, max_kmer, interval)) + [max_kmer]
-        if len(kmer_range) <= kmer_count:
-            break
-        interval += 2
+    for x in [x / (kmer_count - 1) for x in range(kmer_count)]:
+        kmer_range.append((max_kmer - starting_kmer) * (2 - 2 / (x + 1)) + starting_kmer)
+    kmer_range = sorted(list(set([round_to_nearest_odd(x) for x in kmer_range])))
     kmer_range_str = ', '.join([str(x) for x in kmer_range])
 
     if verbosity > 0:

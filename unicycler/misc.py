@@ -359,21 +359,7 @@ def print_section_header(message, verbosity, last_newline=True):
 
 
 def round_to_nearest_odd(num):
-    """
-    Rounds a float to an odd integer.
-    """
-    round_up = int(math.ceil(num))
-    if round_up % 2 == 0:
-        round_up += 1
-    round_down = int(math.floor(num))
-    if round_down % 2 == 0:
-        round_down -= 1
-    up_diff = round_up - num
-    down_diff = num - round_down
-    if up_diff > down_diff:
-        return round_down
-    else:
-        return round_up
+    return 2 * round((num - 1) / 2) + 1
 
 
 def get_compression_type(filename):

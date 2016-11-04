@@ -480,7 +480,7 @@ def get_arguments():
                               help='Lowest k-mer size for SPAdes assembly, expressed as a '
                                    'fraction of the read length'
                                    if show_all_args else argparse.SUPPRESS)
-    spades_group.add_argument('--max_kmer_frac', type=float, default=0.9,
+    spades_group.add_argument('--max_kmer_frac', type=float, default=0.95,
                               help='Highest k-mer size for SPAdes assembly, expressed as a '
                                    'fraction of the read length'
                                    if show_all_args else argparse.SUPPRESS)

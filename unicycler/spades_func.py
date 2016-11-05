@@ -87,7 +87,7 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
         table_line += [int_to_str(dead_ends), '{:.2e}'.format(score)]
         spades_results_table.append(table_line)
 
-        if score >= best_score:
+        if score > best_score:
             best_kmer = kmer
             best_score = score
             best_graph_filename = graph_file

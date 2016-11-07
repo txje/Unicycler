@@ -18,7 +18,8 @@ import math
 import multiprocessing
 from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter, print_table, \
     get_percentile_sorted, get_pilon_jar_path, colour, bold, bold_green, bold_yellow_underline, \
-    dim, get_all_files_in_current_dir, check_file_exists, remove_formatting, red
+    dim, get_all_files_in_current_dir, check_file_exists, remove_formatting, red, \
+    get_sequence_file_type, convert_fastq_to_fasta
 from . import settings
 
 
@@ -420,6 +421,18 @@ def arrow_small_changes_loop(current, round_num, args, short, all_fastas):
     if args.pb_bax and not args.pb_bam:
         make_reads_bam(args)
 
+    # Convert FASTQ to FASTA, if necessary.
+    if args.pb_fasta and get_sequence_file_type(args.pb_fasta) == 'FASTQ':
+        fasta = os.path.basename(args.pb_fasta)
+        if fasta.endswith('.fastq'):
+            fasta = fasta.replace('.fastq', '.fasta')
+        elif fasta.endswith('.fastq.gz'):
+            fasta = fasta.replace('.fastq.gz', '.fasta')
+        else:
+            fasta += '.fasta'
+        convert_fastq_to_fasta(args.pb_fasta, fasta)
+        args.pb_fasta = fasta
+
     previously_applied_variants = []
     overlap_counter = 0
     while True:
@@ -699,10 +712,12 @@ def align_illumina_reads(fasta, args, make_bam_index=True, local=False, keep_una
 
 
 def align_pacbio_reads(fasta, args):
+    reads = args.pb_bam if args.pb_bam else args.pb_fasta
     command = [args.pbalign, '--nproc', str(args.threads),
                '--minLength', str(args.min_align_length),
                '--algorithmOptions="--minRawSubreadScore 800 --bestn 1"',
-               args.pb_bam, fasta, 'pbalign_alignments.bam']
+               reads, fasta, 'pbalign_alignments.bam']
+
     run_command(command, args)
     files = get_all_files_in_current_dir()
     if 'pbalign_alignments.bam' not in files:
@@ -1269,6 +1284,9 @@ def analyse_insert_sizes(args):
     except subprocess.CalledProcessError as e:
         sys.exit(e.output.decode())
     insert_sizes = sorted(insert_sizes)
+    if not insert_sizes:
+        sys.exit('Error: no insert sizes found! Are you using a current (> 1.0) version of '
+                 'Samtools?')
     min_insert = math.floor(get_percentile_sorted(insert_sizes, 2.5))
     mean_insert = statistics.mean(insert_sizes)
     max_insert = math.ceil(get_percentile_sorted(insert_sizes, 97.5))

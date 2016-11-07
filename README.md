@@ -14,6 +14,7 @@ Unicycler is a hybrid assembly pipeline for bacterial genomes. It uses both [Ill
 * [Quick usage](#quick-usage)
 * [How it works](#how-it-works)
     * [Assembly graphs](#assembly-graphs)
+    * [Limitations of short reads](#limitations-of-short-reads)
     * [Unicycler pipeline in brief](#unicycler-pipeline-in-brief)
     * [1. Read correction](#1-read-correction)
     * [2. SPAdes assembly](#2-spades-assembly)
@@ -132,16 +133,21 @@ __Hybrid assembly:__<br>
 
 ### Assembly graphs
 
-To understand what Unicycler is doing, you need to know about assembly graphs. They come in many different varieties, but essentially an assembly graph is a structure where the contigs don't have to simply end – rather they can lead into other contigs:
+To understand what Unicycler is doing, you need to know about assembly graphs. For a thorough introduction, I'd suggest [this tutorial](http://homolog.us/Tutorials/index.php?p=1.1&s=1) or the [Velvet paper](http://genome.cshlp.org/content/genome/18/5/821.full.html). But in short, an assembly graph is a data structure where contigs aren't disconnected sequences but can have connections to each other:
 ```
-                        CCTTGTTTAT
-                       /          \
-...TCGAAACTTGACGCGAGTCG            GCTACTGCTTGATGATGCGG...
-                       \          /
-                        CTGTCAATTT
+Just contigs:               Assembly graph:
+
+TCGAAACTTGACGCGAGTCGC                             CTTGTTTA
+TGCTACTGCTTGATGATGCGG                            /        \
+TGTCCATT                    TCGAAACTTGACGCGAGTCGC          TGCTACTGCTTGATGATGCGG
+CTTGTTTA                                         \        /
+                                                  TGTCCATT
 ```
 
-If the assembly process was complete, we'd always get one contig per chromosome/plasmid and may not care about assembly graphs. But most assemblies are not complete (especially short read assemblies), and a graph can describe an incomplete assembly much better than contigs alone.
+Most assemblers use graphs internally to produce their assemblies, but users often ignore the graph in favour of the conceptually simpler FASTA file of contigs. When a genome assembly is 100% complete, we have one contig per chromosome/plasmid and there's no real need for the graph. But most assemblies are not complete (especially short read assemblies), and a graph can describe an incomplete assembly much better than contigs alone.
+
+
+### Limitations of short reads
 
 The main reason we can't get a complete assembly from short reads is that DNA usually contains _repeats_ – the same sequence occuring two or more times in the genome. When a repeat is longer than the reads (or for paired-end sequencing, longer than the insert size), it forms a single contig in the assembly graph with multiple connections in and multiple connections out.
 
@@ -153,9 +159,18 @@ As repeats are added, the graph becomes increasingly tangled (and real assembly 
 To complete a bacterial genome assembly (i.e. find the one correct sequence for each chromosome/plasmid), we need to resolve the repeats. This means finding which way into a repeat matches up with which way out. Short reads don't have enough information for this but _long reads_ do.
 
 
+### SPAdes graphs
+
+Assembly graphs come in many different varieties, but we are particularly interested in the kind produced by SPAdes, because that is what Unicycler uses.
+
+SPAdes graphs are made by performing a De Bruijn graph assembly with a range of different k-mer sizes, from small to large (see the [SPAdes paper](http://online.liebertpub.com/doi/abs/10.1089/cmb.2012.0021)). Each assembly builds on the previous one, which allows SPAdes to get the advantages of both small k-mer assemblies (a more connected graph) and large k-mer assemblies (ability to resolve repeats). As a consequence of how SPAdes combines k-mers, two contigs in a SPAdes graph that connect will overlap by their k-mer size (more info on the [Bandage wiki page](https://github.com/rrwick/Bandage/wiki/Assembler-differences)).
+
+After producing the graph, SPAdes can perform further repeat resolution by using paired-end information. Since two reads in a pair are close to each other in the original DNA, SPAdes can use this to trace paths in the graph to form larger contigs (see [their paper on ExSPAnder](http://bioinformatics.oxfordjournals.org/content/30/12/i293.short)). However, the SPAdes contigs with repeat resolution do not come in graph form – they are only available in a FASTA file.
+
+
 ### Unicycler pipeline in brief
 
-Unicycler uses SPAdes to get an assembly graph made from Illumina reads. Since Illumina reads are accurate, this graph has very few mistakes. But since Illumina reads are short, it will also contain unresolved repeats. Unicycler then uses long read alignments to build 'bridges' between non-repeat contigs, resolving the repeats and simplifying the graph.
+Unicycler uses SPAdes to get an assembly graph made from Illumina reads. Since Illumina reads are accurate, this graph has very few mistakes. But since Illumina reads are short, it will also contain unresolved repeats. Unicycler then uses the SPAdes repeat resolution and long read alignments to build 'bridges' between non-repeat contigs, simplifying the graph into fewer, longer contigs.
 
 Essentially, Unicycler is a scaffolder which uses long reads to properly arrange Illumina contigs. But unlike a naive scaffolding tool which operates on assembled _contigs_, Unicycler works on an assembly _graph_. This gives it much more information to complete assemblies and a lower risk of mistakes.
 
@@ -173,7 +188,7 @@ Unicycler uses SPAdes' built-in read correction step before assembling the Illum
 
 Unicycler uses SPAdes to assemble the Illumina reads into an assembly graph. It tries assemblies at a wide range of k-mer sizes, evaluating the graph at each one. It chooses the graph which best minimises both contig count and dead end count. If the Illumina reads are good, it produces an assembly graph with long contigs but few to no dead ends ([more info here](#bad-illumina-reads)). Since a typical bacterial genome has no dead ends (the sequences are circular) an ideal assembly graph won't either.
 
-Unicycler also performs some graph pruning, filtering out contigs which are very low depth. Low-level contamination in the Illumina reads should not be a problem.
+A raw SPAdes graph can also contain some 'junk' sequences due to sequencer artefacts or contamination, so Unicycler performs some graph cleaning to remove these. Therefore, small amounts of contamination in the Illumina reads should not be a problem.
 
 
 ### 3. Multiplicity

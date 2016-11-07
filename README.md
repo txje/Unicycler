@@ -1,6 +1,6 @@
 <p align="center"><img src="misc/logo.png" alt="Unicycler" width="600"></p>
 
-Unicycler is a hybrid assembly pipeline for bacterial genomes. It uses both [Illumina](http://www.illumina.com/) and [PacBio](http://www.pacb.com/)/[Nanopore](https://nanoporetech.com/) reads to produce complete and accurate assemblies.
+Unicycler is a hybrid assembly pipeline for bacterial genomes. It uses both [Illumina](http://www.illumina.com/) reads and long reads ([PacBio](http://www.pacb.com/) or [Nanopore](https://nanoporetech.com/)) to produce complete and accurate assemblies.
 
 
 
@@ -347,7 +347,7 @@ Long read alignment:
 
 # Output files
 
-Depending on the input files and the value used for `--keep_temp`, Unicycler may only only produce some of these. Also, all outputs except for `assembly.gfa` and `assembly.fasta` will be prefixed with a number so they are in chronological order.
+Depending on the input files and the value used for `--keep_temp`, Unicycler may only produce some of these. Also, all outputs except for `assembly.gfa` and `assembly.fasta` will be prefixed with a number so they are in chronological order.
 
 File                           | Description
 ------------------------------ | ---------------------------------------------------------------------------
@@ -362,7 +362,7 @@ final_clean.gfa                | more redundant contigs removed
 rotated.gfa                    | circular replicons rotated and/or flipped to a start position
 polished.gfa                   | after a round of Pilon polishing
 __assembly.gfa__               | __the final assembly in graph format__
-__assembly.fasta__             | __the final assembly in FASTA format__ (exact same contigs as assembly.gfa)
+__assembly.fasta__             | __the final assembly in FASTA format__ (same contigs and names as in assembly.gfa)
 
 
 
@@ -386,7 +386,7 @@ Consider a sequence with a 2 kb repeat:
 
 In order to resolve the repeat, a read must span it by aligning to some sequence on either side. In this example, the 1 kb reads are shorter than the repeat and are useless. The 2.5 kb reads _can_ resolve the repeat, but they have to be in _just the right place_ to do so. Only one out of the six in this example is useful. The 5 kb reads, however, have a much easier time spanning the repeat and all three are useful.
 
-So how long must your reads be for Unicycler to complete an assembly? _Longer than the longest repeat in the genome._ Depending on the genome, that might be a 1 kb insertion sequence, a 6 kb ribosomal complex or a 50 kb prophage. If your reads are just a bit longer than the longest repeat, you'll probably need a lot of them. If they are much longer, then fewer reads should suffice. But in any scenario, _longer is better!_
+So how long must your reads be for Unicycler to complete an assembly? _Longer than the longest repeat in the genome._ Depending on the genome, that might be a 1 kb insertion sequence, a 6 kb rRNA operon or a 50 kb prophage. If your reads are just a bit longer than the longest repeat, you'll probably need a lot of them. If they are much longer, then fewer reads should suffice. But in any scenario, _longer is better!_
 
 
 ### Poretools
@@ -436,7 +436,7 @@ In the above graph, the chromosome is at the top and there are two plasmids.  Th
 
 ### Known contamination
 
-If your long reads have known contamination, you can use the `--contamination` option to supply give Unicycler a FASTA file of the contaminant sequences. Unicycler will then discard any reads for which the best alignment is to the contaminant.
+If your long reads have known contamination, you can use the `--contamination` option to give Unicycler a FASTA file of the contaminant sequences. Unicycler will then discard any reads for which the best alignment is to the contaminant.
 
 For example, if you've sequenced two isolates in succession on the same Nanopore flow cell, there may be residual reads from the first sample in the second run. In this case, you can supply a reference/assembly of the first sample to Unicycler when assembling the second sample.
 

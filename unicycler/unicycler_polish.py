@@ -111,7 +111,7 @@ def get_arguments():
                                      'exceed this percentage (default: 5)')
 
     other_group = parser.add_argument_group('Other settings')
-    other_group.add_argument('--threads', type=int, required=True,
+    other_group.add_argument('--threads', type=int,
                              help='CPU threads to use in alignment and consensus (default: '
                                   'number of CPUs)')
     other_group.add_argument('--verbosity', type=int, required=False, default=2,
@@ -310,9 +310,10 @@ def get_tool_paths(args, short, pacbio, nanopore):
         if not args.nanopolish:
             sys.exit('Error: could not find nanopolish')
 
-    args.freebayes = shutil.which(args.freebayes)
-    if not args.freebayes:
-        sys.exit('Error: could not find freebayes')
+    if pacbio or nanopore:
+        args.freebayes = shutil.which(args.freebayes)
+        if not args.freebayes:
+            sys.exit('Error: could not find freebayes')
 
     args.ale = shutil.which(args.ale)
     if not args.ale:

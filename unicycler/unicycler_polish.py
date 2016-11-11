@@ -165,7 +165,7 @@ def get_arguments():
 
     args = parser.parse_args()
 
-    for f in [args.assembly, args.short1, args.short2, args.pb_bam, args.pb_fasta, args.on_fasta]:
+    for f in [args.assembly, args.short1, args.short2, args.pb_bam, args.pb_fasta, args.long_reads]:
         if f is not None:
             check_file_exists(f)
     if args.pb_bax:
@@ -182,12 +182,12 @@ def get_arguments():
         parser.error('only one of the following PacBio inputs can be used: --pb_bax, --pb_bam, '
                      '--pb_fasta')
 
-    nanopore_input_count = sum(0 if x is None else 1 for x in [args.on_fast5, args.on_fasta])
-    if nanopore_input_count > 1:
-        parser.error('only one of the following Nanopore inputs can be used: --on_fast5, '
-                     '--on_fasta')
+    # nanopore_input_count = sum(0 if x is None else 1 for x in [args.on_fast5, args.on_fasta])
+    # if nanopore_input_count > 1:
+    #     parser.error('only one of the following Nanopore inputs can be used: --on_fast5, '
+    #                  '--on_fasta')
 
-    if not short_read_input_count and not pacbio_input_count and not nanopore_input_count:
+    if not short_read_input_count and not pacbio_input_count and not args.long_reads:
         parser.error('at least one type of input reads is required')
 
     if args.pb_bam and not os.path.isfile(args.pb_bam + '.pbi'):
@@ -364,13 +364,13 @@ def make_pacbio_reads_bam(args):
         sys.exit('Error: bax2bam failed to make ' + args.pb_bam + '.pbi')
 
 
-def make_on_fasta(args):
-    print_round_header('Converting FAST5 reads to FASTA format', args.verbosity)
-    args.on_fasta = 'nanopore_reads.fasta'
-    command = [args.nanopolish, 'extract', args.on_fast5, '-o', args.on_fasta]
-    run_command(command, args)
-    if args.on_fasta not in get_all_files_in_current_dir():
-        sys.exit('Error: nanopolish extract failed to make ' + args.on_fasta)
+# def make_on_fasta(args):
+#     print_round_header('Converting FAST5 reads to FASTA format', args.verbosity)
+#     args.on_fasta = 'nanopore_reads.fasta'
+#     command = [args.nanopolish, 'extract', args.on_fast5, '-o', args.on_fasta]
+#     run_command(command, args)
+#     if args.on_fasta not in get_all_files_in_current_dir():
+#         sys.exit('Error: nanopolish extract failed to make ' + args.on_fasta)
 
 
 def full_pilon_loop(current, round_num, args, all_fastas):
@@ -551,13 +551,15 @@ def long_read_polish_small_changes(fasta, round_num, args, short, all_fastas):
     polished_fasta = '%03d' % round_num + '_3_polish.fasta'
 
     bam = 'long_read_alignments.bam'
-    align_nanopore_reads(fasta, args, bam)
+    align_long_reads(fasta, args, bam)
 
-    raw_variants = get_pilon_variants(fasta, args, 'bases', raw_variants_file, bam)
-    raw_variants = [x for x in raw_variants if not x.large]
+    raw_variants = get_pilon_variants(fasta, args, 'bases', raw_variants_file, bam, clean=False)
 
-    for v in raw_variants:
-        v.assign_freebayes_qual(fasta, bam, args)
+    # Only accept substitution changes as there will be tons of bogus indels.
+    raw_variants = [x for x in raw_variants if x.type == 'substitution']
+
+    for variant in raw_variants:
+        variant.assign_freebayes_qual(fasta, bam, args)
 
     if short:
         align_illumina_reads(fasta, args, local=False)
@@ -604,7 +606,11 @@ def ale_assessed_changes_loop(current, round_num, args, short, pacbio, long_read
 def ale_assessed_changes(fasta, round_num, args, short, pacbio, long_reads, all_fastas,
                          pilon_fix_type):
     round_num += 1
-    print_round_header('Round ' + str(round_num) + ': ALE assessed variants', args.verbosity)
+    if short and not pacbio and not long_reads:
+        round_title = 'Pilon polish, large variants, ALE assessed'
+    else:
+        round_title = 'all variant types, ALE assessed'
+    print_round_header('Round ' + str(round_num) + ': ' + round_title, args.verbosity)
 
     variants = []
     file_num = 0
@@ -756,11 +762,11 @@ def align_pacbio_reads(fasta, args):
         sys.exit('Error: pbalign failed to make pbalign_alignments.bam.bai')
 
 
-def align_nanopore_reads(fasta, args, bam):
+def align_long_reads(fasta, args, bam):
     run_command([args.bwa, 'index', '-p', 'bwa_index', fasta], args)
 
     bwa_command = [args.bwa, 'mem', '-x', 'ont2d', '-t', str(args.threads),
-                   'bwa_index', args.on_fasta]
+                   'bwa_index', args.long_reads]
     samtools_view_command = [args.samtools, 'view', '-hu', '-']
     samtools_sort_command = [args.samtools, 'sort', '-@', str(args.threads), '-o', bam, '-']
     print_command(bwa_command + ['|'] + samtools_view_command + ['|'] + samtools_sort_command,
@@ -793,12 +799,13 @@ def run_pilon(fasta, args, raw_pilon_changes_filename, fix_type, alignments):
     copy_file(pilon_changes, raw_pilon_changes_filename, args.verbosity)
 
 
-def get_pilon_variants(fasta, args, fix_type, raw_pilon_changes, alignments):
+def get_pilon_variants(fasta, args, fix_type, raw_pilon_changes, alignments, clean=True):
     # Pilon needs local alignment to help spot misassembly regions and unaligned reads to use
     # when reassembling.
     align_illumina_reads(fasta, args, local=True, keep_unaligned=True)
     run_pilon(fasta, args, raw_pilon_changes, fix_type, alignments)
-    clean_up(args)
+    if clean:
+        clean_up(args)
     return load_variants_from_pilon_changes(raw_pilon_changes, fasta, args.large)
 
 
@@ -1151,10 +1158,7 @@ class Variant(object):
                 self.homo_size_after = max(self.homo_size_before - len(self.ref_seq), 0)
 
         # Categorise indel variants as small or large. These two categories are assessed
-        # differently regarding whether or not to apply them. All Pilon changes are 'large',
-        # because it is run only asking for 'local' fixes, not 'bases' fixes.
-        if self.source == 'Pilon':
-            self.large = True
+        # differently regarding whether or not to apply them.
         if self.type == 'insertion':
             self.large = len(self.variant_seq) >= large_var_size
         elif self.type == 'deletion':

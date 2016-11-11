@@ -423,7 +423,7 @@ def pilon_small_changes(fasta, round_num, args, all_fastas):
     else:
         apply_variants(fasta, variants, polished_fasta)
         variant_rows = [x.get_output_row(False) for x in variants]
-        print_small_variant_table(variant_rows, False, args.verbosity)
+        print_small_variant_table(variant_rows, False, False, args.verbosity)
         print_result(variants, polished_fasta, args.verbosity)
         all_fastas[polished_fasta] = None
         return polished_fasta, round_num, variants
@@ -558,13 +558,13 @@ def long_read_polish_small_changes(fasta, round_num, args, short, all_fastas):
     # Only accept substitution changes as there will be tons of bogus indels.
     raw_variants = [x for x in raw_variants if x.type == 'substitution']
 
-    for variant in raw_variants:
-        variant.assign_freebayes_qual(fasta, bam, args)
+    p = multiprocessing.Pool(args.threads)
+    p.map(assign_freebayes_qual_pool, [(v, fasta, bam, args) for v in raw_variants])
 
     if short:
         align_illumina_reads(fasta, args, local=False)
-        for variant in raw_variants:
-            variant.assess_against_illumina_alignments(fasta, args)
+        p = multiprocessing.Pool(args.threads)
+        p.map(assess_against_illumina_alignments_pool, [(v, fasta, args) for v in raw_variants])
     clean_up(args)
 
     filtered_variants = filter_small_variants(raw_variants, raw_variants_file,
@@ -577,6 +577,16 @@ def long_read_polish_small_changes(fasta, round_num, args, short, all_fastas):
         current = fasta
     print_result(filtered_variants, polished_fasta, args.verbosity)
     return current, round_num, filtered_variants
+
+
+def assign_freebayes_qual_pool(info):
+    variant, fasta, bam, args = info
+    variant.assign_freebayes_qual(fasta, bam, args)
+
+
+def assess_against_illumina_alignments_pool(info):
+    variant, fasta, args = info
+    variant.assess_against_illumina_alignments(fasta, args)
 
 
 def all_changes_overlap_previous(variants, previous_variants):
@@ -882,7 +892,7 @@ def filter_small_variants(raw_variants, raw_variants_gff, filtered_variants_gff,
     filtered_variants = []
     variant_rows = []
     for variant in raw_variants:
-        variant_row = variant.get_output_row(short_read_assessed)
+        variant_row = variant.get_output_row(freebayes_qual, short_read_assessed)
 
         # Whether or not we have short reads, we reject changes in homopolymers.
         passed = variant.homo_size_before < args.homopolymer
@@ -904,7 +914,7 @@ def filter_small_variants(raw_variants, raw_variants_gff, filtered_variants_gff,
             variant_row.append('FAIL')
         variant_rows.append(variant_row)
 
-    print_small_variant_table(variant_rows, short_read_assessed, args.verbosity)
+    print_small_variant_table(variant_rows, freebayes_qual, short_read_assessed, args.verbosity)
 
     with open(filtered_variants_gff, 'wt') as new_gff:
         with open(raw_variants_gff, 'rt') as old_gff:
@@ -1192,8 +1202,11 @@ class Variant(object):
                            if x and not x.startswith('#')]
         for line in freebayes_lines:
             line_parts = line.split('\t')
-            freebayes_qual = float(line_parts[5])
-            self.freebayes_qual = max(self.freebayes_qual, freebayes_qual)
+            try:
+                freebayes_qual = float(line_parts[5])
+                self.freebayes_qual = max(self.freebayes_qual, freebayes_qual)
+            except IndexError:
+                pass
 
     def assess_against_illumina_alignments(self, reference_fasta, args):
         """
@@ -1246,7 +1259,7 @@ class Variant(object):
             elif args.verbosity > 2:
                 print(dim(line))
 
-    def get_output_row(self, short_read_assessed):
+    def get_output_row(self, freebayes_qual, short_read_assessed):
         if self.homo_size_before > 1:
             variant_type = 'homo ' + str(self.homo_size_before) + ' \u2192 ' + str(
                 self.homo_size_after)
@@ -1258,15 +1271,15 @@ class Variant(object):
         ref_seq = self.ref_seq if self.ref_seq else '.'
         variant_seq = self.variant_seq if self.variant_seq else '.'
 
-        if not short_read_assessed:
-            return [self.ref_name, str(self.start_pos + 1), ref_seq, variant_seq, variant_type]
-        else:
+        row = [self.ref_name, str(self.start_pos + 1), ref_seq, variant_seq, variant_type]
+        if freebayes_qual:
+            row.append('%.1f' % self.freebayes_qual)
+        if short_read_assessed:
             # noinspection PyStringFormat
             alt_percent = 'n/a' if self.illumina_alt_percent is None \
                 else '%.1f' % self.illumina_alt_percent
-
-            return [self.ref_name, str(self.start_pos + 1), ref_seq, variant_seq, variant_type,
-                    str(self.ao), str(self.ro), alt_percent]
+            row += [str(self.ao), str(self.ro), alt_percent]
+        return row
 
     def get_original_line(self):
         if self.original_gff_line:
@@ -1283,17 +1296,23 @@ class Variant(object):
         return bool(set(range_1) & set(range_2))
 
 
-def print_small_variant_table(rows, short_read_assessed, verbosity):
+def print_small_variant_table(rows, freebayes_qual, short_read_assessed, verbosity):
     if verbosity < 2:
         return
     print()
+    header = ['Contig', 'Position', 'Ref', 'Alt', 'Type']
+    alignments = 'LRLLL'
+    sub_colour = None
+
+    if freebayes_qual:
+        header += ['Qual']
+        alignments += 'R'
     if short_read_assessed:
-        header = ['Contig', 'Position', 'Ref', 'Alt', 'Type', 'AO', 'RO', 'AO%', 'Result']
-        print_table([header] + rows, alignments='LRLLLRRRR',
-                    sub_colour={'PASS': 'green', 'FAIL': 'red'})
-    else:
-        header = ['Contig', 'Position', 'Ref', 'Alt', 'Type']
-        print_table([header] + rows, alignments='LRLLL')
+        header += ['AO', 'RO', 'AO%', 'Result']
+        alignments += 'RRRR'
+        sub_colour = {'PASS': 'green', 'FAIL': 'red'}
+
+    print_table([header] + rows, alignments=alignments, sub_colour=sub_colour)
 
 
 def print_simple_large_variant_table(variants):

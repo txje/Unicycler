@@ -44,8 +44,8 @@ def main():
     if short:
         current, round_num = full_pilon_loop(current, round_num, args, all_fastas)
 
-    if long_reads:
-        current, round_num = long_read_polish_small_changes_loop(current, round_num, args, short,
+    if long_reads and short:
+        current, round_num = long_read_polish_small_changes_loop(current, round_num, args,
                                                                  all_fastas)
     if pacbio:
         current, round_num = arrow_small_changes_loop(current, round_num, args, short, all_fastas)
@@ -422,7 +422,7 @@ def pilon_small_changes(fasta, round_num, args, all_fastas):
         return fasta, round_num, 0
     else:
         apply_variants(fasta, variants, polished_fasta)
-        variant_rows = [x.get_output_row(False) for x in variants]
+        variant_rows = [x.get_output_row(False, False) for x in variants]
         print_small_variant_table(variant_rows, False, False, args.verbosity)
         print_result(variants, polished_fasta, args.verbosity)
         all_fastas[polished_fasta] = None
@@ -498,8 +498,8 @@ def arrow_small_changes(fasta, round_num, args, short, all_fastas):
             variant.assess_against_illumina_alignments(fasta, args)
     clean_up(args)
 
-    filtered_variants = filter_small_variants(small_variants, raw_variants_file,
-                                              filtered_variants_file, args, short, False)
+    filtered_variants = filter_arrow_small_variants(small_variants, raw_variants_file,
+                                                    filtered_variants_file, args, short)
     if filtered_variants:
         apply_variants(fasta, filtered_variants, polished_fasta)
         all_fastas[polished_fasta] = None
@@ -510,7 +510,7 @@ def arrow_small_changes(fasta, round_num, args, short, all_fastas):
     return current, round_num, filtered_variants
 
 
-def long_read_polish_small_changes_loop(current, round_num, args, short, all_fastas):
+def long_read_polish_small_changes_loop(current, round_num, args, all_fastas):
     """
     Repeatedly apply small variants using Pilon with long read alignments.
     """
@@ -522,7 +522,7 @@ def long_read_polish_small_changes_loop(current, round_num, args, short, all_fas
     overlap_counter = 0
     while True:
         current, round_num, variants = long_read_polish_small_changes(current, round_num, args,
-                                                                      short, all_fastas)
+                                                                      all_fastas)
         # If no more changes are suggested, then we're done!
         if not variants:
             break
@@ -535,13 +535,13 @@ def long_read_polish_small_changes_loop(current, round_num, args, short, all_fas
         previously_applied_variants += variants
 
     # If changes were made and short reads are available, then another we do another Pilon round.
-    if previously_applied_variants and short:
+    if previously_applied_variants:
         current, round_num = full_pilon_loop(current, round_num, args, all_fastas)
 
     return current, round_num
 
 
-def long_read_polish_small_changes(fasta, round_num, args, short, all_fastas):
+def long_read_polish_small_changes(fasta, round_num, args, all_fastas):
     round_num += 1
     print_round_header('Round ' + str(round_num) + ': Long read polish, small variants',
                        args.verbosity)
@@ -559,16 +559,18 @@ def long_read_polish_small_changes(fasta, round_num, args, short, all_fastas):
     raw_variants = [x for x in raw_variants if x.type == 'substitution']
 
     p = multiprocessing.Pool(args.threads)
-    p.map(assign_freebayes_qual_pool, [(v, fasta, bam, args) for v in raw_variants])
+    raw_variants = p.map(assign_freebayes_qual_pool, [(v, fasta, bam, args) for v in raw_variants])
+    # print([x.freebayes_qual for x in raw_variants], flush=True)  # TEMP
 
-    if short:
-        align_illumina_reads(fasta, args, local=False)
-        p = multiprocessing.Pool(args.threads)
-        p.map(assess_against_illumina_alignments_pool, [(v, fasta, args) for v in raw_variants])
+    align_illumina_reads(fasta, args, local=False)
+    p = multiprocessing.Pool(args.threads)
+    raw_variants = p.map(assess_against_illumina_alignments_pool, [(v, fasta, args)
+                                                                   for v in raw_variants])
+    # print([x.illumina_alt_percent for x in raw_variants], flush=True)  # TEMP
     clean_up(args)
 
-    filtered_variants = filter_small_variants(raw_variants, raw_variants_file,
-                                              filtered_variants_file, args, short, True)
+    filtered_variants = filter_long_read_pilon_variants(raw_variants, raw_variants_file,
+                                                        filtered_variants_file, args)
     if filtered_variants:
         apply_variants(fasta, filtered_variants, polished_fasta)
         all_fastas[polished_fasta] = None
@@ -581,12 +583,24 @@ def long_read_polish_small_changes(fasta, round_num, args, short, all_fastas):
 
 def assign_freebayes_qual_pool(info):
     variant, fasta, bam, args = info
-    variant.assign_freebayes_qual(fasta, bam, args)
+    for i in range(4):  # Make a few attempts in case the process crashes
+        try:
+            variant.assign_freebayes_qual(fasta, bam, args)
+            break
+        except subprocess.CalledProcessError:
+            pass
+    return variant
 
 
 def assess_against_illumina_alignments_pool(info):
     variant, fasta, args = info
-    variant.assess_against_illumina_alignments(fasta, args)
+    for i in range(4):  # Make a few attempts in case the process crashes
+        try:
+            variant.assess_against_illumina_alignments(fasta, args)
+            break
+        except subprocess.CalledProcessError:
+            pass
+    return variant
 
 
 def all_changes_overlap_previous(variants, previous_variants):
@@ -887,12 +901,12 @@ def run_arrow(fasta, args, raw_variants_filename):
 #     clean_up(args)
 
 
-def filter_small_variants(raw_variants, raw_variants_gff, filtered_variants_gff, args,
-                          short_read_assessed, freebayes_qual):
+def filter_arrow_small_variants(raw_variants, raw_variants_gff, filtered_variants_gff, args,
+                                short_read_assessed):
     filtered_variants = []
     variant_rows = []
     for variant in raw_variants:
-        variant_row = variant.get_output_row(freebayes_qual, short_read_assessed)
+        variant_row = variant.get_output_row(False, short_read_assessed)
 
         # Whether or not we have short reads, we reject changes in homopolymers.
         passed = variant.homo_size_before < args.homopolymer
@@ -903,10 +917,6 @@ def filter_small_variants(raw_variants, raw_variants_gff, filtered_variants_gff,
             passed = (variant.illumina_alt_percent and                    # must have an alt%
                       variant.illumina_alt_percent >= args.illumina_alt)  # must have a big alt%
 
-        # If we are using a freebayes quality cutoff, then we filter with that too.
-        if passed and freebayes_qual:
-            passed = (variant.freebayes_qual >= args.freebayes_qual_cutoff)
-
         if passed:
             filtered_variants.append(variant)
             variant_row.append('PASS')
@@ -914,7 +924,7 @@ def filter_small_variants(raw_variants, raw_variants_gff, filtered_variants_gff,
             variant_row.append('FAIL')
         variant_rows.append(variant_row)
 
-    print_small_variant_table(variant_rows, freebayes_qual, short_read_assessed, args.verbosity)
+    print_small_variant_table(variant_rows, False, short_read_assessed, args.verbosity)
 
     with open(filtered_variants_gff, 'wt') as new_gff:
         with open(raw_variants_gff, 'rt') as old_gff:
@@ -922,7 +932,74 @@ def filter_small_variants(raw_variants, raw_variants_gff, filtered_variants_gff,
                 if line.startswith('##'):
                     new_gff.write(line)
         for variant in filtered_variants:
-            new_gff.write(variant.original_gff_line + '\n')
+            if variant.original_gff_line:
+                new_gff.write(variant.original_gff_line + '\n')
+            elif variant.original_changes_line:
+                new_gff.write(variant.original_changes_line + '\n')
+    return filtered_variants
+
+
+def filter_long_read_pilon_variants(raw_variants, raw_variants_filename,
+                                    filtered_variants_filename, args):
+
+    high_percent_qual_product_threshold = 5000.0
+    low_percent_qual_product_threshold = 500.0
+    max_number_of_variants = 20
+
+    percent_qual_products = []
+    for variant in raw_variants:
+        if variant.illumina_alt_percent == 0.0 or variant.freebayes_qual == 0.0 or \
+                        variant.illumina_alt_percent == float('-inf') or \
+                        variant.freebayes_qual == float('-inf'):
+            percent_qual_product = 0.0
+        else:
+            try:
+                percent_qual_product = variant.illumina_alt_percent * variant.freebayes_qual
+            except TypeError:
+                percent_qual_product = 0.0
+        variant.percent_qual_product = percent_qual_product
+        percent_qual_products.append(percent_qual_product)
+
+    percent_qual_product_threshold = high_percent_qual_product_threshold
+    number_above_threshold = 0
+    for percent_qual_product in sorted(percent_qual_products, reverse=True):
+        print(percent_qual_product)
+        if percent_qual_product < low_percent_qual_product_threshold:
+            print('too low')
+            break
+        if percent_qual_product < percent_qual_product_threshold:
+            if number_above_threshold >= max_number_of_variants:
+                print('too many')
+                break
+            else:
+                percent_qual_product_threshold = percent_qual_product
+        number_above_threshold += 1
+
+    # print('percent_qual_products:', percent_qual_products, flush=True)  # TEMP
+    print('percent_qual_product_threshold:', percent_qual_product_threshold, flush=True)  # TEMP
+    print('number_above_threshold:', number_above_threshold, flush=True)  # TEMP
+
+    filtered_variants = []
+    variant_rows = []
+    for variant in raw_variants:
+        variant_row = variant.get_output_row(True, True)
+        if variant.percent_qual_product >= percent_qual_product_threshold:
+            filtered_variants.append(variant)
+            variant_row.append('PASS')
+        else:
+            variant_row.append('FAIL')
+        variant_rows.append(variant_row)
+
+    print_small_variant_table(variant_rows, True, True, args.verbosity)
+
+    with open(filtered_variants_filename, 'wt') as new_variants:
+        with open(raw_variants_filename, 'rt') as old_variants:
+            for line in old_variants:
+                if line.startswith('##'):
+                    new_variants.write(line)
+        for variant in filtered_variants:
+            if variant.original_changes_line:
+                new_variants.write(variant.original_changes_line + '\n')
     return filtered_variants
 
 
@@ -1197,16 +1274,20 @@ class Variant(object):
                              '--pooled-continuous',
                              '--haplotype-length', '0',
                              alignments_bam]
+        # print('\n\n', flush=True)  #TEMP
+        # print(' '.join(freebayes_command), flush=True)  #TEMP
         freebayes_out = subprocess.check_output(freebayes_command, stderr=subprocess.STDOUT)
         freebayes_lines = [x for x in freebayes_out.decode().split('\n')
                            if x and not x.startswith('#')]
         for line in freebayes_lines:
+            # print(line, flush=True)  #TEMP
             line_parts = line.split('\t')
             try:
                 freebayes_qual = float(line_parts[5])
                 self.freebayes_qual = max(self.freebayes_qual, freebayes_qual)
             except IndexError:
                 pass
+        # print('\n\n', flush=True)  #TEMP
 
     def assess_against_illumina_alignments(self, reference_fasta, args):
         """

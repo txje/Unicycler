@@ -35,25 +35,26 @@ def main():
     copy_file(args.assembly, starting_sequence_filename, args.verbosity)
     current = starting_sequence_filename
 
-    all_fastas = collections.OrderedDict()
-    all_fastas[starting_sequence_filename] = None
+    all_ale_scores = collections.OrderedDict()
+    all_ale_scores[starting_sequence_filename] = None
 
     if short and (args.min_insert is None or args.max_insert is None):
         get_insert_size_range(args, current)
 
     if short:
-        current, round_num = full_pilon_loop(current, round_num, args, all_fastas)
+        current, round_num = full_pilon_loop(current, round_num, args, all_ale_scores)
 
     if long_reads and short:
         current, round_num = long_read_polish_small_changes_loop(current, round_num, args,
-                                                                 all_fastas)
+                                                                 all_ale_scores)
     if pacbio:
-        current, round_num = arrow_small_changes_loop(current, round_num, args, short, all_fastas)
+        current, round_num = arrow_small_changes_loop(current, round_num, args, short,
+                                                      all_ale_scores)
 
     if short:
         current, round_num = ale_assessed_changes_loop(current, round_num, args, short, pacbio,
-                                                       long_reads, all_fastas)
-    finish(current, all_fastas, round_num, args, short)
+                                                       long_reads, all_ale_scores)
+    finish(current, all_ale_scores, round_num, args, short)
 
 
 def get_arguments():
@@ -373,26 +374,26 @@ def make_pacbio_reads_bam(args):
 #         sys.exit('Error: nanopolish extract failed to make ' + args.on_fasta)
 
 
-def full_pilon_loop(current, round_num, args, all_fastas):
+def full_pilon_loop(current, round_num, args, all_ale_scores):
     """
     Repeatedly apply both small and large variants using Pilon.
     """
     while True:
-        current, round_num = pilon_small_changes_loop(current, round_num, args, all_fastas)
-        current, round_num, variants = pilon_large_changes(current, round_num, args, all_fastas)
+        current, round_num = pilon_small_changes_loop(current, round_num, args, all_ale_scores)
+        current, round_num, variants = pilon_large_changes(current, round_num, args, all_ale_scores)
         if not variants:
             break
     return current, round_num
 
 
-def pilon_small_changes_loop(current, round_num, args, all_fastas):
+def pilon_small_changes_loop(current, round_num, args, all_ale_scores):
     """
     Repeatedly apply small variants using Pilon.
     """
     previously_applied_variants = []
     overlap_counter = 0
     while True:
-        current, round_num, variants = pilon_small_changes(current, round_num, args, all_fastas)
+        current, round_num, variants = pilon_small_changes(current, round_num, args, all_ale_scores)
 
         # If no more changes are suggested, then we're done!
         if not variants:
@@ -408,7 +409,7 @@ def pilon_small_changes_loop(current, round_num, args, all_fastas):
     return current, round_num
 
 
-def pilon_small_changes(fasta, round_num, args, all_fastas):
+def pilon_small_changes(fasta, round_num, args, all_ale_scores):
     round_num += 1
     print_round_header('Round ' + str(round_num) + ': Pilon polish, small variants', args.verbosity)
 
@@ -425,17 +426,17 @@ def pilon_small_changes(fasta, round_num, args, all_fastas):
         variant_rows = [x.get_output_row(False, False) for x in variants]
         print_small_variant_table(variant_rows, False, False, args.verbosity)
         print_result(variants, polished_fasta, args.verbosity)
-        all_fastas[polished_fasta] = None
+        all_ale_scores[polished_fasta] = None
         return polished_fasta, round_num, variants
 
 
-def pilon_large_changes(fasta, round_num, args, all_fastas):
+def pilon_large_changes(fasta, round_num, args, all_ale_scores):
     current, round_num, applied_variant = ale_assessed_changes(fasta, round_num, args, True, False,
-                                                               False, all_fastas, 'local')
+                                                               False, all_ale_scores, 'local')
     return current, round_num, applied_variant
 
 
-def arrow_small_changes_loop(current, round_num, args, short, all_fastas):
+def arrow_small_changes_loop(current, round_num, args, short, all_ale_scores):
     """
     Repeatedly apply small variants using Arrow.
     """
@@ -459,7 +460,7 @@ def arrow_small_changes_loop(current, round_num, args, short, all_fastas):
     overlap_counter = 0
     while True:
         current, round_num, variants = arrow_small_changes(current, round_num, args, short,
-                                                           all_fastas)
+                                                           all_ale_scores)
         # If no more changes are suggested, then we're done!
         if not variants:
             break
@@ -473,12 +474,12 @@ def arrow_small_changes_loop(current, round_num, args, short, all_fastas):
 
     # If changes were made and short reads are available, then another we do another Pilon round.
     if previously_applied_variants and short:
-        current, round_num = full_pilon_loop(current, round_num, args, all_fastas)
+        current, round_num = full_pilon_loop(current, round_num, args, all_ale_scores)
 
     return current, round_num
 
 
-def arrow_small_changes(fasta, round_num, args, short, all_fastas):
+def arrow_small_changes(fasta, round_num, args, short, all_ale_scores):
     round_num += 1
     print_round_header('Round ' + str(round_num) + ': PacBio polish, small variants',
                        args.verbosity)
@@ -502,7 +503,7 @@ def arrow_small_changes(fasta, round_num, args, short, all_fastas):
                                                     filtered_variants_file, args, short)
     if filtered_variants:
         apply_variants(fasta, filtered_variants, polished_fasta)
-        all_fastas[polished_fasta] = None
+        all_ale_scores[polished_fasta] = None
         current = polished_fasta
     else:
         current = fasta
@@ -510,7 +511,7 @@ def arrow_small_changes(fasta, round_num, args, short, all_fastas):
     return current, round_num, filtered_variants
 
 
-def long_read_polish_small_changes_loop(current, round_num, args, all_fastas):
+def long_read_polish_small_changes_loop(current, round_num, args, all_ale_scores):
     """
     Repeatedly apply small variants using Pilon with long read alignments.
     """
@@ -518,30 +519,39 @@ def long_read_polish_small_changes_loop(current, round_num, args, all_fastas):
     # if args.on_fast5 and not args.on_fasta:
     #     make_on_fasta(args)
 
-    previously_applied_variants = []
-    overlap_counter = 0
+    best_ale_score = get_ale_score(current, all_ale_scores, args)
     while True:
         current, round_num, variants = long_read_polish_small_changes(current, round_num, args,
-                                                                      all_fastas)
+                                                                      all_ale_scores)
         # If no more changes are suggested, then we're done!
         if not variants:
             break
 
-        # Prevent an infinite loop potentially caused by bases that keep changing back and forth.
-        if all_changes_overlap_previous(variants, previously_applied_variants):
-            overlap_counter += 1
-            if overlap_counter > 2:
-                break
-        previously_applied_variants += variants
+        # If changes were made, then another we do another short read Pilon round.
+        current, round_num = full_pilon_loop(current, round_num, args, all_ale_scores)
 
-    # If changes were made and short reads are available, then another we do another Pilon round.
-    if previously_applied_variants:
-        current, round_num = full_pilon_loop(current, round_num, args, all_fastas)
+        # If this full round (both long and short read Pilon polishing together) made an ALE
+        # improvement, then we repeat. Otherwise, we're done.
+        ale_score_after_pilon = get_ale_score(current, all_ale_scores, args)
+        if ale_score_after_pilon > best_ale_score:
+            best_ale_score = ale_score_after_pilon
+        else:
+            break
 
     return current, round_num
 
 
-def long_read_polish_small_changes(fasta, round_num, args, all_fastas):
+def get_ale_score(fasta, all_ale_scores, args):
+    """
+    This function runs ALE (only if necessary) and returns the score, also storing the score in
+    the dictionary.
+    """
+    if all_ale_scores[fasta] is None:
+        all_ale_scores[fasta] = run_ale(fasta, args, 'ALE_output')
+    return all_ale_scores[fasta]
+
+
+def long_read_polish_small_changes(fasta, round_num, args, all_ale_scores):
     round_num += 1
     print_round_header('Round ' + str(round_num) + ': Long read polish, small variants',
                        args.verbosity)
@@ -560,20 +570,18 @@ def long_read_polish_small_changes(fasta, round_num, args, all_fastas):
 
     p = multiprocessing.Pool(args.threads)
     raw_variants = p.map(assign_freebayes_qual_pool, [(v, fasta, bam, args) for v in raw_variants])
-    # print([x.freebayes_qual for x in raw_variants], flush=True)  # TEMP
 
     align_illumina_reads(fasta, args, local=False)
     p = multiprocessing.Pool(args.threads)
     raw_variants = p.map(assess_against_illumina_alignments_pool, [(v, fasta, args)
                                                                    for v in raw_variants])
-    # print([x.illumina_alt_percent for x in raw_variants], flush=True)  # TEMP
     clean_up(args)
 
     filtered_variants = filter_long_read_pilon_variants(raw_variants, raw_variants_file,
                                                         filtered_variants_file, args)
     if filtered_variants:
         apply_variants(fasta, filtered_variants, polished_fasta)
-        all_fastas[polished_fasta] = None
+        all_ale_scores[polished_fasta] = None
         current = polished_fasta
     else:
         current = fasta
@@ -613,7 +621,7 @@ def all_changes_overlap_previous(variants, previous_variants):
     return True
 
 
-def ale_assessed_changes_loop(current, round_num, args, short, pacbio, long_reads, all_fastas):
+def ale_assessed_changes_loop(current, round_num, args, short, pacbio, long_reads, all_ale_scores):
     """
     All changes are gathered from all available sources (Pilon, Arrow and Nanopolish) and each
     is evaluated using ALE. If the best one beats the ALE score of the input assembly then we
@@ -621,13 +629,14 @@ def ale_assessed_changes_loop(current, round_num, args, short, pacbio, long_read
     """
     while True:
         current, round_num, variants = ale_assessed_changes(current, round_num, args, short, pacbio,
-                                                            long_reads, all_fastas, 'bases,local')
+                                                            long_reads, all_ale_scores,
+                                                            'bases,local')
         if not variants:
             break
     return current, round_num
 
 
-def ale_assessed_changes(fasta, round_num, args, short, pacbio, long_reads, all_fastas,
+def ale_assessed_changes(fasta, round_num, args, short, pacbio, long_reads, all_ale_scores,
                          pilon_fix_type):
     round_num += 1
     if short and not pacbio and not long_reads:
@@ -682,7 +691,7 @@ def ale_assessed_changes(fasta, round_num, args, short, pacbio, long_reads, all_
 
     if best_modification:
         rename_file(best_modification, polished_fasta, args.verbosity)
-        all_fastas[polished_fasta] = best_ale_score
+        all_ale_scores[polished_fasta] = best_ale_score
         current = polished_fasta
     else:
         current = fasta
@@ -700,6 +709,8 @@ def run_ale(fasta, args, all_ale_outputs):
     completed bacterial genomes, where each contig is different replicon (chromosome or plasmid)
     with potentially different depth.
     """
+    if not os.path.isfile(all_ale_outputs):
+        open(all_ale_outputs, 'a').close()
     ale_output = 'ale.out'
     ale_score = float('-inf')
     previous_output_exists = os.path.getsize(all_ale_outputs) > 0
@@ -790,6 +801,7 @@ def align_long_reads(fasta, args, bam):
     run_command([args.bwa, 'index', '-p', 'bwa_index', fasta], args)
 
     bwa_command = [args.bwa, 'mem', '-x', 'ont2d', '-t', str(args.threads),
+                   '-L', '100',  # big clipping penalty to encourage semi-global alignment
                    'bwa_index', args.long_reads]
     samtools_view_command = [args.samtools, 'view', '-hu', '-']
     samtools_sort_command = [args.samtools, 'sort', '-@', str(args.threads), '-o', bam, '-']
@@ -942,9 +954,10 @@ def filter_arrow_small_variants(raw_variants, raw_variants_gff, filtered_variant
 def filter_long_read_pilon_variants(raw_variants, raw_variants_filename,
                                     filtered_variants_filename, args):
 
-    high_percent_qual_product_threshold = 5000.0
-    low_percent_qual_product_threshold = 500.0
-    max_number_of_variants = 20
+    high_percent_qual_product_threshold = 5000.0     # Above this will always be applied
+    low_percent_qual_product_threshold = 1000.0      # Above this will be applied, up to the max num
+    very_low_percent_qual_product_threshold = 500.0  # Below this won't even be printed
+    max_number_of_variants = 50
 
     percent_qual_products = []
     for variant in raw_variants:
@@ -963,25 +976,20 @@ def filter_long_read_pilon_variants(raw_variants, raw_variants_filename,
     percent_qual_product_threshold = high_percent_qual_product_threshold
     number_above_threshold = 0
     for percent_qual_product in sorted(percent_qual_products, reverse=True):
-        print(percent_qual_product)
         if percent_qual_product < low_percent_qual_product_threshold:
-            print('too low')
             break
         if percent_qual_product < percent_qual_product_threshold:
             if number_above_threshold >= max_number_of_variants:
-                print('too many')
                 break
             else:
                 percent_qual_product_threshold = percent_qual_product
         number_above_threshold += 1
 
-    # print('percent_qual_products:', percent_qual_products, flush=True)  # TEMP
-    print('percent_qual_product_threshold:', percent_qual_product_threshold, flush=True)  # TEMP
-    print('number_above_threshold:', number_above_threshold, flush=True)  # TEMP
-
     filtered_variants = []
     variant_rows = []
     for variant in raw_variants:
+        if variant.percent_qual_product < very_low_percent_qual_product_threshold:
+            continue
         variant_row = variant.get_output_row(True, True)
         if variant.percent_qual_product >= percent_qual_product_threshold:
             filtered_variants.append(variant)
@@ -1063,11 +1071,11 @@ def print_result(variants, fasta, verbosity):
             print('No variants applied', flush=True)
 
 
-def finish(current, all_fastas, round_num, args, short):
+def finish(current, all_ale_scores, round_num, args, short):
     round_num += 1
     final_fasta = '%03d' % round_num + '_final_polish.fasta'
 
-    if not short or len(all_fastas) == 1:
+    if not short or len(all_ale_scores) == 1:
         copy_file(current, final_fasta, args.verbosity)
 
     # If variants have been applied and we have short reads, then each stage of the polishing is
@@ -1084,11 +1092,11 @@ def finish(current, all_fastas, round_num, args, short):
         best_ale_score = 0.0
         starting_ale_score = 0.0
         table_row = 0
-        for fasta, ale_score in all_fastas.items():
+        for fasta, ale_score in all_ale_scores.items():
             table_row += 1
             first_test = best_assembly == ''
             if ale_score is None:
-                ale_score = run_ale(fasta, args, ale_outputs)
+                ale_score = run_ale(fasta, args, 'ALE_output')
             if first_test:
                 starting_ale_score = ale_score
             if first_test or ale_score > best_ale_score:
@@ -1274,20 +1282,16 @@ class Variant(object):
                              '--pooled-continuous',
                              '--haplotype-length', '0',
                              alignments_bam]
-        # print('\n\n', flush=True)  #TEMP
-        # print(' '.join(freebayes_command), flush=True)  #TEMP
         freebayes_out = subprocess.check_output(freebayes_command, stderr=subprocess.STDOUT)
         freebayes_lines = [x for x in freebayes_out.decode().split('\n')
                            if x and not x.startswith('#')]
         for line in freebayes_lines:
-            # print(line, flush=True)  #TEMP
             line_parts = line.split('\t')
             try:
                 freebayes_qual = float(line_parts[5])
                 self.freebayes_qual = max(self.freebayes_qual, freebayes_qual)
             except IndexError:
                 pass
-        # print('\n\n', flush=True)  #TEMP
 
     def assess_against_illumina_alignments(self, reference_fasta, args):
         """

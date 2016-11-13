@@ -953,13 +953,9 @@ def filter_arrow_small_variants(raw_variants, raw_variants_gff, filtered_variant
 
 def filter_long_read_pilon_variants(raw_variants, raw_variants_filename,
                                     filtered_variants_filename, args):
-
-    high_percent_qual_product_threshold = 5000.0     # Above this will always be applied
-    low_percent_qual_product_threshold = 1000.0      # Above this will be applied, up to the max num
+    low_percent_qual_product_threshold = 1000.0
     very_low_percent_qual_product_threshold = 500.0  # Below this won't even be printed
-    max_number_of_variants = 50
 
-    percent_qual_products = []
     for variant in raw_variants:
         if variant.illumina_alt_percent == 0.0 or variant.freebayes_qual == 0.0 or \
                         variant.illumina_alt_percent == float('-inf') or \
@@ -971,19 +967,6 @@ def filter_long_read_pilon_variants(raw_variants, raw_variants_filename,
             except TypeError:
                 percent_qual_product = 0.0
         variant.percent_qual_product = percent_qual_product
-        percent_qual_products.append(percent_qual_product)
-
-    percent_qual_product_threshold = high_percent_qual_product_threshold
-    number_above_threshold = 0
-    for percent_qual_product in sorted(percent_qual_products, reverse=True):
-        if percent_qual_product < low_percent_qual_product_threshold:
-            break
-        if percent_qual_product < percent_qual_product_threshold:
-            if number_above_threshold >= max_number_of_variants:
-                break
-            else:
-                percent_qual_product_threshold = percent_qual_product
-        number_above_threshold += 1
 
     filtered_variants = []
     variant_rows = []
@@ -991,7 +974,7 @@ def filter_long_read_pilon_variants(raw_variants, raw_variants_filename,
         if variant.percent_qual_product < very_low_percent_qual_product_threshold:
             continue
         variant_row = variant.get_output_row(True, True)
-        if variant.percent_qual_product >= percent_qual_product_threshold:
+        if variant.percent_qual_product >= low_percent_qual_product_threshold:
             filtered_variants.append(variant)
             variant_row.append('PASS')
         else:

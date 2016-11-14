@@ -798,29 +798,55 @@ def align_pacbio_reads(fasta, args):
 
 
 def align_long_reads(fasta, args, bam):
-    run_command([args.bwa, 'index', '-p', 'bwa_index', fasta], args)
 
-    bwa_command = [args.bwa, 'mem', '-x', 'ont2d', '-t', str(args.threads),
-                   '-L', '100',  # big clipping penalty to encourage semi-global alignment
-                   'bwa_index', args.long_reads]
-    samtools_view_command = [args.samtools, 'view', '-hu', '-']
+    run_command(['unicycler_align', '--ref', fasta, '--reads', args.long_reads,
+                 '--threads', str(args.threads), '--sam', 'long_read_alignments.sam',
+                 '--no_graphmap'], args)
+
+    samtools_view_command = [args.samtools, 'view', '-hu', 'long_read_alignments.sam']
     samtools_sort_command = [args.samtools, 'sort', '-@', str(args.threads), '-o', bam, '-']
-    print_command(bwa_command + ['|'] + samtools_view_command + ['|'] + samtools_sort_command,
-                  args.verbosity)
+    print_command(samtools_view_command + ['|'] + samtools_sort_command, args.verbosity)
 
-    bwa = subprocess.Popen(bwa_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    samtools_view = subprocess.Popen(samtools_view_command, stdin=bwa.stdout,
-                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    bwa.stdout.close()
+    samtools_view = subprocess.Popen(samtools_view_command, stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE)
     samtools_sort = subprocess.Popen(samtools_sort_command, stdin=samtools_view.stdout,
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     samtools_view.stdout.close()
     out, err = samtools_sort.communicate()
     if args.verbosity > 2:
-        out = bwa.stderr.read() + samtools_view.stderr.read() + out + err
+        out = samtools_view.stderr.read() + out + err
         print(dim(out.decode()))
 
     run_command([args.samtools, 'index', bam], args)
+
+
+
+
+
+
+    # run_command([args.bwa, 'index', '-p', 'bwa_index', fasta], args)
+    #
+    # bwa_command = [args.bwa, 'mem', '-x', 'ont2d', '-t', str(args.threads),
+    #                '-L', '100',  # big clipping penalty to encourage semi-global alignment
+    #                'bwa_index', args.long_reads]
+    # samtools_view_command = [args.samtools, 'view', '-hu', '-']
+    # samtools_sort_command = [args.samtools, 'sort', '-@', str(args.threads), '-o', bam, '-']
+    # print_command(bwa_command + ['|'] + samtools_view_command + ['|'] + samtools_sort_command,
+    #               args.verbosity)
+    #
+    # bwa = subprocess.Popen(bwa_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # samtools_view = subprocess.Popen(samtools_view_command, stdin=bwa.stdout,
+    #                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # bwa.stdout.close()
+    # samtools_sort = subprocess.Popen(samtools_sort_command, stdin=samtools_view.stdout,
+    #                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # samtools_view.stdout.close()
+    # out, err = samtools_sort.communicate()
+    # if args.verbosity > 2:
+    #     out = bwa.stderr.read() + samtools_view.stderr.read() + out + err
+    #     print(dim(out.decode()))
+    #
+    # run_command([args.samtools, 'index', bam], args)
 
 
 def run_pilon(fasta, args, raw_pilon_changes_filename, fix_type, alignments):
@@ -953,8 +979,8 @@ def filter_arrow_small_variants(raw_variants, raw_variants_gff, filtered_variant
 
 def filter_long_read_pilon_variants(raw_variants, raw_variants_filename,
                                     filtered_variants_filename, args):
-    low_percent_qual_product_threshold = 1000.0
-    very_low_percent_qual_product_threshold = 500.0  # Below this won't even be printed
+    low_percent_qual_product_threshold = 500.0
+    very_low_percent_qual_product_threshold = 200.0  # Below this won't even be printed
 
     for variant in raw_variants:
         if variant.illumina_alt_percent == 0.0 or variant.freebayes_qual == 0.0 or \

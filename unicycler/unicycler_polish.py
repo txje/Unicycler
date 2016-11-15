@@ -519,20 +519,24 @@ def long_read_polish_small_changes_loop(current, round_num, args, all_ale_scores
     # if args.on_fast5 and not args.on_fasta:
     #     make_on_fasta(args)
 
-    best_ale_score = get_ale_score(current, all_ale_scores, args)
+    previously_applied_variants = []
+    best_ale_score = get_ale_score(current, all_ale_scores, args, round_num)
     while True:
         current, round_num, variants = long_read_polish_small_changes(current, round_num, args,
-                                                                      all_ale_scores)
+                                                                      all_ale_scores,
+                                                                      previously_applied_variants)
         # If no more changes are suggested, then we're done!
         if not variants:
             break
+
+        previously_applied_variants += variants
 
         # If changes were made, then another we do another short read Pilon round.
         current, round_num = full_pilon_loop(current, round_num, args, all_ale_scores)
 
         # If this full round (both long and short read Pilon polishing together) made an ALE
         # improvement, then we repeat. Otherwise, we're done.
-        ale_score_after_pilon = get_ale_score(current, all_ale_scores, args)
+        ale_score_after_pilon = get_ale_score(current, all_ale_scores, args, round_num)
         if ale_score_after_pilon > best_ale_score:
             best_ale_score = ale_score_after_pilon
         else:
@@ -541,17 +545,8 @@ def long_read_polish_small_changes_loop(current, round_num, args, all_ale_scores
     return current, round_num
 
 
-def get_ale_score(fasta, all_ale_scores, args):
-    """
-    This function runs ALE (only if necessary) and returns the score, also storing the score in
-    the dictionary.
-    """
-    if all_ale_scores[fasta] is None:
-        all_ale_scores[fasta] = run_ale(fasta, args, 'ALE_output')
-    return all_ale_scores[fasta]
-
-
-def long_read_polish_small_changes(fasta, round_num, args, all_ale_scores):
+def long_read_polish_small_changes(fasta, round_num, args, all_ale_scores,
+                                   previously_applied_variants):
     round_num += 1
     print_round_header('Round ' + str(round_num) + ': Long read polish, small variants',
                        args.verbosity)
@@ -578,7 +573,8 @@ def long_read_polish_small_changes(fasta, round_num, args, all_ale_scores):
     clean_up(args)
 
     filtered_variants = filter_long_read_pilon_variants(raw_variants, raw_variants_file,
-                                                        filtered_variants_file, args)
+                                                        filtered_variants_file, args,
+                                                        previously_applied_variants)
     if filtered_variants:
         apply_variants(fasta, filtered_variants, polished_fasta)
         all_ale_scores[polished_fasta] = None
@@ -672,7 +668,6 @@ def ale_assessed_changes(fasta, round_num, args, short, pacbio, long_reads, all_
     polished_fasta = '%03d' % round_num + '_' + str(file_num+3) + '_polish.fasta'
 
     open(filtered_variants_file, 'a').close()
-    open(ale_outputs, 'a').close()
 
     initial_ale_score = run_ale(fasta, args, ale_outputs)
     best_ale_score = initial_ale_score
@@ -703,12 +698,24 @@ def ale_assessed_changes(fasta, round_num, args, short, pacbio, long_reads, all_
     return current, round_num, applied_variant
 
 
+def get_ale_score(fasta, all_ale_scores, args, round_num):
+    """
+    This function runs ALE (only if necessary) and returns the score, also storing the score in
+    the dictionary.
+    """
+    if all_ale_scores[fasta] is None:
+        all_ale_scores[fasta] = run_ale(fasta, args, '%03d' % round_num + '_ALE_output')
+    return all_ale_scores[fasta]
+
+
 def run_ale(fasta, args, all_ale_outputs):
     """
     ALE is run in --metagenome mode because this polishing script is presumed to be used on
     completed bacterial genomes, where each contig is different replicon (chromosome or plasmid)
     with potentially different depth.
     """
+    if args.verbosity > 1:
+        print()
     if not os.path.isfile(all_ale_outputs):
         open(all_ale_outputs, 'a').close()
     ale_output = 'ale.out'
@@ -818,11 +825,6 @@ def align_long_reads(fasta, args, bam):
         print(dim(out.decode()))
 
     run_command([args.samtools, 'index', bam], args)
-
-
-
-
-
 
     # run_command([args.bwa, 'index', '-p', 'bwa_index', fasta], args)
     #
@@ -978,21 +980,21 @@ def filter_arrow_small_variants(raw_variants, raw_variants_gff, filtered_variant
 
 
 def filter_long_read_pilon_variants(raw_variants, raw_variants_filename,
-                                    filtered_variants_filename, args):
+                                    filtered_variants_filename, args, previously_applied_variants):
     low_percent_qual_product_threshold = 500.0
-    very_low_percent_qual_product_threshold = 200.0  # Below this won't even be printed
+    very_low_percent_qual_product_threshold = 100.0  # Below this won't even be printed
 
     for variant in raw_variants:
         if variant.illumina_alt_percent == 0.0 or variant.freebayes_qual == 0.0 or \
                         variant.illumina_alt_percent == float('-inf') or \
                         variant.freebayes_qual == float('-inf'):
-            percent_qual_product = 0.0
+            variant.percent_qual_product = 0.0
         else:
             try:
-                percent_qual_product = variant.illumina_alt_percent * variant.freebayes_qual
+                variant.percent_qual_product = (variant.illumina_alt_percent ** 2) * \
+                                               variant.freebayes_qual
             except TypeError:
-                percent_qual_product = 0.0
-        variant.percent_qual_product = percent_qual_product
+                variant.percent_qual_product = 0.0
 
     filtered_variants = []
     variant_rows = []
@@ -1000,11 +1002,16 @@ def filter_long_read_pilon_variants(raw_variants, raw_variants_filename,
         if variant.percent_qual_product < very_low_percent_qual_product_threshold:
             continue
         variant_row = variant.get_output_row(True, True)
-        if variant.percent_qual_product >= low_percent_qual_product_threshold:
+
+        # Variants fail if they are below the quality threshold or if they have previously been
+        # applied (which suggests that the Illumina-Pilon round undid the change).
+        low_quality = variant.percent_qual_product < low_percent_qual_product_threshold
+        previously_applied = any(variant == x for x in previously_applied_variants)
+        if low_quality or previously_applied:
+            variant_row.append('FAIL')
+        else:
             filtered_variants.append(variant)
             variant_row.append('PASS')
-        else:
-            variant_row.append('FAIL')
         variant_rows.append(variant_row)
 
     print_small_variant_table(variant_rows, True, True, args.verbosity)
@@ -1093,7 +1100,6 @@ def finish(current, all_ale_scores, round_num, args, short):
         print_round_header('Round ' + str(round_num) + ': final assessment', args.verbosity)
 
         ale_outputs = '%03d' % round_num + '_ALE_output'
-        open(ale_outputs, 'a').close()
 
         ale_results_table = [['FASTA', 'ALE score', 'ALE score change']]
         best_assembly = ''
@@ -1105,7 +1111,7 @@ def finish(current, all_ale_scores, round_num, args, short):
             table_row += 1
             first_test = best_assembly == ''
             if ale_score is None:
-                ale_score = run_ale(fasta, args, 'ALE_output')
+                ale_score = run_ale(fasta, args, ale_outputs)
             if first_test:
                 starting_ale_score = ale_score
             if first_test or ale_score > best_ale_score:
@@ -1275,6 +1281,17 @@ class Variant(object):
         self.illumina_alt_percent = None
         self.ale_score = float('-inf')
         self.freebayes_qual = float('-inf')
+
+    def __eq__(self, other):
+        if isinstance(other, self.__class__):
+            return self.ref_name == other.ref_name and self.ref_seq == other.ref_seq and \
+                self.variant_seq == other.variant_seq and self.start_pos == other.start_pos
+        return NotImplemented
+
+    def __ne__(self, other):
+        if isinstance(other, self.__class__):
+            return not self.__eq__(other)
+        return NotImplemented
 
     def assign_freebayes_qual(self, reference_fasta, alignments_bam, args):
         """

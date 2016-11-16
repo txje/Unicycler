@@ -117,7 +117,7 @@ class UnicycleInstall(install):
             print()
 
             # Check for required programs.
-            tools = ['spades.py', 'graphmap', 'java', 'pilon.jar', 'samtools', 'bowtie2',
+            tools = ['spades.py', 'java', 'pilon.jar', 'samtools', 'bowtie2',
                      'bowtie2-build', 'makeblastdb', 'tblastn']
             missing_tools = []
             for tool in tools:

@@ -80,7 +80,7 @@ def main():
     args = get_arguments()
     check_file_exists(args.ref)
     check_file_exists(args.reads)
-    if not args.no_graphmap:
+    if args.graphmap:
         check_graphmap(args.graphmap_path)
 
     references = load_references(args.ref, VERBOSITY)
@@ -89,7 +89,7 @@ def main():
 
     semi_global_align_long_reads(references, args.ref, read_dict, read_names, read_filename,
                                  args.temp_dir, args.graphmap_path, args.threads, scoring_scheme,
-                                 [args.low_score], not args.no_graphmap, args.keep_bad, args.kmer,
+                                 [args.low_score], args.graphmap, args.keep_bad, args.kmer,
                                  args.min_len, args.sam, full_command, args.allowed_overlap,
                                  args.extra_sensitive, args.contamination, VERBOSITY)
     sys.exit(0)
@@ -145,9 +145,8 @@ def add_aligning_arguments(parser, show_help):
                         help='FASTA file of known contamination in long reads, e.g. lambda phage '
                              'spike-in (default: none).'
                              if show_help else argparse.SUPPRESS)
-    parser.add_argument('--no_graphmap', action='store_true', default=argparse.SUPPRESS,
-                        help='Do not use GraphMap as a first-pass aligner (default: GraphMap is '
-                             'used)'
+    parser.add_argument('--graphmap', action='store_true', default=argparse.SUPPRESS,
+                        help='Use GraphMap as a first-pass aligner'
                              if show_help else argparse.SUPPRESS)
     parser.add_argument('--graphmap_path', type=str, required=False, default='graphmap',
                         help='Path to the GraphMap executable'
@@ -186,9 +185,9 @@ def fix_up_arguments(args):
     except AttributeError:
         args.low_score = None
     try:
-        args.no_graphmap
+        args.graphmap
     except AttributeError:
-        args.no_graphmap = False
+        args.graphmap = False
     try:
         args.keep_bad
     except AttributeError:

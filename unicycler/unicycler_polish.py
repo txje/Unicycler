@@ -520,7 +520,7 @@ def long_read_polish_small_changes_loop(current, round_num, args, all_ale_scores
     #     make_on_fasta(args)
 
     previously_applied_variants = []
-    best_ale_score = get_ale_score(current, all_ale_scores, args, round_num)
+    best_ale_score = get_ale_score(current, all_ale_scores, args)
     while True:
         current, round_num, variants = long_read_polish_small_changes(current, round_num, args,
                                                                       all_ale_scores,
@@ -536,7 +536,7 @@ def long_read_polish_small_changes_loop(current, round_num, args, all_ale_scores
 
         # If this full round (both long and short read Pilon polishing together) made an ALE
         # improvement, then we repeat. Otherwise, we're done.
-        ale_score_after_pilon = get_ale_score(current, all_ale_scores, args, round_num)
+        ale_score_after_pilon = get_ale_score(current, all_ale_scores, args)
         if ale_score_after_pilon > best_ale_score:
             best_ale_score = ale_score_after_pilon
         else:
@@ -698,13 +698,13 @@ def ale_assessed_changes(fasta, round_num, args, short, pacbio, long_reads, all_
     return current, round_num, applied_variant
 
 
-def get_ale_score(fasta, all_ale_scores, args, round_num):
+def get_ale_score(fasta, all_ale_scores, args):
     """
     This function runs ALE (only if necessary) and returns the score, also storing the score in
     the dictionary.
     """
     if all_ale_scores[fasta] is None:
-        all_ale_scores[fasta] = run_ale(fasta, args, '%03d' % round_num + '_ALE_output')
+        all_ale_scores[fasta] = run_ale(fasta, args, fasta[:3] + '_ALE_output')
     return all_ale_scores[fasta]
 
 
@@ -807,8 +807,7 @@ def align_pacbio_reads(fasta, args):
 def align_long_reads(fasta, args, bam):
 
     run_command(['unicycler_align', '--ref', fasta, '--reads', args.long_reads,
-                 '--threads', str(args.threads), '--sam', 'long_read_alignments.sam',
-                 '--no_graphmap'], args)
+                 '--threads', str(args.threads), '--sam', 'long_read_alignments.sam'], args)
 
     samtools_view_command = [args.samtools, 'view', '-hu', 'long_read_alignments.sam']
     samtools_sort_command = [args.samtools, 'sort', '-@', str(args.threads), '-o', bam, '-']

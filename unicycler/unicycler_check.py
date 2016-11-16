@@ -39,7 +39,7 @@ def main():
     full_command = ' '.join(sys.argv)
     check_file_exists(args.ref)
     check_file_exists(args.reads)
-    if must_perform_alignment and not args.no_graphmap:
+    if must_perform_alignment and args.graphmap:
         check_graphmap(args.graphmap_path)
 
     references = load_references(args.ref, VERBOSITY)
@@ -54,7 +54,7 @@ def main():
     if must_perform_alignment:
         semi_global_align_long_reads(references, args.ref, read_dict, read_names, read_filename,
                                      args.temp_dir, args.graphmap_path, args.threads,
-                                     scoring_scheme, [args.low_score], not args.no_graphmap,
+                                     scoring_scheme, [args.low_score], args.graphmap,
                                      args.keep_bad, args.kmer, args.min_len, args.sam,
                                      full_command, 0, False, args.contamination, VERBOSITY)
 

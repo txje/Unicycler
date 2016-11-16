@@ -84,7 +84,6 @@ Reasons to __not__ use Unicycler:
 
 Unicycler needs the following tools for certain parts of its pipeline. They are optional, but without them Unicycler will not be able to perform all pipeline tasks:
 
-* [GraphMap](https://github.com/isovic/graphmap) – can accelerate long read alignment process
 * [Pilon](https://github.com/broadinstitute/pilon/wiki) – required for polishing
 * Java – required for polishing
 * [Bowtie2](http://bowtie-bio.sourceforge.net/bowtie2/) – required for polishing
@@ -350,7 +349,7 @@ Long read alignment:
 
   --temp_dir TEMP_DIR                   Temp directory for working files ("PID" will be replaced with the process ID)
   --contamination CONTAMINATION         FASTA file of known contamination in long reads, e.g. lambda phage spike-in (default: none).
-  --no_graphmap                         Do not use GraphMap as a first-pass aligner (default: GraphMap is used)
+  --graphmap                            Use GraphMap as a first-pass aligner
   --graphmap_path GRAPHMAP_PATH         Path to the GraphMap executable
   --scores SCORES                       Comma-delimited string of alignment scores: match, mismatch, gap open, gap extend
   --low_score LOW_SCORE                 Score threshold - alignments below this are considered poor (default: set threshold automatically)
@@ -507,8 +506,8 @@ Try [BWA-MEM](http://bio-bwa.sourceforge.net/), [LAST](http://last.cbrc.jp/) or 
 __Regular alignment:__<br>
 `unicycler_align --reads queries.fastq --ref target.fasta --sam output.sam`
 
-__Only use Unicycler to align (no first pass with GraphMap):__<br>
-`unicycler_align --reads queries.fastq --ref target.fasta --sam output.sam --no_graphmap`
+__Use [GraphMap](https://github.com/isovic/graphmap) as a first pass aligner (can be faster), then align with Unicycler:__<br>
+`unicycler_align --reads queries.fastq --ref target.fasta --sam output.sam --graphmap`
 
 __Very sensitive (and slow) alignment:__<br>
 `unicycler_align --reads queries.fastq --ref target.fasta --sam output.sam --extra_sensitive`

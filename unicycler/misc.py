@@ -101,7 +101,7 @@ def check_graphmap(graphmap_path):
     """
     if shutil.which(graphmap_path) is None:
         quit_with_error('could not find GraphMap at ' + graphmap_path +
-                        ', either fix path or run with --no_graphmap')
+                        ', either fix path or do not use --graphmap')
 
 
 def check_spades(spades_path):

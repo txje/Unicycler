@@ -1098,8 +1098,6 @@ def finish(current, all_ale_scores, round_num, args, short):
     else:
         print_round_header('Round ' + str(round_num) + ': final assessment', args.verbosity)
 
-        ale_outputs = '%03d' % round_num + '_ALE_output'
-
         ale_results_table = [['FASTA', 'ALE score', 'ALE score change']]
         sub_colour = {}
         best_assembly = ''
@@ -1107,11 +1105,10 @@ def finish(current, all_ale_scores, round_num, args, short):
         best_ale_score = 0.0
         starting_ale_score = 0.0
         table_row = 0
-        for fasta, ale_score in all_ale_scores.items():
+        for fasta in all_ale_scores:
             table_row += 1
             first_test = best_assembly == ''
-            if ale_score is None:
-                ale_score = run_ale(fasta, args, ale_outputs)
+            ale_score = get_ale_score(fasta, all_ale_scores, args)
             if first_test:
                 starting_ale_score = ale_score
             if first_test or ale_score > best_ale_score:

@@ -18,7 +18,7 @@ import math
 import multiprocessing
 from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter, print_table, \
     get_percentile_sorted, get_pilon_jar_path, colour, bold, bold_green, bold_yellow_underline, \
-    dim, get_all_files_in_current_dir, check_file_exists, remove_formatting, red, \
+    dim, get_all_files_in_current_dir, check_file_exists, remove_formatting, \
     get_sequence_file_type, convert_fastq_to_fasta
 from . import settings
 
@@ -1101,6 +1101,7 @@ def finish(current, all_ale_scores, round_num, args, short):
         ale_outputs = '%03d' % round_num + '_ALE_output'
 
         ale_results_table = [['FASTA', 'ALE score', 'ALE score change']]
+        sub_colour = {}
         best_assembly = ''
         best_table_row = 0
         best_ale_score = 0.0
@@ -1121,8 +1122,8 @@ def finish(current, all_ale_scores, round_num, args, short):
             score_str = '%.6f' % ale_score
             difference_str = '%.6f' % difference_from_start
             if difference_from_start < 0.0:
-                score_str = red(score_str)
-                difference_str = red(difference_str)
+                sub_colour[score_str] = 'red'
+                sub_colour[difference_str] = 'red'
             ale_results_table.append([fasta, score_str, difference_str])
 
         final_fasta = '%03d' % (round_num+1) + '_final_polish.fasta'
@@ -1130,7 +1131,8 @@ def finish(current, all_ale_scores, round_num, args, short):
 
         if args.verbosity > 0:
             print_table(ale_results_table, alignments='LRR', row_colour={best_table_row: 'green'},
-                        row_extra_text={best_table_row: ' \u2190 best'}, leading_newline=True)
+                        row_extra_text={best_table_row: ' \u2190 best'}, leading_newline=True,
+                        sub_colour=sub_colour)
 
     if args.verbosity > 0:
         print()

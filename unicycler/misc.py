@@ -443,11 +443,9 @@ def flip_number_order(num_1, num_2):
         return (num_1, num_2), False
 
 
-def load_fasta(filename, full_fasta_header=False):
+def load_fasta(filename):
     """
     Returns a list of tuples (name, seq) for each record in the fasta file.
-    If full_fasta_header is True, then the name (first part of tuple) will contain the entire
-    header line (including stuff after any spaces).
     """
     fasta_seqs = []
     fasta_file = open(filename, 'rt')
@@ -459,16 +457,38 @@ def load_fasta(filename, full_fasta_header=False):
             continue
         if line[0] == '>':  # Header line = start of new contig
             if name:
-                fasta_seqs.append((name, sequence))
+                fasta_seqs.append((name.split()[0], sequence))
                 sequence = ''
-            if full_fasta_header:
-                name = line[1:]
-            else:
-                name = line[1:].split()[0]
+            name = line[1:]
         else:
             sequence += line
     if name:
-        fasta_seqs.append((name, sequence))
+        fasta_seqs.append((name.split()[0], sequence))
+    fasta_file.close()
+    return fasta_seqs
+
+
+def load_fasta_with_full_header(filename):
+    """
+    Returns a list of tuples (name, header, seq) for each record in the fasta file.
+    """
+    fasta_seqs = []
+    fasta_file = open(filename, 'rt')
+    name = ''
+    sequence = ''
+    for line in fasta_file:
+        line = line.strip()
+        if not line:
+            continue
+        if line[0] == '>':  # Header line = start of new contig
+            if name:
+                fasta_seqs.append((name.split()[0], name, sequence))
+                sequence = ''
+            name = line[1:]
+        else:
+            sequence += line
+    if name:
+        fasta_seqs.append((name.split()[0], name, sequence))
     fasta_file.close()
     return fasta_seqs
 

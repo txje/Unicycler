@@ -16,10 +16,11 @@ import datetime
 import statistics
 import math
 import multiprocessing
+import re
 from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter, print_table, \
     get_percentile_sorted, get_pilon_jar_path, colour, bold, bold_green, bold_yellow_underline, \
     dim, get_all_files_in_current_dir, check_file_exists, remove_formatting, \
-    get_sequence_file_type, convert_fastq_to_fasta
+    get_sequence_file_type, convert_fastq_to_fasta, load_fasta_with_full_header
 from . import settings
 
 
@@ -1036,9 +1037,15 @@ def apply_variants(in_fasta, variants, out_fasta):
     """
     This function creates a new FASTA file by applying the variants to an existing FASTA file.
     """
-    in_seqs = collections.OrderedDict(load_fasta(in_fasta, full_fasta_header=True))
+    in_seqs_list = load_fasta_with_full_header(in_fasta)
+    in_seqs = collections.OrderedDict()
+    for in_seq in in_seqs_list:
+        name, header, seq = in_seq
+        in_seqs[name] = (header, seq)
+
     out_seqs = collections.OrderedDict()
-    for name, seq in in_seqs.items():
+    for name in in_seqs:
+        header, seq = in_seqs[name]
         seq_variants = sorted([x for x in variants if x.ref_name == name],
                               key=lambda x: x.start_pos)
         new_seq = ''
@@ -1048,10 +1055,18 @@ def apply_variants(in_fasta, variants, out_fasta):
             new_seq += variant.variant_seq
             pos = variant.end_pos
         new_seq += seq[pos:]
-        out_seqs[name] = new_seq
+
+        # If the header contains the sequence length, then we need to replace that value with the
+        # new length (because indels will have changed the length).
+        new_header = header
+        if 'length=' in new_header:
+            new_header = re.compile(r'length=\d+').sub('length=' + str(len(seq)), new_header)
+        out_seqs[name] = (new_header, new_seq)
+
     with open(out_fasta, 'wt') as fasta:
-        for name, seq in out_seqs.items():
-            fasta.write('>' + name + '\n')
+        for name in out_seqs:
+            header, seq = out_seqs[name]
+            fasta.write('>' + header + '\n')
             fasta.write(add_line_breaks_to_sequence(seq, 60))
 
 

@@ -277,7 +277,7 @@ class AssemblyGraph(object):
         print_v(('\n' if leading_newline else '') + 'Saving ' + filename, verbosity, 1)
         sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
         for segment in sorted_segments:
-            fasta.write('>' + str(segment.number) + '\n')
+            fasta.write(segment.get_fasta_name_and_description_line())
             fasta.write(add_line_breaks_to_sequence(segment.forward_sequence, 60))
 
     @staticmethod
@@ -327,7 +327,6 @@ class AssemblyGraph(object):
                 segment_line += '\tLB:z:' + label.replace('\n', '\\n')
                 segment_line += '\tCL:z:' + segment_colour
                 segment_line += '\n'
-
             gfa.write(segment_line)
         gfa.write(self.get_all_gfa_link_lines())
         paths = sorted(self.paths.items())
@@ -2585,12 +2584,19 @@ class Segment(object):
         s_line += 'dp:f:' + str(self.depth) + '\n'
         return s_line
 
+    def get_fasta_name_and_description_line(self):
+        """
+        Returns the segment's fasta line, including the '>' and the newline.
+        """
+        return ''.join(['>', str(self.number), ' length=', str(self.get_length()),
+                        ' depth=', str(self.depth), 'x\n'])
+
     def save_to_fasta(self, fasta_filename):
         """
         Saves the segment's sequence to FASTA file.
         """
         fasta = open(fasta_filename, 'w')
-        fasta.write('>' + self.get_fastg_header(True) + '\n')
+        fasta.write(self.get_fasta_name_and_description_line())
         fasta.write(add_line_breaks_to_sequence(self.forward_sequence, 60))
         fasta.close()
 

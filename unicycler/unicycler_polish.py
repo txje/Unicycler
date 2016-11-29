@@ -1036,7 +1036,7 @@ def apply_variants(in_fasta, variants, out_fasta):
     """
     This function creates a new FASTA file by applying the variants to an existing FASTA file.
     """
-    in_seqs = collections.OrderedDict(load_fasta(in_fasta))
+    in_seqs = collections.OrderedDict(load_fasta(in_fasta, full_fasta_header=True))
     out_seqs = collections.OrderedDict()
     for name, seq in in_seqs.items():
         seq_variants = sorted([x for x in variants if x.ref_name == name],

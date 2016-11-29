@@ -443,9 +443,11 @@ def flip_number_order(num_1, num_2):
         return (num_1, num_2), False
 
 
-def load_fasta(filename):
+def load_fasta(filename, full_fasta_header=False):
     """
-    Returns a list of tuples (header, seq) for each record in the fasta file.
+    Returns a list of tuples (name, seq) for each record in the fasta file.
+    If full_fasta_header is True, then the name (first part of tuple) will contain the entire
+    header line (including stuff after any spaces).
     """
     fasta_seqs = []
     fasta_file = open(filename, 'rt')
@@ -457,13 +459,16 @@ def load_fasta(filename):
             continue
         if line[0] == '>':  # Header line = start of new contig
             if name:
-                fasta_seqs.append((name.split()[0], sequence))
+                fasta_seqs.append((name, sequence))
                 sequence = ''
-            name = line[1:]
+            if full_fasta_header:
+                name = line[1:]
+            else:
+                name = line[1:].split()[0]
         else:
             sequence += line
     if name:
-        fasta_seqs.append((name.split()[0], sequence))
+        fasta_seqs.append((name, sequence))
     fasta_file.close()
     return fasta_seqs
 

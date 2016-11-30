@@ -40,6 +40,8 @@ def main():
     verbosity = args.verbosity
 
     files = [args.short1, args.short2]
+    if args.short_unpaired:
+        files.append(args.short_unpaired)
     if not args.no_long:
         files.append(args.long)
     check_files_and_programs(files, args,
@@ -71,8 +73,8 @@ def main():
             print('  ' + unbridged_graph_filename)
         unbridged_graph = AssemblyGraph(unbridged_graph_filename, None)
     else:
-        unbridged_graph = get_best_spades_graph(args.short1, args.short2, args.out,
-                                                settings.READ_DEPTH_FILTER, verbosity,
+        unbridged_graph = get_best_spades_graph(args.short1, args.short2, args.short_unpaired,
+                                                args.out, settings.READ_DEPTH_FILTER, verbosity,
                                                 args.spades_path, args.threads, args.keep_temp,
                                                 args.kmer_count, args.min_kmer_frac,
                                                 args.max_kmer_frac, args.no_correct,
@@ -418,9 +420,11 @@ def get_arguments():
     # Short read input options
     input_group = parser.add_argument_group('Input')
     input_group.add_argument('-1', '--short1', required=True, default=argparse.SUPPRESS,
-                             help='FASTQ file of short reads (first reads in each pair).')
+                             help='FASTQ file of short reads (first reads in each pair)')
     input_group.add_argument('-2', '--short2', required=True, default=argparse.SUPPRESS,
-                             help='FASTQ file of short reads (second reads in each pair).')
+                             help='FASTQ file of short reads (second reads in each pair)')
+    input_group.add_argument('-s', '--short_unpaired', required=False, default=argparse.SUPPRESS,
+                             help='FASTQ file of unpaired short reads')
 
     # Long read input options
     input_group.add_argument('-l', '--long', required=False, default=argparse.SUPPRESS,
@@ -574,6 +578,10 @@ def get_arguments():
         quit_with_error('--keep_temp must be between 0 and 2 (inclusive)')
 
     try:
+        args.short_unpaired
+    except AttributeError:
+        args.short_unpaired = None
+    try:
         args.long
     except AttributeError:
         args.long = None
@@ -620,6 +628,8 @@ def get_arguments():
     args.out = os.path.abspath(args.out)
     args.short1 = os.path.abspath(args.short1)
     args.short2 = os.path.abspath(args.short2)
+    if args.short_unpaired:
+        args.short_unpaired = os.path.abspath(args.short_unpaired)
     if args.long:
         args.long = os.path.abspath(args.long)
     # if args.long_dir:

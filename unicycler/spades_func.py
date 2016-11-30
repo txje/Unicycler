@@ -14,8 +14,8 @@ from .misc import print_section_header, round_to_nearest_odd, get_compression_ty
 from .assembly_graph import AssemblyGraph
 
 
-def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity, spades_path,
-                          threads, keep_temp, kmer_count, min_kmer_frac, max_kmer_frac,
+def get_best_spades_graph(short1, short2, short_unpaired, out_dir, read_depth_filter, verbosity,
+                          spades_path, threads, keep_temp, kmer_count, min_kmer_frac, max_kmer_frac,
                           no_spades_correct, expected_linear_seqs):
     """
     This function tries a SPAdes assembly at different kmers and returns the best.
@@ -27,9 +27,10 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
         os.makedirs(spades_dir)
 
     if no_spades_correct:
-        reads = (short1, short2, None)
+        reads = (short1, short2, short_unpaired)
     else:
-        reads = spades_read_correction(short1, short2, spades_dir, verbosity, threads, spades_path)
+        reads = spades_read_correction(short1, short2, short_unpaired, spades_dir, verbosity,
+                                       threads, spades_path)
     kmer_range = get_kmer_range(short1, short2, spades_dir, verbosity, kmer_count, min_kmer_frac,
                                 max_kmer_frac)
     assem_dir = os.path.join(spades_dir, 'assembly')
@@ -137,7 +138,8 @@ def get_best_spades_graph(short1, short2, out_dir, read_depth_filter, verbosity,
     return assembly_graph
 
 
-def spades_read_correction(short1, short2, spades_dir, verbosity, threads, spades_path):
+def spades_read_correction(short1, short2, short_unpaired, spades_dir, verbosity, threads,
+                           spades_path):
     """
     This runs SPAdes with the --only-error-correction option.
     """
@@ -159,8 +161,10 @@ def spades_read_correction(short1, short2, spades_dir, verbosity, threads, spade
 
     # If the corrected reads don't exist, then we run SPAdes in error correction only mode.
     read_correction_dir = os.path.join(spades_dir, 'read_correction')
-    command = [spades_path, '-1', short1, '-2', short2, '-o', read_correction_dir,
-               '--threads', str(threads), '--only-error-correction']
+    command = [spades_path, '-1', short1, '-2', short2]
+    if short_unpaired:
+        command += ['-s', short_unpaired]
+    command += ['-o', read_correction_dir, '--threads', str(threads), '--only-error-correction']
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     while process.poll() is None:

@@ -794,9 +794,11 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
 
         update_expected_slope(read, low_score_threshold)
 
+    # Colour the output title based on the alignment quality.
     if read.mostly_aligns_to_contamination() or not read.alignments:
         title_colour = 'red'
-    elif read.aligns_to_multiple_single_copy_segments(single_copy_segment_names):
+    elif read.aligns_to_multiple_single_copy_segments(single_copy_segment_names) and \
+            read.get_fraction_aligned() > 0.8:
         title_colour = 'green'
     else:
         title_colour = 'normal'

@@ -44,13 +44,21 @@ def get_best_spades_graph(short1, short2, short_unpaired, out_dir, read_depth_fi
     else:
         spades_results_table = [['K-mer', 'Segments', 'Dead ends', 'Score']]
     best_score = 0.0
-    best_kmer = kmer_range[0]
+    best_kmer = 0
     best_graph_filename = ''
 
     graph_files, insert_size_mean, insert_size_deviation = \
         spades_assembly(reads, assem_dir, kmer_range, verbosity, threads, spades_path)
 
     for graph_file, kmer in zip(graph_files, kmer_range):
+
+        # If the k-mer size is too small, then we will just skip this graph altogether. That's
+        # because very small k-mers lead to very complex graphs which take forever to clean up.
+        # TO DO: I can remove this awkward hack when I make the graph cleaning more efficient.
+        #        Specifically, I think that the merging step has poor complexity.
+        if kmer < 25:
+            continue
+
         table_line = [int_to_str(kmer)]
 
         if graph_file is None:
@@ -92,6 +100,9 @@ def get_best_spades_graph(short1, short2, short_unpaired, out_dir, read_depth_fi
             best_kmer = kmer
             best_score = score
             best_graph_filename = graph_file
+
+    if not best_kmer:
+        quit_with_error('none of the SPAdes graphs were suitable for scaffolding in Unicycler')
 
     # If the best k-mer is the top k-mer, then SPAdes has already done the repeat resolution and
     # we can just grab it now. Easy! If the best k-mer was a different k-mer size, then we need

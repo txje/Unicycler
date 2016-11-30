@@ -42,6 +42,9 @@ def main():
     if short and (args.min_insert is None or args.max_insert is None):
         get_insert_size_range(args, current)
 
+    if long_reads and short and args.use_racon:
+        current, round_num = racon_polish(current, round_num, args, all_ale_scores)
+
     if short:
         current, round_num = full_pilon_loop(current, round_num, args, all_ale_scores)
 
@@ -51,7 +54,6 @@ def main():
     if pacbio:
         current, round_num = arrow_small_changes_loop(current, round_num, args, short,
                                                       all_ale_scores)
-
     if short:
         current, round_num = ale_assessed_changes_loop(current, round_num, args, short, pacbio,
                                                        long_reads, all_ale_scores)
@@ -98,6 +100,8 @@ def get_arguments():
                                                'following')
     nanopore_group.add_argument('--long_reads', type=str,
                                 help='FASTQ/FASTA file of long reads')
+    nanopore_group.add_argument('--use_racon', action='store_true',
+                                help='Use Racon before polishing')
 
     settings_group = parser.add_argument_group('Polishing settings',
                                                'Various settings for polishing behaviour '
@@ -164,6 +168,10 @@ def get_arguments():
                              help='path to nanopolish executable')
     tools_group.add_argument('--nanopolish_model_dir', type=str,
                              help='path to nanopolish models directory')
+    tools_group.add_argument('--racon', type=str, default='racon',
+                             help='path to racon executable')
+    tools_group.add_argument('--minimap', type=str, default='minimap',
+                             help='path to miniasm executable')
 
     args = parser.parse_args()
 
@@ -516,10 +524,6 @@ def long_read_polish_small_changes_loop(current, round_num, args, all_ale_scores
     """
     Repeatedly apply small variants using Pilon with long read alignments.
     """
-    # # Convert FAST5 files to a Nanopolish FASTA, if necessary.
-    # if args.on_fast5 and not args.on_fasta:
-    #     make_on_fasta(args)
-
     previously_applied_variants = []
     best_ale_score = get_ale_score(current, all_ale_scores, args)
     while True:
@@ -544,6 +548,33 @@ def long_read_polish_small_changes_loop(current, round_num, args, all_ale_scores
             break
 
     return current, round_num
+
+
+def racon_polish(fasta, round_num, args, all_ale_scores):
+    round_num += 1
+    print_round_header('Round ' + str(round_num) + ': Racon polish', args.verbosity)
+
+    racon_fasta = '%03d' % round_num + '_racon_polish.fasta'
+
+    minimap_command = [args.minimap,
+                       '-t', str(args.threads),
+                       fasta, args.long_reads]
+    racon_command = [args.racon,
+                     '-t', str(args.threads),
+                     args.long_reads, '-', fasta, racon_fasta]
+    print_command(minimap_command + ['|'] + racon_command, args.verbosity)
+
+    minimap = subprocess.Popen(minimap_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    racon = subprocess.Popen(racon_command, stdin=minimap.stdout, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE)
+    minimap.stdout.close()
+    out, err = racon.communicate()
+    if args.verbosity > 2:
+        out = racon.stderr.read() + out + err
+        print(dim(out.decode()))
+
+    all_ale_scores[racon_fasta] = None
+    return racon_fasta, round_num
 
 
 def long_read_polish_small_changes(fasta, round_num, args, all_ale_scores,
@@ -1060,7 +1091,7 @@ def apply_variants(in_fasta, variants, out_fasta):
         # new length (because indels will have changed the length).
         new_header = header
         if 'length=' in new_header:
-            new_header = re.compile(r'length=\d+').sub('length=' + str(len(seq)), new_header)
+            new_header = re.compile(r'length=\d+').sub('length=' + str(len(new_seq)), new_header)
         out_seqs[name] = (new_header, new_seq)
 
     with open(out_fasta, 'wt') as fasta:
@@ -1384,9 +1415,9 @@ class Variant(object):
                 print(dim(line))
 
     def get_output_row(self, freebayes_qual, short_read_assessed):
-        if self.homo_size_before > 1:
-            variant_type = 'homo ' + str(self.homo_size_before) + ' \u2192 ' + str(
-                self.homo_size_after)
+        if self.homo_size_before > 1 and self.homo_size_after > 1:
+            variant_type = 'homo ' + str(self.homo_size_before) + ' \u2192 ' + \
+                           str(self.homo_size_after)
         else:
             variant_type = self.type
             if self.large:

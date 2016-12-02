@@ -50,15 +50,9 @@ def get_best_spades_graph(short1, short2, short_unpaired, out_dir, read_depth_fi
     graph_files, insert_size_mean, insert_size_deviation = \
         spades_assembly(reads, assem_dir, kmer_range, verbosity, threads, spades_path)
 
-    for graph_file, kmer in zip(graph_files, kmer_range):
-        # If the k-mer size is too small, then we will just skip this graph altogether. That's
-        # because very small k-mers lead to very complex graphs which take forever to clean up.
-        # TO DO: I can remove this awkward hack when I make the graph cleaning more efficient.
-        #        Specifically, I think that the merging step has poor complexity.
-        if kmer < 25:
-            continue
+    lowest_segment_count = min(count_segments_in_spades_fastg(x) for x in graph_files)
 
-        print_v(get_timestamp() + ' cleaning SPAdes graph (k-mer=' + str(kmer) + ')', verbosity, 3)
+    for graph_file, kmer in zip(graph_files, kmer_range):
         table_line = [int_to_str(kmer)]
 
         if graph_file is None:
@@ -70,6 +64,17 @@ def get_best_spades_graph(short1, short2, short_unpaired, out_dir, read_depth_fi
         assembly_graph = AssemblyGraph(graph_file, kmer, paths_file=None,
                                        insert_size_mean=insert_size_mean,
                                        insert_size_deviation=insert_size_deviation)
+
+        # If this graph has way too many segments, then we will just skip it because very complex
+        # graphs take forever to clean up.
+        # TO DO: I can remove this awkward hack if I make the graph cleaning more efficient.
+        if len(assembly_graph.segments) > 4 * lowest_segment_count:
+            table_line += [''] * (7 if verbosity > 1 else 2)
+            table_line.append('too complex')
+            spades_results_table.append(table_line)
+            continue
+
+        print_v(get_timestamp() + ' cleaning SPAdes graph (k-mer=' + str(kmer) + ')', verbosity, 3)
         assembly_graph.clean(read_depth_filter, verbosity)
         clean_graph_filename = os.path.join(spades_dir, 'k' + str(kmer) + '_assembly_graph.gfa')
         assembly_graph.save_to_gfa(os.path.join(spades_dir, clean_graph_filename), 0)
@@ -351,3 +356,12 @@ def get_read_lengths(reads_filename):
         i += 1
     reads.close()
     return read_lengths
+
+
+def count_segments_in_spades_fastg(fastg_file):
+    seq_count = 0
+    with open(fastg_file, 'rt') as fastg:
+        for line in fastg:
+            if line.startswith('>'):
+                seq_count += 1
+    return seq_count // 2

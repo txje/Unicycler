@@ -10,7 +10,7 @@ import subprocess
 import gzip
 import shutil
 from .misc import print_section_header, round_to_nearest_odd, get_compression_type, int_to_str, \
-    quit_with_error, strip_read_extensions, bold, dim, print_table, print_v
+    quit_with_error, strip_read_extensions, bold, dim, print_table, print_v, get_timestamp
 from .assembly_graph import AssemblyGraph
 
 
@@ -51,7 +51,6 @@ def get_best_spades_graph(short1, short2, short_unpaired, out_dir, read_depth_fi
         spades_assembly(reads, assem_dir, kmer_range, verbosity, threads, spades_path)
 
     for graph_file, kmer in zip(graph_files, kmer_range):
-
         # If the k-mer size is too small, then we will just skip this graph altogether. That's
         # because very small k-mers lead to very complex graphs which take forever to clean up.
         # TO DO: I can remove this awkward hack when I make the graph cleaning more efficient.
@@ -59,6 +58,7 @@ def get_best_spades_graph(short1, short2, short_unpaired, out_dir, read_depth_fi
         if kmer < 25:
             continue
 
+        print_v(get_timestamp() + ' cleaning SPAdes graph (k-mer=' + str(kmer) + ')', verbosity, 3)
         table_line = [int_to_str(kmer)]
 
         if graph_file is None:
@@ -70,7 +70,7 @@ def get_best_spades_graph(short1, short2, short_unpaired, out_dir, read_depth_fi
         assembly_graph = AssemblyGraph(graph_file, kmer, paths_file=None,
                                        insert_size_mean=insert_size_mean,
                                        insert_size_deviation=insert_size_deviation)
-        assembly_graph.clean(read_depth_filter)
+        assembly_graph.clean(read_depth_filter, verbosity)
         clean_graph_filename = os.path.join(spades_dir, 'k' + str(kmer) + '_assembly_graph.gfa')
         assembly_graph.save_to_gfa(os.path.join(spades_dir, clean_graph_filename), 0)
 
@@ -123,7 +123,7 @@ def get_best_spades_graph(short1, short2, short_unpaired, out_dir, read_depth_fi
     assembly_graph = AssemblyGraph(best_graph_filename, best_kmer, paths_file=paths_file,
                                    insert_size_mean=insert_size_mean,
                                    insert_size_deviation=insert_size_deviation)
-    assembly_graph.clean(read_depth_filter)
+    assembly_graph.clean(read_depth_filter, verbosity)
     clean_graph_filename = os.path.join(spades_dir,
                                         'k' + str(best_kmer) + '_assembly_graph.gfa')
     assembly_graph.save_to_gfa(os.path.join(spades_dir, clean_graph_filename), 0)

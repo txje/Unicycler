@@ -9,7 +9,8 @@ import math
 from collections import deque, defaultdict
 import textwrap
 from .misc import int_to_str, float_to_str, weighted_average_list, print_section_header, \
-    reverse_complement, score_function, add_line_breaks_to_sequence, print_v, print_table, colour
+    reverse_complement, score_function, add_line_breaks_to_sequence, print_v, print_table, colour, \
+    get_timestamp
 from .bridge import SpadesContigBridge, LoopUnrollingBridge, LongReadBridge
 from . import settings
 
@@ -867,18 +868,26 @@ class AssemblyGraph(object):
             dead_ends += 1
         return potential_dead_ends - dead_ends
 
-    def clean(self, read_depth_filter):
+    def clean(self, read_depth_filter, verbosity):
         """
         This function does various graph repairs, filters and normalisations to make it a bit
         nicer.
         """
+        print_v(get_timestamp() + ' repair_multi_way_junctions', verbosity, 3)
         self.repair_multi_way_junctions()
+        print_v(get_timestamp() + ' filter_by_read_depth', verbosity, 3)
         self.filter_by_read_depth(read_depth_filter)
+        print_v(get_timestamp() + ' filter_homopolymer_loops', verbosity, 3)
         self.filter_homopolymer_loops()
+        print_v(get_timestamp() + ' merge_all_possible', verbosity, 3)
         self.merge_all_possible(None, 2)
+        print_v(get_timestamp() + ' normalise_read_depths', verbosity, 3)
         self.normalise_read_depths()
+        print_v(get_timestamp() + ' remove_zero_length_segs', verbosity, 3)
         self.remove_zero_length_segs(0)
+        print_v(get_timestamp() + ' sort_link_order', verbosity, 3)
         self.sort_link_order()
+        print_v(get_timestamp() + ' clean finish', verbosity, 3)
 
     def final_clean(self, verbosity):
         """

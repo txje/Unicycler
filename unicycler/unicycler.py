@@ -340,7 +340,7 @@ def main():
                                             args.start_gene_cov, blast_dir, args.makeblastdb_path,
                                             args.tblastn_path, args.threads, verbosity)
             except CannotFindStart:
-                rotation_result_row += ['none found', '', '']
+                rotation_result_row += ['none found', '', '', '', '']
             else:
                 rotation_result_row += [blast_hit.qseqid, int_to_str(blast_hit.start_pos),
                                         'reverse' if blast_hit.flip else 'forward',

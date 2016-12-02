@@ -587,7 +587,7 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
                 hide_header=False, fixed_col_widths=None, left_align_header=True):
     """
     Args:
-        table: a list of lists of strings (one row is one list, all rows must be the same length)
+        table: a list of lists of strings (one row is one list, all rows should be the same length)
         alignments: a string of L and R, indicating the alignment for each row
         max_col_width: values longer than this will be wrapped
         col_separation: the number of spaces between columns
@@ -604,8 +604,11 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
         left_align_header: if False, the header will follow the column alignments
 
     Returns:
-        nothing, just prints the table
+        nothing (just prints the table)
     """
+    column_count = len(table[0])
+    table = [x[:column_count] for x in table]
+    table = [x + [''] * (column_count - len(x)) for x in table]
     if row_colour is None:
         row_colour = {}
     if sub_colour is None:
@@ -614,11 +617,11 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
         row_extra_text = {}
     if leading_newline:
         print()
-    alignments += 'L' * (len(table[0]) - len(alignments))  # Fill out with L, if incomplete
+    alignments += 'L' * (column_count - len(alignments))  # Fill out with L, if incomplete
     if fixed_col_widths is not None:
         col_widths = fixed_col_widths
     else:
-        col_widths = [0] * len(table[0])
+        col_widths = [0] * column_count
         for row in table:
             col_widths = [min(max(col_widths[i], len_without_format(x)), max_col_width)
                           for i, x in enumerate(row)]

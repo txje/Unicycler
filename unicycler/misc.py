@@ -15,6 +15,7 @@ import argparse
 import shutil
 import re
 import textwrap
+import datetime
 
 
 def float_to_str(num, decimals, max_num=0):
@@ -797,3 +798,7 @@ def get_ascii_art():
                  bold_yellow("                                        __/ |\n") +
                  bold_yellow("                                       |___/"))
     return ascii_art
+
+
+def get_timestamp():
+    return '{:%Y-%m-%d %H:%M:%S}'.format(datetime.datetime.now())

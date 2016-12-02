@@ -12,7 +12,6 @@ import shutil
 import sys
 import subprocess
 import collections
-import datetime
 import statistics
 import math
 import multiprocessing
@@ -20,7 +19,7 @@ import re
 from .misc import add_line_breaks_to_sequence, load_fasta, MyHelpFormatter, print_table, \
     get_percentile_sorted, get_pilon_jar_path, colour, bold, bold_green, bold_yellow_underline, \
     dim, get_all_files_in_current_dir, check_file_exists, remove_formatting, \
-    get_sequence_file_type, convert_fastq_to_fasta, load_fasta_with_full_header
+    get_sequence_file_type, convert_fastq_to_fasta, load_fasta_with_full_header, get_timestamp
 from . import settings
 
 
@@ -1103,9 +1102,8 @@ def apply_variants(in_fasta, variants, out_fasta):
 
 def print_command(command, verbosity):
     if verbosity > 1:
-        timestamp = '{:%Y-%m-%d %H:%M:%S}'.format(datetime.datetime.now())
         command = [os.path.basename(command[0])] + command[1:]  # Remove path from program name
-        print(bold(timestamp) + '   ' + ' '.join(command), flush=True)
+        print(bold(get_timestamp()) + '   ' + ' '.join(command), flush=True)
 
 
 def print_round_header(text, verbosity):

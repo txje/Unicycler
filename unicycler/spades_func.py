@@ -69,7 +69,7 @@ def get_best_spades_graph(short1, short2, short_unpaired, out_dir, read_depth_fi
         # graphs take forever to clean up.
         # TO DO: I can remove this awkward hack if I make the graph cleaning more efficient.
         if len(assembly_graph.segments) > 4 * lowest_segment_count:
-            table_line += [''] * (7 if verbosity > 1 else 2)
+            table_line += [''] * (6 if verbosity > 1 else 2)
             table_line.append('too complex')
             spades_results_table.append(table_line)
             continue

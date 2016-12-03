@@ -329,3 +329,43 @@ def multiple_sequence_alignment(full_length_sequences, full_length_qualities,
     # between_seq_scores = [x.split(',') for x in result_parts[2:]]
 
     return consensus, full_length_scores, start_only_scores, end_only_scores
+
+
+# C_LIB.buildMinimapIndex.argtypes = [c_char_p]  # Reference fasta filename
+# C_LIB.buildMinimapIndex.restype = c_void_p     # Pointer to Minimap index
+#
+#
+# def build_minimap_index(reference_fasta):
+#     """
+#     Python wrapper for buildMinimapIndex C++ function.
+#     """
+#     return C_LIB.buildMinimapIndex(reference_fasta.encode('utf-8'))
+#
+#
+# C_LIB.destroyMinimapIndex.argtypes = [c_void_p]  # Pointer to Minimap index
+# C_LIB.destroyMinimapIndex.restype = None
+#
+#
+# def destroy_minimap_index(minimap_index_pointer):
+#     """
+#     Python wrapper for destroyMinimapIndex C++ function.
+#     """
+#     return C_LIB.destroyMinimapIndex(minimap_index_pointer)
+
+
+# This function conducts a minimap alignment between reads and reference.
+C_LIB.minimapAlignReads.argtypes = [c_char_p,  # Reference fasta filename
+                                    c_char_p,  # Reads fastq filename
+                                    c_int,     # K-mer size
+                                    c_int,     # Threads
+                                    c_int]     # Verbosity
+C_LIB.minimapAlignReads.restype = c_void_p     # String describing alignments
+
+
+def minimap_align_reads(reference_fasta, reads_fastq, kmer_size, threads, verbosity):
+    """
+    Python wrapper for destroyMinimapIndex C++ function.
+    """
+    ptr = C_LIB.minimapAlignReads(reference_fasta.encode('utf-8'), reads_fastq.encode('utf-8'),
+                                  kmer_size, threads, verbosity)
+    return c_string_to_python_string(ptr)

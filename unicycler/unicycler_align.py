@@ -38,14 +38,14 @@ from multiprocessing.dummy import Pool as ThreadPool
 import multiprocessing
 import threading
 from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
-    get_mean_and_st_dev, print_progress_line, print_section_header, weighted_average_list, \
-    get_sequence_file_type, MyHelpFormatter, bold, dim, print_table, colour
+    print_progress_line, print_section_header, weighted_average_list, get_sequence_file_type, \
+    MyHelpFormatter, bold, dim, print_table, colour, print_v
 from .cpp_function_wrappers import semi_global_alignment, new_kmer_positions, add_kmer_positions, \
-    delete_all_kmer_positions, \
-    get_random_sequence_alignment_mean_and_std_dev
+    delete_all_kmer_positions, get_random_sequence_alignment_mean_and_std_dev, minimap_align_reads
 from .read_ref import load_references, load_long_reads
 from .alignment import Alignment, AlignmentScoringScheme
 from . import settings
+from .minimap_alignment import load_minimap_alignments
 
 # Used to ensure that multiple threads writing to the same SAM file don't write at the same time.
 SAM_WRITE_LOCK = threading.Lock()
@@ -252,7 +252,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
 
     # If the user supplied a low score threshold, we use that. Otherwise, we'll use the median
     # score minus three times the MAD.
-    if display_low_score:
+    if VERBOSITY > 0 and display_low_score:
         print_section_header('Determining low score threshold', VERBOSITY)
     low_score_threshold = low_score_threshold_list[0]
     if low_score_threshold is not None:
@@ -278,6 +278,13 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
 
     reference_dict = {x.name: x for x in references}
 
+    if VERBOSITY > 1:
+        print_section_header('Aligning reads with minimap', VERBOSITY)
+    minimap_alignments_str = minimap_align_reads(ref_fasta, reads_fastq, 15, threads, VERBOSITY)
+    minimap_alignments = load_minimap_alignments(minimap_alignments_str, read_dict, reference_dict)
+    print_v('Done! ' + str(len(minimap_alignments)) + ' out of ' + str(len(read_dict)) +
+            ' reads aligned', VERBOSITY, 2)
+
     # Create the SAM file.
     if sam_filename:
         sam_file = open(sam_filename, 'w')
@@ -301,92 +308,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         sam_file.write('SC:' + str(scoring_scheme) + '\n')
         sam_file.close()
 
-    # GraphMap can be used as a first-pass aligner. This has the advantage of saving time (GraphMap
-    # is probably faster than the Seqan alignment) and it gives a good initial expected slope.
-    if use_graphmap:
-
-        # Make the temp directory, if necessary.
-        temp_dir_exist_at_start = os.path.exists(temp_dir)
-        if not temp_dir_exist_at_start:
-            os.makedirs(temp_dir)
-
-        # Run GraphMap and load in the resulting SAM.
-        graphmap_sam = os.path.join(temp_dir, 'graphmap_alignments.sam')
-        run_graphmap(ref_fasta, reads_fastq, graphmap_sam, graphmap_path, threads, scoring_scheme)
-        graphmap_alignments = load_sam_alignments(graphmap_sam, read_dict, reference_dict,
-                                                  scoring_scheme, VERBOSITY)
-        # Clean up files and directories.
-        if use_graphmap:
-            os.remove(graphmap_sam)
-            if not temp_dir_exist_at_start:
-                os.rmdir(temp_dir)
-
-        if VERBOSITY > 3 and graphmap_alignments:
-            print_section_header('GraphMap alignments before extension', VERBOSITY)
-            for alignment in graphmap_alignments:
-                print(alignment)
-                if VERBOSITY > 4:
-                    print(alignment.cigar)
-
-        # Use Seqan to extend the GraphMap alignments so they are fully semi-global. In this
-        # process, some alignments will be discarded (those too far from being semi-global).
-        semi_global_graphmap_alignments = extend_to_semi_global(graphmap_alignments, scoring_scheme)
-        if VERBOSITY > 3 and semi_global_graphmap_alignments:
-            print_section_header('GraphMap alignments after extension', VERBOSITY)
-            for alignment in semi_global_graphmap_alignments:
-                print(alignment)
-                if VERBOSITY > 4:
-                    print(alignment.cigar)
-
-        # Gather some statistics about the alignments.
-        percent_ids = [x.percent_identity for x in semi_global_graphmap_alignments]
-        scores = [x.scaled_score for x in semi_global_graphmap_alignments]
-        percent_id_mean, percent_id_std_dev = get_mean_and_st_dev(percent_ids)
-        score_mean, score_std_dev = get_mean_and_st_dev(scores)
-
-        # Give the alignments to their corresponding reads.
-        for alignment in semi_global_graphmap_alignments:
-            read_dict[alignment.read.name].alignments.append(alignment)
-
-        # We can now sort our reads into two different categories for further action:
-        #   1) Reads with a single, high quality alignment in the middle of a reference. These reads
-        #      are done!
-        #   2) Reads that are incompletely (or not at all) aligned, have overlapping alignments or
-        #      low quality alignments. These reads will be aligned again using Seqan.
-        completed_reads = []
-        reads_to_align = []
-        for read_name in read_names:
-            read = read_dict[read_name]
-            update_expected_slope(read, low_score_threshold)
-            if read.needs_seqan_realignment(low_score_threshold):
-                reads_to_align.append(read)
-            else:
-                completed_reads.append(read)
-
-        if VERBOSITY > 0:
-            print_graphmap_summary_table(graphmap_alignments, percent_id_mean, percent_id_std_dev,
-                                         score_mean, score_std_dev)
-            max_v = len(read_dict)
-            print()
-            print('Reads completed by GraphMap:', int_to_str(len(completed_reads), max_v))
-            print('Reads to be realigned:      ', int_to_str(len(reads_to_align), max_v))
-
-        # Write GraphMap alignments to SAM.
-        if sam_filename:
-            sam_file = open(sam_filename, 'a')
-            for read in completed_reads:
-                for alignment in read.alignments:
-                    if not alignment.ref.name.startswith('CONTAMINATION_'):
-                        sam_file.write(alignment.get_sam_line())
-            sam_file.close()
-
-            # OPTIONAL TO DO: for reads which are completed, I could still try to refine GraphMap
-            #                 alignments using my Seqan code. I'm not sure if it's worth it, so I
-            #                 should give it a try to see what kind of difference it makes.
-
-    # If we aren't using GraphMap as a first pass, then we align every read using Seqan.
-    else:
-        reads_to_align = [read_dict[x] for x in read_names]
+    reads_to_align = [read_dict[x] for x in read_names]
 
     num_alignments = len(reads_to_align)
     if VERBOSITY > 0:
@@ -406,8 +328,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         for read in reads_to_align:
             output = seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
                                      low_score_threshold, keep_bad, kmer_size, min_align_length,
-                                     sam_filename, allowed_overlap, use_graphmap, extra_sensitive,
-                                     single_copy_segment_names)
+                                     sam_filename, allowed_overlap, minimap_alignments[read.name],
+                                     extra_sensitive, single_copy_segment_names)
             completed_count += 1
             if VERBOSITY == 1:
                 print_progress_line(completed_count, num_alignments, prefix='Read: ')
@@ -422,8 +344,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         for read in reads_to_align:
             arg_list.append((read, reference_dict, scoring_scheme, kmer_positions_ptr,
                              low_score_threshold, keep_bad, kmer_size, min_align_length,
-                             sam_filename, allowed_overlap, use_graphmap, extra_sensitive,
-                             single_copy_segment_names))
+                             sam_filename, allowed_overlap, minimap_alignments[read.name],
+                             extra_sensitive, single_copy_segment_names))
 
         # If the verbosity is 1, then the order doesn't matter, so use imap_unordered to deliver
         # the results evenly. If the verbosity is higher, deliver the results in order with imap.
@@ -718,30 +640,24 @@ def seqan_alignment_one_arg(all_args):
     in a thread pool.
     """
     read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold, keep_bad, \
-        kmer_size, min_align_length, sam_filename, allowed_overlap, used_graphmap, \
+        kmer_size, min_align_length, sam_filename, allowed_overlap, minimap_alignments, \
         extra_sensitive, single_copy_segment_names = all_args
     return seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
                            low_score_threshold, keep_bad, kmer_size, min_align_length,
-                           sam_filename, allowed_overlap, used_graphmap, extra_sensitive,
+                           sam_filename, allowed_overlap, minimap_alignments, extra_sensitive,
                            single_copy_segment_names)
 
 
 def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold,
                     keep_bad, kmer_size, min_align_length, sam_filename, allowed_overlap,
-                    used_graphmap, extra_sensitive, single_copy_segment_names):
+                    minimap_alignments, extra_sensitive, single_copy_segment_names):
     """
     Aligns a single read against all reference sequences using Seqan.
     """
     start_time = time.time()
     output = ''
-    if VERBOSITY > 2 and used_graphmap:
-        starting_graphmap_alignments = len(read.alignments)
-        output += 'Graphmap alignments:\n'
-        if starting_graphmap_alignments:
-            for alignment in read.alignments:
-                output += '  ' + str(alignment) + '\n'
-        else:
-            output += '  None\n'
+
+    print(minimap_alignments)  # TEMP
 
     # Don't bother trying to align reads too short to have a good alignment.
     if read.get_length() < min_align_length:

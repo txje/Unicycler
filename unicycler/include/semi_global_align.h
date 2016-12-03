@@ -9,6 +9,7 @@
 #include "alignmentline.h"
 #include "scoredalignment.h"
 #include "random_alignments.h"
+#include "string_functions.h"
 
 using namespace seqan;
 
@@ -28,8 +29,6 @@ extern "C" {
     char * endExtensionAlignment(char * read, char * ref,
                                  int matchScore, int mismatchScore, int gapOpenScore,
                                  int gapExtensionScore);
-
-    void freeCString(char * p);
 }
 
 ScoredAlignment * semiGlobalAlignmentOneLine(std::string & readName, std::string & refName,
@@ -43,8 +42,6 @@ ScoredAlignment * semiGlobalAlignmentOneLineOneBand(std::string & readName, std:
                                                     AlignmentLine * line, int bandSize,
                                                     int verbosity, std::string & output,
                                                     Score<int, Simple> & scoringScheme);
-
-char * cppStringToCString(std::string cpp_string);
 
 std::string getReverseComplement(std::string sequence);
 

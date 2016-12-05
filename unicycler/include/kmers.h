@@ -11,24 +11,17 @@
 
 typedef std::unordered_map<std::string, std::vector<int> > KmerPosMap;
 
-// CommonKmer is a class to hold the positions of common k-mers between a read and a reference.
-// It holds the position in both original and rotated coordinates, and will ultimately hold the
-// point's score as well.
+
 class CommonKmer {
 public:
-    CommonKmer(int hPosition, int vPosition, float angle);
-    static float getRotationAngle(float slope) {return -atan(slope);}
-
+    CommonKmer(int hPosition, int vPosition);
     int m_hPosition;
     int m_vPosition;
-    float m_rotatedHPosition;
-    float m_rotatedVPosition;
-    float m_score; // Scaled kmer density
 };
 
 
 // KmerPositions is a class that holds maps of k-mer positions for named sequences. It exists so we
-// don't have to repeatedly find the same k-mer sets over and over when finding alignment lines.
+// don't have to repeatedly find the same k-mer sets over and over.
 class KmerPositions {
 public:
     KmerPositions() {}
@@ -45,17 +38,12 @@ private:
     std::mutex m_mutex;
 };
 
+KmerPositions * newKmerPositions();
 
-// Functions that are called by the Python script must have C linkage, not C++ linkage.
-extern "C" {
+void addKmerPositions(KmerPositions * kmerPositions, char * nameC, char * sequenceC, int kSize);
 
-    KmerPositions * newKmerPositions();
+void deleteAllKmerPositions(KmerPositions * kmerPositions);
 
-    void addKmerPositions(KmerPositions * kmerPositions, char * nameC, char * sequenceC, int kSize);
-
-    void deleteAllKmerPositions(KmerPositions * kmerPositions);
-
-}
 
 #endif // KMERS_H
 

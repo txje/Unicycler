@@ -2,17 +2,12 @@
 #include "kmers.h"
 
 
-// Creates the CommonKmer object using the position in the two sequences.
-// It then rotates the point relative to the origin by the given angle (in radians).
-CommonKmer::CommonKmer(int hPosition, int vPosition, float angle) :
+CommonKmer::CommonKmer(int hPosition, int vPosition) :
     m_hPosition(hPosition),
-    m_vPosition(vPosition),
-    m_score(1.0) {
-    float s = sin(angle);
-    float c = cos(angle);
-    m_rotatedHPosition = (m_hPosition * c) - (m_vPosition * s);
-    m_rotatedVPosition = (m_hPosition * s) + (m_vPosition * c);
+    m_vPosition(vPosition)
+{
 }
+
 
 // This is the destructor for KmerPositions. It cleans up all the KmerPosMaps which were allocated
 // on the heap.

@@ -28,6 +28,10 @@ class MinimapAlignment(object):
         self.read = read_dict[self.read_name]
         self.ref = ref_dict[self.ref_name]
 
+    def get_concise_string(self):
+        return ','.join([str(x) for x in [self.read_start, self.read_end, self.read_strand,
+                                          self.ref_name, self.ref_start, self.ref_end]])
+
 
 def line_iterator(string_with_line_breaks):
     """Iterates over a string containing line breaks, one line at a time."""

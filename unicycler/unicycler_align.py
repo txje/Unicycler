@@ -26,7 +26,7 @@ Author: Ryan Wick
 email: rrwick@gmail.com
 """
 
-import subprocess
+# import subprocess
 import sys
 import os
 import argparse
@@ -40,8 +40,8 @@ import threading
 from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
     print_progress_line, print_section_header, weighted_average_list, get_sequence_file_type, \
     MyHelpFormatter, bold, dim, print_table, colour, print_v
-from .cpp_function_wrappers import semi_global_alignment, new_kmer_positions, add_kmer_positions, \
-    delete_all_kmer_positions, get_random_sequence_alignment_mean_and_std_dev, minimap_align_reads
+from .cpp_function_wrappers import semi_global_alignment, new_ref_seqs, add_ref_seq, \
+    delete_ref_seqs, get_random_sequence_alignment_mean_and_std_dev, minimap_align_reads
 from .read_ref import load_references, load_long_reads
 from .alignment import Alignment, AlignmentScoringScheme
 from . import settings
@@ -170,7 +170,7 @@ def add_aligning_arguments(parser, show_help):
     parser.add_argument('--allowed_overlap', type=int, required=False, default=100,
                         help='Allow this much overlap between alignments in a single read'
                              if show_help else argparse.SUPPRESS)
-    parser.add_argument('--kmer', type=int, required=False, default=7,
+    parser.add_argument('--kmer', type=int, required=False, default=8,
                         help='K-mer size used for seeding alignments'
                              if show_help else argparse.SUPPRESS)
 
@@ -318,15 +318,15 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         print_progress_line(0, num_alignments, prefix='Read: ')
     completed_count = 0
 
-    # Create a C++ KmerPositions object and add each reference sequence.
-    kmer_positions_ptr = new_kmer_positions()
+    # Create a C++ ReferenceSeqs object and add each reference sequence.
+    ref_seqs_ptr = new_ref_seqs()
     for ref in references:
-        add_kmer_positions(kmer_positions_ptr, ref.name, ref.sequence, kmer_size)
+        add_ref_seq(ref_seqs_ptr, ref.name, ref.sequence)
 
     # If single-threaded, just do the work in a simple loop.
     if threads == 1:
         for read in reads_to_align:
-            output = seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
+            output = seqan_alignment(read, reference_dict, scoring_scheme, ref_seqs_ptr,
                                      low_score_threshold, keep_bad, kmer_size, min_align_length,
                                      sam_filename, allowed_overlap, minimap_alignments[read.name],
                                      extra_sensitive, single_copy_segment_names)
@@ -342,7 +342,7 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
         pool = ThreadPool(threads)
         arg_list = []
         for read in reads_to_align:
-            arg_list.append((read, reference_dict, scoring_scheme, kmer_positions_ptr,
+            arg_list.append((read, reference_dict, scoring_scheme, ref_seqs_ptr,
                              low_score_threshold, keep_bad, kmer_size, min_align_length,
                              sam_filename, allowed_overlap, minimap_alignments[read.name],
                              extra_sensitive, single_copy_segment_names))
@@ -362,8 +362,8 @@ def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, r
                 fraction = str(completed_count) + '/' + str(num_alignments) + ': '
                 print('\n' + fraction + output, end='', flush=True)
 
-    # We're done with the C++ KmerPositions object, so delete it now.
-    delete_all_kmer_positions(kmer_positions_ptr)
+    # We're done with the C++ ReferenceSeqs object, so delete it now.
+    delete_ref_seqs(ref_seqs_ptr)
 
     if VERBOSITY == 1:
         print()
@@ -448,143 +448,143 @@ def print_alignment_summary_table(read_dict, verbosity, using_contamination):
     print('Mean alignment identity:', float_to_str(mean_identity, 1, max_v) + '%')
 
 
-def print_graphmap_summary_table(graphmap_alignments, percent_id_mean, percent_id_std_dev,
-                                 score_mean, score_std_dev):
-    """
-    Prints a small table showing some details about the GraphMap alignments.
-    """
-    print_section_header('Graphmap alignment summary', VERBOSITY)
-    print('Total alignments:', int_to_str(len(graphmap_alignments)))
-    print()
+# def print_graphmap_summary_table(graphmap_alignments, percent_id_mean, percent_id_std_dev,
+#                                  score_mean, score_std_dev):
+#     """
+#     Prints a small table showing some details about the GraphMap alignments.
+#     """
+#     print_section_header('Graphmap alignment summary', VERBOSITY)
+#     print('Total alignments:', int_to_str(len(graphmap_alignments)))
+#     print()
+#
+#     summary_table = [['', 'Mean', 'Stdev'],
+#                      ['Identity:', float_to_str(percent_id_mean, 2) + '%',
+#                       float_to_str(percent_id_std_dev, 2) + '%'],
+#                      ['Score:', float_to_str(score_mean, 2) + ' ',
+#                       float_to_str(score_std_dev, 2) + ' ']]
+#     print_table(summary_table, indent=0, header_format='normal')
+#     print()
+#     print('Mean reference length / read length:', float_to_str(EXPECTED_SLOPE, 5))
 
-    summary_table = [['', 'Mean', 'Stdev'],
-                     ['Identity:', float_to_str(percent_id_mean, 2) + '%',
-                      float_to_str(percent_id_std_dev, 2) + '%'],
-                     ['Score:', float_to_str(score_mean, 2) + ' ',
-                      float_to_str(score_std_dev, 2) + ' ']]
-    print_table(summary_table, indent=0, header_format='normal')
-    print()
-    print('Mean reference length / read length:', float_to_str(EXPECTED_SLOPE, 5))
+#
+# def extend_to_semi_global(alignments, scoring_scheme):
+#     """
+#     This function returns truly semi-global alignments made from the input alignments.
+#     """
+#     if VERBOSITY > 3 and alignments:
+#         print_section_header('Extending alignments', VERBOSITY, last_newline=False)
+#
+#     semi_global_alignments = []
+#     for alignment in alignments:
+#         total_missing_bases = alignment.get_total_missing_bases()
+#
+#         # If an input alignment is already semi-global, then it's included in the output.
+#         if total_missing_bases == 0:
+#             semi_global_alignments.append(alignment)
+#
+#         # If an input alignment is almost semi-global (below a threshold), and not too close to the
+#         # end of the reference, then it is extended to make it semi-global.
+#         elif total_missing_bases <= settings.ALLOWED_MISSING_GRAPHMAP_BASES:
+#             missing_start = alignment.get_missing_bases_at_start()
+#             missing_end = alignment.get_missing_bases_at_end()
+#             if missing_start and alignment.ref_start_pos >= 2 * missing_start:
+#                 alignment.extend_start(scoring_scheme, VERBOSITY)
+#             if missing_end and alignment.ref_end_gap >= 2 * missing_end:
+#                 alignment.extend_end(scoring_scheme, VERBOSITY)
+#             semi_global_alignments.append(alignment)
+#
+#         # If an input alignment is above the threshold (not close to being semi-global), it is
+#         # discarded.
+#         else:
+#             pass
+#
+#     return semi_global_alignments
 
-
-def extend_to_semi_global(alignments, scoring_scheme):
-    """
-    This function returns truly semi-global alignments made from the input alignments.
-    """
-    if VERBOSITY > 3 and alignments:
-        print_section_header('Extending alignments', VERBOSITY, last_newline=False)
-
-    semi_global_alignments = []
-    for alignment in alignments:
-        total_missing_bases = alignment.get_total_missing_bases()
-
-        # If an input alignment is already semi-global, then it's included in the output.
-        if total_missing_bases == 0:
-            semi_global_alignments.append(alignment)
-
-        # If an input alignment is almost semi-global (below a threshold), and not too close to the
-        # end of the reference, then it is extended to make it semi-global.
-        elif total_missing_bases <= settings.ALLOWED_MISSING_GRAPHMAP_BASES:
-            missing_start = alignment.get_missing_bases_at_start()
-            missing_end = alignment.get_missing_bases_at_end()
-            if missing_start and alignment.ref_start_pos >= 2 * missing_start:
-                alignment.extend_start(scoring_scheme, VERBOSITY)
-            if missing_end and alignment.ref_end_gap >= 2 * missing_end:
-                alignment.extend_end(scoring_scheme, VERBOSITY)
-            semi_global_alignments.append(alignment)
-
-        # If an input alignment is above the threshold (not close to being semi-global), it is
-        # discarded.
-        else:
-            pass
-
-    return semi_global_alignments
-
-
-def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scoring_scheme):
-    """
-    This function runs GraphMap for the given inputs and produces a SAM file at the given location.
-    """
-    graphmap_version = get_graphmap_version(graphmap_path)
-
-    # Build the GraphMap command. There is a bit of difference if we're using a version before or
-    # after v0.3.0.
-    command = [graphmap_path]
-    if graphmap_version >= 0.3:
-        command.append('align')
-    command += ['-r', fasta,
-                '-d', long_reads_fastq,
-                '-o', sam_file,
-                '-t', str(threads),
-                '-a', 'anchorgotoh']
-    command += scoring_scheme.get_graphmap_parameters()
-
-    print_section_header('Aligning with GraphMap', VERBOSITY)
-    if VERBOSITY > 0:
-        print('Command: ' + bold(' '.join(command)))
-
-    # Print the GraphMap output as it comes. I gather up and display lines so I can display fewer
-    # progress lines (only at every 0.1% of progress, instead of for every read). This helps when
-    # piping the output to file (otherwise the output can be excessively large).
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    line = ''
-    last_progress = -1.0
-    step = settings.GRAPHMAP_PROGRESS_STEP
-    read_progress_started = False
-    read_progress_finished = False
-    while process.poll() is None:
-        graphmap_output = process.stderr.read(1).decode()
-        if VERBOSITY > 0:
-            line += graphmap_output
-            if line.endswith('\n') or line.endswith('\r'):
-                if line.strip():
-                    if 'CPU time' in line:
-                        read_progress_started = True
-                        trimmed_line = line.strip().split('] ')[2].split(', l')[0]
-                        progress = float(trimmed_line.split('(')[1].split(')')[0][:-1])
-                        progress_rounded_down = math.floor(progress / step) * step
-                        if progress == 100.0 or progress_rounded_down > last_progress:
-                            print('\r' + dim(trimmed_line), end='')
-                            last_progress = progress_rounded_down
-                    elif VERBOSITY > 1:
-                        if read_progress_started and not read_progress_finished:
-                            print()
-                            read_progress_finished = True
-                        print(dim(line), end='')
-                line = ''
-    if VERBOSITY == 1:
-        print('')
-
-    # Clean up.
-    if os.path.isfile(fasta + '.gmidx'):
-        os.remove(fasta + '.gmidx')
-    if os.path.isfile(fasta + '.gmidxsec'):
-        os.remove(fasta + '.gmidxsec')
-
-    if not os.path.isfile(sam_file):
-        quit_with_error('GraphMap failure')
-
-
-def get_graphmap_version(graphmap_path):
-    """
-    Returns the version of GraphMap.
-    """
-    command = [graphmap_path, '-h']
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = process.communicate()
-    all_out = (out + err).decode()
-    if 'Version: v' not in all_out:
-        command = [graphmap_path, 'align', '-h']
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, err = process.communicate()
-        all_out = (out + err).decode()
-    if 'Version: v' not in all_out:
-        return 0.0
-    version_i = all_out.find('Version: v')
-    version = all_out[version_i + 10:]
-    version = version.split()[0]
-    version = '.'.join(version.split('.')[0:2])
-    return float(version)
+#
+# def run_graphmap(fasta, long_reads_fastq, sam_file, graphmap_path, threads, scoring_scheme):
+#     """
+#     This function runs GraphMap for the given inputs and produces a SAM file at the given location.
+#     """
+#     graphmap_version = get_graphmap_version(graphmap_path)
+#
+#     # Build the GraphMap command. There is a bit of difference if we're using a version before or
+#     # after v0.3.0.
+#     command = [graphmap_path]
+#     if graphmap_version >= 0.3:
+#         command.append('align')
+#     command += ['-r', fasta,
+#                 '-d', long_reads_fastq,
+#                 '-o', sam_file,
+#                 '-t', str(threads),
+#                 '-a', 'anchorgotoh']
+#     command += scoring_scheme.get_graphmap_parameters()
+#
+#     print_section_header('Aligning with GraphMap', VERBOSITY)
+#     if VERBOSITY > 0:
+#         print('Command: ' + bold(' '.join(command)))
+#
+#     # Print the GraphMap output as it comes. I gather up and display lines so I can display fewer
+#     # progress lines (only at every 0.1% of progress, instead of for every read). This helps when
+#     # piping the output to file (otherwise the output can be excessively large).
+#     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+#     line = ''
+#     last_progress = -1.0
+#     step = settings.GRAPHMAP_PROGRESS_STEP
+#     read_progress_started = False
+#     read_progress_finished = False
+#     while process.poll() is None:
+#         graphmap_output = process.stderr.read(1).decode()
+#         if VERBOSITY > 0:
+#             line += graphmap_output
+#             if line.endswith('\n') or line.endswith('\r'):
+#                 if line.strip():
+#                     if 'CPU time' in line:
+#                         read_progress_started = True
+#                         trimmed_line = line.strip().split('] ')[2].split(', l')[0]
+#                         progress = float(trimmed_line.split('(')[1].split(')')[0][:-1])
+#                         progress_rounded_down = math.floor(progress / step) * step
+#                         if progress == 100.0 or progress_rounded_down > last_progress:
+#                             print('\r' + dim(trimmed_line), end='')
+#                             last_progress = progress_rounded_down
+#                     elif VERBOSITY > 1:
+#                         if read_progress_started and not read_progress_finished:
+#                             print()
+#                             read_progress_finished = True
+#                         print(dim(line), end='')
+#                 line = ''
+#     if VERBOSITY == 1:
+#         print('')
+#
+#     # Clean up.
+#     if os.path.isfile(fasta + '.gmidx'):
+#         os.remove(fasta + '.gmidx')
+#     if os.path.isfile(fasta + '.gmidxsec'):
+#         os.remove(fasta + '.gmidxsec')
+#
+#     if not os.path.isfile(sam_file):
+#         quit_with_error('GraphMap failure')
+#
+#
+# def get_graphmap_version(graphmap_path):
+#     """
+#     Returns the version of GraphMap.
+#     """
+#     command = [graphmap_path, '-h']
+#     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+#     out, err = process.communicate()
+#     all_out = (out + err).decode()
+#     if 'Version: v' not in all_out:
+#         command = [graphmap_path, 'align', '-h']
+#         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+#         out, err = process.communicate()
+#         all_out = (out + err).decode()
+#     if 'Version: v' not in all_out:
+#         return 0.0
+#     version_i = all_out.find('Version: v')
+#     version = all_out[version_i + 10:]
+#     version = version.split()[0]
+#     version = '.'.join(version.split('.')[0:2])
+#     return float(version)
 
 
 def load_sam_alignments(sam_filename, read_dict, reference_dict, scoring_scheme, verbosity):
@@ -639,16 +639,16 @@ def seqan_alignment_one_arg(all_args):
     This is just a one-argument version of seqan_alignment to make it easier to use that function
     in a thread pool.
     """
-    read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold, keep_bad, \
+    read, reference_dict, scoring_scheme, ref_seqs_ptr, low_score_threshold, keep_bad, \
         kmer_size, min_align_length, sam_filename, allowed_overlap, minimap_alignments, \
         extra_sensitive, single_copy_segment_names = all_args
-    return seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr,
+    return seqan_alignment(read, reference_dict, scoring_scheme, ref_seqs_ptr,
                            low_score_threshold, keep_bad, kmer_size, min_align_length,
                            sam_filename, allowed_overlap, minimap_alignments, extra_sensitive,
                            single_copy_segment_names)
 
 
-def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, low_score_threshold,
+def seqan_alignment(read, reference_dict, scoring_scheme, ref_seqs_ptr, low_score_threshold,
                     keep_bad, kmer_size, min_align_length, sam_filename, allowed_overlap,
                     minimap_alignments, extra_sensitive, single_copy_segment_names):
     """
@@ -657,18 +657,18 @@ def seqan_alignment(read, reference_dict, scoring_scheme, kmer_positions_ptr, lo
     start_time = time.time()
     output = ''
 
-    print(minimap_alignments)  # TEMP
-
     # Don't bother trying to align reads too short to have a good alignment.
     if read.get_length() < min_align_length:
         if VERBOSITY > 1:
             output += '  too short to align\n'
     else:
-        results = semi_global_alignment(read.name, read.sequence, VERBOSITY, EXPECTED_SLOPE,
-                                        kmer_positions_ptr, scoring_scheme.match,
+        minimap_alignments_str = ';'.join([x.get_concise_string() for x in minimap_alignments])
+        results = semi_global_alignment(read.name, read.sequence, VERBOSITY, minimap_alignments_str,
+                                        ref_seqs_ptr, scoring_scheme.match,
                                         scoring_scheme.mismatch, scoring_scheme.gap_open,
                                         scoring_scheme.gap_extend, low_score_threshold, keep_bad,
                                         kmer_size, extra_sensitive).split(';')
+
         alignment_strings = results[:-1]
         output += results[-1]
 

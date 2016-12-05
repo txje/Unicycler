@@ -7,7 +7,7 @@ email: rrwick@gmail.com
 
 import re
 from .misc import get_nice_header, reverse_complement, float_to_str
-from .cpp_function_wrappers import start_extension_alignment, end_extension_alignment
+# from .cpp_function_wrappers import start_extension_alignment, end_extension_alignment
 
 
 class AlignmentScoringScheme(object):
@@ -232,160 +232,160 @@ class Alignment(object):
         worst_score = scoring_scheme.mismatch * self.alignment_length
         self.scaled_score = 100.0 * (self.raw_score - worst_score) / (perfect_score - worst_score)
 
-    def extend_start(self, scoring_scheme, verbosity):
-        """
-        This function extends the start of the alignment to remove any missing start bases.
-        """
-        cigar_length_before = 0
-        if verbosity > 3:
-            print()
-            print(self)
-            cigar = ''.join(self.cigar_parts)
-            if len(cigar) > 20:
-                print('   ', cigar[:20] + '...')
-            else:
-                print('   ', cigar[:20])
-            cigar_length_before = len(cigar)
-
-        # We will try the start extension a few times, if necessary, with increasing margin sizes.
-        # The first try should usually be sufficient.
-        seqan_parts = []
-        realigned_ref_start = 0
-        for i in range(3):
-            margin_size = 2 ** (i + 1)  # 2, 4, 8
-            missing_start_bases = self.get_missing_bases_at_start()
-            realigned_bases = margin_size * missing_start_bases
-            realigned_read_end = self.read_start_pos
-            realigned_read_start = max(0, realigned_read_end - realigned_bases)
-            realigned_ref_end = self.ref_start_pos
-            realigned_ref_start = max(0, realigned_ref_end - realigned_bases)
-            if self.rev_comp:
-                realigned_read_seq = \
-                    reverse_complement(self.read.sequence)[realigned_read_start:realigned_read_end]
-            else:
-                realigned_read_seq = self.read.sequence[realigned_read_start:realigned_read_end]
-            realigned_ref_seq = self.ref.sequence[realigned_ref_start:realigned_ref_end]
-            assert len(realigned_ref_seq) >= len(realigned_read_seq)
-
-            # Call the C++ function to do the actual alignment.
-            alignment_result = start_extension_alignment(realigned_read_seq, realigned_ref_seq,
-                                                         scoring_scheme)
-            seqan_parts = alignment_result.split(',', 9)
-            assert len(seqan_parts) >= 10
-
-            # If the extended alignment has taken us far enough (should usually be the case), then
-            # use it. In rare cases, the margin size won't have been enough, so we try again with a
-            # bigger margin.
-            if int(seqan_parts[2]) == 0:
-                break
-
-        # Set the new read start.
-        self.read_start_pos = int(seqan_parts[2])
-
-        # Set the new reference start.
-        self.ref_start_pos = realigned_ref_start + int(seqan_parts[4])
-
-        # Replace the S part at the beginning the alignment's CIGAR with the CIGAR just made. If
-        # the last part of the new CIGAR is of the same type as the first part of the existing
-        # CIGAR, they will need to be merged.
-        new_cigar_parts = re.findall(r'\d+\w', seqan_parts[9])
-        old_cigar_parts = self.cigar_parts[1:]
-        if new_cigar_parts[-1][-1] == old_cigar_parts[0][-1]:
-            part_sum = int(new_cigar_parts[-1][:-1]) + int(old_cigar_parts[0][:-1])
-            merged_part = str(part_sum) + new_cigar_parts[-1][-1]
-            new_cigar_parts = new_cigar_parts[:-1] + [merged_part]
-            old_cigar_parts = old_cigar_parts[1:]
-        self.cigar_parts = new_cigar_parts + old_cigar_parts
-
-        self.tally_up_score_and_errors(scoring_scheme)
-
-        if verbosity > 3:
-            cigar = ''.join(self.cigar_parts)
-            cigar_length_increase = len(cigar) - cigar_length_before
-            cigar_size_to_print = 20 + cigar_length_increase
-            print(self)
-            if len(cigar) > cigar_size_to_print:
-                print('   ', cigar[:cigar_size_to_print] + '...')
-            else:
-                print('   ', cigar[:cigar_size_to_print])
-
-    def extend_end(self, scoring_scheme, verbosity):
-        """
-        This function extends the end of the alignment to remove any missing end bases.
-        """
-        cigar_length_before = 0
-        if verbosity > 3:
-            print()
-            print(self)
-            cigar = ''.join(self.cigar_parts)
-            if len(cigar) > 20:
-                print('    ...' + cigar[-20:])
-            else:
-                print('       ' + cigar[-20:])
-            cigar_length_before = len(cigar)
-
-        # We will try the end extension a few times, if necessary, with increasing margin sizes.
-        # The first try should usually be sufficient.
-        seqan_parts = []
-        for i in range(3):
-            margin_size = 2 ** (i + 1)  # 2, 4, 8
-            missing_end_bases = self.get_missing_bases_at_end()
-            realigned_bases = margin_size * missing_end_bases
-            realigned_read_start = self.read_end_pos
-            realigned_read_end = min(self.read.get_length(), realigned_read_start + realigned_bases)
-            realigned_ref_start = self.ref_end_pos
-            realigned_ref_end = min(len(self.ref.sequence), realigned_ref_start + realigned_bases)
-            if self.rev_comp:
-                realigned_read_seq = \
-                    reverse_complement(self.read.sequence)[realigned_read_start:realigned_read_end]
-            else:
-                realigned_read_seq = self.read.sequence[realigned_read_start:realigned_read_end]
-            realigned_ref_seq = self.ref.sequence[realigned_ref_start:realigned_ref_end]
-            assert len(realigned_ref_seq) >= len(realigned_read_seq)
-
-            # Call the C++ function to do the actual alignment.
-            alignment_result = end_extension_alignment(realigned_read_seq, realigned_ref_seq,
-                                                       scoring_scheme)
-            seqan_parts = alignment_result.split(',', 9)
-            assert len(seqan_parts) >= 10
-
-            # If the extended alignment has taken us far enough (should usually be the case), then
-            # use it. In rare cases, the margin size won't have been enough, so we try again with a
-            # bigger margin.
-            if self.read_end_pos + int(seqan_parts[3]) == self.read.get_length():
-                break
-
-        # Set the new read end.
-        self.read_end_pos += int(seqan_parts[3])
-        self.read_end_gap = self.read.get_length() - self.read_end_pos
-
-        # Set the new reference end.
-        self.ref_end_pos += int(seqan_parts[5])
-        self.ref_end_gap = len(self.ref.sequence) - self.ref_end_pos
-
-        # Replace the S part at the end the alignment's CIGAR with the CIGAR just made. If
-        # the first part of the new CIGAR is of the same type as the last part of the existing
-        # CIGAR, they will need to be merged.
-        old_cigar_parts = self.cigar_parts[:-1]
-        new_cigar_parts = re.findall(r'\d+\w', seqan_parts[9])
-        if old_cigar_parts[-1][-1] == new_cigar_parts[0][-1]:
-            part_sum = int(old_cigar_parts[-1][:-1]) + int(new_cigar_parts[0][:-1])
-            merged_part = str(part_sum) + new_cigar_parts[0][-1]
-            old_cigar_parts = old_cigar_parts[:-1] + [merged_part]
-            new_cigar_parts = new_cigar_parts[1:]
-        self.cigar_parts = old_cigar_parts + new_cigar_parts
-
-        self.tally_up_score_and_errors(scoring_scheme)
-
-        if verbosity > 3:
-            cigar = ''.join(self.cigar_parts)
-            cigar_length_increase = len(cigar) - cigar_length_before
-            cigar_size_to_print = 20 + cigar_length_increase
-            print(self)
-            if len(cigar) > cigar_size_to_print:
-                print('    ...' + cigar[-cigar_size_to_print:])
-            else:
-                print('       ' + cigar[-cigar_size_to_print:])
+    # def extend_start(self, scoring_scheme, verbosity):
+    #     """
+    #     This function extends the start of the alignment to remove any missing start bases.
+    #     """
+    #     cigar_length_before = 0
+    #     if verbosity > 3:
+    #         print()
+    #         print(self)
+    #         cigar = ''.join(self.cigar_parts)
+    #         if len(cigar) > 20:
+    #             print('   ', cigar[:20] + '...')
+    #         else:
+    #             print('   ', cigar[:20])
+    #         cigar_length_before = len(cigar)
+    #
+    #     # We will try the start extension a few times, if necessary, with increasing margin sizes.
+    #     # The first try should usually be sufficient.
+    #     seqan_parts = []
+    #     realigned_ref_start = 0
+    #     for i in range(3):
+    #         margin_size = 2 ** (i + 1)  # 2, 4, 8
+    #         missing_start_bases = self.get_missing_bases_at_start()
+    #         realigned_bases = margin_size * missing_start_bases
+    #         realigned_read_end = self.read_start_pos
+    #         realigned_read_start = max(0, realigned_read_end - realigned_bases)
+    #         realigned_ref_end = self.ref_start_pos
+    #         realigned_ref_start = max(0, realigned_ref_end - realigned_bases)
+    #         if self.rev_comp:
+    #             realigned_read_seq = \
+    #                 reverse_complement(self.read.sequence)[realigned_read_start:realigned_read_end]
+    #         else:
+    #             realigned_read_seq = self.read.sequence[realigned_read_start:realigned_read_end]
+    #         realigned_ref_seq = self.ref.sequence[realigned_ref_start:realigned_ref_end]
+    #         assert len(realigned_ref_seq) >= len(realigned_read_seq)
+    #
+    #         # Call the C++ function to do the actual alignment.
+    #         alignment_result = start_extension_alignment(realigned_read_seq, realigned_ref_seq,
+    #                                                      scoring_scheme)
+    #         seqan_parts = alignment_result.split(',', 9)
+    #         assert len(seqan_parts) >= 10
+    #
+    #         # If the extended alignment has taken us far enough (should usually be the case), then
+    #         # use it. In rare cases, the margin size won't have been enough, so we try again with a
+    #         # bigger margin.
+    #         if int(seqan_parts[2]) == 0:
+    #             break
+    #
+    #     # Set the new read start.
+    #     self.read_start_pos = int(seqan_parts[2])
+    #
+    #     # Set the new reference start.
+    #     self.ref_start_pos = realigned_ref_start + int(seqan_parts[4])
+    #
+    #     # Replace the S part at the beginning the alignment's CIGAR with the CIGAR just made. If
+    #     # the last part of the new CIGAR is of the same type as the first part of the existing
+    #     # CIGAR, they will need to be merged.
+    #     new_cigar_parts = re.findall(r'\d+\w', seqan_parts[9])
+    #     old_cigar_parts = self.cigar_parts[1:]
+    #     if new_cigar_parts[-1][-1] == old_cigar_parts[0][-1]:
+    #         part_sum = int(new_cigar_parts[-1][:-1]) + int(old_cigar_parts[0][:-1])
+    #         merged_part = str(part_sum) + new_cigar_parts[-1][-1]
+    #         new_cigar_parts = new_cigar_parts[:-1] + [merged_part]
+    #         old_cigar_parts = old_cigar_parts[1:]
+    #     self.cigar_parts = new_cigar_parts + old_cigar_parts
+    #
+    #     self.tally_up_score_and_errors(scoring_scheme)
+    #
+    #     if verbosity > 3:
+    #         cigar = ''.join(self.cigar_parts)
+    #         cigar_length_increase = len(cigar) - cigar_length_before
+    #         cigar_size_to_print = 20 + cigar_length_increase
+    #         print(self)
+    #         if len(cigar) > cigar_size_to_print:
+    #             print('   ', cigar[:cigar_size_to_print] + '...')
+    #         else:
+    #             print('   ', cigar[:cigar_size_to_print])
+    #
+    # def extend_end(self, scoring_scheme, verbosity):
+    #     """
+    #     This function extends the end of the alignment to remove any missing end bases.
+    #     """
+    #     cigar_length_before = 0
+    #     if verbosity > 3:
+    #         print()
+    #         print(self)
+    #         cigar = ''.join(self.cigar_parts)
+    #         if len(cigar) > 20:
+    #             print('    ...' + cigar[-20:])
+    #         else:
+    #             print('       ' + cigar[-20:])
+    #         cigar_length_before = len(cigar)
+    #
+    #     # We will try the end extension a few times, if necessary, with increasing margin sizes.
+    #     # The first try should usually be sufficient.
+    #     seqan_parts = []
+    #     for i in range(3):
+    #         margin_size = 2 ** (i + 1)  # 2, 4, 8
+    #         missing_end_bases = self.get_missing_bases_at_end()
+    #         realigned_bases = margin_size * missing_end_bases
+    #         realigned_read_start = self.read_end_pos
+    #         realigned_read_end = min(self.read.get_length(), realigned_read_start + realigned_bases)
+    #         realigned_ref_start = self.ref_end_pos
+    #         realigned_ref_end = min(len(self.ref.sequence), realigned_ref_start + realigned_bases)
+    #         if self.rev_comp:
+    #             realigned_read_seq = \
+    #                 reverse_complement(self.read.sequence)[realigned_read_start:realigned_read_end]
+    #         else:
+    #             realigned_read_seq = self.read.sequence[realigned_read_start:realigned_read_end]
+    #         realigned_ref_seq = self.ref.sequence[realigned_ref_start:realigned_ref_end]
+    #         assert len(realigned_ref_seq) >= len(realigned_read_seq)
+    #
+    #         # Call the C++ function to do the actual alignment.
+    #         alignment_result = end_extension_alignment(realigned_read_seq, realigned_ref_seq,
+    #                                                    scoring_scheme)
+    #         seqan_parts = alignment_result.split(',', 9)
+    #         assert len(seqan_parts) >= 10
+    #
+    #         # If the extended alignment has taken us far enough (should usually be the case), then
+    #         # use it. In rare cases, the margin size won't have been enough, so we try again with a
+    #         # bigger margin.
+    #         if self.read_end_pos + int(seqan_parts[3]) == self.read.get_length():
+    #             break
+    #
+    #     # Set the new read end.
+    #     self.read_end_pos += int(seqan_parts[3])
+    #     self.read_end_gap = self.read.get_length() - self.read_end_pos
+    #
+    #     # Set the new reference end.
+    #     self.ref_end_pos += int(seqan_parts[5])
+    #     self.ref_end_gap = len(self.ref.sequence) - self.ref_end_pos
+    #
+    #     # Replace the S part at the end the alignment's CIGAR with the CIGAR just made. If
+    #     # the first part of the new CIGAR is of the same type as the last part of the existing
+    #     # CIGAR, they will need to be merged.
+    #     old_cigar_parts = self.cigar_parts[:-1]
+    #     new_cigar_parts = re.findall(r'\d+\w', seqan_parts[9])
+    #     if old_cigar_parts[-1][-1] == new_cigar_parts[0][-1]:
+    #         part_sum = int(old_cigar_parts[-1][:-1]) + int(new_cigar_parts[0][:-1])
+    #         merged_part = str(part_sum) + new_cigar_parts[0][-1]
+    #         old_cigar_parts = old_cigar_parts[:-1] + [merged_part]
+    #         new_cigar_parts = new_cigar_parts[1:]
+    #     self.cigar_parts = old_cigar_parts + new_cigar_parts
+    #
+    #     self.tally_up_score_and_errors(scoring_scheme)
+    #
+    #     if verbosity > 3:
+    #         cigar = ''.join(self.cigar_parts)
+    #         cigar_length_increase = len(cigar) - cigar_length_before
+    #         cigar_size_to_print = 20 + cigar_length_increase
+    #         print(self)
+    #         if len(cigar) > cigar_size_to_print:
+    #             print('    ...' + cigar[-cigar_size_to_print:])
+    #         else:
+    #             print('       ' + cigar[-cigar_size_to_print:])
 
     def __repr__(self):
         read_start, read_end = self.read_start_end_positive_strand()

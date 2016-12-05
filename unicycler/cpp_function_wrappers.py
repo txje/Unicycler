@@ -20,7 +20,7 @@ C_LIB = CDLL(SO_FILE_FULL)
 C_LIB.semiGlobalAlignment.argtypes = [c_char_p,  # Read name
                                       c_char_p,  # Read sequence
                                       c_int,     # Verbosity
-                                      c_double,  # Expected slope
+                                      c_char_p,  # Minimap alignment info
                                       c_void_p,  # KmerPositions pointer
                                       c_int,     # Match score
                                       c_int,     # Mismatch score
@@ -33,16 +33,18 @@ C_LIB.semiGlobalAlignment.argtypes = [c_char_p,  # Read name
 C_LIB.semiGlobalAlignment.restype = c_void_p     # String describing alignments
 
 
-def semi_global_alignment(read_name, read_sequence, verbosity, expected_slope, kmer_positions_ptr,
-                          match_score, mismatch_score, gap_open_score, gap_extend_score,
-                          low_score_threshold, keep_bad, kmer_size, extra_sensitive):
+def semi_global_alignment(read_name, read_sequence, verbosity, minimap_alignments_str,
+                          kmer_positions_ptr, match_score, mismatch_score, gap_open_score,
+                          gap_extend_score, low_score_threshold, keep_bad, kmer_size,
+                          extra_sensitive):
     """
     Python wrapper for semiGlobalAlignment C++ function.
     """
     ptr = C_LIB.semiGlobalAlignment(read_name.encode('utf-8'), read_sequence.encode('utf-8'),
-                                    verbosity, expected_slope, kmer_positions_ptr,
-                                    match_score, mismatch_score, gap_open_score, gap_extend_score,
-                                    low_score_threshold, keep_bad, kmer_size, extra_sensitive)
+                                    verbosity, minimap_alignments_str.encode('utf-8'),
+                                    kmer_positions_ptr, match_score, mismatch_score,
+                                    gap_open_score, gap_extend_score, low_score_threshold,
+                                    keep_bad, kmer_size, extra_sensitive)
     return c_string_to_python_string(ptr)
 
 
@@ -93,48 +95,48 @@ def path_alignment(partial_seq, full_seq, scoring_scheme, use_banding, band_size
                               scoring_scheme.gap_open, scoring_scheme.gap_extend,
                               use_banding, band_size)
     return c_string_to_python_string(ptr)
-
-
-# These functions are used to conduct short alignments for the sake of extending the start and end
-# of a GraphMap alignment.
-C_LIB.startExtensionAlignment.argtypes = [c_char_p,  # Read sequence
-                                          c_char_p,  # Reference sequence
-                                          c_int,  # Match score
-                                          c_int,  # Mismatch score
-                                          c_int,  # Gap open score
-                                          c_int]  # Gap extension score
-C_LIB.startExtensionAlignment.restype = c_void_p  # String describing alignment
-
-
-def start_extension_alignment(realigned_read_seq, realigned_ref_seq, scoring_scheme):
-    """
-    Python wrapper for startExtensionAlignment C++ function.
-    """
-    ptr = C_LIB.startExtensionAlignment(realigned_read_seq.encode('utf-8'),
-                                        realigned_ref_seq.encode('utf-8'),
-                                        scoring_scheme.match, scoring_scheme.mismatch,
-                                        scoring_scheme.gap_open, scoring_scheme.gap_extend)
-    return c_string_to_python_string(ptr)
-
-
-C_LIB.endExtensionAlignment.argtypes = [c_char_p,  # Read sequence
-                                        c_char_p,  # Reference sequence
-                                        c_int,  # Match score
-                                        c_int,  # Mismatch score
-                                        c_int,  # Gap open score
-                                        c_int]  # Gap extension score
-C_LIB.endExtensionAlignment.restype = c_void_p  # String describing alignment
-
-
-def end_extension_alignment(realigned_read_seq, realigned_ref_seq, scoring_scheme):
-    """
-    Python wrapper for endExtensionAlignment C++ function.
-    """
-    ptr = C_LIB.endExtensionAlignment(realigned_read_seq.encode('utf-8'),
-                                      realigned_ref_seq.encode('utf-8'),
-                                      scoring_scheme.match, scoring_scheme.mismatch,
-                                      scoring_scheme.gap_open, scoring_scheme.gap_extend)
-    return c_string_to_python_string(ptr)
+#
+#
+# # These functions are used to conduct short alignments for the sake of extending the start and end
+# # of a GraphMap alignment.
+# C_LIB.startExtensionAlignment.argtypes = [c_char_p,  # Read sequence
+#                                           c_char_p,  # Reference sequence
+#                                           c_int,  # Match score
+#                                           c_int,  # Mismatch score
+#                                           c_int,  # Gap open score
+#                                           c_int]  # Gap extension score
+# C_LIB.startExtensionAlignment.restype = c_void_p  # String describing alignment
+#
+#
+# def start_extension_alignment(realigned_read_seq, realigned_ref_seq, scoring_scheme):
+#     """
+#     Python wrapper for startExtensionAlignment C++ function.
+#     """
+#     ptr = C_LIB.startExtensionAlignment(realigned_read_seq.encode('utf-8'),
+#                                         realigned_ref_seq.encode('utf-8'),
+#                                         scoring_scheme.match, scoring_scheme.mismatch,
+#                                         scoring_scheme.gap_open, scoring_scheme.gap_extend)
+#     return c_string_to_python_string(ptr)
+#
+#
+# C_LIB.endExtensionAlignment.argtypes = [c_char_p,  # Read sequence
+#                                         c_char_p,  # Reference sequence
+#                                         c_int,  # Match score
+#                                         c_int,  # Mismatch score
+#                                         c_int,  # Gap open score
+#                                         c_int]  # Gap extension score
+# C_LIB.endExtensionAlignment.restype = c_void_p  # String describing alignment
+#
+#
+# def end_extension_alignment(realigned_read_seq, realigned_ref_seq, scoring_scheme):
+#     """
+#     Python wrapper for endExtensionAlignment C++ function.
+#     """
+#     ptr = C_LIB.endExtensionAlignment(realigned_read_seq.encode('utf-8'),
+#                                       realigned_ref_seq.encode('utf-8'),
+#                                       scoring_scheme.match, scoring_scheme.mismatch,
+#                                       scoring_scheme.gap_open, scoring_scheme.gap_extend)
+#     return c_string_to_python_string(ptr)
 
 
 # This function cleans up the heap memory for the C strings returned by the other C functions. It
@@ -153,42 +155,34 @@ def c_string_to_python_string(c_string):
     return python_string
 
 
-# These functions make/delete a C++ object that will be used during line-finding.
-C_LIB.newKmerPositions.argtypes = []
-C_LIB.newKmerPositions.restype = c_void_p
+# These functions make/delete a C++ object that will hold reference sequences for quick access.
+C_LIB.newRefSeqs.argtypes = []
+C_LIB.newRefSeqs.restype = c_void_p
 
 
-def new_kmer_positions():
-    """
-    Python wrapper for newKmerPositions C++ function.
-    """
-    return C_LIB.newKmerPositions()
+def new_ref_seqs():
+    """Python wrapper for newRefSeqs C++ function."""
+    return C_LIB.newRefSeqs()
 
 
-C_LIB.addKmerPositions.argtypes = [c_void_p,  # KmerPositions pointer
-                                   c_char_p,  # Name
-                                   c_char_p,  # Sequence
-                                   c_int]  # K-mer size
-C_LIB.addKmerPositions.restype = None
+C_LIB.addRefSeq.argtypes = [c_void_p,  # SeqMap pointer
+                             c_char_p,  # Name
+                             c_char_p]  # Sequence
+C_LIB.addRefSeq.restype = None
 
 
-def add_kmer_positions(kmer_positions_ptr, name, sequence, kmer_size):
-    """
-    Python wrapper for addKmerPositions C++ function.
-    """
-    C_LIB.addKmerPositions(kmer_positions_ptr, name.encode('utf-8'), sequence.encode('utf-8'),
-                           kmer_size)
+def add_ref_seq(ref_seqs_ptr, name, sequence):
+    """Python wrapper for addRefSeq C++ function."""
+    C_LIB.addRefSeq(ref_seqs_ptr, name.encode('utf-8'), sequence.encode('utf-8'))
 
 
-C_LIB.deleteAllKmerPositions.argtypes = [c_void_p]
-C_LIB.deleteAllKmerPositions.restype = None
+C_LIB.deleteRefSeqs.argtypes = [c_void_p]
+C_LIB.deleteRefSeqs.restype = None
 
 
-def delete_all_kmer_positions(kmer_positions_ptr):
-    """
-    Python wrapper for deleteAllKmerPositions C++ function.
-    """
-    C_LIB.deleteAllKmerPositions(kmer_positions_ptr)
+def delete_ref_seqs(ref_seqs_ptr):
+    """Python wrapper for deleteRefSeqs C++ function."""
+    C_LIB.deleteRefSeqs(ref_seqs_ptr)
 
 
 # This function gets the mean and standard deviation of alignments between random sequences.

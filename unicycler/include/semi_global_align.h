@@ -26,9 +26,9 @@ extern "C" {
 
     char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
                                char * minimapAlignmentsStr, SeqMap * refSeqs,
-                               int matchScore, int mismatchScore, int gapOpenScore, int gapExtensionScore,
-                               double lowScoreThreshold, bool returnBad, int kSize,
-                               bool extraSensitive);
+                               int matchScore, int mismatchScore, int gapOpenScore,
+                               int gapExtensionScore, double lowScoreThreshold, bool returnBad,
+                               int sensitivityLevel);
 
 //    char * startExtensionAlignment(char * read, char * ref,
 //                                   int matchScore, int mismatchScore, int gapOpenScore,
@@ -45,7 +45,8 @@ std::vector<ScoredAlignment *> alignReadToReferenceRange(SeqMap * refSeqs, std::
                                                          KmerPosMap * kmerPositions, int kSize,
                                                          std::string * readSeq, int matchScore,
                                                          int mismatchScore, int gapOpenScore,
-                                                         int gapExtensionScore);
+                                                         int gapExtensionScore,
+                                                         int sensitivityLevel);
 
 //ScoredAlignment * semiGlobalAlignmentOneLine(std::string & readName, std::string & refName,
 //                                             std::string * readSeq, std::string * refSeq,
@@ -122,7 +123,7 @@ Point getHighestDensityPoint(int densityRadius, PointCloud & cloud, my_kd_tree_t
                              std::string & trimmedRefSeq, std::string * readSeq);
 
 Point getHighestDensityPointNearPoint(int densityRadius, Point centre, PointCloud & cloud,
-                                      my_kd_tree_t & index, int maxX, int maxY);
+                                      my_kd_tree_t & index);
 
 void addKmerPointsToNanoflann(PointCloud & cloud, std::vector<CommonKmer> & commonKmers);
 

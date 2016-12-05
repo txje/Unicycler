@@ -349,14 +349,11 @@ Long read alignment:
 
   --temp_dir TEMP_DIR                   Temp directory for working files ("PID" will be replaced with the process ID)
   --contamination CONTAMINATION         FASTA file of known contamination in long reads, e.g. lambda phage spike-in (default: none).
-  --graphmap                            Use GraphMap as a first-pass aligner
-  --graphmap_path GRAPHMAP_PATH         Path to the GraphMap executable
   --scores SCORES                       Comma-delimited string of alignment scores: match, mismatch, gap open, gap extend
   --low_score LOW_SCORE                 Score threshold - alignments below this are considered poor (default: set threshold automatically)
   --min_len MIN_LEN                     Minimum alignment length (bp) - exclude alignments shorter than this length
   --keep_bad                            Include alignments in the results even if they are below the low score threshold (default: low-scoring alignments are discarded)
   --allowed_overlap ALLOWED_OVERLAP     Allow this much overlap between alignments in a single read
-  --kmer KMER                           K-mer size used for seeding alignments
 ```
 
 
@@ -506,11 +503,8 @@ Try [BWA-MEM](http://bio-bwa.sourceforge.net/), [LAST](http://last.cbrc.jp/) or 
 __Regular alignment:__<br>
 `unicycler_align --reads queries.fastq --ref target.fasta --sam output.sam`
 
-__Use [GraphMap](https://github.com/isovic/graphmap) as a first pass aligner (can be faster), then align with Unicycler:__<br>
-`unicycler_align --reads queries.fastq --ref target.fasta --sam output.sam --graphmap`
-
 __Very sensitive (and slow) alignment:__<br>
-`unicycler_align --reads queries.fastq --ref target.fasta --sam output.sam --extra_sensitive`
+`unicycler_align --reads queries.fastq --ref target.fasta --sam output.sam --sensitivity_level 3`
 
 __Setting some additional thresholds:__<br>
 `unicycler_align --reads queries.fastq --ref target.fasta --sam output.sam --min_len 1000 --low_score 80.0`

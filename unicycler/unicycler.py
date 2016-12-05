@@ -46,8 +46,6 @@ def main():
         files.append(args.long)
     check_files_and_programs(files, args,
                              spades_path=args.spades_path,
-                             graphmap_path=(None if (not args.graphmap or args.no_long)
-                                            else args.graphmap_path),
                              makeblastdb_path=(None if args.no_rotate else args.makeblastdb_path),
                              tblastn_path=(None if args.no_rotate else args.tblastn_path),
                              gene_db_path=(None if args.no_rotate else args.start_genes),
@@ -169,9 +167,9 @@ def main():
                                         settings.ALLOWED_ALIGNMENT_OVERLAP))
             low_score_threshold = [args.low_score]
             semi_global_align_long_reads(references, graph_fasta, read_dict, read_names,
-                                         long_read_filename, temp_alignment_dir, args.graphmap_path,
+                                         long_read_filename, temp_alignment_dir,
                                          args.threads, scoring_scheme, low_score_threshold,
-                                         args.graphmap, False, args.kmer,
+                                         False, args.kmer,
                                          min_alignment_length, alignments_1_in_progress,
                                          full_command, allowed_overlap, False, args.contamination,
                                          verbosity, stdout_header='Aligning reads (first pass)',
@@ -186,7 +184,7 @@ def main():
             if retry_read_names:
                 semi_global_align_long_reads(references, single_copy_segments_fasta, read_dict,
                                              retry_read_names, long_read_filename,
-                                             temp_alignment_dir, args.graphmap_path,
+                                             temp_alignment_dir,
                                              args.threads, scoring_scheme, low_score_threshold,
                                              False, False, args.kmer, min_alignment_length,
                                              alignments_2_in_progress, full_command,

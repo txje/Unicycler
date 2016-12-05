@@ -19,12 +19,20 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
                            char * minimapAlignmentsStr, SeqMap * refSeqs,
                            int matchScore, int mismatchScore, int gapOpenScore,
                            int gapExtensionScore, double lowScoreThreshold, bool returnBad,
-                           int kSize, bool extraSensitive) {
+                           int sensitivityLevel) {
+    int kSize = LEVEL_0_KMER_SIZE;
+    if (sensitivityLevel == 1)
+        kSize = LEVEL_1_KMER_SIZE;
+    else if (sensitivityLevel == 2)
+        kSize = LEVEL_2_KMER_SIZE;
+    else if (sensitivityLevel == 3)
+        kSize = LEVEL_3_KMER_SIZE;
+
     std::string output;
     std::string returnString;
     std::vector<ScoredAlignment *> returnedAlignments;
 
-    std::cout << std::endl;  // TEMP
+//    std::cout << std::endl;  // TEMP
 
     // Change the read name and sequence to C++ strings.
     std::string readName(readNameC);
@@ -34,8 +42,15 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
     std::string negReadSeq;  // Will make later, if necessary.
     int readLength = posReadSeq.length();
 
-    // For each minimap alignment we find the appropriate part of the reference sequence.
+
     std::vector<std::string> minimapAlignments = splitString(minimapAlignmentsStr, ';');
+    if (verbosity > 2) {
+        output += "minimap alignments:\n";
+        for (auto minimapAlignment : minimapAlignments)
+            output += "    " + minimapAlignment + "\n";
+    }
+
+    // For each minimap alignment we find the appropriate part of the reference sequence.
     RefRangeMap refRanges;
     for (size_t i = 0; i < minimapAlignments.size(); ++i) {
         std::string minimapStr = minimapAlignments[i];
@@ -122,7 +137,8 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
             std::vector<ScoredAlignment *> a =
                 alignReadToReferenceRange(refSeqs, refName, range, refSeq.length(), readName,
                                           readStrand, kmerPositions, kSize, readSeq, matchScore,
-                                          mismatchScore, gapOpenScore, gapExtensionScore);
+                                          mismatchScore, gapOpenScore, gapExtensionScore,
+                                          sensitivityLevel);
             returnedAlignments.insert(returnedAlignments.end(), a.begin(), a.end());
         }
     }
@@ -145,7 +161,8 @@ std::vector<ScoredAlignment *> alignReadToReferenceRange(SeqMap * refSeqs, std::
                                                          KmerPosMap * kmerPositions, int kSize,
                                                          std::string * readSeq, int matchScore,
                                                          int mismatchScore, int gapOpenScore,
-                                                         int gapExtensionScore) {
+                                                         int gapExtensionScore,
+                                                         int sensitivityLevel) {
     long long startTime = getTime();
     std::vector<ScoredAlignment *> alignments;
 
@@ -153,8 +170,8 @@ std::vector<ScoredAlignment *> alignReadToReferenceRange(SeqMap * refSeqs, std::
     int refEnd = refRange.second;
     int readLen = readSeq->length();
 
-    std::cout << "(" << refName << "," << readStrand << "," << refStart << "," << refEnd << ") ";  // TEMP
-    std::cout << std::flush; // TEMP
+//    std::cout << "(" << refName << "," << readStrand << "," << refStart << "," << refEnd << ") ";  // TEMP
+//    std::cout << std::flush; // TEMP
     std::string trimmedRefSeq = refSeqs->at(refName).substr(refStart, refEnd-refStart);
 
     // Find all common k-mer positions.
@@ -164,7 +181,7 @@ std::vector<ScoredAlignment *> alignReadToReferenceRange(SeqMap * refSeqs, std::
         std::string refKmer = trimmedRefSeq.substr(i, kSize);
         if (kmerPositions->find(refKmer) != kmerPositions->end() ) {  // if k-mer is in the read
             std::vector<int> & readPositions = kmerPositions->at(refKmer);
-            for (int j = 0; j < readPositions.size(); ++j)
+            for (size_t j = 0; j < readPositions.size(); ++j)
                 commonKmers.emplace_back(readPositions[j], i);
         }
     }
@@ -181,8 +198,8 @@ std::vector<ScoredAlignment *> alignReadToReferenceRange(SeqMap * refSeqs, std::
     Point highestDensityPoint = getHighestDensityPoint(100, cloud, index, trimmedRefSeq, readSeq);
 
     Point p = highestDensityPoint;
-    std::cout << std::endl;
-    std::cout << "(" << p.x << "," << p.y << ") " << std::flush;
+//    std::cout << std::endl;
+//    std::cout << "(" << p.x << "," << p.y << ") " << std::flush;
 
     int lineTracingStepSize = 250;
     int searchRadius = 500;
@@ -203,10 +220,10 @@ std::vector<ScoredAlignment *> alignReadToReferenceRange(SeqMap * refSeqs, std::
         if (newP.x > maxX || newP.y > maxY)
             p = newP;
         else
-            p = getHighestDensityPointNearPoint(lineTracingStepSize, newP, cloud, index, maxX, maxY);
+            p = getHighestDensityPointNearPoint(lineTracingStepSize, newP, cloud, index);
         if (p.x == -1 || p.y == -1)
             p = newP;
-        std::cout << "(" << p.x << "," << p.y << ") " << std::flush;
+//        std::cout << "(" << p.x << "," << p.y << ") " << std::flush;
         std::vector<Point> nearbyPoints = radiusSearchAroundPoint(p, searchRadius, cloud, index);
         for (auto p : nearbyPoints)
             pointSet.insert(p);
@@ -222,16 +239,16 @@ std::vector<ScoredAlignment *> alignReadToReferenceRange(SeqMap * refSeqs, std::
         if (newP.x < 0 || newP.y < 0)
             p = newP;
         else
-            p = getHighestDensityPointNearPoint(lineTracingStepSize, newP, cloud, index, maxX, maxY);
+            p = getHighestDensityPointNearPoint(lineTracingStepSize, newP, cloud, index);
         if (p.x == -1 || p.y == -1)
             p = newP;
-        std::cout << "(" << p.x << "," << p.y << ") " << std::flush;
+//        std::cout << "(" << p.x << "," << p.y << ") " << std::flush;
         std::vector<Point> nearbyPoints = radiusSearchAroundPoint(p, searchRadius, cloud, index);
         for (auto p : nearbyPoints)
             pointSet.insert(p);
     } while (p.x >= 0 && p.y >= 0);
 
-    std::cout << std::endl;
+//    std::cout << std::endl;
 
     // Now we can do a Seqan alignment around the points we've collected!
     typedef Seed<Simple> TSeed;
@@ -277,19 +294,28 @@ std::vector<ScoredAlignment *> alignReadToReferenceRange(SeqMap * refSeqs, std::
     assignSource(row(alignment, 1), trimmedRefSeq);
     AlignConfig<true, true, true, true> alignConfig;
     Score<int, Simple> scoringScheme(matchScore, mismatchScore, gapExtensionScore, gapOpenScore);
-    int bandSize = 20;
+
+    int bandSize = LEVEL_0_BAND_SIZE;
+    if (sensitivityLevel == 1)
+        bandSize = LEVEL_1_BAND_SIZE;
+    else if (sensitivityLevel == 2)
+        bandSize = LEVEL_2_BAND_SIZE;
+    else if (sensitivityLevel == 3)
+        bandSize = LEVEL_3_BAND_SIZE;
 
     ScoredAlignment * sgAlignment;
     try {
         bandedChainAlignment(alignment, seedChain, scoringScheme, alignConfig, bandSize);
-        sgAlignment = new ScoredAlignment(alignment, readName, refName, readLen, refLen,
+//        std::cout << alignment << std::endl;
+        std::string signedReadName = readName + readStrand;
+        sgAlignment = new ScoredAlignment(alignment, signedReadName, refName, readLen, refLen,
                                           refStart, startTime, bandSize, false, false, false,
                                           scoringScheme);
+//        std::cout << sgAlignment->m_rawScore << std::endl;
     }
     catch (...) {
         sgAlignment = 0;
     }
-    std::cout << sgAlignment << std::endl;
 
     alignments.push_back(sgAlignment);
     return alignments;
@@ -334,8 +360,6 @@ std::vector<Point> getPointsInHighestDensityRegion(int searchRadius, std::string
 
     nanoflann::SearchParams params;
     double highestDensity = 0.0;
-    int maxX = readSeq->length();
-    int maxY = trimmedRefSeq.length();
     std::vector<Point> pointsInHighestDensity;
 
     for (int i = 0; i <= xStepCount; ++i) {
@@ -400,7 +424,7 @@ Point getHighestDensityPoint(int densityRadius, PointCloud & cloud, my_kd_tree_t
 }
 
 Point getHighestDensityPointNearPoint(int densityRadius, Point centre, PointCloud & cloud,
-                                      my_kd_tree_t & index, int maxX, int maxY) {
+                                      my_kd_tree_t & index) {
     std::vector<Point> points = radiusSearchAroundPoint(centre, densityRadius, cloud, index);
     if (points.size() == 0)
         return {-1, -1};

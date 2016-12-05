@@ -28,15 +28,13 @@ C_LIB.semiGlobalAlignment.argtypes = [c_char_p,  # Read name
                                       c_int,     # Gap extension score
                                       c_double,  # Low score threshold
                                       c_bool,    # Return bad alignments
-                                      c_int,     # K-mer size
-                                      c_bool]    # Perform slow but extra sensitive alignment
+                                      c_int]     # Sensitivity level
 C_LIB.semiGlobalAlignment.restype = c_void_p     # String describing alignments
 
 
 def semi_global_alignment(read_name, read_sequence, verbosity, minimap_alignments_str,
                           kmer_positions_ptr, match_score, mismatch_score, gap_open_score,
-                          gap_extend_score, low_score_threshold, keep_bad, kmer_size,
-                          extra_sensitive):
+                          gap_extend_score, low_score_threshold, keep_bad, sensitivity_level):
     """
     Python wrapper for semiGlobalAlignment C++ function.
     """
@@ -44,7 +42,7 @@ def semi_global_alignment(read_name, read_sequence, verbosity, minimap_alignment
                                     verbosity, minimap_alignments_str.encode('utf-8'),
                                     kmer_positions_ptr, match_score, mismatch_score,
                                     gap_open_score, gap_extend_score, low_score_threshold,
-                                    keep_bad, kmer_size, extra_sensitive)
+                                    keep_bad, sensitivity_level)
     return c_string_to_python_string(ptr)
 
 
@@ -350,16 +348,16 @@ def multiple_sequence_alignment(full_length_sequences, full_length_qualities,
 # This function conducts a minimap alignment between reads and reference.
 C_LIB.minimapAlignReads.argtypes = [c_char_p,  # Reference fasta filename
                                     c_char_p,  # Reads fastq filename
-                                    c_int,     # K-mer size
                                     c_int,     # Threads
+                                    c_int,     # Sensitivity level
                                     c_int]     # Verbosity
 C_LIB.minimapAlignReads.restype = c_void_p     # String describing alignments
 
 
-def minimap_align_reads(reference_fasta, reads_fastq, kmer_size, threads, verbosity):
+def minimap_align_reads(reference_fasta, reads_fastq, threads, verbosity, sensitivity_level):
     """
     Python wrapper for destroyMinimapIndex C++ function.
     """
     ptr = C_LIB.minimapAlignReads(reference_fasta.encode('utf-8'), reads_fastq.encode('utf-8'),
-                                  kmer_size, threads, verbosity)
+                                  threads, verbosity, sensitivity_level)
     return c_string_to_python_string(ptr)

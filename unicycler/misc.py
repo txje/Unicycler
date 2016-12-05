@@ -53,7 +53,7 @@ def int_to_str(num, max_num=0):
     return num_str.rjust(len(max_str))
 
 
-def check_files_and_programs(files, args, spades_path=None, graphmap_path=None,
+def check_files_and_programs(files, args, spades_path=None,
                              makeblastdb_path=None, tblastn_path=None, gene_db_path=None,
                              pilon_path=None, java_path=None, samtools_path=None,
                              bowtie2_path=None, bowtie2_build_path=None):
@@ -62,8 +62,6 @@ def check_files_and_programs(files, args, spades_path=None, graphmap_path=None,
     """
     for file in files:
         check_file_exists(file)
-    if graphmap_path:
-        check_graphmap(graphmap_path)
     if spades_path:
         check_spades(spades_path)
     if makeblastdb_path and tblastn_path:
@@ -94,15 +92,6 @@ def quit_with_error(message):  # type: (str) -> None
     """
     print('Error:', message, file=sys.stderr)
     sys.exit(1)
-
-
-def check_graphmap(graphmap_path):
-    """
-    Makes sure the GraphMap executable is available.
-    """
-    if shutil.which(graphmap_path) is None:
-        quit_with_error('could not find GraphMap at ' + graphmap_path +
-                        ', either fix path or do not use --graphmap')
 
 
 def check_spades(spades_path):

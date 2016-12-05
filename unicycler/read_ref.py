@@ -176,8 +176,7 @@ def load_long_reads(filename, verbosity):
         print_progress_line(len(read_dict), len(read_dict), total_bases, end_newline=True)
 
     # If there were duplicate read names, then we save the reads back out to file with their fixed
-    # names. We'll then be able to use this fixed file for GraphMap and the duplicate read names
-    # won't be a problem in the SAM file.
+    # names.
     if duplicate_read_names_found:
         no_dup_filename = os.path.abspath(strip_read_extensions(filename) +
                                           '_no_duplicates.fastq.gz')
@@ -434,15 +433,10 @@ class Read(object):
     def aligns_to_multiple_single_copy_segments(self, single_copy_segment_names):
         return sum(x.ref.name in single_copy_segment_names for x in self.alignments) > 1
 
-    def get_alignment_table(self, exclude_graphmap=False):
+    def get_alignment_table(self):
         alignment_table = [['Ref name', 'Ref start', 'Ref end', 'Read start', 'Read end', 'Strand',
                             'Raw score', 'Scaled score', 'Identity']]
-
-        if exclude_graphmap:
-            alignments = [x for x in self.alignments if x.alignment_type != 'SAM']
-        else:
-            alignments = self.alignments
-        for alignment in alignments:
+        for alignment in self.alignments:
             read_start, read_end = alignment.read_start_end_positive_strand()
             strand = '-' if alignment.rev_comp else '+'
             ref_name = alignment.ref.name

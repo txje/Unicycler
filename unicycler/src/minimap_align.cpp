@@ -1,9 +1,13 @@
 
 #include "minimap_align.h"
+
 #include <assert.h>
 #include <zlib.h>
 #include <iostream>
+
 #include "string_functions.h"
+#include "settings.h"
+
 KSEQ_INIT(gzFile, gzread)
 
 
@@ -18,7 +22,16 @@ KSEQ_INIT(gzFile, gzread)
 //     mm_idx_destroy(mi);
 // }
 
-char * minimapAlignReads(char * referenceFasta, char * readsFastq, int k, int n_threads, int verbosity) {
+char * minimapAlignReads(char * referenceFasta, char * readsFastq, int n_threads, int verbosity,
+                         int sensitivityLevel) {
+
+    int k = LEVEL_0_MINIMAP_KMER_SIZE;
+    if (sensitivityLevel == 1)
+        k = LEVEL_1_MINIMAP_KMER_SIZE;
+    else if (sensitivityLevel == 2)
+        k = LEVEL_2_MINIMAP_KMER_SIZE;
+    else if (sensitivityLevel == 3)
+        k = LEVEL_3_MINIMAP_KMER_SIZE;
 
     // Load in the reads.
     gzFile f = gzopen(readsFastq, "r");

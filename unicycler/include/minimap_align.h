@@ -13,7 +13,8 @@ extern "C" {
 
     // void destroyMinimapIndex(mm_idx_t * mi);
 
-    char * minimapAlignReads(char * referenceFasta, char * readsFastq, int k, int n_threads, int verbosity);
+    char * minimapAlignReads(char * referenceFasta, char * readsFastq, int n_threads,
+                             int verbosity, int sensitivityLevel);
 }
 
 #endif // MINIMAP_ALIGN_H

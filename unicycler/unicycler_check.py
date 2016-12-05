@@ -14,7 +14,7 @@ import string
 import argparse
 import random
 import shutil
-from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, check_graphmap, \
+from .misc import int_to_str, float_to_str, check_file_exists, quit_with_error, \
     get_nice_header, reverse_complement, print_progress_line, print_section_header, \
     MyHelpFormatter
 from .read_ref import load_references, load_long_reads
@@ -39,8 +39,6 @@ def main():
     full_command = ' '.join(sys.argv)
     check_file_exists(args.ref)
     check_file_exists(args.reads)
-    if must_perform_alignment and args.graphmap:
-        check_graphmap(args.graphmap_path)
 
     references = load_references(args.ref, VERBOSITY)
     reference_dict = {x.name: x for x in references}
@@ -53,8 +51,8 @@ def main():
 
     if must_perform_alignment:
         semi_global_align_long_reads(references, args.ref, read_dict, read_names, read_filename,
-                                     args.temp_dir, args.graphmap_path, args.threads,
-                                     scoring_scheme, [args.low_score], args.graphmap,
+                                     args.temp_dir, args.threads,
+                                     scoring_scheme, [args.low_score],
                                      args.keep_bad, args.kmer, args.min_len, args.sam,
                                      full_command, 0, False, args.contamination, VERBOSITY)
 

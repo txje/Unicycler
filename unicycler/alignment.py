@@ -41,15 +41,6 @@ class AlignmentScoringScheme(object):
         return 'match = ' + str(self.match) + ', mismatch = ' + str(self.mismatch) + \
                ', gap open = ' + str(self.gap_open) + ', gap extend = ' + str(self.gap_extend)
 
-    def get_graphmap_parameters(self):
-        """
-        Returns the scoring scheme in the form of GraphMap parameters for subprocess.
-        """
-        return ['-M', str(self.match),
-                '-X', str(-self.mismatch),
-                '-G', str(-self.gap_open),
-                '-E', str(-self.gap_extend)]
-
 
 class Alignment(object):
     """

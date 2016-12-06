@@ -189,7 +189,7 @@ int main(int argc, char *argv[])
 		else if (c == 't') T = atoi(optarg);
 	}
 	if (optind == argc) {
-		fprintf(stderr, "Usage: sdust [-w %d] [-t %d] <in.fa>\n", W, T);
+		fprintf(stdout, "Usage: sdust [-w %d] [-t %d] <in.fa>\n", W, T);
 		return 1;
 	}
 	fp = strcmp(argv[optind], "-")? gzopen(argv[optind], "r") : gzdopen(fileno(stdin), "r");

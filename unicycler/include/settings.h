@@ -1,18 +1,18 @@
 
 #define LEVEL_0_MINIMAP_KMER_SIZE 15
 #define LEVEL_1_MINIMAP_KMER_SIZE 15
-#define LEVEL_2_MINIMAP_KMER_SIZE 13
-#define LEVEL_3_MINIMAP_KMER_SIZE 11
+#define LEVEL_2_MINIMAP_KMER_SIZE 15
+#define LEVEL_3_MINIMAP_KMER_SIZE 15
 
 #define LEVEL_0_KMER_SIZE 10
-#define LEVEL_1_KMER_SIZE 9
-#define LEVEL_2_KMER_SIZE 8
-#define LEVEL_3_KMER_SIZE 7
+#define LEVEL_1_KMER_SIZE 10
+#define LEVEL_2_KMER_SIZE 10
+#define LEVEL_3_KMER_SIZE 10
 
-#define LEVEL_0_BAND_SIZE 50
-#define LEVEL_1_BAND_SIZE 100
-#define LEVEL_2_BAND_SIZE 150
-#define LEVEL_3_BAND_SIZE 200
+#define LEVEL_0_BAND_SIZE 25
+#define LEVEL_1_BAND_SIZE 50
+#define LEVEL_2_BAND_SIZE 75
+#define LEVEL_3_BAND_SIZE 100
 
 //// This is the k-mer size used in the line-finding process. It is small, which leads to lots of
 //// background noise in the alignment rectangle, but it means that alignments will still be found

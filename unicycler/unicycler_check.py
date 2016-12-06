@@ -51,8 +51,7 @@ def main():
 
     if must_perform_alignment:
         semi_global_align_long_reads(references, args.ref, read_dict, read_names, read_filename,
-                                     args.temp_dir, args.threads,
-                                     scoring_scheme, [args.low_score],
+                                     args.threads, scoring_scheme, [args.low_score],
                                      args.keep_bad, args.kmer, args.min_len, args.sam,
                                      full_command, 0, False, args.contamination, VERBOSITY)
 

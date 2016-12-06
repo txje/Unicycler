@@ -48,7 +48,7 @@ char * minimapAlignReads(char * referenceFasta, char * readsFastq, int n_threads
     mm_idx_t * mi = mm_idx_build(referenceFasta, w, k, n_threads);
     assert(mi);
     if (verbosity >= 3)
-        std::cout << "minimap indexing complete" << std::endl << std::flush;
+        std::cout << "minimap indexing complete" << std::endl << std::endl << std::flush;
 
     std::string outputString;
 

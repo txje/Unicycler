@@ -86,8 +86,7 @@ def main():
     scoring_scheme = AlignmentScoringScheme(args.scores)
 
     semi_global_align_long_reads(references, args.ref, read_dict, read_names, read_filename,
-                                 args.temp_dir, args.threads, scoring_scheme,
-                                 [args.low_score], args.keep_bad,
+                                 args.threads, scoring_scheme, [args.low_score], args.keep_bad,
                                  args.min_len, args.sam, full_command, args.allowed_overlap,
                                  args.sensitivity, args.contamination, VERBOSITY)
     sys.exit(0)
@@ -215,8 +214,7 @@ def fix_up_arguments(args):
 
 
 def semi_global_align_long_reads(references, ref_fasta, read_dict, read_names, reads_fastq,
-                                 temp_dir, threads, scoring_scheme,
-                                 low_score_threshold_list, keep_bad,
+                                 threads, scoring_scheme, low_score_threshold_list, keep_bad,
                                  min_align_length, sam_filename, full_command, allowed_overlap,
                                  sensitivity_level, contamination_fasta, verbosity=None,
                                  stdout_header='Aligning reads', display_low_score=True,

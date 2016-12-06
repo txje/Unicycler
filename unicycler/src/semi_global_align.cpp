@@ -2,6 +2,7 @@
 
 #include <seqan/align.h>
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <limits>
 #include <algorithm>
@@ -48,6 +49,15 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
         output += "minimap alignments:\n";
         for (auto minimapAlignment : minimapAlignments)
             output += "    " + minimapAlignment + "\n";
+    }
+
+
+    // Debugging information for use in R.
+    if (verbosity > 3) {  // only at very high verbosities
+        output += "R:library(ggplot2)\n";
+        output += "R:dot.plot.1 <- function(all_points) {ggplot() + geom_point(data=all_points,  aes(x=X1, y=X2), size=0.1, alpha=0.1, shape=19) + theme_bw() + coord_equal() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))}\n";
+        output += "R:dot.plot.2 <- function(all_points, trace_dots) {ggplot() + geom_point(data=all_points,  aes(x=X1, y=X2), size=0.1, alpha=0.02, shape=19) + geom_point(data=trace_dots,  aes(x=X1, y=X2), size=0.1, alpha=1, shape=19, colour=\"red\") + theme_bw() + coord_equal() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))}\n";
+        output += "R:dot.plot.3 <- function(all_points, filtered_data, trace_dots) {ggplot() + geom_point(data=all_points,  aes(x=X1, y=X2), size=0.1, alpha=0.02, shape=19) + geom_point(data=filtered_data,  aes(x=X1, y=X2), size=0.1, alpha=1, shape=19, colour=\"green\") + geom_point(data=trace_dots,  aes(x=X1, y=X2), size=0.1, alpha=1, shape=19, colour=\"red\") + theme_bw() + coord_equal() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))}\n";
     }
 
     // For each minimap alignment we find the appropriate part of the reference sequence.
@@ -138,7 +148,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
                 alignReadToReferenceRange(refSeqs, refName, range, refSeq.length(), readName,
                                           readStrand, kmerPositions, kSize, readSeq, matchScore,
                                           mismatchScore, gapOpenScore, gapExtensionScore,
-                                          sensitivityLevel);
+                                          sensitivityLevel, verbosity, output);
             returnedAlignments.insert(returnedAlignments.end(), a.begin(), a.end());
         }
     }
@@ -162,7 +172,8 @@ std::vector<ScoredAlignment *> alignReadToReferenceRange(SeqMap * refSeqs, std::
                                                          std::string * readSeq, int matchScore,
                                                          int mismatchScore, int gapOpenScore,
                                                          int gapExtensionScore,
-                                                         int sensitivityLevel) {
+                                                         int sensitivityLevel,
+                                                         int verbosity, std::string & output) {
     long long startTime = getTime();
     std::vector<ScoredAlignment *> alignments;
 
@@ -173,10 +184,11 @@ std::vector<ScoredAlignment *> alignReadToReferenceRange(SeqMap * refSeqs, std::
 //    std::cout << "(" << refName << "," << readStrand << "," << refStart << "," << refEnd << ") ";  // TEMP
 //    std::cout << std::flush; // TEMP
     std::string trimmedRefSeq = refSeqs->at(refName).substr(refStart, refEnd-refStart);
+    int trimmedRefLen = trimmedRefSeq.length();
 
     // Find all common k-mer positions.
     std::vector<CommonKmer> commonKmers;
-    int maxI = trimmedRefSeq.length() - kSize + 1;
+    int maxI = trimmedRefLen - kSize + 1;
     for (int i = 0; i < maxI; ++i) {
         std::string refKmer = trimmedRefSeq.substr(i, kSize);
         if (kmerPositions->find(refKmer) != kmerPositions->end() ) {  // if k-mer is in the read
@@ -185,6 +197,18 @@ std::vector<ScoredAlignment *> alignReadToReferenceRange(SeqMap * refSeqs, std::
                 commonKmers.emplace_back(readPositions[j], i);
         }
     }
+
+    // Debugging information for use in R.
+    if (verbosity > 3) {  // only at very high verbosities
+        std::ofstream allPointsFile;
+        std::string filename = readName + readStrand + "_" + refName + "_all_points.tsv";
+        allPointsFile.open(filename);
+        for (auto k : commonKmers)
+            allPointsFile << k.m_hPosition << "\t" << k.m_vPosition << "\n";
+        allPointsFile.close();
+        output += "R:all.points <- read_delim(\"" + filename + "\", \"\t\", escape_double = FALSE, col_names = FALSE, trim_ws = TRUE)\n";
+    }
+
 
 //    for (int i = 0; i < commonKmers.size(); ++i)   // TEMP
 //        std::cout << commonKmers[i].m_hPosition << "\t" << commonKmers[i].m_vPosition << "\n";  // TEMP
@@ -195,62 +219,119 @@ std::vector<ScoredAlignment *> alignReadToReferenceRange(SeqMap * refSeqs, std::
     my_kd_tree_t index(2, cloud, KDTreeSingleIndexAdaptorParams(10 /* max leaf */) );
     index.buildIndex();
 
-    Point highestDensityPoint = getHighestDensityPoint(100, cloud, index, trimmedRefSeq, readSeq);
+    double highestDensityScore = 0.0;
+    Point highestDensityPoint = getHighestDensityPoint(100, cloud, index, trimmedRefSeq, readSeq,
+                                                       &highestDensityScore);
 
     Point p = highestDensityPoint;
+    std::vector<Point> traceDots;
+    traceDots.push_back(p);
 //    std::cout << std::endl;
 //    std::cout << "(" << p.x << "," << p.y << ") " << std::flush;
 
-    int lineTracingStepSize = 250;
-    int searchRadius = 500;
+    int smallLineTracingStepSize = 250;
+    int smallSearchRadius = 500;
+
+    // If the line is 'lost' then we will switch to larger steps to increase our change of
+    //'finding' it again.
+    int largeLineTracingStepSize = 500;
+    int largeSearchRadius = 1000;
 
     // Start the point collection using points around the starting point.
     std::unordered_set<Point> pointSet;
-    std::vector<Point> nearbyPoints = radiusSearchAroundPoint(p, searchRadius, cloud, index);
+    std::vector<Point> nearbyPoints = radiusSearchAroundPoint(p, smallSearchRadius, cloud, index);
     for (auto p : nearbyPoints)
         pointSet.insert(p);
 
-    // Trace the line forward.
-    int maxX = readLen;
-    int maxY = trimmedRefSeq.length();
-    do {
-        Point newP = p;
-        newP.x += lineTracingStepSize;
-        newP.y += lineTracingStepSize;
-        if (newP.x > maxX || newP.y > maxY)
-            p = newP;
-        else
-            p = getHighestDensityPointNearPoint(lineTracingStepSize, newP, cloud, index);
-        if (p.x == -1 || p.y == -1)
-            p = newP;
-//        std::cout << "(" << p.x << "," << p.y << ") " << std::flush;
-        std::vector<Point> nearbyPoints = radiusSearchAroundPoint(p, searchRadius, cloud, index);
-        for (auto p : nearbyPoints)
-            pointSet.insert(p);
-    } while (p.x <= maxX && p.y <= maxY);
+    int smallestTraceLineX = p.x, largestTraceLineX = p.x;
+    int smallestTraceLineY = p.y, largestTraceLineY = p.y;
 
+    // Trace the line forward then backward.
+    int directions[2] = {1, -1};
+    for (auto direction : directions) {
+        p = highestDensityPoint;
+        int lineTracingStepSize = smallLineTracingStepSize;
+        int searchRadius = smallSearchRadius;
+        int maxX = readLen;
+        int maxY = trimmedRefSeq.length();
+        bool failed;
+        while (true) {
+            Point newP = p;
+            int step = direction * lineTracingStepSize;
+            newP.x += step;
+            newP.y += step;
+            if (newP.x > maxX || newP.y > maxY)
+                p = newP;
+            else if (newP.x < 0 || newP.y < 0)
+                p = newP;
+            else
+                p = getHighestDensityPointNearPoint(lineTracingStepSize, newP, cloud, index,
+                                                    highestDensityScore, &failed);
+                if (failed) {
+                    lineTracingStepSize = largeLineTracingStepSize;
+                    searchRadius = largeSearchRadius;
+                }
+                else {
+                    lineTracingStepSize = smallLineTracingStepSize;
+                    searchRadius = smallSearchRadius;
+                }
 
-    // Trace the line backward.
-    p = highestDensityPoint;
-    do {
-        Point newP = p;
-        newP.x -= lineTracingStepSize;
-        newP.y -= lineTracingStepSize;
-        if (newP.x < 0 || newP.y < 0)
-            p = newP;
-        else
-            p = getHighestDensityPointNearPoint(lineTracingStepSize, newP, cloud, index);
-        if (p.x == -1 || p.y == -1)
-            p = newP;
-//        std::cout << "(" << p.x << "," << p.y << ") " << std::flush;
-        std::vector<Point> nearbyPoints = radiusSearchAroundPoint(p, searchRadius, cloud, index);
-        for (auto p : nearbyPoints)
-            pointSet.insert(p);
-    } while (p.x >= 0 && p.y >= 0);
+            if (p.x == -1 || p.y == -1)
+                p = newP;
+    //        std::cout << "(" << p.x << "," << p.y << ") " << std::flush;
+            std::vector<Point> nearbyPoints = radiusSearchAroundPoint(p, searchRadius, cloud, index);
+            traceDots.push_back(p);
+            for (auto p : nearbyPoints)
+                pointSet.insert(p);
 
+            smallestTraceLineX = std::min(p.x, smallestTraceLineX);
+            smallestTraceLineY = std::min(p.y, smallestTraceLineY);
+            largestTraceLineX = std::max(p.x, largestTraceLineX);
+            largestTraceLineY = std::max(p.y, largestTraceLineY);
+
+            if (direction == 1 && (p.x > maxX || p.y > maxY))
+                break;
+            if (direction == -1 && (p.x < 0 || p.y < 0))
+                break;
+        }
+    }
+
+    // This figures out whether the read alignment is contained within a large contig. If so, then
+    // Unicycler won't try as hard to align it well, because it won't be informative for bridging.
+    bool containedRead = (smallestTraceLineY > 1000 && trimmedRefLen - largestTraceLineY > 1000);
+
+//    std::cout << readName << ", " << refName << std::endl;
+//    std::cout << "Trace line X: " << smallestTraceLineX << " to " << largestTraceLineX << std::endl;
+//    std::cout << "Trace line Y: " << smallestTraceLineY << " to " << largestTraceLineY << std::endl;
+//    std::cout << "Contained: " << containedRead << std::endl;
 //    std::cout << std::endl;
 
+
+    if (verbosity > 3) {  // only at very high verbosities
+        std::ofstream traceDotsFile;
+        std::string filename = readName + readStrand + "_" + refName + "_trace_dots.tsv";
+        traceDotsFile.open(filename);
+        for (auto d : traceDots)
+            traceDotsFile << d.x << "\t" << d.y << "\n";
+        traceDotsFile.close();
+        output += "R:trace.dots <- read_delim(\"" + filename + "\", \"\t\", escape_double = FALSE, col_names = FALSE, trim_ws = TRUE)\n";
+        
+        std::ofstream filteredDataFile;
+        filename = readName + readStrand + "_" + refName + "_filtered_data.tsv";
+        filteredDataFile.open(filename);
+        for (auto d : pointSet)
+            filteredDataFile << d.x << "\t" << d.y << "\n";
+        filteredDataFile.close();
+        output += "R:filtered.data <- read_delim(\"" + filename + "\", \"\t\", escape_double = FALSE, col_names = FALSE, trim_ws = TRUE)\n";
+
+        output += "R:dot.plot.1(all.points)\n";
+        output += "R:dot.plot.2(all.points, trace.dots)\n";
+        output += "R:dot.plot.3(all.points, filtered.data, trace.dots)\n";
+    }
+
+
     // Now we can do a Seqan alignment around the points we've collected!
+
     typedef Seed<Simple> TSeed;
     typedef SeedSet<TSeed> TSeedSet;
 
@@ -303,15 +384,14 @@ std::vector<ScoredAlignment *> alignReadToReferenceRange(SeqMap * refSeqs, std::
     else if (sensitivityLevel == 3)
         bandSize = LEVEL_3_BAND_SIZE;
 
+    // First try a fast alignment with a small band.
     ScoredAlignment * sgAlignment;
     try {
         bandedChainAlignment(alignment, seedChain, scoringScheme, alignConfig, bandSize);
-//        std::cout << alignment << std::endl;
         std::string signedReadName = readName + readStrand;
         sgAlignment = new ScoredAlignment(alignment, signedReadName, refName, readLen, refLen,
                                           refStart, startTime, bandSize, false, false, false,
                                           scoringScheme);
-//        std::cout << sgAlignment->m_rawScore << std::endl;
     }
     catch (...) {
         sgAlignment = 0;
@@ -399,24 +479,18 @@ std::vector<Point> getPointsInHighestDensityRegion(int searchRadius, std::string
 }
 
 Point getHighestDensityPoint(int densityRadius, PointCloud & cloud, my_kd_tree_t & index,
-                             std::string & trimmedRefSeq, std::string * readSeq) {
+                             std::string & trimmedRefSeq, std::string * readSeq,
+                             double * highestDensityScore) {
 
     std::vector<Point> points = getPointsInHighestDensityRegion(densityRadius * 2, trimmedRefSeq,
                                                                 readSeq, cloud, index);
     Point highestDensityPoint = points[0];
-    double bestDensityScore = 0.0;
+    *highestDensityScore = 0.0;
 
     for (auto point : points) {
-        std::vector<Point> neighbourPoints = radiusSearchAroundPoint(point, densityRadius, cloud,
-                                                                     index);
-        double densityScore = 0.0;
-        for (auto neighbourPoint : neighbourPoints) {
-            int xDiff = neighbourPoint.x - point.x;
-            int yDiff = neighbourPoint.y - point.y;
-            densityScore += 1.0 / (abs(xDiff-yDiff) + 1.0);
-        }
-        if (densityScore > bestDensityScore) {
-            bestDensityScore = densityScore;
+        double densityScore = getPointDensityScore(densityRadius, point, cloud, index);
+        if (densityScore > *highestDensityScore) {
+            *highestDensityScore = densityScore;
             highestDensityPoint = point;
         }
     }
@@ -424,21 +498,17 @@ Point getHighestDensityPoint(int densityRadius, PointCloud & cloud, my_kd_tree_t
 }
 
 Point getHighestDensityPointNearPoint(int densityRadius, Point centre, PointCloud & cloud,
-                                      my_kd_tree_t & index) {
+                                      my_kd_tree_t & index, double highestDensityScore,
+                                      bool * failed) {
     std::vector<Point> points = radiusSearchAroundPoint(centre, densityRadius, cloud, index);
     if (points.size() == 0)
         return {-1, -1};
-    Point highestDensityPoint = points[0];
-    double bestDensityScore = 0.0;
+    Point highestDensityPoint = centre;
+    *failed = true;
+    double bestDensityScore = highestDensityScore / 10.0;
 
     for (auto point : points) {
-        std::vector<Point> neighbourPoints = radiusSearchAroundPoint(point, densityRadius, cloud, index);
-        double densityScore = 0.0;
-        for (auto neighbourPoint : neighbourPoints) {
-            int xDiff = neighbourPoint.x - point.x;
-            int yDiff = neighbourPoint.y - point.y;
-            densityScore += 1.0 / (abs(xDiff-yDiff) + 1.0);
-        }
+        double densityScore = getPointDensityScore(densityRadius, point, cloud, index);
 
         // Boost the density score for points near the centre.
         int distanceFromCentre = abs(point.x - centre.x) + abs(point.y - centre.y);
@@ -447,11 +517,30 @@ Point getHighestDensityPointNearPoint(int densityRadius, Point centre, PointClou
         if (densityScore > bestDensityScore) {
             bestDensityScore = densityScore;
             highestDensityPoint = point;
+            *failed = false;
         }
     }
+
+//    std::cout << "Starting point: " << centre.x << "," << centre.y << "\n";
+//    std::cout << "Highest density point: " << highestDensityPoint.x << "," << highestDensityPoint.y << "\n";
+//    std::cout << "Density score: " << bestDensityScore << "\n";
+//    std::cout << "\n";
+
     return highestDensityPoint;
 }
 
+
+double getPointDensityScore(int densityRadius, Point p, PointCloud & cloud, my_kd_tree_t & index) {
+    std::vector<Point> neighbourPoints = radiusSearchAroundPoint(p, densityRadius, cloud, index);
+    double densityScore = 0.0;
+    for (auto neighbourPoint : neighbourPoints) {
+        int xDiff = neighbourPoint.x - p.x;
+        int yDiff = neighbourPoint.y - p.y;
+        if (xDiff + yDiff > 0)
+            densityScore += 1.0 / (abs(xDiff-yDiff) + 1.0);
+    }
+    return densityScore;
+}
 
 //
 //

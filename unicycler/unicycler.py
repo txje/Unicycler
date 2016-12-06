@@ -167,28 +167,26 @@ def main():
                                         settings.ALLOWED_ALIGNMENT_OVERLAP))
             low_score_threshold = [args.low_score]
             semi_global_align_long_reads(references, graph_fasta, read_dict, read_names,
-                                         long_read_filename, temp_alignment_dir,
+                                         long_read_filename,
                                          args.threads, scoring_scheme, low_score_threshold,
-                                         False, args.kmer,
-                                         min_alignment_length, alignments_1_in_progress,
-                                         full_command, allowed_overlap, False, args.contamination,
+                                         False, min_alignment_length, alignments_1_in_progress,
+                                         full_command, allowed_overlap, 0, args.contamination,
                                          verbosity, stdout_header='Aligning reads (first pass)',
                                          single_copy_segment_names=single_copy_segment_names)
             shutil.move(alignments_1_in_progress, alignments_1_sam)
 
-            # Reads with a lot of unaligned parts are tried again, this time on extra sensitive
-            # mode.
-            retry_read_names = [x.name for x in read_dict.values()
-                                if x.get_fraction_aligned() < settings.MIN_READ_FRACTION_ALIGNED
-                                and x.get_length() >= min_alignment_length]
+            # Some reads are aligned again with a more sensitive mode: those with multiple
+            # alignments or unaligned parts.
+            retry_read_names = [x.name for x in read_dict.values() if
+                                (x.get_fraction_aligned() < settings.MIN_READ_FRACTION_ALIGNED or
+                                 len(x.alignments) > 1) and x.get_length() >= min_alignment_length]
             if retry_read_names:
                 semi_global_align_long_reads(references, single_copy_segments_fasta, read_dict,
                                              retry_read_names, long_read_filename,
-                                             temp_alignment_dir,
                                              args.threads, scoring_scheme, low_score_threshold,
-                                             False, False, args.kmer, min_alignment_length,
-                                             alignments_2_in_progress, full_command,
-                                             allowed_overlap, True, args.contamination, verbosity,
+                                             False, min_alignment_length, alignments_2_in_progress,
+                                             full_command, allowed_overlap, 3,
+                                             args.contamination, verbosity,
                                              stdout_header='Aligning reads (second pass)',
                                              display_low_score=False,
                                              single_copy_segment_names=single_copy_segment_names)

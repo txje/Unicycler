@@ -46,7 +46,8 @@ std::vector<ScoredAlignment *> alignReadToReferenceRange(SeqMap * refSeqs, std::
                                                          std::string * readSeq, int matchScore,
                                                          int mismatchScore, int gapOpenScore,
                                                          int gapExtensionScore,
-                                                         int sensitivityLevel);
+                                                         int sensitivityLevel,
+                                                         int verbosity, std::string & output);
 
 //ScoredAlignment * semiGlobalAlignmentOneLine(std::string & readName, std::string & refName,
 //                                             std::string * readSeq, std::string * refSeq,
@@ -117,13 +118,17 @@ std::vector<Point> radiusSearchAroundPoint(Point point, int radius, PointCloud &
 
 std::vector<Point> getPointsInHighestDensityRegion(int searchRadius, std::string & trimmedRefSeq,
                                                    std::string * readSeq, PointCloud & cloud,
-                                                   my_kd_tree_t & index);
+                                                   my_kd_tree_t & index);\
 
 Point getHighestDensityPoint(int densityRadius, PointCloud & cloud, my_kd_tree_t & index,
-                             std::string & trimmedRefSeq, std::string * readSeq);
+                             std::string & trimmedRefSeq, std::string * readSeq,
+                             double * highestDensityScore);
 
 Point getHighestDensityPointNearPoint(int densityRadius, Point centre, PointCloud & cloud,
-                                      my_kd_tree_t & index);
+                                      my_kd_tree_t & index, double highestDensityScore,
+                                      bool * failed);
+
+double getPointDensityScore(int densityRadius, Point p, PointCloud & cloud, my_kd_tree_t & index);
 
 void addKmerPointsToNanoflann(PointCloud & cloud, std::vector<CommonKmer> & commonKmers);
 

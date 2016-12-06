@@ -2,6 +2,7 @@
 #include <sys/time.h>
 #include "minimap/minimap.h"
 
+#pragma GCC diagnostic ignored "-Wpragmas"
 #pragma GCC diagnostic ignored "-Wvla-extension"
 #pragma GCC diagnostic ignored "-Wdeprecated-register"
 

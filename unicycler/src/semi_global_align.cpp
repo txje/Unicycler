@@ -51,7 +51,6 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
             output += "    " + minimapAlignment + "\n";
     }
 
-
     // Debugging information for use in R.
     if (verbosity > 3) {  // only at very high verbosities
         output += "R:library(ggplot2)\n";
@@ -66,6 +65,7 @@ char * semiGlobalAlignment(char * readNameC, char * readSeqC, int verbosity,
         std::string minimapStr = minimapAlignments[i];
         std::vector<std::string> minimapStrParts = splitString(minimapStr, ',');
 
+//        std::cout << "`" << minimapStr << "`" << std::endl << std::flush;  // TEMP
         int readStart = std::stoi(minimapStrParts[0]);
         int readEnd = std::stoi(minimapStrParts[1]);
         char readStrand = minimapStrParts[2][0];

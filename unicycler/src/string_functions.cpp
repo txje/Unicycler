@@ -13,6 +13,7 @@ char * cppStringToCString(std::string cpp_string) {
     return c_string;
 }
 
+
 void freeCString(char * p) {
     free(p);
 }
@@ -22,9 +23,12 @@ std::vector<std::string> splitString(char * inString, char delimiter) {
     return splitString(std::string(inString), delimiter);
 }
 
+
 std::vector<std::string> splitString(std::string inString, char delimiter) {
-    std::stringstream ss(inString);
     std::vector<std::string> result;
+    if (inString.length() == 0)
+        return result;
+    std::stringstream ss(inString);
     while(ss.good())
     {
         std::string substr;

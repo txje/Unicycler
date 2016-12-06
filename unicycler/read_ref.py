@@ -348,7 +348,8 @@ class Read(object):
         """
         This function removes alignments with identity below the cutoff.
         """
-        self.alignments = [x for x in self.alignments if x.scaled_score >= low_score_threshold]
+        self.alignments = [x for x in self.alignments
+                           if x.scaled_score is not None and x.scaled_score >= low_score_threshold]
 
     def remove_short_alignments(self, min_align_length):
         """

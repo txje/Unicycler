@@ -264,7 +264,7 @@ std::vector<ScoredAlignment *> alignReadToReferenceRange(SeqMap * refSeqs, std::
                 p = newP;
             else if (newP.x < 0 || newP.y < 0)
                 p = newP;
-            else
+            else {
                 p = getHighestDensityPointNearPoint(lineTracingStepSize, newP, cloud, index,
                                                     highestDensityScore, &failed);
                 if (failed) {
@@ -275,6 +275,7 @@ std::vector<ScoredAlignment *> alignReadToReferenceRange(SeqMap * refSeqs, std::
                     lineTracingStepSize = smallLineTracingStepSize;
                     searchRadius = smallSearchRadius;
                 }
+            }
 
             if (p.x == -1 || p.y == -1)
                 p = newP;

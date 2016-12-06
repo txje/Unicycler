@@ -5,8 +5,6 @@
 #include <string>
 #include <vector>
 #include "kmers.h"
-#include "commonkmerset.h"
-#include "alignmentline.h"
 #include "scoredalignment.h"
 #include "random_alignments.h"
 #include "string_functions.h"
@@ -29,14 +27,6 @@ extern "C" {
                                int matchScore, int mismatchScore, int gapOpenScore,
                                int gapExtensionScore, double lowScoreThreshold, bool returnBad,
                                int sensitivityLevel);
-
-//    char * startExtensionAlignment(char * read, char * ref,
-//                                   int matchScore, int mismatchScore, int gapOpenScore,
-//                                   int gapExtensionScore);
-//
-//    char * endExtensionAlignment(char * read, char * ref,
-//                                 int matchScore, int mismatchScore, int gapOpenScore,
-//                                 int gapExtensionScore);
 }
 
 std::vector<ScoredAlignment *> alignReadToReferenceRange(SeqMap * refSeqs, std::string refName,
@@ -49,27 +39,12 @@ std::vector<ScoredAlignment *> alignReadToReferenceRange(SeqMap * refSeqs, std::
                                                          int sensitivityLevel,
                                                          int verbosity, std::string & output);
 
-//ScoredAlignment * semiGlobalAlignmentOneLine(std::string & readName, std::string & refName,
-//                                             std::string * readSeq, std::string * refSeq,
-//                                             AlignmentLine * line, int verbosity, std::string & output,
-//                                             Score<int, Simple> & scoringScheme);
-//
-//ScoredAlignment * semiGlobalAlignmentOneLineOneBand(std::string & readName, std::string & refName,
-//                                                    Dna5String & readSeq, int readLen,
-//                                                    Dna5String & refSeq, int refLen,
-//                                                    AlignmentLine * line, int bandSize,
-//                                                    int verbosity, std::string & output,
-//                                                    Score<int, Simple> & scoringScheme);
-
 double fractionOfReadAligned(std::vector<ScoredAlignment *> & alignments);
 
 std::pair<int,int> getRefRange(int refStart, int refEnd, int refLen,
                                int readStart, int readEnd, int readLen, bool posStrand);
 
 std::vector<std::pair<int, int> > simplifyRanges(std::vector<std::pair<int, int> > & ranges);
-
-//CommonKmerSet * getHighestScoringSet(std::vector<CommonKmerSet *> & commonKmerSets);
-
 
 
 // This stuff is for the nanoflann NN searching.

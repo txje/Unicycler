@@ -11,17 +11,6 @@
 KSEQ_INIT(gzFile, gzread)
 
 
-// mm_idx_t * buildMinimapIndex(char * referenceFasta) {
-//     int n_threads = 4, w = 10, k = 15;
-//     mm_idx_t * mi = mm_idx_build(referenceFasta, w, k, n_threads);
-//     assert(mi);
-//     return mi;
-// }
-
-// void destroyMinimapIndex(mm_idx_t * mi) {
-//     mm_idx_destroy(mi);
-// }
-
 char * minimapAlignReads(char * referenceFasta, char * readsFastq, int n_threads, int verbosity,
                          int sensitivityLevel) {
 

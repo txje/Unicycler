@@ -1,6 +1,11 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <stdio.h>
+
+#pragma GCC diagnostic ignored "-Wsign-compare"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wunused-function"
+
 #include "minimap/minimap.h"
 #include "minimap/kvec.h"
 #include "minimap/khash.h"

@@ -5,6 +5,8 @@
 #include "minimap/kvec.h"
 #include "minimap/sdust.h"
 
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
 #define SD_WLEN 3
 #define SD_WTOT (1<<(SD_WLEN<<1))
 #define SD_WMSK (SD_WTOT - 1)

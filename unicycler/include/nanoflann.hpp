@@ -55,6 +55,8 @@
 #include <cstdlib> // for abs()
 #include <limits>
 
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 // Avoid conflicting declaration of min/max macros in windows headers
 #if !defined(NOMINMAX) && (defined(_WIN32) || defined(_WIN32_)  || defined(WIN32) || defined(_WIN64))
 # define NOMINMAX

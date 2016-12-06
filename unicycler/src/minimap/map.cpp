@@ -6,6 +6,10 @@
 #include "minimap/minimap.h"
 #include "minimap/sdust.h"
 
+#pragma GCC diagnostic ignored "-Wvla-extension"
+#pragma GCC diagnostic ignored "-Wdeprecated-register"
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
 void mm_mapopt_init(mm_mapopt_t *opt)
 {
 	opt->radius = 500;

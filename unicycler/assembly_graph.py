@@ -2598,7 +2598,7 @@ class Segment(object):
         Returns the segment's fasta line, including the '>' and the newline.
         """
         return ''.join(['>', str(self.number), ' length=', str(self.get_length()),
-                        ' depth=', str(self.depth), 'x\n'])
+                        ' depth=', '%.2f' % self.depth, 'x\n'])
 
     def save_to_fasta(self, fasta_filename):
         """

@@ -512,19 +512,25 @@ def seqan_alignment(read, reference_dict, scoring_scheme, ref_seqs_ptr, low_scor
             output += '  too short to align\n'
     else:
         minimap_alignments_str = ';'.join([x.get_concise_string() for x in minimap_alignments])
-        results = semi_global_alignment(read.name, read.sequence, VERBOSITY, minimap_alignments_str,
-                                        ref_seqs_ptr, scoring_scheme.match,
-                                        scoring_scheme.mismatch, scoring_scheme.gap_open,
-                                        scoring_scheme.gap_extend, low_score_threshold, keep_bad,
-                                        sensitivity_level).split(';')
+        alignment_strings = []
 
-        alignment_strings = results[:-1]
-        output += results[-1]
+        # Try at each sensitivity up to the current level. E.g. if sensitivity level is 2,
+        # we try the Seqan alignment at levels 0, 1 and 2. This produces many redundant
+        # alignments but we'll filter them out later.
+        for sensitivity in range(0, sensitivity_level+1):
+            results = semi_global_alignment(read.name, read.sequence, VERBOSITY,
+                                            minimap_alignments_str, ref_seqs_ptr,
+                                            scoring_scheme.match, scoring_scheme.mismatch,
+                                            scoring_scheme.gap_open, scoring_scheme.gap_extend,
+                                            low_score_threshold, keep_bad, sensitivity).split(';')
 
-        for alignment_string in alignment_strings:
-            alignment = Alignment(seqan_output=alignment_string, read=read,
-                                  reference_dict=reference_dict, scoring_scheme=scoring_scheme)
-            read.alignments.append(alignment)
+            alignment_strings += results[:-1]
+            output += results[-1]
+
+            for alignment_string in alignment_strings:
+                alignment = Alignment(seqan_output=alignment_string, read=read,
+                                      reference_dict=reference_dict, scoring_scheme=scoring_scheme)
+                read.alignments.append(alignment)
 
         if VERBOSITY > 2:
             if not alignment_strings:

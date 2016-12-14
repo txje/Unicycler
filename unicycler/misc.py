@@ -21,7 +21,7 @@ import datetime
 def float_to_str(num, decimals, max_num=0):
     """
     Converts a number to a string. Will add left padding based on the max value to ensure numbers
-    align well.
+    align well. Will also add commas to numbers over 1000.
     """
     if decimals == 0:
         return int_to_str(int(round(num)), max_num=max_num)
@@ -171,21 +171,6 @@ def get_pilon_jar_path(pilon_path):
     return None
 
 
-def get_mean_and_st_dev(num_list):
-    """
-    This function returns the mean and standard deviation of the given list of numbers.
-    """
-    num = len(num_list)
-    if num == 0:
-        return None, None
-    mean = sum(num_list) / num
-    if num == 1:
-        return mean, None
-    sum_squares = sum((x - mean) ** 2 for x in num_list)
-    st_dev = (sum_squares / (num - 1)) ** 0.5
-    return mean, st_dev
-
-
 def print_progress_line(completed, total, base_pairs=None, prefix=None, end_newline=False):
     """
     Prints a progress line to the screen using a carriage return to overwrite the previous progress
@@ -286,18 +271,6 @@ def get_random_sequence(length):
     return sequence
 
 
-def get_median(sorted_list):
-    """
-    Returns the median of a list of numbers. Assumes the list has already been sorted.
-    """
-    count = len(sorted_list)
-    index = (count - 1) // 2
-    if count % 2:
-        return sorted_list[index]
-    else:
-        return (sorted_list[index] + sorted_list[index + 1]) / 2.0
-
-
 def get_percentile(unsorted_list, percentile):
     """
     Returns a percentile of a list of numbers. Doesn't assume the list has already been sorted.
@@ -386,8 +359,9 @@ def get_sequence_file_type(filename):
         open_func = gzip.open
     else:  # plain text
         open_func = open
-    seq_file = open_func(filename, 'rt')
-    first_char = seq_file.read(1)
+
+    with open_func(filename, 'rt') as seq_file:
+        first_char = seq_file.read(1)
 
     if first_char == '>':
         return 'FASTA'
@@ -656,85 +630,93 @@ def print_table(table, alignments='', max_col_width=30, col_separation=3, indent
         return full_table_str
 
 
+END_FORMATTING = '\033[0m'
+BOLD = '\033[1m'
+UNDERLINE = '\033[4m'
+RED = '\033[31m'
+GREEN = '\033[32m'
+YELLOW = '\033[93m'
+DIM = '\033[2m'
+
+
 def colour(text, text_colour):
-    if text_colour == 'normal':
-        return text
-    elif text_colour == 'green':
-        return green(text)
-    elif text_colour == 'red':
-        return red(text)
-    elif text_colour == 'clear_red':
-        return clear_red(text)
-    elif text_colour == 'dim':
-        return dim(text)
-    elif text_colour == 'dim_underline':
-        return dim_underline(text)
-    elif text_colour == 'bold_green':
-        return bold_green(text)
-    elif text_colour == 'bold':
-        return bold(text)
-    elif text_colour == 'bold_underline':
-        return bold_underline(text)
-    elif text_colour == 'underline':
-        return underline(text)
-    elif text_colour == 'bold_yellow_underline':
-        return bold_yellow_underline(text)
-    elif text_colour == 'bold_red_underline':
-        return bold_red_underline(text)
+    bold_text = 'bold' in text_colour
+    text_colour = text_colour.replace('bold', '')
+    underline_text = 'underline' in text_colour
+    text_colour = text_colour.replace('underline', '')
+    text_colour = text_colour.replace('_', '')
+    text_colour = text_colour.replace(' ', '')
+    text_colour = text_colour.lower()
+    if 'red' in text_colour:
+        coloured_text = RED
+    elif 'green' in text_colour:
+        coloured_text = GREEN
+    elif 'yellow' in text_colour:
+        coloured_text = YELLOW
+    elif 'dim' in text_colour:
+        coloured_text = DIM
     else:
+        coloured_text = ''
+    if bold_text:
+        coloured_text += BOLD
+    if underline_text:
+        coloured_text += UNDERLINE
+    if not coloured_text:
         return text
+    coloured_text += text + END_FORMATTING
+    return coloured_text
 
 
 def green(text):
-    return '\033[32m' + text + '\033[0m'
+    return GREEN + text + END_FORMATTING
 
 
 def bold_green(text):
-    return '\033[1m' + '\033[32m' + text + '\033[0m'
+    return GREEN + BOLD + text + END_FORMATTING
 
 
 def red(text):
-    return '\033[31m' + text + '\033[0m'
+    return RED + text + END_FORMATTING
 
 
 def bold_red(text):
-    return '\033[1m' + '\033[31m' + text + '\033[0m'
+    return RED + BOLD + text + END_FORMATTING
 
 
 def clear_red(text):
-    return '\033[0m' + '\033[31m' + text + '\033[0m'
+    return END_FORMATTING + RED + text + END_FORMATTING
 
 
 def bold(text):
-    return '\033[1m' + text + '\033[0m'
+    return BOLD + text + END_FORMATTING
 
 
 def bold_underline(text):
-    return '\033[1m' + '\033[4m' + text + '\033[0m'
+    return BOLD + UNDERLINE + text + END_FORMATTING
 
 
 def underline(text):
-    return '\033[4m' + text + '\033[0m'
+    return UNDERLINE + text + END_FORMATTING
 
 
 def dim(text):
-    return '\033[2m' + text + '\033[0m'
+    return DIM + text + END_FORMATTING
 
 
 def dim_underline(text):
-    return '\033[2m' + '\033[4m' + text + '\033[0m'
+    return DIM + UNDERLINE + text + END_FORMATTING
 
 
 def bold_yellow(text):
-    return '\033[1m' + '\033[93m' + text + '\033[0m'
+    return YELLOW + BOLD + text + END_FORMATTING
 
 
 def bold_yellow_underline(text):
-    return '\033[1m' + '\033[93m' + '\033[4m' + text + '\033[0m'
+    return YELLOW + BOLD + UNDERLINE + text + END_FORMATTING
 
 
 def bold_red_underline(text):
-    return '\033[1m' + '\033[31m' + '\033[4m' + text + '\033[0m'
+    return RED + BOLD + UNDERLINE + text + END_FORMATTING
 
 
 def len_without_format(text):

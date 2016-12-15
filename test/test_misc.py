@@ -22,24 +22,34 @@ class TestMiscFunctions(unittest.TestCase):
         self.assertEqual('       14,000', unicycler.misc.int_to_str(14000, 1000000000))
 
     def test_get_nice_header(self):
-        self.assertEqual('NODE_1', unicycler.misc.get_nice_header('NODE_1_length_49055_cov_41.580185'))
-        self.assertEqual('NODE_69', unicycler.misc.get_nice_header('NODE_69_length_12837_cov_39.210640'))
-        self.assertEqual('name', unicycler.misc.get_nice_header('name stuff'))
-        self.assertEqual('name', unicycler.misc.get_nice_header('name stuff stuff stuff'))
+        self.assertEqual(unicycler.misc.get_nice_header('NODE_1_length_49055_cov_41.580185'),
+                         'NODE_1')
+        self.assertEqual(unicycler.misc.get_nice_header('NODE_69_length_12837_cov_39.210640'),
+                         'NODE_69')
+        self.assertEqual(unicycler.misc.get_nice_header('name stuff'),
+                         'name')
+        self.assertEqual(unicycler.misc.get_nice_header('name stuff stuff stuff'),
+                         'name')
 
     def test_is_header_spades_format(self):
-        self.assertTrue(unicycler.misc.is_header_spades_format('NODE_1_length_49055_cov_41.580185'))
-        self.assertTrue(unicycler.misc.is_header_spades_format('NODE_69_length_12837_cov_39.210640'))
+        self.assertTrue(unicycler.misc.is_header_spades_format('NODE_1_length_49055_'
+                                                               'cov_41.580185'))
+        self.assertTrue(unicycler.misc.is_header_spades_format('NODE_69_length_12837_'
+                                                               'cov_39.210640'))
         self.assertFalse(unicycler.misc.is_header_spades_format('name stuff'))
         self.assertFalse(unicycler.misc.is_header_spades_format('name stuff stuff stuff'))
 
     def test_reverse_complement(self):
-        self.assertEqual('GCAGGCCGCTTAATGAATAGATCATGGCTGCGCCGCCTACCGGTCCGAGACCTTCGCTGA', unicycler.misc.reverse_complement('TCAGCGAAGGTCTCGGACCGGTAGGCGGCGCAGCCATGATCTATTCATTAAGCGGCCTGC'))
+        self.assertEqual('GCAGGCCGCTTAATGAATAGATCATGGCTGCGCCGCCTACCGGTCCGAGACCTTCGCTGA',
+                         unicycler.misc.reverse_complement('TCAGCGAAGGTCTCGGACCGGTAGGCGGCGCAGCCATG'
+                                                           'ATCTATTCATTAAGCGGCCTGC'))
         self.assertEqual('', unicycler.misc.reverse_complement(''))
         self.assertEqual('TATTTNGTTANAT', unicycler.misc.reverse_complement('ATNTAACNAAATA'))
         self.assertEqual('ATNTAACNAAATA', unicycler.misc.reverse_complement('TATTTNGTTANAT'))
-        self.assertEqual('TGACBWDARAYACHASKGVTMACNG', unicycler.misc.reverse_complement('CNGTKABCMSTDGTRTYTHWVGTCA'))
-        self.assertEqual('tgACBWDARAYACHASKGVTMACnG', unicycler.misc.reverse_complement('CnGTKABCMSTDGTRTYTHWVGTca'))
+        self.assertEqual('TGACBWDARAYACHASKGVTMACNG',
+                         unicycler.misc.reverse_complement('CNGTKABCMSTDGTRTYTHWVGTCA'))
+        self.assertEqual('tgACBWDARAYACHASKGVTMACnG',
+                         unicycler.misc.reverse_complement('CnGTKABCMSTDGTRTYTHWVGTca'))
 
     def test_get_random_base(self):
         a_count, c_count, g_count, t_count, other_count = 0, 0, 0, 0, 0
@@ -71,14 +81,22 @@ class TestMiscFunctions(unittest.TestCase):
         self.assertEqual(20, unicycler.misc.get_percentile([20, 50, 40, 35, 15], 40))
         self.assertEqual(35, unicycler.misc.get_percentile([50, 20, 40, 35, 15], 50))
         self.assertEqual(50, unicycler.misc.get_percentile([50, 20, 15, 35, 40], 100))
-        self.assertEqual(7, unicycler.misc.get_percentile([3, 16, 7, 8, 8, 13, 10, 15, 6, 20], 25))
-        self.assertEqual(8, unicycler.misc.get_percentile([16, 7, 8, 8, 13, 10, 15, 6, 20, 3], 50))
-        self.assertEqual(15, unicycler.misc.get_percentile([3, 16, 7, 15, 8, 13, 10, 8, 6, 20], 75))
-        self.assertEqual(20, unicycler.misc.get_percentile([20, 16, 7, 8, 8, 13, 10, 15, 6, 3], 100))
-        self.assertEqual(7, unicycler.misc.get_percentile([3, 6, 7, 8, 8, 9, 10, 13, 15, 16, 20], 25))
-        self.assertEqual(9, unicycler.misc.get_percentile([7, 9, 10, 3, 8, 15, 16, 13, 8, 20, 6], 50))
-        self.assertEqual(15, unicycler.misc.get_percentile([3, 15, 13, 7, 8, 20, 10, 8, 16, 6, 9], 75))
-        self.assertEqual(20, unicycler.misc.get_percentile([6, 13, 10, 8, 15, 3, 9, 8, 16, 7, 20], 100))
+        self.assertEqual(7, unicycler.misc.get_percentile([3, 16, 7, 8, 8, 13, 10, 15, 6, 20],
+                                                          25))
+        self.assertEqual(8, unicycler.misc.get_percentile([16, 7, 8, 8, 13, 10, 15, 6, 20, 3],
+                                                          50))
+        self.assertEqual(15, unicycler.misc.get_percentile([3, 16, 7, 15, 8, 13, 10, 8, 6, 20],
+                                                           75))
+        self.assertEqual(20, unicycler.misc.get_percentile([20, 16, 7, 8, 8, 13, 10, 15, 6, 3],
+                                                           100))
+        self.assertEqual(7, unicycler.misc.get_percentile([3, 6, 7, 8, 8, 9, 10, 13, 15, 16, 20],
+                                                          25))
+        self.assertEqual(9, unicycler.misc.get_percentile([7, 9, 10, 3, 8, 15, 16, 13, 8, 20, 6],
+                                                          50))
+        self.assertEqual(15, unicycler.misc.get_percentile([3, 15, 13, 7, 8, 20, 10, 8, 16, 6, 9],
+                                                           75))
+        self.assertEqual(20, unicycler.misc.get_percentile([6, 13, 10, 8, 15, 3, 9, 8, 16, 7, 20],
+                                                           100))
 
     def test_weighted_average(self):
         self.assertAlmostEqual(1.0, unicycler.misc.weighted_average(1.0, 2.0, 1.0, 0.0))
@@ -91,10 +109,15 @@ class TestMiscFunctions(unittest.TestCase):
         self.assertAlmostEqual(1.6666666666666, unicycler.misc.weighted_average(1.0, 2.0, 3, 6))
 
     def test_weighted_average_list(self):
-        self.assertAlmostEqual(1.0, unicycler.misc.weighted_average_list([1.0, 2.0, 3.0], [2.0, 0.0, 0.0]))
-        self.assertAlmostEqual(2.0, unicycler.misc.weighted_average_list([1.0, 2.0, 3.0], [2.0, 0.0, 2.0]))
-        self.assertAlmostEqual(2.5, unicycler.misc.weighted_average_list([1.0, 2.0, 3.0], [0.0, 1.0, 1.0]))
-        self.assertAlmostEqual(2.6666666666666, unicycler.misc.weighted_average_list([1.0, 2.0, 3.0], [0.0, 1.0, 2.0]))
+        self.assertAlmostEqual(1.0, unicycler.misc.weighted_average_list([1.0, 2.0, 3.0],
+                                                                         [2.0, 0.0, 0.0]))
+        self.assertAlmostEqual(2.0, unicycler.misc.weighted_average_list([1.0, 2.0, 3.0],
+                                                                         [2.0, 0.0, 2.0]))
+        self.assertAlmostEqual(2.5, unicycler.misc.weighted_average_list([1.0, 2.0, 3.0],
+                                                                         [0.0, 1.0, 1.0]))
+        self.assertAlmostEqual(2.6666666666666,
+                               unicycler.misc.weighted_average_list([1.0, 2.0, 3.0],
+                                                                    [0.0, 1.0, 2.0]))
 
     def test_round_to_nearest_odd(self):
         self.assertEqual(1, unicycler.misc.round_to_nearest_odd(0.9))
@@ -141,8 +164,10 @@ class TestMiscFunctions(unittest.TestCase):
         self.assertEqual(len(fasta), 3)
         self.assertEqual(fasta[0][0], 'NC_016833.1')
         self.assertEqual(fasta[2][0], 'NC_016834.1')
-        self.assertTrue(fasta[0][1].startswith('ATGCTGATGAAAATACCTAAATAATCAGCCAGCACTCTATCTTTCCAAATCCACAGCATAGCAAAGAGAGCAAAAGAGCCTGTAAATTCAGAAATT'))
-        self.assertTrue(fasta[2][1].endswith('AGTTGATTTAAATCGCTACACCATTATGATTCATGTAGCGATTTAAATTACTACATAATGGTGATTAGC'))
+        self.assertTrue(fasta[0][1].startswith('ATGCTGATGAAAATACCTAAATAATCAGCCAGCACTCTATCTTTCCAAAT'
+                                               'CCACAGCATAGCAAAGAGAGCAAAAGAGCCTGTAAATTCAGAAATT'))
+        self.assertTrue(fasta[2][1].endswith('AGTTGATTTAAATCGCTACACCATTATGATTCATGTAGCGATTTAAATTACT'
+                                             'ACATAATGGTGATTAGC'))
 
     def test_load_fasta_with_full_header(self):
         sample_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'sample_data')
@@ -153,8 +178,10 @@ class TestMiscFunctions(unittest.TestCase):
         self.assertEqual(fasta[2][0], 'NC_016834.1')
         self.assertEqual(fasta[0][1], 'NC_016833.1 Shigella sonnei 53G plasmid A, complete genome')
         self.assertEqual(fasta[2][1], 'NC_016834.1 Shigella sonnei 53G plasmid E, complete genome')
-        self.assertTrue(fasta[0][2].startswith('ATGCTGATGAAAATACCTAAATAATCAGCCAGCACTCTATCTTTCCAAATCCACAGCATAGCAAAGAGAGCAAAAGAGCCTGTAAATTCAGAAATT'))
-        self.assertTrue(fasta[2][2].endswith('AGTTGATTTAAATCGCTACACCATTATGATTCATGTAGCGATTTAAATTACTACATAATGGTGATTAGC'))
+        self.assertTrue(fasta[0][2].startswith('ATGCTGATGAAAATACCTAAATAATCAGCCAGCACTCTATCTTTCCAAAT'
+                                               'CCACAGCATAGCAAAGAGAGCAAAAGAGCCTGTAAATTCAGAAATT'))
+        self.assertTrue(fasta[2][2].endswith('AGTTGATTTAAATCGCTACACCATTATGATTCATGTAGCGATTTAAATTACT'
+                                             'ACATAATGGTGATTAGC'))
 
     def test_score_function(self):
         self.assertAlmostEqual(unicycler.misc.score_function(0.0, 1.0), 0.0)
@@ -174,9 +201,12 @@ class TestMiscFunctions(unittest.TestCase):
         self.assertEqual(unicycler.misc.strip_read_extensions('path/to/file.fasta.gz'), 'file')
 
     def test_add_line_breaks_to_sequence(self):
-        self.assertEqual(unicycler.misc.add_line_breaks_to_sequence('ATGCTGATGAAAATACC', 4),'ATGC\nTGAT\nGAAA\nATAC\nC\n')
-        self.assertEqual(unicycler.misc.add_line_breaks_to_sequence('ATGCTGATGAAAATACC', 8), 'ATGCTGAT\nGAAAATAC\nC\n')
-        self.assertEqual(unicycler.misc.add_line_breaks_to_sequence('ATGCTGATGAAAATACC', 80), 'ATGCTGATGAAAATACC\n')
+        self.assertEqual(unicycler.misc.add_line_breaks_to_sequence('ATGCTGATGAAAATACC', 4),
+                         'ATGC\nTGAT\nGAAA\nATAC\nC\n')
+        self.assertEqual(unicycler.misc.add_line_breaks_to_sequence('ATGCTGATGAAAATACC', 8),
+                         'ATGCTGAT\nGAAAATAC\nC\n')
+        self.assertEqual(unicycler.misc.add_line_breaks_to_sequence('ATGCTGATGAAAATACC', 80),
+                         'ATGCTGATGAAAATACC\n')
 
     def test_colour(self):
         t = 'test string'
@@ -193,31 +223,37 @@ class TestMiscFunctions(unittest.TestCase):
         self.assertNotEqual(t, unicycler.misc.colour(t, 'bold'))
         self.assertEqual(unicycler.misc.bold(t), unicycler.misc.colour(t, 'bold'))
         self.assertNotEqual(t, unicycler.misc.colour(t, 'bold_underline'))
-        self.assertEqual(unicycler.misc.bold_underline(t), unicycler.misc.colour(t, 'bold_underline'))
+        self.assertEqual(unicycler.misc.bold_underline(t),
+                         unicycler.misc.colour(t, 'bold_underline'))
         self.assertNotEqual(t, unicycler.misc.colour(t, 'underline'))
         self.assertEqual(unicycler.misc.underline(t), unicycler.misc.colour(t, 'underline'))
         self.assertNotEqual(t, unicycler.misc.colour(t, 'dim'))
         self.assertEqual(unicycler.misc.dim(t), unicycler.misc.colour(t, 'dim'))
         self.assertNotEqual(t, unicycler.misc.colour(t, 'dim_underline'))
-        self.assertEqual(unicycler.misc.dim_underline(t), unicycler.misc.colour(t, 'dim_underline'))
+        self.assertEqual(unicycler.misc.dim_underline(t),
+                         unicycler.misc.colour(t, 'dim_underline'))
         self.assertNotEqual(t, unicycler.misc.colour(t, 'bold_yellow'))
         self.assertEqual(unicycler.misc.bold_yellow(t), unicycler.misc.colour(t, 'bold_yellow'))
         self.assertNotEqual(t, unicycler.misc.colour(t, 'bold_yellow_underline'))
-        self.assertEqual(unicycler.misc.bold_yellow_underline(t), unicycler.misc.colour(t, 'bold_yellow_underline'))
+        self.assertEqual(unicycler.misc.bold_yellow_underline(t),
+                         unicycler.misc.colour(t, 'bold_yellow_underline'))
         self.assertNotEqual(t, unicycler.misc.colour(t, 'bold_red_underline'))
-        self.assertEqual(unicycler.misc.bold_red_underline(t), unicycler.misc.colour(t, 'bold_red_underline'))
+        self.assertEqual(unicycler.misc.bold_red_underline(t),
+                         unicycler.misc.colour(t, 'bold_red_underline'))
 
     def test_len_without_format(self):
         t = 'test string'
         self.assertEqual(len(t), unicycler.misc.len_without_format(unicycler.misc.green(t)))
         self.assertEqual(len(t), unicycler.misc.len_without_format(unicycler.misc.bold_red(t)))
-        self.assertEqual(len(t), unicycler.misc.len_without_format(unicycler.misc.bold_yellow_underline(t)))
+        self.assertEqual(len(t),
+                         unicycler.misc.len_without_format(unicycler.misc.bold_yellow_underline(t)))
 
     def test_remove_formatting(self):
         t = 'test string'
         self.assertEqual(t, unicycler.misc.remove_formatting(unicycler.misc.green(t)))
         self.assertEqual(t, unicycler.misc.remove_formatting(unicycler.misc.bold_red(t)))
-        self.assertEqual(t, unicycler.misc.remove_formatting(unicycler.misc.bold_yellow_underline(t)))
+        self.assertEqual(t,
+                         unicycler.misc.remove_formatting(unicycler.misc.bold_yellow_underline(t)))
 
     def test_get_all_files_in_current_dir(self):
         starting_cwd = os.getcwd()
@@ -233,5 +269,7 @@ class TestMiscFunctions(unittest.TestCase):
         fasta = unicycler.misc.load_fasta(test_fasta)
         self.assertEqual(len(fasta), 3)
         self.assertEqual(fasta[1][0], 'read_2')
-        self.assertEqual(fasta[1][1], 'CACATACAGGCAGAGTGGCCGTGAAAGAAAGCAATCAGCGATGGTGCTCTGACGGGTTCGAGTTCTGCTGTGATAACGGAGAGAGACTGCGTGTCACGTTCGCGCTGGACTGCTGTGATCGTGAG')
+        self.assertEqual(fasta[1][1], 'CACATACAGGCAGAGTGGCCGTGAAAGAAAGCAATCAGCGATGGTGCTCTGACGGGTTC'
+                                      'GAGTTCTGCTGTGATAACGGAGAGAGACTGCGTGTCACGTTCGCGCTGGACTGCTGTGA'
+                                      'TCGTGAG')
         os.remove(test_fasta)

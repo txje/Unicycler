@@ -93,7 +93,8 @@ class UnicycleInstall(install):
             install.run(self)
 
             # Copy non-Python stuff to the installation directory.
-            shutil.copyfile(cpp_code, os.path.join(self.install_lib, 'unicycler', 'cpp_functions.so'))
+            shutil.copyfile(cpp_code, os.path.join(self.install_lib, 'unicycler',
+                                                   'cpp_functions.so'))
             gene_data_source_dir = os.path.join('unicycler', 'gene_data')
             gene_data_dest_dir = os.path.join(self.install_lib, 'unicycler', 'gene_data')
             if not os.path.exists(gene_data_dest_dir):

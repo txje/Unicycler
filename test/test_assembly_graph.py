@@ -81,7 +81,8 @@ class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
         self.assertEqual(fasta[335][0], '336')
         self.assertEqual(fasta[0][1], '1 length=449 depth=82.60x')
         self.assertEqual(fasta[335][1], '336 length=185 depth=124.44x')
-        self.assertTrue(fasta[0][2].startswith('ACCAGCCGCTGCGGGCCACCCGGAGCACGCGGCACATTGCCTTGATGCTGAACT'))
+        self.assertTrue(fasta[0][2].startswith('ACCAGCCGCTGCGGGCCACCCGGAGCACGCGGCACATTGCCTTGATGCTG'
+                                               'AACT'))
         self.assertTrue(fasta[335][2].endswith('TGTCGTGAAGCTTCACGAAGATGATTTTTTTGACGAAGAAGA'))
         os.remove(temp_fasta)
 
@@ -94,8 +95,10 @@ class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
         self.assertEqual(len(fasta), 5)
         self.assertEqual(fasta[0][0], '1')
         self.assertEqual(fasta[2][0], '5')
-        self.assertTrue(fasta[0][1].startswith('ACCAGCCGCTGCGGGCCACCCGGAGCACGCGGCACATTGCCTTGATGCTGAACT'))
-        self.assertTrue(fasta[2][1].endswith('TGCATGACAAAGTCATCGGGCATTATCTGAACATAAAACACTATCAATAAGTT'))
+        self.assertTrue(fasta[0][1].startswith('ACCAGCCGCTGCGGGCCACCCGGAGCACGCGGCACATTGCCTTGATGCT'
+                                               'GAACT'))
+        self.assertTrue(fasta[2][1].endswith('TGCATGACAAAGTCATCGGGCATTATCTGAACATAAAACACTATCAATAAG'
+                                             'TT'))
         os.remove(temp_fasta)
 
     def test_save_to_gfa(self):
@@ -122,8 +125,6 @@ class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
         gfa_link_lines = self.graph.get_all_gfa_link_lines()
         self.assertEqual(gfa_link_lines.count('\n'), 452)
         self.assertEqual(gfa_link_lines.count('25M'), 452)
-
-
 
 # class TestAssemblyGraphFunctionsGfa(unittest.TestCase):
 #     """

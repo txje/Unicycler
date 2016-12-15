@@ -122,8 +122,8 @@ def new_ref_seqs():
 
 
 C_LIB.addRefSeq.argtypes = [c_void_p,  # SeqMap pointer
-                             c_char_p,  # Name
-                             c_char_p]  # Sequence
+                            c_char_p,  # Name
+                            c_char_p]  # Sequence
 C_LIB.addRefSeq.restype = None
 
 

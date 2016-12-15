@@ -519,25 +519,7 @@ class LongReadBridge(object):
         # the scores up a bit (otherwise they tend to hang near the bottom of the range).
         self.quality = 100.0 * math.sqrt(self.quality)
 
-        # if verbosity > 2:
-        #     output += '  depth agreement factor:    ' + float_to_str(depth_agreement_factor, 2) + \
-        #               '\n'
-        #     output += '  read count factor:         ' + float_to_str(read_count_factor, 2) + '\n'
-        #     output += '    expected read count:     ' + float_to_str(expected_read_count, 2) + '\n'
-        #     output += '    actual read count:       ' + int_to_str(actual_read_count) + '\n'
-        #     output += '  alignment length factor:   ' + float_to_str(align_length_factor, 2) + '\n'
-        #     output += '  alignment score factor:    ' + float_to_str(align_score_factor, 2) + '\n'
-        #     output += '  start length factor:       ' + float_to_str(start_length_factor, 2) + '\n'
-        #     output += '  end length factor:         ' + float_to_str(end_length_factor, 2) + '\n'
-        #     output += '  smaller_length_factor:     ' + float_to_str(smaller_length_factor, 2) + \
-        #               '\n'
         output.append(self.quality)
-
-        # if verbosity > 2:
-        #     full_time = time.time() - start_time
-        #     output += '  total time:                ' + float_to_str(full_time, 2) + ' sec\n'
-        #     output += '    predicted time:          ' + \
-        #               float_to_str(self.predicted_time_to_finalise(), 2) + ' sec\n'
 
         return output
 

@@ -270,6 +270,26 @@ class AssemblyGraph(object):
         """
         return sum([x.get_length_no_overlap(self.overlap) for x in self.segments.values()])
 
+    def total_dead_end_count(self):
+        """
+        Returns the total number of dead ends in the assembly graph.
+        """
+        dead_ends = 0
+        for seg_num in self.segments:
+            dead_ends += self.dead_end_count(seg_num)
+        return dead_ends
+
+    def dead_end_count(self, seg_num):
+        """
+        Returns the number of dead ends for one segment: 0, 1 or 2.
+        """
+        dead_ends = 0
+        if seg_num not in self.forward_links or not self.forward_links[seg_num]:
+            dead_ends += 1
+        if seg_num not in self.reverse_links or not self.reverse_links[seg_num]:
+            dead_ends += 1
+        return dead_ends
+
     def save_to_fasta(self, filename, verbosity=0, leading_newline=True):
         """
         Saves whole graph (only forward sequences) to a FASTA file.
@@ -380,26 +400,6 @@ class AssemblyGraph(object):
             header += ','.join(next_segment_headers)
         header += ';\n'
         return header
-
-    def total_dead_end_count(self):
-        """
-        Returns the total number of dead ends in the assembly graph.
-        """
-        dead_ends = 0
-        for seg_num in self.segments:
-            dead_ends += self.dead_end_count(seg_num)
-        return dead_ends
-
-    def dead_end_count(self, seg_num):
-        """
-        Returns the number of dead ends for one segment: 0, 1 or 2.
-        """
-        dead_ends = 0
-        if seg_num not in self.forward_links or not self.forward_links[seg_num]:
-            dead_ends += 1
-        if seg_num not in self.reverse_links or not self.reverse_links[seg_num]:
-            dead_ends += 1
-        return dead_ends
 
     def filter_by_read_depth(self, relative_depth_cutoff):
         """
@@ -2772,22 +2772,22 @@ def get_headers_and_sequences(filename):
     sequences = []
     header = ''
     sequence = ''
-    graph_file = open(filename, 'rt')
-    for line in graph_file:
-        line = line.strip()
-        if not line:
-            continue
-        if line[0] == '>':
-            if header:
-                headers.append(header)
-                sequences.append(sequence)
-                sequence = ''
-            header = line[1:]
-        else:
-            sequence += line
-    if header:
-        headers.append(header)
-        sequences.append(sequence)
+    with open(filename, 'rt') as graph_file:
+        for line in graph_file:
+            line = line.strip()
+            if not line:
+                continue
+            if line[0] == '>':
+                if header:
+                    headers.append(header)
+                    sequences.append(sequence)
+                    sequence = ''
+                header = line[1:]
+            else:
+                sequence += line
+        if header:
+            headers.append(header)
+            sequences.append(sequence)
     return headers, sequences
 
 

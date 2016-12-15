@@ -45,7 +45,7 @@ class AlignmentScoringScheme(object):
 class Alignment(object):
     """
     This class describes an alignment between a long read and a contig.
-    It can be constructed either from a SAM line made by GraphMap or from the C++ Seqan output.
+    It can be constructed either from a SAM line or from the C++ Seqan output.
     """
 
     def __init__(self,
@@ -87,8 +87,8 @@ class Alignment(object):
         self.scaled_score = None
         self.milliseconds = None
 
-        # How some of the values are gotten depends on whether this alignment came from a GraphMap
-        # SAM or a Seqan alignment.
+        # How some of the values are gotten depends on whether this alignment came from SAM
+        # or a Seqan alignment.
         if seqan_output:
             self.setup_using_seqan_output(seqan_output, read, reference_dict)
         elif sam_line:
@@ -140,8 +140,7 @@ class Alignment(object):
             self.ref_end_pos += get_ref_shift_from_cigar_part(cigar_part)
 
         # If all is good with the CIGAR, then we should never end up with a ref_end_pos out of the
-        # reference range. But a CIGAR error (which has occurred in GraphMap) can cause this, so
-        # check here.
+        # reference range. But we check just to be safe.
         if self.ref_end_pos > len(self.ref.sequence):
             self.ref_end_pos = len(self.ref.sequence)
 
@@ -198,8 +197,8 @@ class Alignment(object):
                 cigar_score = 0
                 for _ in range(cigar_count):
                     # If all is good with the CIGAR, then we should never end up with a sequence
-                    # index out of the sequence range. But a CIGAR error (which has occurred in
-                    # GraphMap) can cause this, so check here.
+                    # index out of the sequence range. But a CIGAR error can cause this, so check
+                    # here.
                     if read_i >= read_len or ref_i >= ref_len:
                         break
                     read_base = read_seq[read_i]

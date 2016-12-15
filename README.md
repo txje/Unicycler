@@ -345,7 +345,7 @@ Graph cleaning:
                                         Graph dead ends smaller than this size will be removed from the final graph
 
 Long read alignment:
-  These options control the alignment of long reads to the assembly graph using Graphmap and/or Unicycler-align
+  These options control the alignment of long reads to the assembly graph.
 
   --temp_dir TEMP_DIR                   Temp directory for working files ("PID" will be replaced with the process ID)
   --contamination CONTAMINATION         FASTA file of known contamination in long reads, e.g. lambda phage spike-in (default: none).
@@ -354,6 +354,7 @@ Long read alignment:
   --min_len MIN_LEN                     Minimum alignment length (bp) - exclude alignments shorter than this length
   --keep_bad                            Include alignments in the results even if they are below the low score threshold (default: low-scoring alignments are discarded)
   --allowed_overlap ALLOWED_OVERLAP     Allow this much overlap between alignments in a single read
+  --kmer KMER                           K-mer size used for seeding alignments
 ```
 
 

@@ -562,8 +562,7 @@ def get_arguments():
     # Add the arguments for the aligner, but suppress the help text.
     align_group = parser.add_argument_group('Long read alignment',
                                             'These options control the alignment of long reads to '
-                                            'the assembly graph using Graphmap and/or '
-                                            'Unicycler-align'
+                                            'the assembly graph.'
                                             if show_all_args else argparse.SUPPRESS)
     add_aligning_arguments(align_group, show_all_args)
 

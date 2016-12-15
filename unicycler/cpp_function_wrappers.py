@@ -93,48 +93,6 @@ def path_alignment(partial_seq, full_seq, scoring_scheme, use_banding, band_size
                               scoring_scheme.gap_open, scoring_scheme.gap_extend,
                               use_banding, band_size)
     return c_string_to_python_string(ptr)
-#
-#
-# # These functions are used to conduct short alignments for the sake of extending the start and end
-# # of a GraphMap alignment.
-# C_LIB.startExtensionAlignment.argtypes = [c_char_p,  # Read sequence
-#                                           c_char_p,  # Reference sequence
-#                                           c_int,  # Match score
-#                                           c_int,  # Mismatch score
-#                                           c_int,  # Gap open score
-#                                           c_int]  # Gap extension score
-# C_LIB.startExtensionAlignment.restype = c_void_p  # String describing alignment
-#
-#
-# def start_extension_alignment(realigned_read_seq, realigned_ref_seq, scoring_scheme):
-#     """
-#     Python wrapper for startExtensionAlignment C++ function.
-#     """
-#     ptr = C_LIB.startExtensionAlignment(realigned_read_seq.encode('utf-8'),
-#                                         realigned_ref_seq.encode('utf-8'),
-#                                         scoring_scheme.match, scoring_scheme.mismatch,
-#                                         scoring_scheme.gap_open, scoring_scheme.gap_extend)
-#     return c_string_to_python_string(ptr)
-#
-#
-# C_LIB.endExtensionAlignment.argtypes = [c_char_p,  # Read sequence
-#                                         c_char_p,  # Reference sequence
-#                                         c_int,  # Match score
-#                                         c_int,  # Mismatch score
-#                                         c_int,  # Gap open score
-#                                         c_int]  # Gap extension score
-# C_LIB.endExtensionAlignment.restype = c_void_p  # String describing alignment
-#
-#
-# def end_extension_alignment(realigned_read_seq, realigned_ref_seq, scoring_scheme):
-#     """
-#     Python wrapper for endExtensionAlignment C++ function.
-#     """
-#     ptr = C_LIB.endExtensionAlignment(realigned_read_seq.encode('utf-8'),
-#                                       realigned_ref_seq.encode('utf-8'),
-#                                       scoring_scheme.match, scoring_scheme.mismatch,
-#                                       scoring_scheme.gap_open, scoring_scheme.gap_extend)
-#     return c_string_to_python_string(ptr)
 
 
 # This function cleans up the heap memory for the C strings returned by the other C functions. It
@@ -321,28 +279,6 @@ def multiple_sequence_alignment(full_length_sequences, full_length_qualities,
     # between_seq_scores = [x.split(',') for x in result_parts[2:]]
 
     return consensus, full_length_scores, start_only_scores, end_only_scores
-
-
-# C_LIB.buildMinimapIndex.argtypes = [c_char_p]  # Reference fasta filename
-# C_LIB.buildMinimapIndex.restype = c_void_p     # Pointer to Minimap index
-#
-#
-# def build_minimap_index(reference_fasta):
-#     """
-#     Python wrapper for buildMinimapIndex C++ function.
-#     """
-#     return C_LIB.buildMinimapIndex(reference_fasta.encode('utf-8'))
-#
-#
-# C_LIB.destroyMinimapIndex.argtypes = [c_void_p]  # Pointer to Minimap index
-# C_LIB.destroyMinimapIndex.restype = None
-#
-#
-# def destroy_minimap_index(minimap_index_pointer):
-#     """
-#     Python wrapper for destroyMinimapIndex C++ function.
-#     """
-#     return C_LIB.destroyMinimapIndex(minimap_index_pointer)
 
 
 # This function conducts a minimap alignment between reads and reference.

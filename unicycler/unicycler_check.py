@@ -306,8 +306,8 @@ def count_depth_and_errors_per_base(references, reference_dict, alignments):
             else:  # match/mismatch
                 for _ in range(cigar_count):
                     # If all is good with the CIGAR, then we should never end up with a sequence
-                    # index out of the sequence range. But a CIGAR error (which has occurred in
-                    # GraphMap) can cause this, so check here.
+                    # index out of the sequence range. But a CIGAR error can cause this, so check
+                    # here.
                     if read_i >= read_len or ref_i >= ref_len:
                         break
                     read_base = read_seq[read_i]
@@ -1343,8 +1343,8 @@ class Alignment(object):
             else:  # match/mismatch
                 for _ in range(cigar_count):
                     # If all is good with the CIGAR, then we should never end up with a sequence
-                    # index out of the sequence range. But a CIGAR error (which has occurred in
-                    # GraphMap) can cause this, so check here.
+                    # index out of the sequence range. But a CIGAR error can cause this, so check
+                    # here.
                     if read_i >= read_len or ref_i >= ref_len:
                         break
                     if read_seq[read_i] != self.ref.sequence[ref_i]:

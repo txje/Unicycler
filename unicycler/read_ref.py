@@ -295,20 +295,6 @@ class Read(object):
         """
         return len(self.sequence)
 
-    def needs_seqan_realignment(self, low_score_threshold):
-        """
-        This function returns True or False based on whether a read was nicely aligned by GraphMap
-        or needs to be realigned with Seqan.
-        """
-        # Either zero or more than one alignments result in realignment.
-        if len(self.alignments) != 1:
-            return True
-
-        # Overlapping alignments or low quality alignments result in realignment.
-        only_alignment = self.alignments[0]
-        return (not only_alignment.is_whole_read() or
-                only_alignment.scaled_score < low_score_threshold)
-
     def remove_conflicting_alignments(self, allowed_overlap):
         """
         This function removes alignments from the read which are likely to be spurious or

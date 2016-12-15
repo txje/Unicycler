@@ -210,13 +210,12 @@ class LongReadBridge(object):
         return predicted_consensus_time + predicted_path_time
 
     def finalise(self, scoring_scheme, min_alignment_length, read_lengths, estimated_genome_size,
-                 verbosity, expected_linear_seqs):
+                 expected_linear_seqs):
         """
         Determines the consensus sequence for the bridge, attempts to find it in the graph and
         assigns a quality score to the bridge. This is the big performance-intensive step of long
         read bridging!
         """
-        start_time = time.time()
         start_seg = self.graph.segments[abs(self.start_segment)]
         end_seg = self.graph.segments[abs(self.end_segment)]
 
@@ -347,12 +346,8 @@ class LongReadBridge(object):
             output.append('')
             target_path_length = mean_overlap + (2 * self.graph.overlap)
             expected_scaled_score = 100.0
-            expected_consensus_to_ref_ratio = 1.0
 
         output.append(str(target_path_length))
-        # if verbosity > 2:
-        #     output += '  expected scaled score:     ' + \
-        #         float_to_str(expected_scaled_score, 2) + '\n'
 
         path_start_time = time.time()
         self.all_paths, progressive_path_search = \
@@ -364,15 +359,6 @@ class LongReadBridge(object):
         output.append(str(len(self.all_paths)))
         output.append('progressive' if progressive_path_search else 'exhaustive')
         output.append(float_to_str(path_time, 1))
-        # if verbosity > 2:
-        #     for i, path in enumerate(self.all_paths):
-        #         label = '    path ' + str(i + 1) + ':'
-        #         label = label.ljust(29)
-        #         output += label + ', '.join(str(x) for x in path[0])
-        #         output += ' (' + int_to_str(self.graph.get_path_length(path[0])) + ' bp, '
-        #         output += 'raw score = ' + float_to_str(path[1], 1) + ', '
-        #         output += 'scaled score = ' + float_to_str(path[3], 2) + ', '
-        #         output += 'length discrepancy = ' + int_to_str(path[2]) + ' bp)\n'
 
         # If paths were found, use a path sequence for the bridge.
         if self.all_paths:
@@ -403,27 +389,6 @@ class LongReadBridge(object):
             actual_scaled_score = self.all_paths[0][3]
             self.quality = math.sqrt(1.0 /
                                      (1.0 + 2.0 ** (expected_scaled_score - actual_scaled_score)))
-            best_path_len_no_overlap = best_path_len - (self.graph.overlap * 2)
-            if best_path_len_no_overlap > 0 and len(self.consensus_sequence) > 0:
-                actual_consensus_to_ref_ratio = len(self.consensus_sequence) / \
-                                                best_path_len_no_overlap
-            else:
-                actual_consensus_to_ref_ratio = 1.0
-
-            # if verbosity > 2:
-            #     output += '  path score factor:         ' + float_to_str(self.quality, 2) + '\n'
-            #     output += '    mean alignment score:    ' + \
-            #               float_to_str(mean_alignment_scaled_score, 2) + '\n'
-            #     output += '    expected scaled score:   ' + \
-            #               float_to_str(expected_scaled_score, 2) + '\n'
-            #     output += '    actual scaled score:     ' + \
-            #               float_to_str(actual_scaled_score, 2) + '\n'
-            #     output += '    mean read to ref ratio:  ' + \
-            #               float_to_str(mean_read_to_ref_ratio, 4) + '\n'
-            #     output += '    expected cons to ref:    ' + \
-            #               float_to_str(expected_consensus_to_ref_ratio, 4) + '\n'
-            #     output += '    actual cons to ref:      ' + \
-            #               float_to_str(actual_consensus_to_ref_ratio, 4) + '\n'
 
         # If a path wasn't found, the consensus sequence is the bridge (with the overlaps added).
         else:
@@ -486,9 +451,6 @@ class LongReadBridge(object):
                     self.quality = settings.PATHLESS_BRIDGE_QUAL_ONE_DEAD_END
                 else:  # dead_end_count == 0
                     self.quality = settings.PATHLESS_BRIDGE_QUAL_NO_DEAD_ENDS
-
-            # if verbosity > 2:
-            #     output += '  dead end score factor:     ' + float_to_str(self.quality, 2) + '\n'
 
         # Expected read count is determined using the read lengths and bridge size. For a given
         # read length and bridge, there are an estimable number of positions where a read of that
@@ -1043,7 +1005,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
     if threads == 1:
         for bridge in long_read_bridges:
             output = bridge.finalise(scoring_scheme, min_alignment_length, read_lengths,
-                                     estimated_genome_size, verbosity, expected_linear_seqs)
+                                     estimated_genome_size, expected_linear_seqs)
             completed_count += 1
             if verbosity > 0:
                 print_long_read_bridge_table_row(alignments, col_widths, output, completed_count,
@@ -1061,7 +1023,7 @@ def create_long_read_bridges(graph, read_dict, read_names, single_copy_segments,
 
         for bridge in long_read_bridges:
             arg_list.append((bridge, scoring_scheme, min_alignment_length, read_lengths,
-                             estimated_genome_size, verbosity, expected_linear_seqs))
+                             estimated_genome_size, expected_linear_seqs))
 
         for output in pool.imap_unordered(finalise_bridge, arg_list):
             completed_count += 1
@@ -1215,10 +1177,10 @@ def finalise_bridge(all_args):
     """
     Just a one-argument version of bridge.finalise, for pool.imap.
     """
-    bridge, scoring_scheme, min_alignment_length, read_lengths, estimated_genome_size, verbosity,\
+    bridge, scoring_scheme, min_alignment_length, read_lengths, estimated_genome_size,\
         expected_linear_seqs = all_args
     return bridge.finalise(scoring_scheme, min_alignment_length, read_lengths,
-                           estimated_genome_size, verbosity, expected_linear_seqs)
+                           estimated_genome_size, expected_linear_seqs)
 
 
 def get_bridge_str(bridge):

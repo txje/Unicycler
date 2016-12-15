@@ -127,7 +127,6 @@ def main():
     single_copy_segments_fasta = os.path.join(alignment_dir, 'single_copy_segments.fasta')
     single_copy_segment_names = set(str(x.number) for x in single_copy_segments)
     alignments_sam = os.path.join(alignment_dir, 'long_read_alignments.sam')
-    temp_alignment_dir = os.path.join(alignment_dir, 'temp')
     scoring_scheme = AlignmentScoringScheme(args.scores)
     min_alignment_length = unbridged_graph.overlap * \
         settings.MIN_ALIGNMENT_LENGTH_RELATIVE_TO_GRAPH_OVERLAP

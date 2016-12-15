@@ -294,77 +294,63 @@ class AssemblyGraph(object):
         """
         Saves whole graph (only forward sequences) to a FASTA file.
         """
-        fasta = open(filename, 'w')
         print_v(('\n' if leading_newline else '') + 'Saving ' + filename, verbosity, 1)
-        sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
-        for segment in sorted_segments:
-            fasta.write(segment.get_fasta_name_and_description_line())
-            fasta.write(add_line_breaks_to_sequence(segment.forward_sequence, 60))
+        with open(filename, 'w') as fasta:
+            sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
+            for segment in sorted_segments:
+                fasta.write(segment.get_fasta_name_and_description_line())
+                fasta.write(add_line_breaks_to_sequence(segment.forward_sequence, 60))
 
     @staticmethod
-    def save_specific_segments_to_fasta(filename, segments, verbosity=0, leading_newline=True):
+    def save_specific_segments_to_fasta(filename, segments, verbosity=0):
         """
         Saves single copy segments (only forward sequences) to a FASTA file.
         """
-        fasta = open(filename, 'w')
-        print_v(('\n' if leading_newline else '') + 'Saving ' + filename, verbosity, 1)
-        sorted_segments = sorted(segments, key=lambda x: x.number)
-        for segment in sorted_segments:
-            fasta.write('>' + str(segment.number) + '\n')
-            fasta.write(add_line_breaks_to_sequence(segment.forward_sequence, 60))
-
-    def save_to_fastg(self, filename, verbosity=0, leading_newline=True):
-        """
-        Saves whole graph to a SPAdes-style FASTG file.
-        """
-        fastg = open(filename, 'w')
-        print_v(('\n' if leading_newline else '') + 'Saving ' + filename, verbosity, 1)
-        sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
-        for segment in sorted_segments:
-            fastg.write(self.get_fastg_header_with_links(segment, True))
-            fastg.write(add_line_breaks_to_sequence(segment.forward_sequence, 60))
-            fastg.write(self.get_fastg_header_with_links(segment, False))
-            fastg.write(add_line_breaks_to_sequence(segment.reverse_sequence, 60))
+        print_v('\nSaving ' + filename, verbosity, 1)
+        with open(filename, 'w') as fasta:
+            sorted_segments = sorted(segments, key=lambda x: x.number)
+            for segment in sorted_segments:
+                fasta.write('>' + str(segment.number) + '\n')
+                fasta.write(add_line_breaks_to_sequence(segment.forward_sequence, 60))
 
     def save_to_gfa(self, filename, verbosity, save_copy_depth_info=False,
                     save_seg_type_info=False, leading_newline=True):
         """
         Saves whole graph to a GFA file.
         """
-        gfa = open(filename, 'w')
         print_v(('\n' if leading_newline else '') + 'Saving ' + filename, verbosity, 1)
-        sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
-        for segment in sorted_segments:
-            segment_line = segment.gfa_segment_line()
-            segment_colour, label = '', ''
-            if save_copy_depth_info and segment.number in self.copy_depths:
-                segment_colour = self.get_copy_number_colour(segment)
-                label = self.get_depth_string(segment)
-            if save_seg_type_info and segment.bridge is not None:
-                segment_colour = 'pink'
-                label = segment.get_seg_type_label()
-            if segment_colour or label:
-                segment_line = segment_line[:-1]  # Remove newline
-                segment_line += '\tLB:z:' + label.replace('\n', '\\n')
-                segment_line += '\tCL:z:' + segment_colour
-                segment_line += '\n'
-            gfa.write(segment_line)
-        gfa.write(self.get_all_gfa_link_lines())
-        paths = sorted(self.paths.items())
-        overlap_cigar = str(self.overlap) + 'M'
-        for path_name, segment_list in paths:
-            gfa.write('P\t' + path_name + '\t')
-            gfa.write(','.join([int_to_signed_string(x) for x in segment_list]))
-            gfa.write('\t')
-            gfa.write(','.join([overlap_cigar] * (len(segment_list) - 1)))
-            gfa.write('\n')
-        if self.insert_size_mean is not None and self.insert_size_deviation is not None:
-            gfa.write('i\t')
-            gfa.write(str(self.insert_size_mean))
-            gfa.write('\t')
-            gfa.write(str(self.insert_size_deviation))
-            gfa.write('\n')
-        gfa.close()
+        with open(filename, 'w') as gfa:
+            sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
+            for segment in sorted_segments:
+                segment_line = segment.gfa_segment_line()
+                segment_colour, label = '', ''
+                if save_copy_depth_info and segment.number in self.copy_depths:
+                    segment_colour = self.get_copy_number_colour(segment)
+                    label = self.get_depth_string(segment)
+                if save_seg_type_info and segment.bridge is not None:
+                    segment_colour = 'pink'
+                    label = segment.get_seg_type_label()
+                if segment_colour or label:
+                    segment_line = segment_line[:-1]  # Remove newline
+                    segment_line += '\tLB:z:' + label.replace('\n', '\\n')
+                    segment_line += '\tCL:z:' + segment_colour
+                    segment_line += '\n'
+                gfa.write(segment_line)
+            gfa.write(self.get_all_gfa_link_lines())
+            paths = sorted(self.paths.items())
+            overlap_cigar = str(self.overlap) + 'M'
+            for path_name, segment_list in paths:
+                gfa.write('P\t' + path_name + '\t')
+                gfa.write(','.join([int_to_signed_string(x) for x in segment_list]))
+                gfa.write('\t')
+                gfa.write(','.join([overlap_cigar] * (len(segment_list) - 1)))
+                gfa.write('\n')
+            if self.insert_size_mean is not None and self.insert_size_deviation is not None:
+                gfa.write('i\t')
+                gfa.write(str(self.insert_size_mean))
+                gfa.write('\t')
+                gfa.write(str(self.insert_size_deviation))
+                gfa.write('\n')
 
     def get_all_gfa_link_lines(self):
         """

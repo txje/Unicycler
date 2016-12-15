@@ -1283,7 +1283,6 @@ class Alignment(object):
             print()
             quit_with_error('the read ' + read_name + ' is in the SAM file but not in the '
                                                       'provided reads')
-
         self.read = read_dict[read_name]
         read_len = self.read.get_length()
         self.read_start_pos = self.get_start_soft_clips(cigar_parts)
@@ -1295,7 +1294,6 @@ class Alignment(object):
             print()
             quit_with_error('the reference ' + ref_name + ' is in the SAM file but not in the '
                                                           'provided references')
-
         self.ref = reference_dict[get_nice_header(sam_parts[2])]
         ref_len = self.ref.get_length()
         self.ref_start_pos = int(sam_parts[3]) - 1

@@ -1,0 +1,2 @@
+To run Unicycler tests, simply run this command from the main Unicycler repository directory:
+python3 -m unittest

@@ -60,7 +60,7 @@ Reasons to use Unicycler:
    * It can cope with very repetitive genomes, such as [_Shigella_](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC153260/).
    * It correctly handles plasmids of varying depth.
    * It works with long reads of any quality – even Nanopore reads classed as 'fail' can be used as input.
-   * It works with any long read depth. Approximately 10x may be required to complete a genome, but it can make nearly-complete genomes with far fewer long reads.
+   * It works with any long read depth. 10x or more may be required to complete a genome, but Unicycler can make nearly-complete genomes with far fewer long reads.
    * Even if you have no long reads, it functions as a [SPAdes](http://bioinf.spbau.ru/spades) optimiser and produces very good Illumina assemblies.
    * It produces an assembly _graph_ in addition to a contigs FASTA file, viewable in [Bandage](https://github.com/rrwick/Bandage).
    * It's easy to use, runs with just one command and doesn't require tinkering with parameters!
@@ -68,7 +68,7 @@ Reasons to use Unicycler:
 Reasons to __not__ use Unicycler:
    * You only have long reads, not Illumina reads (try [Canu](https://github.com/marbl/canu) instead).
    * Your Illumina reads are poor quality (Unicycler requires a good short read assembly graph – [more info here](#bad-illumina-reads)).
-   * You're assembling a large eukaryotic genome or a metagenome (Unicycler is designed for bacterial isolates).
+   * You're assembling a large eukaryotic genome or a metagenome (Unicycler is designed for small genomes like bacterial isolates).
    * Your Illumina reads and long reads are from different isolates.
    * You're very impatient (Unicycler is not as fast as alternatives).
 
@@ -80,15 +80,15 @@ Reasons to __not__ use Unicycler:
 * [Python](https://www.python.org/) 3.4 or later
 * C++ compiler
     * [GCC](https://gcc.gnu.org/), [Clang](http://clang.llvm.org/) and [ICC](https://software.intel.com/en-us/c-compilers) should all work if the version isn't too old (C++11 support is required).
-* [SPAdes](http://bioinf.spbau.ru/spades)
+* [SPAdes](http://bioinf.spbau.ru/spades) 3.6.2 or later
 
-Unicycler needs the following tools for certain parts of its pipeline. They are optional, but without them Unicycler will not be able to perform all pipeline tasks:
+Unicycler needs the following tools for certain parts of its pipeline. They are optional, but without them Unicycler will not be able to perform all tasks:
 
-* [Pilon](https://github.com/broadinstitute/pilon/wiki) – required for polishing
-* Java – required for polishing
-* [Bowtie2](http://bowtie-bio.sourceforge.net/bowtie2/) – required for polishing
-* [Samtools](http://www.htslib.org/) version 1.0 or later – required for polishing
-* [BLAST+](https://www.ncbi.nlm.nih.gov/books/NBK279690/) – required for rotating finished assemblies
+* [Pilon](https://github.com/broadinstitute/pilon/wiki) (required for polishing)
+* Java (required for polishing)
+* [Bowtie2](http://bowtie-bio.sourceforge.net/bowtie2/) (required for polishing)
+* [Samtools](http://www.htslib.org/) version 1.0 or later (required for polishing)
+* [BLAST+](https://www.ncbi.nlm.nih.gov/books/NBK279690/) (required for rotating finished assemblies)
 
 
 
@@ -111,8 +111,8 @@ If the last command complains about permissions, you may need to run it with `su
 * Install with pip (from GitHub): `pip3 install git+https://github.com/rrwick/Unicycler.git`
 * Install with specific Makefile options: `python3 setup.py install --makeargs "CXX=icpc"`
 * Build and run without installing:
-    * `make`
-    * Execute `./unicycler-runner.py` instead of `unicycler`
+    * Run `make` in the Unicycler directory.
+    * Then you can execute `path/to/unicycler-runner.py` instead of `unicycler`
 
 
 
@@ -332,7 +332,7 @@ Pilon polishing:
   --bowtie2_build_path BOWTIE2_BUILD_PATH
                                         Path to the bowtie2_build executable
   --samtools_path SAMTOOLS_PATH         Path to the samtools executable
-  --pilon_path PILON_PATH               Path to the executable Pilon Java archive file
+  --pilon_path PILON_PATH               Path to the executable Pilon Java archive (jar) file
   --java_path JAVA_PATH                 Path to the java executable
   --min_polish_size MIN_POLISH_SIZE     Sequences shorter than this value will not be polished using Pilon
 
@@ -434,7 +434,7 @@ __C__ is a disaster! It is broken into many pieces, probably because parts of th
 
 ### Very short contigs
 
-Confused by very small (e.g. 2 bp) contigs in Unicycler assemblies? Unlike a SPAdes graph where neighbouring sequences overlap by their k-mer size, Unicycler's final graph has no overlaps and the sequences adjoin directly. This means that contigs in complex regions can be quite short. They may be useless as stand-alone contigs but are still very important in the graph structure.
+Confused by very small (e.g. 2 bp) contigs in Unicycler assemblies? Unlike a SPAdes graph where neighbouring sequences overlap by their k-mer size, Unicycler's final graph has no overlaps and the sequences adjoin directly. This means that contigs in complex regions can be quite short. They may be useless as stand-alone contigs but are still important in the graph structure.
 
 <p align="center"><img src="misc/short_contigs.png" alt="Short contigs in assembly graph"></p>
 
@@ -445,7 +445,7 @@ Unicycler normalises the depth of contigs in the graph to the median value. This
 
 <p align="center"><img src="misc/depth.png" alt="Plasmid depths"></p>
 
-In the above graph, the chromosome is at the top and there are two plasmids.  The plasmid on the left occurs in approximately 4 or 5 copies per cell. For the larger plasmid on the right, most cells probably had one copy but some had more. Since sequencing biases can affect read depth, these per cell counts should be interpreted loosely.
+In the above graph, the chromosome is at the top (you can only see part of it) and there are two plasmids.  The plasmid on the left occurs in approximately 4 or 5 copies per cell. For the larger plasmid on the right, most cells probably had one copy but some had more. Since sequencing biases can affect read depth, these per cell counts should be interpreted loosely.
 
 
 ### Known contamination
@@ -548,7 +548,7 @@ __Polishing with only Illumina reads:__<br>
 __Polishing with only PacBio reads:__<br>
 `unicycler_polish --pb_bax path/to/*bax.h5 -a assembly.fasta`
 
-__Hybrid read set polishing:__<br>
+__Hybrid read set (Illumina and PacBio) polishing:__<br>
 `unicycler_polish -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --pb_bax path/to/*bax.h5 -a assembly.fasta`
 
 

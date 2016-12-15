@@ -24,16 +24,10 @@ class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
         self.assertEqual(len(self.graph.segments), 336)
 
     def test_forward_links(self):
-        link_count = 0
-        for link_list in self.graph.forward_links.values():
-            link_count += len(link_list)
-        self.assertEqual(link_count, 904)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 904)
 
     def test_reverse_links(self):
-        link_count = 0
-        for link_list in self.graph.reverse_links.values():
-            link_count += len(link_list)
-        self.assertEqual(link_count, 904)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 904)
 
     def test_links_match(self):
         """
@@ -125,6 +119,81 @@ class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
         gfa_link_lines = self.graph.get_all_gfa_link_lines()
         self.assertEqual(gfa_link_lines.count('\n'), 452)
         self.assertEqual(gfa_link_lines.count('25M'), 452)
+
+    def test_filter_by_read_depth(self):
+        # A loop segment can be removed only when its depth drops below the threshold.
+        self.assertEqual(len(self.graph.segments), 336)
+        self.graph.filter_by_read_depth(0.5)
+        self.assertEqual(len(self.graph.segments), 336)
+        self.graph.segments[68].depth = 21.0
+        self.graph.filter_by_read_depth(0.5)
+        self.assertEqual(len(self.graph.segments), 336)
+        self.graph.segments[68].depth = 20.0
+        self.graph.filter_by_read_depth(0.5)
+        self.assertEqual(len(self.graph.segments), 335)
+
+        # A low-depth segment is only removed if its a dead end.
+        self.graph.segments[306].depth = 0.1
+        self.graph.filter_by_read_depth(0.5)
+        self.assertEqual(len(self.graph.segments), 335)
+        self.graph.remove_segments([273])
+        self.assertEqual(len(self.graph.segments), 334)
+        self.graph.filter_by_read_depth(0.5)
+        self.assertEqual(len(self.graph.segments), 333)
+
+    # def test_filter_homopolymer_loops(self):
+    #     pass
+
+    def test_remove_segments(self):
+        self.assertEqual(len(self.graph.segments), 336)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 904)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 904)
+        self.graph.remove_segments([276])
+        self.assertEqual(len(self.graph.segments), 335)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 902)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 902)
+        self.graph.remove_segments([273])
+        self.assertEqual(len(self.graph.segments), 334)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 894)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 894)
+        self.graph.remove_segments([67, 108, 222, 297])
+        self.assertEqual(len(self.graph.segments), 330)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 870)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 870)
+
+    def test_remove_small_components(self):
+        self.assertEqual(len(self.graph.segments), 336)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 904)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 904)
+        self.graph.remove_small_components(5000, 0)
+        self.assertEqual(len(self.graph.segments), 336)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 904)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 904)
+        self.graph.remove_small_components(6000, 0)
+        self.assertEqual(len(self.graph.segments), 335)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 902)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 902)
+        self.graph.remove_small_components(180000, 0)
+        self.assertEqual(len(self.graph.segments), 335)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 902)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 902)
+        self.graph.remove_small_components(190000, 0)
+        self.assertEqual(len(self.graph.segments), 0)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 0)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 0)
+
+    # def test_remove_small_dead_ends(self):
+    #     pass
+
+    # def test_merge_all_possible(self):
+    #     pass
+
+    # def test_merge_simple_path(self):
+    #     pass
+
+    # def test_get_mean_path_depth(self):
+    #     pass
+
 
 # class TestAssemblyGraphFunctionsGfa(unittest.TestCase):
 #     """

@@ -363,30 +363,6 @@ class AssemblyGraph(object):
                     gfa_link_lines += self.gfa_link_line(start, end)
         return gfa_link_lines
 
-    def get_fastg_header_with_links(self, segment, positive):
-        """
-        Returns a full SPAdes-style FASTG header for a segment, including the leading '>', all of
-        the links, the trailing ';' and a newline.
-        """
-        number = segment.number
-        if not positive:
-            number *= -1
-        header = '>' + segment.get_fastg_header(positive)
-        if number in self.forward_links:
-            header += ':'
-            next_segment_headers = []
-            for next_num in self.forward_links[number]:
-                if next_num < 0:
-                    next_positive = False
-                    next_num *= -1
-                else:
-                    next_positive = True
-                next_segment = self.segments[next_num]
-                next_segment_headers.append(next_segment.get_fastg_header(next_positive))
-            header += ','.join(next_segment_headers)
-        header += ';\n'
-        return header
-
     def filter_by_read_depth(self, relative_depth_cutoff):
         """
         This function removes segments from the graph based on a relative depth cutoff. Segments

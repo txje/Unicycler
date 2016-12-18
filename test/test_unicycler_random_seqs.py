@@ -54,12 +54,25 @@ def make_fake_reads(seq):
     return out_dir
 
 
-def run_unicycler(out_dir):
+def run_unicycler(out_dir, i):
+    """
+    This function runs Unicycler. It uses different options, based on the iteration.
+    """
     unicycler_runner = os.path.join(os.path.dirname(os.path.dirname(__file__)),
                                     'unicycler-runner.py')
     reads_1 = os.path.join(out_dir, 'reads_1.fastq')
     reads_2 = os.path.join(out_dir, 'reads_2.fastq')
+
     unicycler_cmd = [unicycler_runner, '-1', reads_1, '-2', reads_2, '--no_long', '-o', out_dir]
+    if i % 5 == 1:
+        unicycler_cmd.append('--no_rotate')
+    if i % 5 == 2:
+        unicycler_cmd.append('--no_pilon')
+    if i % 5 == 3:
+        unicycler_cmd.append('--no_correct')
+    if i % 5 == 4:
+        unicycler_cmd += ['--no_rotate', '--no_pilon', '--no_correct']
+
     p = subprocess.Popen(unicycler_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = p.communicate()
     return stdout.decode(), stderr.decode()
@@ -95,12 +108,12 @@ class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
     """
     Tests various AssemblyGraph functions on a graph loaded from a SPAdes FASTG file.
     """
-    def test_01000_bp_circular_no_repeat(self):
+    def test_1000_bp_circular_no_repeat(self):
         for i in range(REPLICATE_COUNT):
             random.seed(i)
             random_seq = unicycler.misc.get_random_sequence(1000)
             out_dir = make_fake_reads(random_seq)
-            stdout, stderr = run_unicycler(out_dir)
+            stdout, stderr = run_unicycler(out_dir, i)
             self.assertFalse(bool(stderr), msg=stderr)
             fasta, graph = get_assembly_fasta_and_graph(out_dir)
             self.assertEqual(len(fasta), 1)
@@ -109,14 +122,16 @@ class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
             self.assertEqual(len(graph.segments), 1)
             self.assertEqual(len(graph.forward_links), 2)
             self.assertEqual(len(graph.reverse_links), 2)
+            self.assertTrue(graph.segments[1].depth > 0.9)
+            self.assertTrue(graph.segments[1].depth < 1.1)
             shutil.rmtree(out_dir)
 
-    def test_05000_bp_circular_no_repeat(self):
+    def test_5000_bp_circular_no_repeat(self):
         for i in range(REPLICATE_COUNT):
             random.seed(i)
             random_seq = unicycler.misc.get_random_sequence(5000)
             out_dir = make_fake_reads(random_seq)
-            stdout, stderr = run_unicycler(out_dir)
+            stdout, stderr = run_unicycler(out_dir, i)
             self.assertFalse(bool(stderr), msg=stderr)
             fasta, graph = get_assembly_fasta_and_graph(out_dir)
             self.assertEqual(len(fasta), 1)
@@ -125,9 +140,11 @@ class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
             self.assertEqual(len(graph.segments), 1)
             self.assertEqual(len(graph.forward_links), 2)
             self.assertEqual(len(graph.reverse_links), 2)
+            self.assertTrue(graph.segments[1].depth > 0.9)
+            self.assertTrue(graph.segments[1].depth < 1.1)
             shutil.rmtree(out_dir)
 
-    def test_05000_bp_circular_one_repeat(self):
+    def test_5000_bp_circular_one_repeat(self):
         for i in range(REPLICATE_COUNT):
             random.seed(i)
             repeat = unicycler.misc.get_random_sequence(500)
@@ -135,7 +152,7 @@ class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
             seq_2 = unicycler.misc.get_random_sequence(1500)
             random_seq = seq_1 + repeat + seq_2 + repeat
             out_dir = make_fake_reads(random_seq)
-            stdout, stderr = run_unicycler(out_dir)
+            stdout, stderr = run_unicycler(out_dir, i)
             self.assertFalse(bool(stderr), msg=stderr)
             fasta, graph = get_assembly_fasta_and_graph(out_dir)
             self.assertEqual(len(fasta), 3)
@@ -146,6 +163,12 @@ class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
             self.assertEqual(len(graph.segments), 3)
             self.assertEqual(len(graph.forward_links), 6)
             self.assertEqual(len(graph.reverse_links), 6)
+            self.assertTrue(graph.segments[1].depth > 0.9)
+            self.assertTrue(graph.segments[1].depth < 1.1)
+            self.assertTrue(graph.segments[2].depth > 0.9)
+            self.assertTrue(graph.segments[2].depth < 1.1)
+            self.assertTrue(graph.segments[3].depth > 1.9)
+            self.assertTrue(graph.segments[3].depth < 2.1)
 
             assembled_len = len(seq_1) + len(seq_2) + 2 * len(seq_3)
             self.assertEqual(assembled_len, 5000)

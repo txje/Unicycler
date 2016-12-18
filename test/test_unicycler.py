@@ -1,0 +1,167 @@
+import unittest
+import os
+import subprocess
+import shutil
+import unicycler.unicycler
+import unicycler.assembly_graph
+import unicycler.misc
+import random
+
+
+REPLICATE_COUNT = 5
+
+
+def make_fake_qual_string(length):
+    qual_string = ''
+    for i in range(length):
+        qual_string += chr(random.randint(70, 75))
+    return qual_string
+
+
+def make_fake_reads(seq):
+    """
+    This function makes super-simple fake reads (no errors and even distribution) for a circular
+    genome and saves them to FASTQ files.
+    """
+    read_length = 100
+    insert_length = 300
+    looped_seq = seq + seq[0:insert_length]
+
+    out_dir = 'TEST_TEMP_' + str(os.getpid())
+    os.makedirs(out_dir)
+
+    reads_1 = os.path.join(out_dir, 'reads_1.fastq')
+    reads_2 = os.path.join(out_dir, 'reads_2.fastq')
+
+    read_num = 1
+    with open(reads_1, 'wt') as r_1, open(reads_2, 'wt') as r_2:
+        for i in range(0, 2):
+            for j in range(0, len(looped_seq) - insert_length + 1):
+                if i == 1:
+                    looped_seq = unicycler.misc.reverse_complement(looped_seq)
+                insert = looped_seq[j:j+insert_length]
+                read_1 = insert[:read_length]
+                read_2 = insert[-read_length:]
+                r_1.write('@read_' + str(read_num) + '/1\n')
+                r_2.write('@read_' + str(read_num) + '/2\n')
+                r_1.write(read_1 + '\n')
+                r_2.write(read_2 + '\n')
+                r_1.write('+\n')
+                r_2.write('+\n')
+                r_1.write(make_fake_qual_string(read_length) + '\n')
+                r_2.write(make_fake_qual_string(read_length) + '\n')
+                read_num += 1
+    return out_dir
+
+
+def run_unicycler(out_dir):
+    unicycler_runner = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                                    'unicycler-runner.py')
+    reads_1 = os.path.join(out_dir, 'reads_1.fastq')
+    reads_2 = os.path.join(out_dir, 'reads_2.fastq')
+    unicycler_cmd = [unicycler_runner, '-1', reads_1, '-2', reads_2, '--no_long', '-o', out_dir]
+    p = subprocess.Popen(unicycler_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout, stderr = p.communicate()
+    return stdout.decode(), stderr.decode()
+
+
+def get_assembly_fasta_and_graph(out_dir):
+    fasta = unicycler.misc.load_fasta(os.path.join(out_dir, 'assembly.fasta'))
+    graph = unicycler.assembly_graph.AssemblyGraph(os.path.join(out_dir, 'assembly.gfa'),
+                                                   0, paths_file=None)
+    return fasta, graph
+
+
+def sequence_matches_either_strand(seq_1, seq_2):
+    if seq_1 == seq_2:
+        return True
+    else:
+        return unicycler.misc.reverse_complement(seq_1) == seq_2
+
+
+def sequence_matches_any_rotation(seq_1, seq_2):
+    seq_1_rev_comp = unicycler.misc.reverse_complement(seq_1)
+    for i in range(len(seq_1)):
+        rotated_seq = seq_1[i:] + seq_1[:i]
+        if seq_2 == rotated_seq:
+            return True
+        rotated_seq_rev_comp = seq_1_rev_comp[i:] + seq_1_rev_comp[:i]
+        if seq_2 == rotated_seq_rev_comp:
+            return True
+    return False
+
+
+class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
+    """
+    Tests various AssemblyGraph functions on a graph loaded from a SPAdes FASTG file.
+    """
+    def test_01000_bp_circular_no_repeat(self):
+        for i in range(REPLICATE_COUNT):
+            random.seed(i)
+            random_seq = unicycler.misc.get_random_sequence(1000)
+            out_dir = make_fake_reads(random_seq)
+            stdout, stderr = run_unicycler(out_dir)
+            self.assertFalse(bool(stderr), msg=stderr)
+            fasta, graph = get_assembly_fasta_and_graph(out_dir)
+            self.assertEqual(len(fasta), 1)
+            assembled_seq = fasta[0][1]
+            self.assertTrue(sequence_matches_any_rotation(random_seq, assembled_seq))
+            self.assertEqual(len(graph.segments), 1)
+            self.assertEqual(len(graph.forward_links), 2)
+            self.assertEqual(len(graph.reverse_links), 2)
+            shutil.rmtree(out_dir)
+
+    def test_05000_bp_circular_no_repeat(self):
+        for i in range(REPLICATE_COUNT):
+            random.seed(i)
+            random_seq = unicycler.misc.get_random_sequence(5000)
+            out_dir = make_fake_reads(random_seq)
+            stdout, stderr = run_unicycler(out_dir)
+            self.assertFalse(bool(stderr), msg=stderr)
+            fasta, graph = get_assembly_fasta_and_graph(out_dir)
+            self.assertEqual(len(fasta), 1)
+            assembled_seq = fasta[0][1]
+            self.assertTrue(sequence_matches_any_rotation(random_seq, assembled_seq))
+            self.assertEqual(len(graph.segments), 1)
+            self.assertEqual(len(graph.forward_links), 2)
+            self.assertEqual(len(graph.reverse_links), 2)
+            shutil.rmtree(out_dir)
+
+    def test_05000_bp_circular_one_repeat(self):
+        for i in range(REPLICATE_COUNT):
+            random.seed(i)
+            repeat = unicycler.misc.get_random_sequence(500)
+            seq_1 = unicycler.misc.get_random_sequence(2500)
+            seq_2 = unicycler.misc.get_random_sequence(1500)
+            random_seq = seq_1 + repeat + seq_2 + repeat
+            out_dir = make_fake_reads(random_seq)
+            stdout, stderr = run_unicycler(out_dir)
+            self.assertFalse(bool(stderr), msg=stderr)
+            fasta, graph = get_assembly_fasta_and_graph(out_dir)
+            self.assertEqual(len(fasta), 3)
+            seq_1 = fasta[0][1]
+            seq_2 = fasta[1][1]
+            seq_3 = fasta[2][1]
+
+            self.assertEqual(len(graph.segments), 3)
+            self.assertEqual(len(graph.forward_links), 6)
+            self.assertEqual(len(graph.reverse_links), 6)
+
+            assembled_len = len(seq_1) + len(seq_2) + 2 * len(seq_3)
+            self.assertEqual(assembled_len, 5000)
+
+            repeat_forward_links = set(graph.forward_links[3])
+            if 1 in repeat_forward_links:
+                s_1 = seq_1
+            else:
+                s_1 = unicycler.misc.reverse_complement(seq_1)
+            if 2 in repeat_forward_links:
+                s_2 = seq_2
+            else:
+                s_2 = unicycler.misc.reverse_complement(seq_2)
+            assembled_seq = s_1 + seq_3 + s_2 + seq_3
+
+            self.assertEqual(len(assembled_seq), 5000)
+            self.assertTrue(sequence_matches_any_rotation(random_seq, assembled_seq))
+
+            shutil.rmtree(out_dir)

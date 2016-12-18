@@ -91,52 +91,49 @@ class AssemblyGraph(object):
         3) All link overlaps are the same (equal to the graph overlap value).
         """
         # Load in the segments.
-        gfa_file = open(filename, 'rt')
-        for line in gfa_file:
-            if line.startswith('S'):
-                line_parts = line.strip().split('\t')
-                num = int(line_parts[1])
-                depth = 1.0
-                for part in line_parts:
-                    if part.startswith('DP:') or part.startswith('dp:'):
-                        depth = float(part[5:])
-                sequence = line_parts[2]
-                self.segments[num] = Segment(num, depth, sequence, True)
-                self.segments[num].build_other_sequence_if_necessary()
-            if line.startswith('i'):
-                line_parts = line.strip().split('\t')
-                try:
-                    self.insert_size_mean = float(line_parts[1])
-                    self.insert_size_deviation = float(line_parts[2])
-                except ValueError:
-                    pass
-        gfa_file.close()
+        with open(filename, 'rt') as gfa_file:
+            for line in gfa_file:
+                if line.startswith('S'):
+                    line_parts = line.strip().split('\t')
+                    num = int(line_parts[1])
+                    depth = 1.0
+                    for part in line_parts:
+                        if part.startswith('DP:') or part.startswith('dp:'):
+                            depth = float(part[5:])
+                    sequence = line_parts[2]
+                    self.segments[num] = Segment(num, depth, sequence, True)
+                    self.segments[num].build_other_sequence_if_necessary()
+                if line.startswith('i'):
+                    line_parts = line.strip().split('\t')
+                    try:
+                        self.insert_size_mean = float(line_parts[1])
+                        self.insert_size_deviation = float(line_parts[2])
+                    except ValueError:
+                        pass
 
         # Load in the links.
-        gfa_file = open(filename, 'rt')
-        for line in gfa_file:
-            if line.startswith('L'):
-                line_parts = line.strip().split('\t')
-                start = signed_string_to_int(line_parts[1] + line_parts[2])
-                end = signed_string_to_int(line_parts[3] + line_parts[4])
-                if start not in self.forward_links:
-                    self.forward_links[start] = [end]
-                else:
-                    self.forward_links[start].append(end)
-        self.forward_links = build_rc_links_if_necessary(self.forward_links)
-        self.reverse_links = build_reverse_links(self.forward_links)
-        gfa_file.close()
+        with open(filename, 'rt') as gfa_file:
+            for line in gfa_file:
+                if line.startswith('L'):
+                    line_parts = line.strip().split('\t')
+                    start = signed_string_to_int(line_parts[1] + line_parts[2])
+                    end = signed_string_to_int(line_parts[3] + line_parts[4])
+                    if start not in self.forward_links:
+                        self.forward_links[start] = [end]
+                    else:
+                        self.forward_links[start].append(end)
+            self.forward_links = build_rc_links_if_necessary(self.forward_links)
+            self.reverse_links = build_reverse_links(self.forward_links)
         self.sort_link_order()
 
         # Load in the paths
-        gfa_file = open(filename, 'rt')
-        for line in gfa_file:
-            if line.startswith('P'):
-                line_parts = line.strip().split('\t')
-                path_name = line_parts[1]
-                segments = [signed_string_to_int(x) for x in line_parts[2].split(',')]
-                self.paths[path_name] = segments
-        gfa_file.close()
+        with open(filename, 'rt') as gfa_file:
+            for line in gfa_file:
+                if line.startswith('P'):
+                    line_parts = line.strip().split('\t')
+                    path_name = line_parts[1]
+                    segments = [signed_string_to_int(x) for x in line_parts[2].split(',')]
+                    self.paths[path_name] = segments
 
     def load_spades_paths(self, filename):
         """
@@ -3045,13 +3042,13 @@ def get_overlap_from_gfa_link(filename):
     Looks for the first link line and gets the overlap. Assumes that all overlaps in the graph are
     the same.
     """
-    gfa_file = open(filename, 'rt')
-    for line in gfa_file:
-        if line.startswith('L'):
-            line_parts = line.strip().split('\t')
-            if len(line_parts) > 5:
-                cigar = line_parts[5]
-                return int(cigar[:-1])
+    with open(filename, 'rt') as gfa_file:
+        for line in gfa_file:
+            if line.startswith('L'):
+                line_parts = line.strip().split('\t')
+                if len(line_parts) > 5:
+                    cigar = line_parts[5]
+                    return int(cigar[:-1])
     return 0
 
 

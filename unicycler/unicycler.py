@@ -533,8 +533,8 @@ def get_arguments():
     polish_group.add_argument('--samtools_path', type=str, default='samtools',
                               help='Path to the samtools executable'
                                    if show_all_args else argparse.SUPPRESS)
-    polish_group.add_argument('--pilon_path', type=str, default='pilon*.jar',
-                              help='Path to the executable Pilon Java archive file'
+    polish_group.add_argument('--pilon_path', type=str, default='pilon',
+                              help='Path to a Pilon executable or the Pilon Java archive file'
                                    if show_all_args else argparse.SUPPRESS)
     polish_group.add_argument('--java_path', type=str, default='java',
                               help='Path to the java executable'

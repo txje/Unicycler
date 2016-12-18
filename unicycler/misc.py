@@ -132,9 +132,6 @@ def check_pilon(pilon_path, java_path, samtools_path, bowtie2_path, bowtie2_buil
     change based on the version (e.g. pilon-1.18.jar, pilon-1.19.jar, etc.). This function will
     therefore set args.pilon_path to the first matching jar file it finds.
     """
-    if shutil.which(java_path) is None:
-        quit_with_error('could not find java - either specify its location using '
-                        '--java_path or use --no_pilon to remove Java dependency')
     if shutil.which(samtools_path) is None:
         quit_with_error('could not find samtools - either specify its location using '
                         '--samtools_path or use --no_pilon to remove Samtools dependency')
@@ -144,12 +141,36 @@ def check_pilon(pilon_path, java_path, samtools_path, bowtie2_path, bowtie2_buil
     if shutil.which(bowtie2_build_path) is None:
         quit_with_error('could not find bowtie2-build - either specify its location using '
                         '--bowtie2_build_path or use --no_pilon to remove Bowtie2 dependency')
-    found_pilon_path = get_pilon_jar_path(pilon_path)
-    if found_pilon_path:
-        args.pilon_path = found_pilon_path
+
+    # If the user specified a Pilon path other than the default, then it must work.
+    if args.pilon_path != 'pilon' and args.pilon_path is not None:
+        if args.pilon_path.endswith('.jar'):
+            if not os.path.isfile(args.pilon_path):
+                quit_with_error('could not find ' + args.pilon_path + ' - either specify a '
+                                'different location with --pilon_path or use --no_pilon to '
+                                'remove Pilon dependency')
+        elif shutil.which(args.pilon_path) is None:
+            quit_with_error('could not find ' + args.pilon_path + ' - either specify a different '
+                            'location with --pilon_path or use --no_pilon to remove Pilon '
+                            'dependency')
+
+    # If pilon_path is the default and a working executable, then that's great!
+    elif args.pilon_path == 'pilon' and shutil.which(pilon_path) is not None:
+        args.pilon_path = pilon_path
+
+    # If the user didn't specify a path and 'pilon' doesn't work, then we need to look for a
+    # Pilon jar file.
     else:
-        quit_with_error('could not find pilon*.jar - either specify its location using '
-                        '--pilon_path or use --no_pilon to remove Pilon dependency')
+        if shutil.which(java_path) is None:
+            quit_with_error('could not find java - either specify its location using '
+                            '--java_path or use --no_pilon to remove Java dependency')
+        found_pilon_path = get_pilon_jar_path(pilon_path)
+        if found_pilon_path:
+            args.pilon_path = found_pilon_path
+        else:
+            quit_with_error(
+                'could not find pilon or pilon*.jar - either specify its location using '
+                '--pilon_path or use --no_pilon to remove Pilon dependency')
 
 
 def get_pilon_jar_path(pilon_path):

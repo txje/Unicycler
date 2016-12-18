@@ -140,8 +140,12 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, java_
         raise CannotPolish('Samtools encountered an error:\n' + e.output.decode())
 
     # Polish with Pilon.
-    pilon_command = [java_path, '-jar', pilon_path, '--genome', polish_input_filename, '--frags',
-                     bam_filename, '--fix', 'bases', '--changes', '--outdir', polish_dir]
+    if pilon_path.endswith('.jar'):
+        pilon_command = [java_path, '-jar', pilon_path]
+    else:
+        pilon_command = [pilon_path]
+    pilon_command += ['--genome', polish_input_filename, '--frags', bam_filename,
+                      '--fix', 'bases', '--changes', '--outdir', polish_dir]
     if verbosity > 1:
         print()
     if verbosity > 0:

@@ -382,7 +382,10 @@ def get_sequence_file_type(filename):
         open_func = open
 
     with open_func(filename, 'rt') as seq_file:
-        first_char = seq_file.read(1)
+        try:
+            first_char = seq_file.read(1)
+        except UnicodeDecodeError:
+            first_char = ''
 
     if first_char == '>':
         return 'FASTA'

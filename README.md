@@ -122,7 +122,7 @@ If the last command complains about permissions, you may need to run it with `su
 These commands use the reads you'll find in the `sample_data` directory. They are synthetic reads generated from plasmids in a [_Shigella sonnei reference_](https://www.ncbi.nlm.nih.gov/genome/417?genome_assembly_id=166795).
 
 __Short read-only assembly:__<br>
-`unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --no_long -o output_dir`
+`unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz -o output_dir`
 
 __Hybrid assembly:__<br>
 `unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz -l long_reads_high_depth.fastq.gz -o output_dir`
@@ -256,7 +256,7 @@ In the above example, the conservative assembly is incomplete because some bridg
 Run `unicycler --help` to view the program's most commonly used options:
 
 ```
-usage: unicycler [-h] [--help_all] [--version] -1 SHORT1 -2 SHORT2 [-l LONG] [--no_long] -o OUT [--verbosity VERBOSITY] [--keep_temp KEEP_TEMP] [-t THREADS]
+usage: unicycler [-h] [--help_all] [--version] -1 SHORT1 -2 SHORT2 [-l LONG] -o OUT [--verbosity VERBOSITY] [--keep_temp KEEP_TEMP] [-t THREADS]
                  [--mode {conservative,normal,bold}] [--expected_linear_seqs EXPECTED_LINEAR_SEQS]
 
        __
@@ -280,16 +280,16 @@ Help:
   --version                             Show Unicycler's version number
 
 Input:
-  -1 SHORT1, --short1 SHORT1            FASTQ file of short reads (first reads in each pair).
-  -2 SHORT2, --short2 SHORT2            FASTQ file of short reads (second reads in each pair).
+  -1 SHORT1, --short1 SHORT1            FASTQ file of short reads (first reads in each pair)
+  -2 SHORT2, --short2 SHORT2            FASTQ file of short reads (second reads in each pair)
+  -s UNPAIRED, --unpaired UNPAIRED      FASTQ file of unpaired short reads
   -l LONG, --long LONG                  FASTQ or FASTA file of long reads, if all reads are available at start.
-  --no_long                             Do not use any long reads (assemble with short reads only)
 
 Output:
   -o OUT, --out OUT                     Output directory
   --verbosity VERBOSITY                 Level of stdout information (0 to 3, default: 1)
                                           0 = no stdout, 1 = basic progress indicators, 2 = extra info, 3 = debugging info
-  --keep_temp KEEP_TEMP                 Level of file retention (0 to 2, default: 1)
+  --keep_temp KEEP_TEMP                 Level of file retention (0 to 2, default: 0)
                                           0 = only keep files at main checkpoints, 1 = keep some temp files including SAM, 2 = keep all temp files
 
 Other:
@@ -333,7 +333,7 @@ Pilon polishing:
   --bowtie2_build_path BOWTIE2_BUILD_PATH
                                         Path to the bowtie2_build executable
   --samtools_path SAMTOOLS_PATH         Path to the samtools executable
-  --pilon_path PILON_PATH               Path to the executable Pilon Java archive (jar) file
+  --pilon_path PILON_PATH               Path to a Pilon executable or the Pilon Java archive file
   --java_path JAVA_PATH                 Path to the java executable
   --min_polish_size MIN_POLISH_SIZE     Sequences shorter than this value will not be polished using Pilon
 

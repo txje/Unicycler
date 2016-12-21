@@ -40,9 +40,9 @@ def main():
     verbosity = args.verbosity
 
     files = [args.short1, args.short2]
-    if args.short_unpaired:
-        files.append(args.short_unpaired)
-    if not args.no_long:
+    if args.unpaired:
+        files.append(args.unpaired)
+    if args.long:
         files.append(args.long)
     check_files_and_programs(files, args,
                              spades_path=args.spades_path,
@@ -71,7 +71,7 @@ def main():
             print('  ' + unbridged_graph_filename)
         unbridged_graph = AssemblyGraph(unbridged_graph_filename, None)
     else:
-        unbridged_graph = get_best_spades_graph(args.short1, args.short2, args.short_unpaired,
+        unbridged_graph = get_best_spades_graph(args.short1, args.short2, args.unpaired,
                                                 args.out, settings.READ_DEPTH_FILTER, verbosity,
                                                 args.spades_path, args.threads, args.keep_temp,
                                                 args.kmer_count, args.min_kmer_frac,
@@ -130,7 +130,7 @@ def main():
     scoring_scheme = AlignmentScoringScheme(args.scores)
     min_alignment_length = unbridged_graph.overlap * \
         settings.MIN_ALIGNMENT_LENGTH_RELATIVE_TO_GRAPH_OVERLAP
-    if not args.no_long:
+    if args.long:
         if not os.path.exists(alignment_dir):
             os.makedirs(alignment_dir)
         unbridged_graph.save_to_fasta(graph_fasta)
@@ -418,15 +418,13 @@ def get_arguments():
                              help='FASTQ file of short reads (first reads in each pair)')
     input_group.add_argument('-2', '--short2', required=True, default=argparse.SUPPRESS,
                              help='FASTQ file of short reads (second reads in each pair)')
-    input_group.add_argument('-s', '--short_unpaired', required=False, default=argparse.SUPPRESS,
+    input_group.add_argument('-s', '--unpaired', required=False, default=argparse.SUPPRESS,
                              help='FASTQ file of unpaired short reads')
 
     # Long read input options
     input_group.add_argument('-l', '--long', required=False, default=argparse.SUPPRESS,
                              help='FASTQ or FASTA file of long reads, if all reads are available '
                                   'at start.')
-    input_group.add_argument('--no_long', action='store_true',
-                             help='Do not use any long reads (assemble with short reads only)')
 
     # Output options
     output_group = parser.add_argument_group('Output')
@@ -572,9 +570,9 @@ def get_arguments():
         quit_with_error('--keep_temp must be between 0 and 2 (inclusive)')
 
     try:
-        args.short_unpaired
+        args.unpaired
     except AttributeError:
-        args.short_unpaired = None
+        args.unpaired = None
     try:
         args.long
     except AttributeError:
@@ -589,17 +587,6 @@ def get_arguments():
         args.keep_temp
     except AttributeError:
         args.keep_temp = False
-
-    # Make sure that only one of the three long read arguments was used.
-    long_arg_count = 1 if args.long else 0
-    # long_arg_count += 1 if args.long_dir else 0
-    long_arg_count += 1 if args.no_long else 0
-    if long_arg_count == 0:
-        quit_with_error('One of the following options is required: '
-                        '--long or --no_long')
-    if long_arg_count > 1:
-        quit_with_error('Only one of the following options can be used: '
-                        '--long or --no_long')
 
     # Set up bridging mode related stuff.
     user_set_bridge_qual = hasattr(args, 'min_bridge_qual')
@@ -622,8 +609,8 @@ def get_arguments():
     args.out = os.path.abspath(args.out)
     args.short1 = os.path.abspath(args.short1)
     args.short2 = os.path.abspath(args.short2)
-    if args.short_unpaired:
-        args.short_unpaired = os.path.abspath(args.short_unpaired)
+    if args.unpaired:
+        args.unpaired = os.path.abspath(args.unpaired)
     if args.long:
         args.long = os.path.abspath(args.long)
     # if args.long_dir:

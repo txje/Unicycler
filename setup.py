@@ -112,9 +112,9 @@ class UnicycleInstall(install):
             print('  unicycler --help')
             print('  unicycler --help_all')
             print('  unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz '
-                  '-l long_reads.fastq.gz -o path/to/output_dir')
-            print('  unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz --no_long '
                   '-o path/to/output_dir')
+            print('  unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz '
+                  '-l long_reads.fastq.gz -o path/to/output_dir')
             print()
 
             # Check for required programs.

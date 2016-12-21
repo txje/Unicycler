@@ -63,7 +63,7 @@ def run_unicycler(out_dir, i):
     reads_1 = os.path.join(out_dir, 'reads_1.fastq')
     reads_2 = os.path.join(out_dir, 'reads_2.fastq')
 
-    unicycler_cmd = [unicycler_runner, '-1', reads_1, '-2', reads_2, '--no_long', '-o', out_dir]
+    unicycler_cmd = [unicycler_runner, '-1', reads_1, '-2', reads_2, '-o', out_dir]
     if i % 5 == 1:
         unicycler_cmd.append('--no_rotate')
     if i % 5 == 2:

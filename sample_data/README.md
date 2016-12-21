@@ -21,6 +21,6 @@ These reads are not sufficient to complete the whole assembly, we are getting cl
 
 ### High-depth long read hybrid assembly
 
-`unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz -l long_reads_low_depth.fastq.gz -o output_dir`
+`unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz -l long_reads_high_depth.fastq.gz -o output_dir`
 
-This command will assemble the short reads along using long reads of approximately 20x depth. In this case, all parts of the plasmids are represented in a number of long reads, so there is definitely sufficient information to complete the assemblies. Accordingly, you should now see that the assembly produces just three contigs: one for each plasmid.
+This command will assemble the short reads along using long reads of approximately 20x depth. In this case, all parts of the plasmids are represented in a number of long reads, so there is sufficient information to complete the assemblies. Accordingly, you should now see that the assembly produces just three contigs: one for each plasmid.

@@ -380,7 +380,8 @@ def main():
     if verbosity > 0:
         print_section_header('Complete', verbosity)
     graph.save_to_gfa(os.path.join(args.out, 'assembly.gfa'), verbosity, leading_newline=False)
-    graph.save_to_fasta(os.path.join(args.out, 'assembly.fasta'), verbosity, leading_newline=False)
+    graph.save_to_fasta(os.path.join(args.out, 'assembly.fasta'), verbosity, leading_newline=False,
+                        min_length=args.min_fasta_length)
 
 
 def get_arguments():
@@ -434,6 +435,9 @@ def get_arguments():
                               help='R|Level of stdout information (0 to 3, default: 1)\n  '
                                    '0 = no stdout, 1 = basic progress indicators, '
                                    '2 = extra info, 3 = debugging info')
+    output_group.add_argument('--min_fasta_length', type=int, required=False, default=1,
+                              help='Exclude contigs from the FASTA file which are shorter than '
+                                   'this length (default: 1)')
     output_group.add_argument('--keep_temp', type=int, default=0,
                               help='R|Level of file retention (0 to 2, default: 0)\n  '
                                    '0 = only keep files at main checkpoints, '

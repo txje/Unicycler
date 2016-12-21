@@ -507,6 +507,8 @@ def add_line_breaks_to_sequence(sequence, line_length):
     """
     Wraps sequences to the defined length.  All resulting sequences end in a line break.
     """
+    if not sequence:
+        return '\n'
     seq_with_breaks = ''
     pos = 0
     while pos < len(sequence):

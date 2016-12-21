@@ -287,7 +287,7 @@ class AssemblyGraph(object):
             dead_ends += 1
         return dead_ends
 
-    def save_to_fasta(self, filename, verbosity=0, leading_newline=True):
+    def save_to_fasta(self, filename, verbosity=0, leading_newline=True, min_length=1):
         """
         Saves whole graph (only forward sequences) to a FASTA file.
         """
@@ -295,8 +295,9 @@ class AssemblyGraph(object):
         with open(filename, 'w') as fasta:
             sorted_segments = sorted(self.segments.values(), key=lambda x: x.number)
             for segment in sorted_segments:
-                fasta.write(segment.get_fasta_name_and_description_line())
-                fasta.write(add_line_breaks_to_sequence(segment.forward_sequence, 60))
+                if len(segment.forward_sequence) >= min_length:
+                    fasta.write(segment.get_fasta_name_and_description_line())
+                    fasta.write(add_line_breaks_to_sequence(segment.forward_sequence, 60))
 
     @staticmethod
     def save_specific_segments_to_fasta(filename, segments, verbosity=0):

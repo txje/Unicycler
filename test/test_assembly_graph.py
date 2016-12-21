@@ -80,6 +80,69 @@ class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
         self.assertTrue(fasta[335][2].endswith('TGTCGTGAAGCTTCACGAAGATGATTTTTTTGACGAAGAAGA'))
         os.remove(temp_fasta)
 
+    def test_save_to_fasta_length(self):
+        temp_fasta = os.path.join(os.path.dirname(__file__), 'temp.fasta')
+
+        self.graph.save_to_fasta(temp_fasta, min_length=0)
+        fasta = unicycler.misc.load_fasta_with_full_header(temp_fasta)
+        self.assertEqual(len(fasta), 336)
+        os.remove(temp_fasta)
+
+        self.graph.save_to_fasta(temp_fasta, min_length=1)
+        fasta = unicycler.misc.load_fasta_with_full_header(temp_fasta)
+        self.assertEqual(len(fasta), 336)
+        os.remove(temp_fasta)
+
+        self.graph.save_to_fasta(temp_fasta, min_length=10)
+        fasta = unicycler.misc.load_fasta_with_full_header(temp_fasta)
+        self.assertEqual(len(fasta), 336)
+        os.remove(temp_fasta)
+
+        self.graph.save_to_fasta(temp_fasta, min_length=20)
+        fasta = unicycler.misc.load_fasta_with_full_header(temp_fasta)
+        self.assertEqual(len(fasta), 336)
+        os.remove(temp_fasta)
+
+        self.graph.save_to_fasta(temp_fasta, min_length=26)
+        fasta = unicycler.misc.load_fasta_with_full_header(temp_fasta)
+        self.assertEqual(len(fasta), 336)
+        os.remove(temp_fasta)
+
+        self.graph.save_to_fasta(temp_fasta, min_length=27)
+        fasta = unicycler.misc.load_fasta_with_full_header(temp_fasta)
+        self.assertEqual(len(fasta), 318)
+        os.remove(temp_fasta)
+
+        self.graph.save_to_fasta(temp_fasta, min_length=30)
+        fasta = unicycler.misc.load_fasta_with_full_header(temp_fasta)
+        self.assertEqual(len(fasta), 306)
+        os.remove(temp_fasta)
+
+        self.graph.save_to_fasta(temp_fasta, min_length=40)
+        fasta = unicycler.misc.load_fasta_with_full_header(temp_fasta)
+        self.assertEqual(len(fasta), 285)
+        os.remove(temp_fasta)
+
+        self.graph.save_to_fasta(temp_fasta, min_length=50)
+        fasta = unicycler.misc.load_fasta_with_full_header(temp_fasta)
+        self.assertEqual(len(fasta), 239)
+        os.remove(temp_fasta)
+
+        self.graph.save_to_fasta(temp_fasta, min_length=100)
+        fasta = unicycler.misc.load_fasta_with_full_header(temp_fasta)
+        self.assertEqual(len(fasta), 151)
+        os.remove(temp_fasta)
+
+        self.graph.save_to_fasta(temp_fasta, min_length=200)
+        fasta = unicycler.misc.load_fasta_with_full_header(temp_fasta)
+        self.assertEqual(len(fasta), 103)
+        os.remove(temp_fasta)
+
+        self.graph.save_to_fasta(temp_fasta, min_length=1000)
+        fasta = unicycler.misc.load_fasta_with_full_header(temp_fasta)
+        self.assertEqual(len(fasta), 40)
+        os.remove(temp_fasta)
+
     def test_save_specific_segments_to_fasta(self):
         temp_fasta = os.path.join(os.path.dirname(__file__), 'temp.fasta')
         seg_nums = [1, 3, 5, 7, 9]

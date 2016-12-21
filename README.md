@@ -289,6 +289,7 @@ Output:
   -o OUT, --out OUT                     Output directory
   --verbosity VERBOSITY                 Level of stdout information (0 to 3, default: 1)
                                           0 = no stdout, 1 = basic progress indicators, 2 = extra info, 3 = debugging info
+  --min_fasta_length MIN_FASTA_LENGTH   Exclude contigs from the FASTA file which are shorter than this length (default: 1)
   --keep_temp KEEP_TEMP                 Level of file retention (0 to 2, default: 0)
                                           0 = only keep files at main checkpoints, 1 = keep some temp files including SAM, 2 = keep all temp files
 
@@ -438,6 +439,8 @@ __C__ is a disaster! It is broken into many pieces, probably because parts of th
 Confused by very small (e.g. 2 bp) contigs in Unicycler assemblies? Unlike a SPAdes graph where neighbouring sequences overlap by their k-mer size, Unicycler's final graph has no overlaps and the sequences adjoin directly. This means that contigs in complex regions can be quite short. They may be useless as stand-alone contigs but are still important in the graph structure.
 
 <p align="center"><img src="misc/short_contigs.png" alt="Short contigs in assembly graph"></p>
+
+If short contigs are a problem for your downstream analysis, you can use the `--min_fasta_length` to exclude them from Unicycler's FASTA file (they will still be included in the GFA file).
 
 
 ### Chromosomes and plasmid depth

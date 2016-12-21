@@ -90,6 +90,7 @@ Unicycler needs the following tools for certain parts of its pipeline. They are 
 * [Samtools](http://www.htslib.org/) version 1.0 or later (required for polishing)
 * [BLAST+](https://www.ncbi.nlm.nih.gov/books/NBK279690/) (required for rotating finished assemblies)
 
+[Bandage](https://github.com/rrwick/Bandage) isn't required to run Unicycler, but it is very helpful for manually investigating assemblies (the graph images in this README were made with Bandage). Make sure to get the [latest release](https://github.com/rrwick/Bandage/releases) for full compatibility with Unicycler.
 
 
 # Installation

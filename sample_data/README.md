@@ -14,13 +14,13 @@ This command will assemble the short reads alone. If you look at the resulting c
 
 `unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz -l long_reads_low_depth.fastq.gz -o output_dir`
 
-This command will assemble the short reads along with a small number of long reads. They have an average depth of approximately 1x, so some parts of the plasmids will be represented in these reads but other parts will not.
+This command will assemble the short reads along with a small number of long reads. They have an average depth of ~1x, so some parts of the plasmids will be represented in these reads but other parts will not.
 
-These reads are not sufficient to complete the whole assembly, we are getting closer. The second smallest plasmid should now be finished and only the largest plasmid remains incomplete.
+These reads are not sufficient to complete the whole assembly, but we are getting closer. The medium-sized plasmid should now be finished and only the largest plasmid remains incomplete.
 
 
 ### High-depth long read hybrid assembly
 
 `unicycler -1 short_reads_1.fastq.gz -2 short_reads_2.fastq.gz -l long_reads_high_depth.fastq.gz -o output_dir`
 
-This command will assemble the short reads along using long reads of approximately 20x depth. In this case, all parts of the plasmids are represented in a number of long reads, so there is sufficient information to complete the assemblies. Accordingly, you should now see that the assembly produces just three contigs: one for each plasmid.
+This command will assemble the short reads along using long reads of ~20x depth. Now all parts of the plasmids are represented in long reads so there is sufficient information to complete the assemblies. Accordingly, you should now see that the assembly produces just three circular contigs: one for each plasmid.

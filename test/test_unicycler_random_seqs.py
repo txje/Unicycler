@@ -54,7 +54,7 @@ def make_fake_reads(seq):
     return out_dir
 
 
-def run_unicycler(out_dir, i):
+def run_unicycler(out_dir, option_code, verbosity=None):
     """
     This function runs Unicycler. It uses different options, based on the iteration.
     """
@@ -64,14 +64,16 @@ def run_unicycler(out_dir, i):
     reads_2 = os.path.join(out_dir, 'reads_2.fastq')
 
     unicycler_cmd = [unicycler_runner, '-1', reads_1, '-2', reads_2, '-o', out_dir]
-    if i % 5 == 1:
+    if option_code % 5 == 1:
         unicycler_cmd.append('--no_rotate')
-    if i % 5 == 2:
+    if option_code % 5 == 2:
         unicycler_cmd.append('--no_pilon')
-    if i % 5 == 3:
+    if option_code % 5 == 3:
         unicycler_cmd.append('--no_correct')
-    if i % 5 == 4:
+    if option_code % 5 == 4:
         unicycler_cmd += ['--no_rotate', '--no_pilon', '--no_correct']
+    if verbosity is not None:
+        unicycler_cmd += ['--verbosity', str(verbosity)]
 
     p = subprocess.Popen(unicycler_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = p.communicate()
@@ -104,7 +106,7 @@ def sequence_matches_any_rotation(seq_1, seq_2):
     return False
 
 
-class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
+class TestRandomSeqAssemblies(unittest.TestCase):
     """
     Tests various AssemblyGraph functions on a graph loaded from a SPAdes FASTG file.
     """
@@ -188,3 +190,18 @@ class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
             self.assertTrue(sequence_matches_any_rotation(random_seq, assembled_seq))
 
             shutil.rmtree(out_dir)
+
+    def test_stdout_size(self):
+        stdout_sizes = []
+        for verbosity in range(4):
+            random.seed(0)
+            random_seq = unicycler.misc.get_random_sequence(1000)
+            out_dir = make_fake_reads(random_seq)
+            stdout, stderr = run_unicycler(out_dir, 0, verbosity)
+            self.assertFalse(bool(stderr), msg=stderr)
+            stdout_sizes.append(len(stdout))
+            shutil.rmtree(out_dir)
+        self.assertTrue(stdout_sizes[0] == 0)
+        self.assertTrue(stdout_sizes[1] > 0)
+        self.assertTrue(stdout_sizes[2] >= stdout_sizes[1])
+        self.assertTrue(stdout_sizes[3] >= stdout_sizes[2])

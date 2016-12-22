@@ -243,7 +243,6 @@ def spades_assembly(read_files, out_dir, kmers, verbosity, threads, spades_path,
         command += ['--only-assembler', '-1', short1, '-2', short2]
         if unpaired:
             command += ['-s', unpaired]
-    print_v('', verbosity, 2)
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     insert_size_mean = None

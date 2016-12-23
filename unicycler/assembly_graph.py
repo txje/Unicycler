@@ -23,6 +23,14 @@ class CannotTrimOverlaps(Exception):
     pass
 
 
+class BadPath(Exception):
+    pass
+
+
+class BadOverlaps(Exception):
+    pass
+
+
 class AssemblyGraph(object):
     """
     This class holds an assembly graph with segments and links.
@@ -483,8 +491,7 @@ class AssemblyGraph(object):
 
     def merge_all_possible(self, single_copy_segments, bridging_mode):
         """
-        This function merges segments which are in a simple, unbranching path. It produces and
-        returns a dictionary of new segment numbers to old segment numbers.
+        This function merges segments which are in a simple, unbranching path.
         """
         if single_copy_segments is not None:
             single_copy_seg_nums = set(x.number for x in single_copy_segments)
@@ -505,12 +512,18 @@ class AssemblyGraph(object):
 
     def merge_simple_path(self, merge_path):
         """
-        Merges the path into a single segment and adjusts any graph paths as necessary. Assumes
-        that the path is a simple, unbranching path and can be merged.
+        Merges the path into a single segment and adjusts any graph paths as necessary.
         """
         start = merge_path[0]
         end = merge_path[-1]
         mean_depth, original_depth = self.get_mean_path_depth(merge_path)
+
+        # Make sure this is indeed a simple path.
+        for i in range(len(merge_path) - 1):
+            s_1 = merge_path[i]
+            s_2 = merge_path[i+1]
+            if [s_2] != self.forward_links[s_1]:
+                raise BadPath(str(merge_path) + ' is not a simple path')
 
         new_seg_num = self.get_next_available_seg_number()
         merged_forward_seq = self.get_path_sequence(merge_path)
@@ -951,10 +964,9 @@ class AssemblyGraph(object):
 
     def get_next_available_seg_number(self):
         """
-        This function finds the largest used segment number and returns the next
+        This function finds the largest used segment number and returns the next number.
         """
-        current_largest = max(self.segments)
-        return current_largest + 1
+        return max(self.segments) + 1
 
     def get_depth_string(self, segment):
         """
@@ -1373,13 +1385,13 @@ class AssemblyGraph(object):
             if i == 0:
                 path_sequence = seg_sequence
             else:
-                assert seg_num in self.forward_links[prev_segment_number], \
-                    'link missing for ' + str(seg_num) + ' in path ' + \
-                    ','.join([str(x) for x in path_segments])
-                if self.overlap > 0:
-                    assert path_sequence[-self.overlap:] == seg_sequence[:self.overlap], \
-                        'overlaps do not match when merging ' + str(seg_num) + ' in path ' + \
-                        ','.join([str(x) for x in path_segments])
+                if seg_num not in self.forward_links[prev_segment_number]:
+                    raise BadPath(str(path_segments) + ' is not a valid path')
+                if self.overlap > 0 and \
+                        path_sequence[-self.overlap:] != seg_sequence[:self.overlap]:
+                    raise BadOverlaps('overlaps do not match when merging ' +
+                                      str(prev_segment_number) + ' and ' + str(seg_num) +
+                                      ' in path ' + str(path_segments))
                 path_sequence += seg_sequence[self.overlap:]
             prev_segment_number = seg_num
         return path_sequence

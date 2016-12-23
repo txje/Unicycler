@@ -14,6 +14,7 @@ class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
         self.graph = unicycler.assembly_graph.AssemblyGraph(test_fastg, 25, paths_file=None,
                                                             insert_size_mean=401,
                                                             insert_size_deviation=60)
+        self.verbosity = 0
 
     def test_attributes(self):
         self.assertEqual(self.graph.overlap, 25)
@@ -22,6 +23,14 @@ class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
 
     def test_segments(self):
         self.assertEqual(len(self.graph.segments), 336)
+
+    def test_sequence(self):
+        self.assertEqual(self.graph.segments[273].forward_sequence, 'CGGCTGTTGCGGCTGTTGCGGCTGTT')
+        self.assertEqual(self.graph.segments[273].reverse_sequence, 'AACAGCCGCAACAGCCGCAACAGCCG')
+        self.assertEqual(self.graph.segments[170].forward_sequence,
+                         'TTGTTTTACGTGCCAGCCGCTTGATCGATAGGAATTAAAACCCCAAAA')
+        self.assertEqual(self.graph.segments[170].reverse_sequence,
+                         'TTTTGGGGTTTTAATTCCTATCGATCAAGCGGCTGGCACGTAAAACAA')
 
     def test_forward_links(self):
         self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 904)
@@ -164,7 +173,7 @@ class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
         make sure they are the same.
         """
         temp_gfa = os.path.join(os.path.dirname(__file__), 'temp.gfa')
-        self.graph.save_to_gfa(temp_gfa, verbosity=0)
+        self.graph.save_to_gfa(temp_gfa, verbosity=self.verbosity)
         graph2 = unicycler.assembly_graph.AssemblyGraph(temp_gfa, 25)
         self.assertEqual(self.graph.overlap, graph2.overlap)
         self.assertEqual(self.graph.insert_size_mean, graph2.insert_size_mean)
@@ -204,21 +213,21 @@ class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
         self.graph.filter_by_read_depth(0.5)
         self.assertEqual(len(self.graph.segments), 333)
 
-    # def test_filter_homopolymer_loops(self):
-    #     pass
-
     def test_remove_segments(self):
         self.assertEqual(len(self.graph.segments), 336)
         self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 904)
         self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 904)
+
         self.graph.remove_segments([276])
         self.assertEqual(len(self.graph.segments), 335)
         self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 902)
         self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 902)
+
         self.graph.remove_segments([273])
         self.assertEqual(len(self.graph.segments), 334)
         self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 894)
         self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 894)
+
         self.graph.remove_segments([67, 108, 222, 297])
         self.assertEqual(len(self.graph.segments), 330)
         self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 870)
@@ -228,49 +237,257 @@ class TestAssemblyGraphFunctionsFastg(unittest.TestCase):
         self.assertEqual(len(self.graph.segments), 336)
         self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 904)
         self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 904)
-        self.graph.remove_small_components(5000, 0)
+
+        self.graph.remove_small_components(5000, self.verbosity)
         self.assertEqual(len(self.graph.segments), 336)
         self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 904)
         self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 904)
-        self.graph.remove_small_components(6000, 0)
+
+        self.graph.remove_small_components(6000, self.verbosity)
         self.assertEqual(len(self.graph.segments), 335)
         self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 902)
         self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 902)
-        self.graph.remove_small_components(180000, 0)
+
+        self.graph.remove_small_components(180000, self.verbosity)
         self.assertEqual(len(self.graph.segments), 335)
         self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 902)
         self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 902)
+
         self.graph.remove_small_components(190000, 0)
-        self.assertEqual(len(self.graph.segments), 0)
+        self.assertEqual(len(self.graph.segments), self.verbosity)
         self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 0)
         self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 0)
 
-    # def test_remove_small_dead_ends(self):
-    #     pass
 
-    # def test_merge_all_possible(self):
-    #     pass
+class TestAssemblyGraphFunctionsGfa(unittest.TestCase):
+    """
+    Tests various AssemblyGraph functions on a graph loaded from a GFA file.
+    """
 
-    # def test_merge_simple_path(self):
-    #     pass
+    def setUp(self):
+        test_gfa = os.path.join(os.path.dirname(__file__), 'test.gfa')
+        self.graph = unicycler.assembly_graph.AssemblyGraph(test_gfa, 0)
+        self.verbosity = 0
 
-    # def test_get_mean_path_depth(self):
-    #     pass
+    def test_attributes(self):
+        self.assertEqual(self.graph.overlap, 0)
+        self.assertAlmostEqual(self.graph.insert_size_mean, 543.21)
+        self.assertAlmostEqual(self.graph.insert_size_deviation, 123.45)
 
+    def test_segments(self):
+        self.assertEqual(len(self.graph.segments), 19)
 
-# class TestAssemblyGraphFunctionsGfa(unittest.TestCase):
-#     """
-#     Tests various AssemblyGraph functions on a graph loaded from a GFA file.
-#     """
-#
-#     def setUp(self):
-#         pass
-#
-#     def test_segments(self):
-#         pass
-#
-#     def test_forward_links(self):
-#         pass
-#
-#     def test_reverse_links(self):
-#         pass
+    def test_sequence(self):
+        self.assertEqual(self.graph.segments[1].forward_sequence, 'TTCTATTTTG')
+        self.assertEqual(self.graph.segments[1].reverse_sequence, 'CAAAATAGAA')
+        self.assertEqual(self.graph.segments[19].forward_sequence, 'AAAAAAAAAAAAAAAAAAAAAAAAA')
+        self.assertEqual(self.graph.segments[19].reverse_sequence, 'TTTTTTTTTTTTTTTTTTTTTTTTT')
+
+    def test_forward_links(self):
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 40)
+
+    def test_reverse_links(self):
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 40)
+
+    def test_links_match(self):
+        """
+        Tests that each segment's forward links match up with its reverse complement's reverse
+        links.
+        """
+        for segment, forward_link_list in self.graph.forward_links.items():
+            reverse_link_list = self.graph.reverse_links[-segment]
+            flipped_reverse_link_list = [-x for x in reverse_link_list]
+            self.assertEqual(sorted(forward_link_list), sorted(flipped_reverse_link_list))
+
+    def test_get_median_read_depth(self):
+        diff = abs(self.graph.get_median_read_depth() - 1.0)
+        self.assertTrue(diff < 0.01)
+
+    def test_normalise_read_depths(self):
+        self.graph.normalise_read_depths()
+        self.assertAlmostEqual(self.graph.get_median_read_depth(), 1.0)
+
+    def test_get_total_length(self):
+        self.assertEqual(self.graph.get_total_length(), 214)
+
+    def test_get_total_length_no_overlaps(self):
+        self.assertEqual(self.graph.get_total_length_no_overlaps(), 214)
+
+    def test_total_dead_end_count(self):
+        self.assertEqual(self.graph.total_dead_end_count(), 4)
+
+    def test_dead_end_count(self):
+        for seg_num in self.graph.segments:
+            if seg_num == 16:
+                expected_dead_ends = 2
+            elif seg_num == 17 or seg_num == 18:
+                expected_dead_ends = 1
+            else:
+                expected_dead_ends = 0
+            self.assertEqual(self.graph.dead_end_count(seg_num), expected_dead_ends)
+
+    def test_filter_homopolymer_loops(self):
+        self.graph.filter_homopolymer_loops()
+        self.assertEqual(len(self.graph.segments), 18)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 38)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 38)
+        self.assertEqual(self.graph.get_total_length(), 189)
+        self.assertEqual(self.graph.get_total_length_no_overlaps(), 189)
+
+    def test_remove_small_components(self):
+        self.graph.remove_small_components(19, self.verbosity)
+        self.assertEqual(len(self.graph.segments), 19)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 40)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 40)
+
+        self.graph.remove_small_components(20, self.verbosity)
+        self.assertEqual(len(self.graph.segments), 19)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 40)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 40)
+
+        self.graph.remove_small_components(21, self.verbosity)
+        self.assertEqual(len(self.graph.segments), 18)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 40)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 40)
+
+        self.graph.remove_small_components(25, self.verbosity)
+        self.assertEqual(len(self.graph.segments), 18)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 40)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 40)
+
+        self.graph.remove_small_components(26, self.verbosity)
+        self.assertEqual(len(self.graph.segments), 17)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 38)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 38)
+
+    def test_remove_small_dead_ends(self):
+        self.graph.remove_small_dead_ends(19, self.verbosity)
+        self.assertEqual(len(self.graph.segments), 19)
+        self.assertEqual(self.graph.get_total_length(), 214)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 40)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 40)
+
+        self.graph.remove_small_dead_ends(20, self.verbosity)
+        self.assertEqual(len(self.graph.segments), 19)
+        self.assertEqual(self.graph.get_total_length(), 214)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 40)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 40)
+
+        self.graph.remove_small_dead_ends(21, self.verbosity)
+        self.assertEqual(len(self.graph.segments), 17)
+        self.assertEqual(self.graph.get_total_length(), 174)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 38)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 38)
+
+        self.graph.remove_small_dead_ends(22, self.verbosity)
+        self.assertEqual(len(self.graph.segments), 16)
+        self.assertEqual(self.graph.get_total_length(), 153)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 36)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 36)
+
+        self.graph.remove_small_dead_ends(1000, self.verbosity)
+        self.assertEqual(len(self.graph.segments), 16)
+        self.assertEqual(self.graph.get_total_length(), 153)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 36)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 36)
+
+    def test_get_next_available_seg_number(self):
+        self.assertEqual(self.graph.get_next_available_seg_number(), 20)
+        self.graph.remove_segments([18])
+        self.assertEqual(self.graph.get_next_available_seg_number(), 20)
+        self.graph.remove_segments([19])
+        self.assertEqual(self.graph.get_next_available_seg_number(), 18)
+
+    def test_get_path_sequence(self):
+        p = [17, 15, 14, 13, 12, 6, 11, 7, 9, 10, 15, 14, 13, 12, 1, 2, 3, 4, 5, 11, 8, 15, 18]
+        self.assertEqual(self.graph.get_path_sequence(p),
+                         'GCGTCGGATTATATCGATGCGGACCAGATCTACTTTATATAGTCTACTTACGACGCAAATAGGAGTCTCGG'
+                         'GGATGATCAACTTTACAGGACCAGATCTACTTTATATAGTTCTATTTTGCAACTGAATTGGCTTATCTTGC'
+                         'ACGACATGATGACCCGCGACGCAATTGACTCGTTGGACCTAGAACGTCAAGAGACCCTA')
+
+        p = [-6, -12, -13, -14, -15, -8, -11, -6, -12, -13, -14, -15, -10]
+        self.assertEqual(self.graph.get_path_sequence(p),
+                         'CGTAAGTAGACTATATAAAGTAGATCTGGTCCAACGAGTCAATTGCGTCGTAAGTAGACTATATAAAGTAG'
+                         'ATCTGGTCCTGTAAAGTTG')
+
+        with self.assertRaises(unicycler.assembly_graph.BadPath):
+            self.graph.get_path_sequence([14, 12])
+
+    def test_bad_overlaps(self):
+        self.graph.overlap = 4
+        with self.assertRaises(unicycler.assembly_graph.BadOverlaps):
+            self.graph.get_path_sequence([17, 15, 14, 13, 12, 6])
+
+    def test_merge_simple_path_1(self):
+        self.graph.merge_simple_path([1, 2, 3, 4, 5])
+        self.assertEqual(len(self.graph.segments), 15)
+        self.assertEqual(self.graph.segments[20].forward_sequence,
+                         'TTCTATTTTGCAACTGAATTGGCTTATCTTGCACGACATGATGACCCGCG')
+        self.assertEqual(self.graph.segments[20].reverse_sequence,
+                         'CGCGGGTCATCATGTCGTGCAAGATAAGCCAATTCAGTTGCAAAATAGAA')
+        self.assertEqual(self.graph.segments[20].depth, 1.0)
+        self.assertEqual(self.graph.get_total_length(), 214)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 32)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 32)
+
+        self.graph.merge_simple_path([-12, -13, -14])
+        self.assertEqual(len(self.graph.segments), 13)
+        self.assertEqual(self.graph.segments[21].forward_sequence, 'CTATATAAAGTAGATCTG')
+        self.assertEqual(self.graph.segments[21].reverse_sequence, 'CAGATCTACTTTATATAG')
+        self.assertEqual(self.graph.segments[21].depth, 2.0)
+        self.assertEqual(self.graph.get_total_length(), 214)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 28)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 28)
+
+    def test_merge_simple_path_2(self):
+        with self.assertRaises(unicycler.assembly_graph.BadPath):
+            self.graph.merge_simple_path([7, 10])
+
+    def test_merge_simple_path_3(self):
+        with self.assertRaises(unicycler.assembly_graph.BadPath):
+            self.graph.merge_simple_path([12, 1])
+
+    def test_merge_all_possible(self):
+        self.graph.merge_all_possible(None, 2)
+        self.assertEqual(len(self.graph.segments), 11)
+        self.assertEqual(self.graph.get_total_length(), 214)
+        self.assertEqual(self.graph.get_total_length_no_overlaps(), 214)
+        self.assertEqual(sum(len(x) for x in self.graph.forward_links.values()), 24)
+        self.assertEqual(sum(len(x) for x in self.graph.reverse_links.values()), 24)
+        self.assertEqual(self.graph.segments[1].forward_sequence,
+                         'TTCTATTTTGCAACTGAATTGGCTTATCTTGCACGACATGATGACCCGCG')
+        self.assertEqual(self.graph.segments[2].forward_sequence,
+                         'ATAGGAGTCTCGGGGATGATCAACTTTACA')
+        self.assertEqual(self.graph.segments[7].forward_sequence, 'CAGATCTACTTTATATAG')
+
+    def test_get_simple_path(self):
+        self.assertEqual(self.graph.get_simple_path(1, None, 2), [1, 2, 3, 4, 5])
+        self.assertEqual(self.graph.get_simple_path(2, None, 2), [1, 2, 3, 4, 5])
+        self.assertEqual(self.graph.get_simple_path(3, None, 2), [1, 2, 3, 4, 5])
+        self.assertEqual(self.graph.get_simple_path(4, None, 2), [1, 2, 3, 4, 5])
+        self.assertEqual(self.graph.get_simple_path(5, None, 2), [1, 2, 3, 4, 5])
+        self.assertEqual(self.graph.get_simple_path(6, None, 2), [6])
+        self.assertEqual(self.graph.get_simple_path(7, None, 2), [7, 9, 10])
+        self.assertEqual(self.graph.get_simple_path(8, None, 2), [8])
+        self.assertEqual(self.graph.get_simple_path(9, None, 2), [7, 9, 10])
+        self.assertEqual(self.graph.get_simple_path(10, None, 2), [7, 9, 10])
+        self.assertEqual(self.graph.get_simple_path(11, None, 2), [11])
+        self.assertEqual(self.graph.get_simple_path(12, None, 2), [14, 13, 12])
+        self.assertEqual(self.graph.get_simple_path(13, None, 2), [14, 13, 12])
+        self.assertEqual(self.graph.get_simple_path(14, None, 2), [14, 13, 12])
+        self.assertEqual(self.graph.get_simple_path(15, None, 2), [15])
+        self.assertEqual(self.graph.get_simple_path(16, None, 2), [16])
+        self.assertEqual(self.graph.get_simple_path(17, None, 2), [17])
+        self.assertEqual(self.graph.get_simple_path(18, None, 2), [18])
+        self.assertEqual(self.graph.get_simple_path(19, None, 2), [19])
+
+    def test_get_mean_path_depth(self):
+        self.assertAlmostEqual(self.graph.get_mean_path_depth([1])[0], 1.0)
+        self.assertAlmostEqual(self.graph.get_mean_path_depth([1, 2, 3, 4, 5])[0], 1.0)
+        self.assertAlmostEqual(self.graph.get_mean_path_depth([1, 2, 3, 4, 5, 11])[0],
+                               1.10714285714286)
+        self.assertAlmostEqual(self.graph.get_mean_path_depth([14, 13, 12])[0], 2.0)
+        self.assertAlmostEqual(self.graph.get_mean_path_depth([14, 13, 12, 6])[0],
+                               1.64285714285714)
+        self.assertAlmostEqual(self.graph.get_mean_path_depth([19])[0], 10.0)
+        self.assertAlmostEqual(self.graph.get_mean_path_depth([19, 19, 19])[0], 10.0)

@@ -76,48 +76,54 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, java_
     #         print('\nAn error occurred during alignment:\n' + err.decode())
     #     raise CannotPolish('something')
 
-    # Loop through alignments_raw.sam once to collect the insert sizes.
-    insert_sizes = []
-    raw_sam = open(raw_sam_filename, 'rt')
-    for sam_line in raw_sam:
-        try:
-            insert_size = float(sam_line.split('\t')[8])
-            if insert_size > 0.0:
-                insert_sizes.append(insert_size)
-        except (ValueError, IndexError):
-            pass
-    raw_sam.close()
-    if not insert_sizes:
-        raise CannotPolish('no read pairs aligned')
-    insert_mean = statistics.mean(insert_sizes)
-    if verbosity > 1:
-        print()
-    if verbosity > 0:
-        print('Mean fragment size =', float_to_str(insert_mean, 1) + ' bp')
-    insert_sizes = sorted(insert_sizes)
-    insert_size_5th = get_percentile_sorted(insert_sizes, 5.0)
-    if verbosity > 1:
-        print('Fragment size 5th percentile =', float_to_str(insert_size_5th, 0) + ' bp')
-    insert_size_95th = get_percentile_sorted(insert_sizes, 95.0)
-    if verbosity > 1:
-        print('Fragment size 95th percentile =', float_to_str(insert_size_95th, 0) + ' bp')
+    if short_1:
+        # Loop through alignments_raw.sam once to collect the insert sizes.
+        insert_sizes = []
+        raw_sam = open(raw_sam_filename, 'rt')
+        for sam_line in raw_sam:
+            try:
+                insert_size = float(sam_line.split('\t')[8])
+                if insert_size > 0.0:
+                    insert_sizes.append(insert_size)
+            except (ValueError, IndexError):
+                pass
+        raw_sam.close()
+        if not insert_sizes:
+            raise CannotPolish('no read pairs aligned')
+        insert_mean = statistics.mean(insert_sizes)
+        if verbosity > 1:
+            print()
+        if verbosity > 0:
+            print('Mean fragment size =', float_to_str(insert_mean, 1) + ' bp')
+        insert_sizes = sorted(insert_sizes)
+        insert_size_5th = get_percentile_sorted(insert_sizes, 5.0)
+        if verbosity > 1:
+            print('Fragment size 5th percentile =', float_to_str(insert_size_5th, 0) + ' bp')
+        insert_size_95th = get_percentile_sorted(insert_sizes, 95.0)
+        if verbosity > 1:
+            print('Fragment size 95th percentile =', float_to_str(insert_size_95th, 0) + ' bp')
 
-    # Produce a new sam file including only the pairs with an appropriate insert size.
-    filtered_sam_filename = os.path.join(polish_dir, 'alignments_filtered.sam')
-    if verbosity > 0:
-        print('Filtering alignments to fragment size range:',
-              float_to_str(insert_size_5th, 0) + ' to ' + float_to_str(insert_size_95th, 0))
-    filtered_sam = open(filtered_sam_filename, 'w')
-    raw_sam = open(raw_sam_filename, 'rt')
-    for sam_line in raw_sam:
-        try:
-            insert_size = abs(float(sam_line.split('\t')[8]))
-            if insert_size_5th <= insert_size <= insert_size_95th:
+        # Produce a new sam file including only the pairs with an appropriate insert size.
+        filtered_sam_filename = os.path.join(polish_dir, 'alignments_filtered.sam')
+        if verbosity > 0:
+            print('Filtering alignments to fragment size range:',
+                  float_to_str(insert_size_5th, 0) + ' to ' + float_to_str(insert_size_95th, 0))
+        filtered_sam = open(filtered_sam_filename, 'w')
+        raw_sam = open(raw_sam_filename, 'rt')
+        for sam_line in raw_sam:
+            try:
+                insert_size = abs(float(sam_line.split('\t')[8]))
+                if insert_size_5th <= insert_size <= insert_size_95th:
+                    filtered_sam.write(sam_line)
+            except (ValueError, IndexError):
                 filtered_sam.write(sam_line)
-        except (ValueError, IndexError):
-            filtered_sam.write(sam_line)
-    raw_sam.close()
-    filtered_sam.close()
+        raw_sam.close()
+        filtered_sam.close()
+
+    else:
+        if verbosity > 0:
+            print('All reads are unpaired, not filtering by insert size')
+        filtered_sam_filename = raw_sam_filename
 
     # Sort the alignments.
     bam_filename = os.path.join(polish_dir, 'alignments.bam')

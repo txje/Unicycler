@@ -39,7 +39,9 @@ def main():
     args = get_arguments()
     verbosity = args.verbosity
 
-    files = [args.short1, args.short2]
+    files = []
+    if args.short1 and args.short2:
+      files.extend([args.short1, args.short2])
     if args.unpaired:
         files.append(args.unpaired)
     if args.long:
@@ -364,7 +366,7 @@ def main():
         try:
             polish_with_pilon(graph, args.bowtie2_path, args.bowtie2_build_path, args.pilon_path,
                               args.java_path, args.samtools_path, args.min_polish_size, polish_dir,
-                              verbosity, args.short1, args.short2, args.threads)
+                              verbosity, args.short1, args.short2, args.unpaired, args.threads)
         except CannotPolish as e:
             if verbosity > 0:
                 print('Unable to polish assembly using Pilon: ', end='')
@@ -415,9 +417,9 @@ def get_arguments():
 
     # Short read input options
     input_group = parser.add_argument_group('Input')
-    input_group.add_argument('-1', '--short1', required=True, default=argparse.SUPPRESS,
+    input_group.add_argument('-1', '--short1', required=False, default=argparse.SUPPRESS,
                              help='FASTQ file of short reads (first reads in each pair)')
-    input_group.add_argument('-2', '--short2', required=True, default=argparse.SUPPRESS,
+    input_group.add_argument('-2', '--short2', required=False, default=argparse.SUPPRESS,
                              help='FASTQ file of short reads (second reads in each pair)')
     input_group.add_argument('-s', '--unpaired', required=False, default=argparse.SUPPRESS,
                              help='FASTQ file of unpaired short reads')
@@ -574,6 +576,14 @@ def get_arguments():
         quit_with_error('--keep_temp must be between 0 and 2 (inclusive)')
 
     try:
+        args.short1
+    except AttributeError:
+        args.short1 = None
+    try:
+        args.short2
+    except AttributeError:
+        args.short2 = None
+    try:
         args.unpaired
     except AttributeError:
         args.unpaired = None
@@ -611,10 +621,14 @@ def get_arguments():
 
     # Change some arguments to full paths.
     args.out = os.path.abspath(args.out)
-    args.short1 = os.path.abspath(args.short1)
-    args.short2 = os.path.abspath(args.short2)
+    if args.short1:
+        args.short1 = os.path.abspath(args.short1)
+    if args.short2:
+        args.short2 = os.path.abspath(args.short2)
     if args.unpaired:
         args.unpaired = os.path.abspath(args.unpaired)
+    if args.short1 is None and args.short2 is None and args.unpaired is None:
+        quit_with_error('Some short reads, either --short1, --short2 or --unpaired must be included')
     if args.long:
         args.long = os.path.abspath(args.long)
     # if args.long_dir:

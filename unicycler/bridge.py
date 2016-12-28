@@ -90,7 +90,9 @@ class SpadesContigBridge(object):
         # and the SPAdes contig bridge is 2 kb long, we should not believe it!
         if self.graph_path:
             bridge_length = len(self.bridge_sequence)
-            if bridge_length <= graph.insert_size_mean:
+            if graph.insert_size_mean is None: # probably unpaired reads only
+                bridge_length_factor = 1.0
+            elif bridge_length <= graph.insert_size_mean:
                 bridge_length_factor = 1.0
             else:
                 bridge_length_factor = graph.insert_size_deviation / (bridge_length -

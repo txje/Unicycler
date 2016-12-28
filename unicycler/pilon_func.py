@@ -22,7 +22,7 @@ class CannotPolish(Exception):
 
 
 def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, java_path, samtools_path,
-                      min_polish_size, polish_dir, verbosity, short_1, short_2, threads):
+                      min_polish_size, polish_dir, verbosity, short_1, short_2, short_unpaired, threads):
     """
     Runs Pilon on the graph to hopefully fix up small mistakes.
     """
@@ -55,8 +55,12 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, java_
     raw_sam_filename = os.path.join(polish_dir, 'alignments_raw.sam')
     bowtie2_command = [bowtie2_path, '--end-to-end', '--very-sensitive', '--threads', str(threads),
                        '--no-discordant', '--no-mixed', '--no-unal', '-I', '0', '-X', '2000',
-                       '-x', polish_input_filename, '-1', short_1, '-2', short_2,
-                       '-S', raw_sam_filename]
+                       '-x', polish_input_filename, '-S', raw_sam_filename]
+    if short_1:
+        bowtie2_command += ['-1', short_1, '-2', short_2]
+    elif short_unpaired:
+        bowtie2_command += ['-U', short_unpaired]
+
     if verbosity > 0:
         print('Aligning short reads to assembly using Bowtie2')
     if verbosity > 1:
@@ -144,8 +148,12 @@ def polish_with_pilon(graph, bowtie2_path, bowtie2_build_path, pilon_path, java_
         pilon_command = [java_path, '-jar', pilon_path]
     else:
         pilon_command = [pilon_path]
-    pilon_command += ['--genome', polish_input_filename, '--frags', bam_filename,
-                      '--fix', 'bases', '--changes', '--outdir', polish_dir]
+    pilon_command += ['--genome', polish_input_filename, '--fix', 'bases', '--changes', '--outdir', polish_dir]
+    if short_1:
+        pilon_command += ['--frags', bam_filename]
+    elif short_unpaired:
+        pilon_command += ['--unpaired', bam_filename]
+
     if verbosity > 1:
         print()
     if verbosity > 0:

@@ -29,10 +29,14 @@ def get_best_spades_graph(short1, short2, short_unpaired, out_dir, read_depth_fi
     if no_spades_correct:
         reads = (short1, short2, short_unpaired)
     else:
-        reads = spades_read_correction(short1, short2, short_unpaired, spades_dir, verbosity,
+        reads = spades_read_correction(short1, short2, short_unpaired, spades_dir, keep_temp, verbosity,
                                        threads, spades_path)
-    kmer_range = get_kmer_range(short1, short2, spades_dir, verbosity, kmer_count, min_kmer_frac,
-                                max_kmer_frac)
+    if short1 is not None:
+        kmer_range = get_kmer_range(short1, short2, spades_dir, verbosity, kmer_count, min_kmer_frac,
+                                    max_kmer_frac)
+    elif short_unpaired is not None:
+        kmer_range = get_kmer_range(short_unpaired, None, spades_dir, verbosity, kmer_count, min_kmer_frac,
+                                    max_kmer_frac)
     assem_dir = os.path.join(spades_dir, 'assembly')
     print_section_header('Conducting SPAdes assemblies', verbosity)
 
@@ -154,7 +158,7 @@ def get_best_spades_graph(short1, short2, short_unpaired, out_dir, read_depth_fi
     return assembly_graph
 
 
-def spades_read_correction(short1, short2, short_unpaired, spades_dir, verbosity, threads,
+def spades_read_correction(short1, short2, short_unpaired, spades_dir, keep_temp, verbosity, threads,
                            spades_path):
     """
     This runs SPAdes with the --only-error-correction option.
@@ -165,19 +169,27 @@ def spades_read_correction(short1, short2, short_unpaired, spades_dir, verbosity
     corrected_1 = os.path.join(spades_dir, 'corrected_1.fastq.gz')
     corrected_2 = os.path.join(spades_dir, 'corrected_2.fastq.gz')
     corrected_u = os.path.join(spades_dir, 'corrected_u.fastq.gz')
-    if os.path.isfile(corrected_1) and os.path.isfile(corrected_2):
+    if os.path.isfile(corrected_u) or (os.path.isfile(corrected_1) and os.path.isfile(corrected_2)):
         if verbosity > 0:
             print('Corrected reads already exist. Will use these reads instead of running SPAdes '
                   'error correction:')
-            print('  ' + corrected_1)
-            print('  ' + corrected_2)
+            if os.path.isfile(corrected_1):
+                print('  ' + corrected_1)
+                print('  ' + corrected_2)
+            else:
+                corrected_1 = None
+                corrected_2 = None
             if os.path.isfile(corrected_u):
                 print('  ' + corrected_u)
+            else:
+                corrected_u = None
         return corrected_1, corrected_2, corrected_u
 
     # If the corrected reads don't exist, then we run SPAdes in error correction only mode.
     read_correction_dir = os.path.join(spades_dir, 'read_correction')
-    command = [spades_path, '-1', short1, '-2', short2]
+    command = [spades_path]
+    if short1 is not None:
+        command += ['-1', short1, '-2', short2]
     if short_unpaired:
         command += ['-s', short_unpaired]
     command += ['-o', read_correction_dir, '--threads', str(threads), '--only-error-correction']
@@ -197,31 +209,41 @@ def spades_read_correction(short1, short2, short_unpaired, spades_dir, verbosity
 
     # Read error correction should be done now, so copy the correct read files to a more permanent
     # location.
-    short1_no_extension = strip_read_extensions(short1)
-    short2_no_extension = strip_read_extensions(short2)
+    if short1:
+      short1_no_extension = strip_read_extensions(short1)
+      short2_no_extension = strip_read_extensions(short2)
+    if short_unpaired:
+      short_unpaired_no_extension = strip_read_extensions(short_unpaired)
     corrected_dir = os.path.join(read_correction_dir, 'corrected')
     files = os.listdir(corrected_dir)
     for spades_file in files:
         file_path = os.path.join(corrected_dir, spades_file)
-        if short1_no_extension in spades_file:
-            shutil.move(file_path, corrected_1)
-        elif short2_no_extension in spades_file:
-            shutil.move(file_path, corrected_2)
-        elif '_unpaired' in spades_file:
+        if short1:
+          if short1_no_extension in spades_file:
+              shutil.move(file_path, corrected_1)
+          elif short2_no_extension in spades_file:
+              shutil.move(file_path, corrected_2)
+        if short_unpaired_no_extension in spades_file:
             shutil.move(file_path, corrected_u)
-    shutil.rmtree(read_correction_dir)
 
-    if not os.path.isfile(corrected_1) or not os.path.isfile(corrected_2):
+    if keep_temp < 2 and os.path.isdir(read_correction_dir):
+      shutil.rmtree(read_correction_dir)
+
+    if not os.path.isfile(corrected_u) and (not os.path.isfile(corrected_1) or not os.path.isfile(corrected_2)):
         quit_with_error('SPAdes read error correction failed')
 
     if not os.path.isfile(corrected_u):
         corrected_u = None
+    if not os.path.isfile(corrected_1):
+        corrected_1 = None
+        corrected_2 = None
 
     if verbosity > 0:
         print()
         print('Corrected reads:')
-        print('  ' + corrected_1)
-        print('  ' + corrected_2)
+        if corrected_1:
+            print('  ' + corrected_1)
+            print('  ' + corrected_2)
         if corrected_u:
             print('  ' + corrected_u)
 
@@ -240,7 +262,9 @@ def spades_assembly(read_files, out_dir, kmers, verbosity, threads, spades_path,
     if just_last:
         command += ['--restart-from', 'k' + str(kmers[-1])]
     else:
-        command += ['--only-assembler', '-1', short1, '-2', short2]
+        command += ['--only-assembler']
+        if short1:
+            command += ['-1', short1, '-2', short2]
         if unpaired:
             command += ['-s', unpaired]
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -310,7 +334,7 @@ def get_kmer_range(reads_1_filename, reads_2_filename, spades_dir, verbosity, km
 
     # If the code got here, then the k-mer range doesn't already exist and we'll create one by
     # examining the read lengths.
-    read_lengths = get_read_lengths(reads_1_filename) + get_read_lengths(reads_2_filename)
+    read_lengths = get_read_lengths(reads_1_filename) + (get_read_lengths(reads_2_filename) if reads_2_filename is not None else [])
     read_lengths = sorted(read_lengths)
     median_read_length = read_lengths[len(read_lengths) // 2 - 1]
     max_kmer = round_to_nearest_odd(max_kmer_frac * median_read_length)
